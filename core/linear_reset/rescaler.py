@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from nqgl.mlutils.components.config import WandbDynamicConfig
+from sae_components.core.config import WandbDynamicConfig
 
 
 class RescalerConfig(WandbDynamicConfig): ...

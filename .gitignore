@@ -1,0 +1,7 @@
+wandb/
+ssh*.json
+__pycache__/
+*.pt
+nqgl/sae/models/
+notes/
+models-from-remote/

@@ -1,8 +1,8 @@
-from nqgl.mlutils.components.component_layer.layercomponent import LayerComponent
-from nqgl.mlutils.components.config import WandbDynamicConfig
-from nqgl.mlutils.components.cache import Cache, CacheSpec
+from sae_components.core.component_layer.layercomponent import LayerComponent
+from sae_components.core.config import WandbDynamicConfig
+from sae_components.core.cache import Cache, CacheSpec
 
-from nqgl.mlutils.components.component_layer import ComponentLayer
+from sae_components.core.component_layer import ComponentLayer
 import torch.nn as nn
 from dataclasses import dataclass
 import torch
@@ -11,7 +11,7 @@ from abc import abstractmethod
 from torch import Tensor
 from jaxtyping import Bool, Float
 import torch.nn.functional as F
-from nqgl.mlutils.components.component_layer.resampler.adam_resetter import AdamResetter
+from sae_components.core.component_layer.resampler.adam_resetter import AdamResetter
 
 
 @dataclass

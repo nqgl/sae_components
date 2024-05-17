@@ -1,9 +1,9 @@
-from nqgl.mlutils.components.cache_layer import CacheLayer, CacheProcLayer
+from sae_components.core.cache_layer import CacheLayer, CacheProcLayer
 from typing import Dict, List, Union
 import torch.nn as nn
 from unpythonic import box
 
-from nqgl.mlutils.components.component_layer.layercomponent import LayerComponent
+from sae_components.core.component_layer.layercomponent import LayerComponent
 
 
 def provides_field(

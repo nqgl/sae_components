@@ -1,8 +1,8 @@
-from nqgl.mlutils.components.component_layer.resampler.methods.recently_resampled import (
+from sae_components.core.component_layer.resampler.methods.recently_resampled import (
     RecentlyResampledTracker,
     RecentlyResampledTrackerConfig,
 )
-from nqgl.mlutils.components.component_layer.resampler.resampler import (
+from sae_components.core.component_layer.resampler.resampler import (
     ResamplerConfig,
     ResamplingCache,
     ResamplerComponent,
@@ -14,22 +14,22 @@ from nqgl.mlutils.components.component_layer.resampler.resampler import (
     SVDResampling,
 )
 
-from nqgl.mlutils.components.component_layer.resampler.methods.orth_resampler import (
+from sae_components.core.component_layer.resampler.methods.orth_resampler import (
     OrthDiffResampling,
     OrthDiffResamplingConfig,
 )
 
-from nqgl.mlutils.components.component_layer.resampler.queued import (
+from sae_components.core.component_layer.resampler.queued import (
     QueuedResampler,
     QueuedResamplerConfig,
 )
 
-from nqgl.mlutils.components.component_layer.resampler.methods.topk import (
+from sae_components.core.component_layer.resampler.methods.topk import (
     TopKResamplingConfig,
     TopKResampling,
 )
 
-# from nqgl.mlutils.components.component_layer.resampler import methods
-from nqgl.mlutils.components.component_layer.resampler.methods.no_resample import (
+# from sae_components.core.component_layer.resampler import methods
+from sae_components.core.component_layer.resampler.methods.no_resample import (
     NoResampling,
 )

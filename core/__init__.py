@@ -1,9 +1,10 @@
-from nqgl.mlutils.components.component_layer import ComponentLayer
-from nqgl.mlutils.components.cache import Cache
-from nqgl.mlutils.components.cache_layer import (
+from sae_components.core.component_layer import ComponentLayer
+from sae_components.core.cache import Cache
+from sae_components.core.cache_layer import (
     CacheLayer,
     CacheLayerConfig,
-    CacheModule,
+    Module,
     CacheProcLayer,
 )
-from nqgl.mlutils.components.component_layer.layercomponent import LayerComponent
+from sae_components.core.component_layer.layercomponent import LayerComponent
+from sae_components.core.collection_modules.seq import Sequential

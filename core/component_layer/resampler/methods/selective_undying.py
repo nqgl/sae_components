@@ -1,20 +1,20 @@
 from jaxtyping import Float
 from torch.nn.modules import ReLU
 from torch.nn.parameter import Parameter
-from nqgl.mlutils.components.component_layer.component_layer import ComponentLayer
-from nqgl.mlutils.components.component_layer.resampler import (
+from sae_components.core.component_layer.component_layer import ComponentLayer
+from sae_components.core.component_layer.resampler import (
     ResamplingMethod,
     QueuedResampler,
     ResamplerConfig,
     ResamplerComponent,
 )
 
-from nqgl.mlutils.components import CacheModule, Cache
-from nqgl.mlutils.components.component_layer.resampler.resampler import ResamplingCache
-from nqgl.mlutils.components.nonlinearities.undying import undying_relu
+from sae_components.core import CacheModule, Cache
+from sae_components.core.component_layer.resampler.resampler import ResamplingCache
+from sae_components.core.nonlinearities.undying import undying_relu
 from dataclasses import dataclass
 import torch
-from nqgl.mlutils.components.nonlinearities.serializable import SerializableNonlinearity
+from sae_components.core.nonlinearities.serializable import SerializableNonlinearity
 
 
 @dataclass

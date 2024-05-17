@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from nqgl.mlutils.components.component_layer.resampler.resampler import ResamplingMethod
+from sae_components.core.component_layer.resampler.resampler import ResamplingMethod
 import torch
 
 

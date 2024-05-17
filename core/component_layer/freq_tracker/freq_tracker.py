@@ -1,10 +1,10 @@
-from nqgl.mlutils.components.cache_layer import ActsCache, CacheProcLayer, CacheLayer
-from nqgl.mlutils.components.component_layer import (
+from sae_components.core.cache_layer import ActsCache, CacheProcLayer, CacheLayer
+from sae_components.core.component_layer import (
     ComponentLayer,
 )
 
-from nqgl.mlutils.components.component_layer.layercomponent import LayerComponent
-from nqgl.mlutils.components.config import WandbDynamicConfig
+from sae_components.core.component_layer.layercomponent import LayerComponent
+from sae_components.core.config import WandbDynamicConfig
 import torch
 from abc import ABC, abstractmethod
 from typing import List, Type, TypeVar

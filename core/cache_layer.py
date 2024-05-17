@@ -1,4 +1,4 @@
-from nqgl.mlutils.components.cache import Cache
+from sae_components.core.cache import Cache
 
 
 import torch
@@ -23,14 +23,17 @@ class CacheLayerConfig:
     inst: Optional[List[int]] = None
 
 
-class CacheModule(torch.nn.Module, ABC):
-
+# TODO: consider making this a protocol, otherwise make sure to inherit from it instead of nn.Module
+# or maybe add the pre- and post- step hook behaviors to this class
+class Module(torch.nn.Module, ABC):
     @abstractmethod
     def forward(self, *x, cache: Cache = None, **kwargs):
         raise NotImplementedError
 
+    #
 
-class CacheLayer(CacheModule):
+
+class CacheLayer(Module):
     def __init__(
         self,
         W: Float[Tensor, "*inst d_in d_out"],
@@ -41,17 +44,23 @@ class CacheLayer(CacheModule):
     ):
         super().__init__()
         self.cfg = cfg
-        self.d_in = W.shape[-2]
-        self.d_out = W.shape[-1]
+        self.in_features = W.shape[-2]
+        self.out_features = W.shape[-1]
         self.inst = W.shape[:-2]
-        # TODO maybe assert all are parameters already?
-        self.W = nn.Parameter(W) if isinstance(W, Tensor) else W
-        self.ndim_inst = self.W.ndim - 2
-        self.b = nn.Parameter(bias) if isinstance(bias, Tensor) else bias
+        assert isinstance(W, nn.Parameter)
+        assert isinstance(bias, nn.Parameter) or isinstance(bias, bool) or bias is None
+        self.weight = W
+        self.ndim_inst = self.weight.ndim - 2
+        self.bias = bias
         if b_in is None:
             self.b_pre = 0
         else:
-            self.b_pre = nn.Parameter(b_in) if isinstance(b_in, Tensor) else b_in
+            assert isinstance(b_in, nn.Parameter | bool)
+            if isinstance(b_in, nn.Parameter):
+                self.b_pre = b_in
+            else:
+                assert b_in
+                b_in = nn.Parameter(torch.zeros(*self.inst, self.in_features))
         self.nonlinearity = nonlinearity
         # self.W = nn.Parameter(W)
 
@@ -61,12 +70,12 @@ class CacheLayer(CacheModule):
             *(x.shape[:1] + (1,) * (self.ndim_inst - (x.ndim - 2)) + x.shape[1:])
         )
         # TODO become fully satisfied w the squeezing
-        mul = (x + self.b_pre).unsqueeze(-2) @ self.W
-        cache.pre_acts = (pre_acts := mul.squeeze(-2) + self.b)
+        mul = (x + self.b_pre).unsqueeze(-2) @ self.weight
+        cache.pre_acts = (pre_acts := mul.squeeze(-2) + self.bias)
         cache.acts = (
             acts := (
                 self.nonlinearity(pre_acts, cache=cache)
-                if isinstance(self.nonlinearity, CacheModule)
+                if isinstance(self.nonlinearity, Module)
                 else self.nonlinearity(pre_acts)
             )
         )
@@ -88,8 +97,8 @@ class CacheLayer(CacheModule):
         return cls.from_dims(cfg.d_in, cfg.d_out, inst=cfg.inst, cfg=cfg)
 
 
-class CacheProcLayer(CacheModule):
-    def __init__(self, cachelayer: CacheModule, train_cache=None, eval_cache=None):
+class CacheProcLayer(Module):
+    def __init__(self, cachelayer: Module, train_cache=None, eval_cache=None):
         super().__init__()
         self.cachelayer = cachelayer
         self.train_cache_template: Cache = train_cache or ActsCache()

@@ -1,4 +1,4 @@
-from nqgl.mlutils.components.component_layer.resampler.resampler import ResamplingMethod
+from sae_components.core.component_layer.resampler.resampler import ResamplingMethod
 
 
 class NoResampling(ResamplingMethod):

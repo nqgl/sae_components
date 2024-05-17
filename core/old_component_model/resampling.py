@@ -1,8 +1,8 @@
-from nqgl.mlutils.components.config import WandbDynamicConfig
-from nqgl.mlutils.components.old_component_model.freq_component import (
+from sae_components.core.config import WandbDynamicConfig
+from sae_components.core.old_component_model.freq_component import (
     FreqMonitorComponent,
 )
-from nqgl.mlutils.components.old_component_model.act_freq_layer import ActFreqLayer
+from sae_components.core.old_component_model.act_freq_layer import ActFreqLayer
 import torch.nn as nn
 from dataclasses import dataclass
 

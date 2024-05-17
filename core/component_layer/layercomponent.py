@@ -1,7 +1,7 @@
-from nqgl.mlutils.components.cache import Cache
+from sae_components.core.cache import Cache
 
-# from nqgl.mlutils.components.component_layer.component_layer import ComponentLayer
-from nqgl.mlutils.components.component_layer.require_provide import (
+# from sae_components.core.component_layer.component_layer import ComponentLayer
+from sae_components.core.component_layer.require_provide import (
     RequiredReq,
     Req,
 )

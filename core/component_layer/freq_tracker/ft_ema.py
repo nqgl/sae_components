@@ -1,9 +1,9 @@
-from nqgl.mlutils.components.cache_layer import ActsCache
-from nqgl.mlutils.components.component_layer.freq_tracker.freq_tracker import (
+from sae_components.core.cache_layer import ActsCache
+from sae_components.core.component_layer.freq_tracker.freq_tracker import (
     CountingFreqTrackerConfig,
     FreqTracker,
 )
-from nqgl.mlutils.components.config import WandbDynamicConfig
+from sae_components.core.config import WandbDynamicConfig
 import torch
 
 from dataclasses import dataclass

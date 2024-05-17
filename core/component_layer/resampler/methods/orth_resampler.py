@@ -1,12 +1,12 @@
-from nqgl.mlutils.components.component_layer.resampler import (
+from sae_components.core.component_layer.resampler import (
     ResamplingMethod,
     ResamplerConfig,
 )
 from dataclasses import dataclass
-from nqgl.mlutils.components.component_layer.resampler.methods.orthogonalize import (
+from sae_components.core.component_layer.resampler.methods.orthogonalize import (
     re_init_neurons_gram_shmidt_precise_iterative_argmax,
 )
-from nqgl.mlutils.components.component_layer.resampler.methods.topk import (
+from sae_components.core.component_layer.resampler.methods.topk import (
     TopKResampling,
     TopKResamplingConfig,
 )

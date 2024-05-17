@@ -1,11 +1,11 @@
 import torch
 from jaxtyping import Float, jaxtyped, Bool
 from torch import Tensor
-from nqgl.mlutils.components.cache_layer import CacheLayer, CacheProcLayer
+from sae_components.core.cache_layer import CacheLayer, CacheProcLayer
 from typing import Any, Union, Optional
 from dataclasses import field
 
-from nqgl.mlutils.components.old_component_model.freq_component import (
+from sae_components.core.old_component_model.freq_component import (
     FreqMonitorComponent,
 )
 

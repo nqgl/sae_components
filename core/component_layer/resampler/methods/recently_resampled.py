@@ -1,6 +1,6 @@
 import torch.nn as nn
 from torch import Tensor
-from nqgl.mlutils.components.component_layer.resampler.resampler import (
+from sae_components.core.component_layer.resampler.resampler import (
     ResamplerConfig,
     ResamplingMethod,
 )

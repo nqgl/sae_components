@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Dict
 
-from nqgl.mlutils.components.nonlinearities.undying import undying_relu
+from sae_components.core.nonlinearities.undying import undying_relu
 
 nonlinearity_dict = {
     "relu": torch.nn.functional.relu,

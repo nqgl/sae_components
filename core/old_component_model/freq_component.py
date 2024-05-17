@@ -1,4 +1,4 @@
-from nqgl.mlutils.components.cache_layer import ActsCache, CacheProcLayer
+from sae_components.core.cache_layer import ActsCache, CacheProcLayer
 
 
 from abc import ABC, abstractmethod
