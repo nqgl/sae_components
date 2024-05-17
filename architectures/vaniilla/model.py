@@ -48,7 +48,39 @@ class SAE(cl.Sequential):
         )
 
 
-def sae(d_data, d_dict):
+class EncoderLayer(cl.Sequential):
+    pre_bias: NegBias
+    affine: nn.Linear
+    nonlinearity: nn.ReLU
+
+    def __init__(self, pre_bias: NegBias, affine: nn.Linear, nonlinearity: nn.ReLU):
+        super().__init__(
+            pre_bias=pre_bias,
+            affine=affine,
+            nonlinearity=nonlinearity,
+        )
+
+    @property
+    def weight(self):
+        return self.affine.weight
+
+    @property
+    def bias(self):
+        return self.affine.bias
+
+    @property
+    def out_features(self):
+        print("called out_features")
+        print("self.affine", self.affine)
+        print("2")
+        return self.affine.out_features
+
+    @property
+    def in_features(self):
+        return self.affine.in_features
+
+
+def vanilla_sae(d_data, d_dict):
     b_dec = nn.Parameter(torch.zeros(d_data))
     W_enc = nn.Parameter(torch.empty(d_data, d_dict))
     b_enc = nn.Parameter(torch.zeros(d_dict))
@@ -56,12 +88,11 @@ def sae(d_data, d_dict):
 
     sae = cl.Sequential(
         encoder=FreqTracked(
-            layer=cl.Sequential(
+            module=EncoderLayer(
                 pre_bias=NegBias(b_dec),
-                linear=nn.Linear(d_data, d_dict),
+                affine=nn.Linear(d_data, d_dict),
                 nonlinearity=nn.ReLU(),
             ),
-            freq_tracker=FreqTracker(),
         ),
         penalty=L1Penalty(),
         decoder=cl.CacheLayer(
@@ -70,3 +101,19 @@ def sae(d_data, d_dict):
             nonlinearity=None,
         ),
     )
+    return sae
+
+
+def main():
+    d_data = 10
+    d_dict = 20
+    sae = vanilla_sae(d_data, d_dict).cuda()
+    print(sae)
+    x = torch.randn(8, d_data).cuda()
+    cache = SAECache()
+    y = sae(x, cache=cache)
+    print(y)
+
+
+if __name__ == "__main__":
+    main()

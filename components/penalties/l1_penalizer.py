@@ -1,7 +1,6 @@
 import torch
-from components.sparsity_penalizers.penalty import Penalty
+from sae_components.components.penalties.penalty import Penalty
 from torch import Tensor
-from sae_components.core.collection_modules.seq import SequentialCacheLayer
 
 
 class L1Penalty(Penalty):

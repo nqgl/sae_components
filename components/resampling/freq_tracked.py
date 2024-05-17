@@ -6,18 +6,20 @@ from torch import Tensor
 from jaxtyping import Float
 
 from typing import Tuple, Any, Union, Optional, List
-from sae_components.components.resampling.freq_tracker.ema import (
-    EMAFreqTracker,
+from sae_components.components.resampling.freq_tracker import (
     FreqTracker,
 )
 
+from sae_components.components.resampling.ema import EMAFreqTracker
 
-class FreqTracked(cl.Sequential):
-    def __init__(self, module: cl.CacheLayer, freq_tracker: cl.CacheLayer = None):
+
+class FreqTracked(cl.Module):
+    def __init__(self, module: cl.CacheLayer, freq_tracker: cl.Module = None):
         super().__init__()
-        freq_tracker = freq_tracker or EMAFreqTracker(module.out_features)
         self.module = module
-        self.freq_tracker: FreqTracker = freq_tracker
+        self.freq_tracker: FreqTracker = freq_tracker or EMAFreqTracker(
+            module.out_features
+        )
 
     def forward(self, *x, cache: cl.Cache = None, **kwargs):
         acts = self.module(*x, cache=cache, **kwargs)

@@ -56,9 +56,9 @@ class HasLosses(Protocol):
     losses: List[Loss]
 
 
-# Maybe the losses should just be functions and take (model, x, cache) as arguments
+# # Maybe the losses should just be functions and take (model, x, cache) as arguments
 
-# in trainer assert isinstance(model, HasLosses)
-model = ...
-mse = MSELoss(model)
-l1 = L1Loss(model)
+# # in trainer assert isinstance(model, HasLosses)
+# model = ...
+# mse = MSELoss(model)
+# l1 = L1Loss(model)

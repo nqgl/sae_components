@@ -1,6 +1,6 @@
 import torch
 from typing import List
-from components.resampling.freq_tracker import FreqTracker
+from sae_components.components.resampling.freq_tracker import FreqTracker
 import sae_components.core as cl
 
 

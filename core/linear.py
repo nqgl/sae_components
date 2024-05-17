@@ -12,17 +12,71 @@ from unpythonic import box
 from abc import abstractmethod, ABC
 
 
-class MatMul(cl.Module):
-    def __init__(self, d_in, d_out, bias=True):
+class Bias(cl.Module):
+    def __init__(self, bias):
         super().__init__()
-        self.weight = nn.Parameter(torch.empty(d_in, d_out))
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(d_out))
-        else:
-            self.register_parameter("bias", None)
+        assert isinstance(bias, nn.Parameter)
+        self.bias = bias
+
+    @property
+    def in_features(self):
+        return self.bias.shape[-1]
+
+    @property
+    def out_features(self):
+        return self.bias.shape[-1]
+
+    def forward(self, *x, cache: Cache = None, **kwargs):
+        return x + self.bias
+
+    def tied_neg(self):
+        return NegBias(self.bias)
+
+    def __neg__(self):
+        return self.tied_neg()
+
+
+class MatMul(cl.Module):
+    def __init__(self, W):
+        super().__init__()
+        assert isinstance(W, nn.Parameter)
+        self.weight = W
+
+    @property
+    def in_features(self):
+        return self.weight.shape[-2]
+
+    @property
+    def out_features(self):
+        return self.weight.shape[-1]
 
     def forward(self, x, cache: Cache, **kwargs):
         return x @ self.W + self.bias
+
+
+class Affine(cl.Sequential):
+    _weight: MatMul
+    _bias: Bias
+
+    def __init__(self, bias, weight):
+        super().__init__(_weight=weight, _bias=bias)
+
+    @property
+    def weight(self):
+        return self._weight.weight
+
+    @property
+    def bias(self):
+        return self._bias.bias
+
+
+class NegBias(Bias):
+    def forward(self, x, cache: Cache, **kwargs):
+        return x - self.bias
+
+    def tied_neg(self):
+        print("warning: negated a NegBias")
+        return Bias(self.bias)
 
 
 class Linear(cl.Module):
