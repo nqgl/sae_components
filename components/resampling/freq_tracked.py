@@ -17,9 +17,7 @@ class FreqTracked(cl.Module):
     def __init__(self, module: cl.CacheLayer, freq_tracker: cl.Module = None):
         super().__init__()
         self.module = module
-        self.freq_tracker: FreqTracker = freq_tracker or EMAFreqTracker(
-            module.out_features
-        )
+        self.freq_tracker: FreqTracker = freq_tracker or EMAFreqTracker()
 
     def forward(self, *x, cache: cl.Cache = None, **kwargs):
         acts = self.module(*x, cache=cache, **kwargs)

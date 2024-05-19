@@ -31,9 +31,18 @@ class Sequential(Module):
         return self._sequence[key]
 
     def __getattr__(self, key):
+        print(key)
         if key in super().__getattr__("_sequence"):
             return super().__getattr__("_sequence")[key]
         return super().__getattr__(key)
+
+    # @property
+    # def in_features(self):
+    #     return self[0].in_features
+
+    # @property
+    # def out_features(self):
+    #     return self[-1].out_features
 
 
 class NamedSequential(Module):

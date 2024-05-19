@@ -5,6 +5,7 @@ from torch import Tensor
 from jaxtyping import Float
 
 import sae_components.core as cl
+import sae_components.components as cc
 
 from sae_components.components import (
     Penalty,
@@ -17,22 +18,9 @@ from sae_components.components import (
     L2Loss,
     SparsityPenalty,
     SAECache,
-    NegBias,
 )
-
-
-class SAE(nn.Module):
-    def __init__(self, encoder, decoder, penalty):
-        super().__init__()
-        self.encoder = encoder
-        self.penalty = penalty
-        self.decoder = decoder
-
-    def forward(self, x, cache: SAECache):
-        encoded = self.encoder(x, cache=cache["encoder"])
-        self.penalty(encoded, cache["encoder"])
-        decoded = self.decoder(encoded, cache=cache["decoder"])
-        return decoded
+from sae_components.core.linear import Bias, NegBias, Affine, MatMul
+from typing import Optional
 
 
 class SAE(cl.Sequential):
@@ -49,16 +37,22 @@ class SAE(cl.Sequential):
 
 
 class EncoderLayer(cl.Sequential):
-    pre_bias: NegBias
-    affine: nn.Linear
+    pre_bias: Optional[NegBias]
+    affine: Affine
     nonlinearity: nn.ReLU
 
-    def __init__(self, pre_bias: NegBias, affine: nn.Linear, nonlinearity: nn.ReLU):
-        super().__init__(
-            pre_bias=pre_bias,
-            affine=affine,
-            nonlinearity=nonlinearity,
-        )
+    def __init__(self, pre_bias: NegBias, affine: Affine, nonlinearity: nn.Module):
+        if pre_bias is not None:
+            super().__init__(
+                pre_bias=pre_bias,
+                affine=affine,
+                nonlinearity=nonlinearity,
+            )
+        else:
+            super().__init__(
+                affine=affine,
+                nonlinearity=nonlinearity,
+            )
 
     @property
     def weight(self):
@@ -68,37 +62,72 @@ class EncoderLayer(cl.Sequential):
     def bias(self):
         return self.affine.bias
 
-    @property
-    def out_features(self):
-        print("called out_features")
-        print("self.affine", self.affine)
-        print("2")
-        return self.affine.out_features
+    # @property
+    # def out_features(self):
+    #     print("called out_features")
+    #     print("self.affine", self.affine)
+    #     print("2")
+    #     return self.affine.out_features
 
-    @property
-    def in_features(self):
-        return self.affine.in_features
+    # @property
+    # def in_features(self):
+    #     return self.affine.in_features
+
+
+class Resampled(cl.Module):
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, x, cache: SAECache, **kwargs):
+        return self.module(x, cache=cache, **kwargs)
+
+
+class Resampler:
+    def __init__(
+        self,
+    ):
+        self.enc = None
+        self.dec = None
+        self.b = None
+
+    def encoder(self, enc: MatMul):
+        assert self.enc is None
+        self.enc = enc
+        return enc
+
+    def decoder(self, dec: MatMul):
+        assert self.dec is None
+        self.dec = dec
+        return dec
+
+    def bias(self, bias: Bias):
+        assert self.b is None
+        self.b = bias
+        return bias
 
 
 def vanilla_sae(d_data, d_dict):
-    b_dec = nn.Parameter(torch.zeros(d_data))
-    W_enc = nn.Parameter(torch.empty(d_data, d_dict))
-    b_enc = nn.Parameter(torch.zeros(d_dict))
-    W_dec = nn.Parameter(torch.empty(d_dict, d_data))
+    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
+    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
+    b_enc = Bias(nn.Parameter(torch.zeros(d_dict)))
+    b_dec = Bias(nn.Parameter(torch.zeros(d_data)))
+
+    resampler = Resampler()
     sae = cl.Sequential(
-        encoder=FreqTracked(
-            module=EncoderLayer(
-                pre_bias=NegBias(b_dec),
-                affine=nn.Linear(d_data, d_dict),
+        encoder=cl.Sequential(
+            EncoderLayer(
+                pre_bias=b_dec.tied_negative(),
+                affine=Affine(weight=W_enc, bias=b_enc),
                 nonlinearity=nn.ReLU(),
             ),
+            L1Penalty(),
         ),
-        penalty=L1Penalty(),
-        decoder=cl.CacheLayer(
-            W=W_dec,
+        freqs=EMAFreqTracker(),
+        decoder=Affine(
+            weight=W_dec,
             bias=b_dec,
-            nonlinearity=None,
         ),
     )
     return sae

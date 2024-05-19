@@ -7,4 +7,3 @@ from sae_components.components.resampling import (
     ResampledLayer,
 )
 from sae_components.components.sae_cache import SAECache
-from sae_components.components.neg_bias import NegBias

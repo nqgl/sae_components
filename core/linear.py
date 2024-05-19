@@ -12,6 +12,26 @@ from unpythonic import box
 from abc import abstractmethod, ABC
 
 
+class FromDims:  # could add some init logic here or make a generalized "parameter initialization" class
+    def __init__(self, dims: List[int]):
+        self.dims = dims
+        self.initalization = nn.init.kaiming_uniform_
+
+    def parameter(self) -> nn.Parameter:
+        return nn.Parameter(torch.zeros(*self.dims))
+
+
+class FromDimsTied(FromDims):
+    def __init__(self, dims: List[int]):
+        super().__init__(dims)
+        self._parameter = None
+
+    def parameter(self) -> nn.Parameter:
+        if self._parameter is None:
+            self._parameter = nn.Parameter(torch.ones(*self.dims))
+        return self._parameter
+
+
 class Bias(cl.Module):
     def __init__(self, bias):
         super().__init__()
@@ -29,11 +49,20 @@ class Bias(cl.Module):
     def forward(self, *x, cache: Cache = None, **kwargs):
         return x + self.bias
 
-    def tied_neg(self):
+    def tied_negative(self):
         return NegBias(self.bias)
 
     def __neg__(self):
-        return self.tied_neg()
+        return self.tied_negative()
+
+
+class NegBias(Bias):
+    def forward(self, x, cache: Cache, **kwargs):
+        return x - self.bias
+
+    def tied_negative(self):
+        print("warning: negated a NegBias")
+        return Bias(self.bias)
 
 
 class MatMul(cl.Module):
@@ -51,14 +80,26 @@ class MatMul(cl.Module):
         return self.weight.shape[-1]
 
     def forward(self, x, cache: Cache, **kwargs):
-        return x @ self.W + self.bias
+        return x @ self.weight
 
 
 class Affine(cl.Sequential):
     _weight: MatMul
     _bias: Bias
 
-    def __init__(self, bias, weight):
+    def __init__(self, weight=True, bias=True, dims=None):
+        if dims is not None:
+            assert isinstance(weight, bool) and weight
+            assert isinstance(bias, bool)
+            # assert isinstance(dims, List[int] | FromDims)
+            assert isinstance(dims, List[int])
+            weight = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(*dims)))
+            bias = nn.Parameter(torch.zeros(dims[-1]))
+        if isinstance(weight, nn.Parameter):
+            weight = MatMul(weight)
+        if isinstance(bias, nn.Parameter):
+            bias = Bias(bias)
+        assert isinstance(weight, MatMul)
         super().__init__(_weight=weight, _bias=bias)
 
     @property
@@ -68,15 +109,6 @@ class Affine(cl.Sequential):
     @property
     def bias(self):
         return self._bias.bias
-
-
-class NegBias(Bias):
-    def forward(self, x, cache: Cache, **kwargs):
-        return x - self.bias
-
-    def tied_neg(self):
-        print("warning: negated a NegBias")
-        return Bias(self.bias)
 
 
 class Linear(cl.Module):
