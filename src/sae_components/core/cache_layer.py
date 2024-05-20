@@ -27,7 +27,8 @@ class CacheLayerConfig:
 # or maybe add the pre- and post- step hook behaviors to this class
 class Module(torch.nn.Module, ABC):
     @abstractmethod
-    def forward(self, *x, cache: Cache = None, **kwargs):
+    # TODO: Recently changed *x -> x
+    def forward(self, x, cache: Cache = None, **kwargs):
         raise NotImplementedError
 
     #

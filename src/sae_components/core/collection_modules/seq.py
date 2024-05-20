@@ -12,7 +12,7 @@ class Sequential(Module):
         super().__init__()
 
         if len(modules) > 0:
-            d = {i: module for i, module in enumerate(modules)}
+            d = {str(i): module for i, module in enumerate(modules)}
         else:
             d = named_modules
         self._sequence = nn.ModuleDict(d)
