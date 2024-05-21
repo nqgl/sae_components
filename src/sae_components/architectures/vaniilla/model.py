@@ -23,7 +23,7 @@ from sae_components.core.linear import Bias, NegBias, Affine, MatMul
 from typing import Optional
 
 
-class SAE(cl.Sequential):
+class SAE(cl.Seq):
     encoder: cl.Module
     penalty: cl.Module
     decoder: cl.Module
@@ -36,7 +36,7 @@ class SAE(cl.Sequential):
         )
 
 
-class EncoderLayer(cl.Sequential):
+class EncoderLayer(cl.Seq):
     pre_bias: Optional[NegBias]
     affine: Affine
     nonlinearity: nn.ReLU
@@ -48,6 +48,7 @@ class EncoderLayer(cl.Sequential):
                 affine=affine,
                 nonlinearity=nonlinearity,
             )
+
         else:
             super().__init__(
                 affine=affine,
@@ -79,7 +80,7 @@ class Resampled(cl.Module):
         super().__init__()
         self.module = module
 
-    def forward(self, x, cache: SAECache, **kwargs):
+    def forward(self, x, *, cache: SAECache, **kwargs):
         return self.module(x, cache=cache, **kwargs)
 
 
@@ -116,8 +117,8 @@ def vanilla_sae(d_data, d_dict):
     b_dec = Bias(nn.Parameter(torch.zeros(d_data)))
 
     resampler = Resampler()
-    sae = cl.Sequential(
-        encoder=cl.Sequential(
+    sae = cl.Seq(
+        encoder=cl.Seq(
             EncoderLayer(
                 pre_bias=b_dec.tied_negative(),
                 affine=Affine(
@@ -146,8 +147,8 @@ def vanilla_sae(d_data, d_dict):
 
     resampler = Resampler()
 
-    sae = cl.Sequential(
-        encoder=cl.Sequential(
+    sae = cl.Seq(
+        encoder=cl.Seq(
             pre_bias=b_dec.tied_negative(),
             weight=resampler.resampled_encoder(MatMul(W_enc)),
             bias=resampler.resampled_bias(Bias(b_enc)),
@@ -155,7 +156,7 @@ def vanilla_sae(d_data, d_dict):
         ),
         penalty=L1Penalty(),
         freq_tracker=resampler.freq_tracker,
-        decoder=cl.Sequential(
+        decoder=cl.Seq(
             weight=resampler.resampled_decoder(MatMul(W_dec)),
             bias=Bias(b_dec),
         ),
@@ -172,8 +173,8 @@ def vanilla_sae(d_data, d_dict):
 
     resampler = Resampler()
 
-    sae = cl.Sequential(
-        encoder=cl.Sequential(
+    sae = cl.Seq(
+        encoder=cl.Seq(
             pre_bias=b_dec.tied_negative(),
             weight=resampler.resampled_encoder(MatMul(W_enc)),
             bias=resampler.resampled_bias(Bias(b_enc)),
@@ -181,7 +182,7 @@ def vanilla_sae(d_data, d_dict):
         ),
         penalty=L1Penalty(),
         freq_tracker=resampler.freq_tracker,
-        decoder=cl.Sequential(
+        decoder=cl.Seq(
             weight=resampler.resampled_decoder(MatMul(W_dec)),
             bias=Bias(b_dec),
         ),
@@ -198,7 +199,7 @@ def vanilla_sae(d_data, d_dict):
 
     resampler = Resampler()
 
-    sae = cl.Sequential(
+    sae = cl.Seq(
         -Bias(b_dec),
         resampler.resampled_encoder(MatMul(W_enc)),
         resampler.resampled_bias(Bias(b_enc)),
@@ -224,15 +225,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-class Resampler:
-    sae: SAE
-
-    def get_indices(self, freqs): ...
-    def resample(self):
-
-        i = self.get_indices(self.sae.freqs)
-        d = get_directions(i)
-        self.sae.encoder.reset_features(i, d)
-        self.sae.decoder.reset_features(i, d)

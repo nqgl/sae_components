@@ -11,7 +11,7 @@ from sae_components.components.resampling.freq_tracked import (
 )
 
 
-class ResampledLayer(cl.Sequential):
+class ResampledLayer(cl.Seq):
     layer: FreqTracked
 
     def __init__(self, layer, freq_tracker, resampler):

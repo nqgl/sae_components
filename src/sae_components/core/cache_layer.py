@@ -28,7 +28,7 @@ class CacheLayerConfig:
 class Module(torch.nn.Module, ABC):
     @abstractmethod
     # TODO: Recently changed *x -> x
-    def forward(self, x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache, **kwargs):
         raise NotImplementedError
 
     #
@@ -65,7 +65,7 @@ class CacheLayer(Module):
         self.nonlinearity = nonlinearity
         # self.W = nn.Parameter(W)
 
-    def forward(self, x, cache: Cache, **kwargs):
+    def forward(self, x, *, cache: Cache, **kwargs):
         cache.x = x
         x = x.view(
             *(x.shape[:1] + (1,) * (self.ndim_inst - (x.ndim - 2)) + x.shape[1:])
@@ -107,7 +107,7 @@ class CacheProcLayer(Module):
         self.train_process_after_call: set = set()
         self.eval_process_after_call: set = set()
 
-    def forward(self, *x, cache: Cache = None):
+    def forward(self, x, *, cache: Cache = None):
         cache = self.prepare_cache(cache)
         acts = self.cachelayer(*x, cache=cache)
         self._update(cache)

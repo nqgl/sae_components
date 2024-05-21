@@ -4,7 +4,7 @@ from sae_components.core.cache import Cache
 from sae_components.core.cache_layer import Module
 
 
-class Sequential(Module):
+class Seq(Module):
     def __init__(self, *modules, names=None, **named_modules):
         assert (len(modules) > 0) ^ (
             len(named_modules) > 0
@@ -17,7 +17,7 @@ class Sequential(Module):
             d = named_modules
         self._sequence = nn.ModuleDict(d)
 
-    def forward(self, x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache = None, **kwargs):
         for i, module in enumerate(self._sequence.values()):
             if isinstance(module, Module):
                 x = module(x, cache=cache[i], **kwargs)
@@ -46,7 +46,7 @@ class Sequential(Module):
 
 
 class NamedSequential(Module):
-    def forward(self, x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache = None, **kwargs):
         for i, (name, module) in enumerate(self._sequence):
             if isinstance(module, Module):
                 x = module(x, cache=cache[name], **kwargs)

@@ -137,7 +137,7 @@ class SelectiveUndyingResampler(ResamplerComponent):
             self.dead = new_dead | still_dead
         # self.reset_activation_frequencies(undied)
 
-    def _nonlinearity(self, x, cache):
+    def _nonlinearity(self, x, *, cache):
         if self.dead is False:
             return torch.relu(x)
 
@@ -208,5 +208,5 @@ class CacheLayerReferredForwardFn(CacheModule):
         super().__init__()
         self._referred_forward_fn = forward_fn
 
-    def forward(self, *x, cache):
+    def forward(self, x, *, cache):
         return self._referred_forward_fn(*x, cache=cache)

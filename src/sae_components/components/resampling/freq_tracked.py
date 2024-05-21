@@ -19,7 +19,7 @@ class FreqTracked(cl.Module):
         self.module = module
         self.freq_tracker: FreqTracker = freq_tracker or EMAFreqTracker()
 
-    def forward(self, *x, cache: cl.Cache = None, **kwargs):
+    def forward(self, x, *, cache: cl.Cache = None, **kwargs):
         acts = self.module(*x, cache=cache, **kwargs)
         self.freq_tracker.update(acts)
         return acts

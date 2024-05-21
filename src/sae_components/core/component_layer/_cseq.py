@@ -2,7 +2,7 @@ class CachedSequential(nn.Module):  # Is this a cachelayer maybe? not certain be
     def __init__(self, *layers):
         self.layers = nn.ModuleList(layers)
 
-    def forward(self, x, cache):
+    def forward(self, x, *, cache):
         cache.x = x
         for i, layer in enumerate(self.layers):
             if isinstance(layer, CacheModule):

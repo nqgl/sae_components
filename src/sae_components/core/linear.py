@@ -46,7 +46,7 @@ class Bias(cl.Module):
     def out_features(self):
         return self.bias.shape[-1]
 
-    def forward(self, *x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache = None, **kwargs):
         return x + self.bias
 
     def tied_negative(self):
@@ -57,7 +57,7 @@ class Bias(cl.Module):
 
 
 class NegBias(Bias):
-    def forward(self, x, cache: Cache, **kwargs):
+    def forward(self, x, *, cache: Cache, **kwargs):
         return x - self.bias
 
     def tied_negative(self):
@@ -79,11 +79,11 @@ class MatMul(cl.Module):
     def out_features(self):
         return self.weight.shape[-1]
 
-    def forward(self, x, cache: Cache, **kwargs):
+    def forward(self, x, *, cache: Cache, **kwargs):
         return x @ self.weight
 
 
-class Affine(cl.Sequential):
+class Affine(cl.Seq):
     _weight: MatMul
     _bias: Bias
 
@@ -117,7 +117,7 @@ class Linear(cl.Module):
         self.weight = nn.Parameter(torch.empty(d_in, d_out))
         self.bias = nn.Parameter(torch.zeros(d_out)) if bias else None
 
-    def forward(self, x, cache: Cache, **kwargs):
+    def forward(self, x, *, cache: Cache, **kwargs):
         cache.x = x
         return x @ self.W + self.bias
 
@@ -160,7 +160,7 @@ class CacheLinear(cl.Module):
         self.nonlinearity = nonlinearity
         # self.W = nn.Parameter(W)
 
-    def forward(self, x, cache: Cache, **kwargs):
+    def forward(self, x, *, cache: Cache, **kwargs):
         cache.x = x
         x = x.view(
             *(x.shape[:1] + (1,) * (self.ndim_inst - (x.ndim - 2)) + x.shape[1:])

@@ -19,7 +19,7 @@ class CatPrevToInputModule(CacheModule):
         self.cache_site = cache_site
         self._module = module
 
-    def forward(self, x, cache: SAECache):
+    def forward(self, x, *, cache: SAECache):
         cache.y = (
             y := self._module(
                 torch.cat((x, getattr(cache._prev_cache, self.cache_site)), dim=-1),
@@ -43,7 +43,7 @@ class SeqSAEsCL(CacheModule):
                 if i == 0:
                     self.saes.append(SAECacheLayer(cfg))
 
-    def forward(self, x, cache):
+    def forward(self, x, *, cache):
         y = 0
         for i, layer in enumerate(self.sae):
             if isinstance(layer, CacheModule):
@@ -58,7 +58,7 @@ class CatSeqCacheLayer(CacheModule):
         super().__init__()
         self._sequence = nn.ModuleList(modules)
 
-    def forward(self, x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache = None, **kwargs):
         nx = None
         for i, module in enumerate(self._sequence):
             if isinstance(module, CacheModule):
@@ -77,7 +77,7 @@ class CatOutputSeqCacheLayer(CacheModule):
         super().__init__()
         self._sequence = nn.ModuleList(modules)
 
-    def forward(self, x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache = None, **kwargs):
         y = []
         for i, module in enumerate(self._sequence):
             if isinstance(module, CacheModule):
@@ -98,7 +98,7 @@ class CatOutputSeqCacheLayer(CacheModule):
         super().__init__()
         self._sequence = nn.ModuleList(modules)
 
-    def forward(self, x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache = None, **kwargs):
         y = []
         for i, module in enumerate(self._sequence):
             if isinstance(module, CacheModule):
@@ -118,7 +118,7 @@ class SumSeqCacheLayer(CacheModule):
     def __init__(self, *modules):
         self._sequence = nn.ModuleList(modules)
 
-    def forward(self, *x, cache: Cache = None, **kwargs):
+    def forward(self, x, *, cache: Cache = None, **kwargs):
         y_pred = 0
         for i, module in enumerate(self._sequence):
             y_pred = y_pred + module(x, cache=cache[i], **kwargs)

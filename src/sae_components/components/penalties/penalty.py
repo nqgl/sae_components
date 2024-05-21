@@ -6,10 +6,10 @@ import sae_components.core as cl
 from abc import abstractmethod
 
 
-class Penalty(cl.Module):
-    def forward(self, x, cache: SAECache):
+class Penalty(cl.PassThroughModule):
+
+    def process_data(self, x, *, cache, **kwargs):
         cache.sparsity_penalty = self.penalty(x)
-        return x
 
     @abstractmethod
-    def penalty(self, x): ...
+    def penalty(self, x, *, cache, **kwargs): ...
