@@ -43,12 +43,13 @@ class L2Loss(Loss):
         return torch.mean((y - y_pred) ** 2)
 
 
-class SparsityPenalty(Loss):
+class SparsityPenaltyLoss(Loss):
     def loss(self, x, y, y_pred, cache: SAECache):
         sparsity_losses = [c for c in cache.search("sparsity_penalty")]
         assert (
             len(sparsity_losses) == 1
         ), "Expected exactly one sparsity penalty. We may want to support >1 in the future, so this may or may not be a bug."
+        return sparsity_losses[0]
 
 
 @runtime_checkable

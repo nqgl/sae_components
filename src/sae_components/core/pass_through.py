@@ -14,7 +14,7 @@ from abc import abstractmethod
 
 class PassThroughModule(Module):
     def forward(self, x, *, cache, **kwargs):
-        self.process_data(x, cache, **kwargs)
+        self.process_data(x, cache=cache, **kwargs)
         return x
 
     @abstractmethod

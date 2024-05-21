@@ -2,11 +2,17 @@ import sae_components.core as cl
 from sae_components.core import Cache
 import torch
 import wandb
-from typing import Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable, List
+
+from sae_components.components.losses import Loss, L2Loss, SparsityPenaltyLoss
+from dataclasses import dataclass
 
 
 @runtime_checkable
 class TrainableModel(Protocol, cl.Module):
+    losses: List[Loss]
+    model: cl.Module
+
     def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor: ...
 
 

@@ -16,7 +16,7 @@ from sae_components.components import (
     ResampledLayer,
     Loss,
     L2Loss,
-    SparsityPenalty,
+    SparsityPenaltyLoss,
     SAECache,
 )
 from sae_components.core.linear import Bias, NegBias, Affine, MatMul
@@ -138,78 +138,78 @@ def vanilla_sae(d_data, d_dict):
     return sae
 
 
-def vanilla_sae(d_data, d_dict):
-    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
-    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
+# def vanilla_sae(d_data, d_dict):
+#     W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
+#     W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
-    b_enc = Bias(nn.Parameter(torch.zeros(d_dict)))
-    b_dec = Bias(nn.Parameter(torch.zeros(d_data)))
+#     b_enc = nn.Parameter(torch.zeros(d_dict))
+#     b_dec = nn.Parameter(torch.zeros(d_data))
 
-    resampler = Resampler()
+#     resampler = Resampler()
 
-    sae = cl.Seq(
-        encoder=cl.Seq(
-            pre_bias=b_dec.tied_negative(),
-            weight=resampler.resampled_encoder(MatMul(W_enc)),
-            bias=resampler.resampled_bias(Bias(b_enc)),
-            nonlinearity=nn.ReLU(),
-        ),
-        penalty=L1Penalty(),
-        freq_tracker=resampler.freq_tracker,
-        decoder=cl.Seq(
-            weight=resampler.resampled_decoder(MatMul(W_dec)),
-            bias=Bias(b_dec),
-        ),
-    )
-    return sae
-
-
-def vanilla_sae(d_data, d_dict):
-    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
-    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
-
-    b_enc = Bias(nn.Parameter(torch.zeros(d_dict)))
-    b_dec = Bias(nn.Parameter(torch.zeros(d_data)))
-
-    resampler = Resampler()
-
-    sae = cl.Seq(
-        encoder=cl.Seq(
-            pre_bias=b_dec.tied_negative(),
-            weight=resampler.resampled_encoder(MatMul(W_enc)),
-            bias=resampler.resampled_bias(Bias(b_enc)),
-            nonlinearity=nn.ReLU(),
-        ),
-        penalty=L1Penalty(),
-        freq_tracker=resampler.freq_tracker,
-        decoder=cl.Seq(
-            weight=resampler.resampled_decoder(MatMul(W_dec)),
-            bias=Bias(b_dec),
-        ),
-    )
-    return sae
+#     sae = cl.Seq(
+#         encoder=cl.Seq(
+#             pre_bias=Bias(b_dec).tied_negative(),
+#             weight=resampler.resampled_encoder(MatMul(W_enc)),
+#             bias=resampler.resampled_bias(Bias(b_enc)),
+#             nonlinearity=nn.ReLU(),
+#         ),
+#         penalty=L1Penalty(),
+#         freq_tracker=resampler.freq_tracker,
+#         decoder=cl.Seq(
+#             weight=resampler.resampled_decoder(MatMul(W_dec)),
+#             bias=Bias(b_dec),
+#         ),
+#     )
+#     return sae
 
 
-def vanilla_sae(d_data, d_dict):
-    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
-    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
+# def vanilla_sae(d_data, d_dict):
+#     W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
+#     W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
-    b_enc = nn.Parameter(torch.zeros(d_dict))
-    b_dec = nn.Parameter(torch.zeros(d_data))
+#     b_enc = Bias(nn.Parameter(torch.zeros(d_dict)))
+#     b_dec = Bias(nn.Parameter(torch.zeros(d_data)))
 
-    resampler = Resampler()
+#     resampler = Resampler()
 
-    sae = cl.Seq(
-        -Bias(b_dec),
-        resampler.resampled_encoder(MatMul(W_enc)),
-        resampler.resampled_bias(Bias(b_enc)),
-        nn.ReLU(),
-        L1Penalty(),
-        resampler.freq_tracker,
-        resampler.resampled_decoder(MatMul(W_dec)),
-        Bias(b_dec),
-    )
-    return sae
+#     sae = cl.Seq(
+#         encoder=cl.Seq(
+#             pre_bias=b_dec.tied_negative(),
+#             weight=resampler.resampled_encoder(MatMul(W_enc)),
+#             bias=resampler.resampled_bias(b_enc),
+#             nonlinearity=nn.ReLU(),
+#         ),
+#         penalty=L1Penalty(),
+#         freq_tracker=resampler.freq_tracker,
+#         decoder=cl.Seq(
+#             weight=resampler.resampled_decoder(MatMul(W_dec)),
+#             bias=b_dec,
+#         ),
+#     )
+#     return sae
+
+
+# def vanilla_sae(d_data, d_dict):
+#     W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
+#     W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
+
+#     b_enc = nn.Parameter(torch.zeros(d_dict))
+#     b_dec = nn.Parameter(torch.zeros(d_data))
+
+#     resampler = Resampler()
+
+#     sae = cl.Seq(
+#         -Bias(b_dec),
+#         resampler.resampled_encoder(MatMul(W_enc)),
+#         resampler.resampled_bias(Bias(b_enc)),
+#         nn.ReLU(),
+#         L1Penalty(),
+#         resampler.freq_tracker,
+#         resampler.resampled_decoder(MatMul(W_dec)),
+#         Bias(b_dec),
+#     )
+#     return sae
 
 
 def main():
@@ -221,6 +221,7 @@ def main():
     cache = SAECache()
     y = sae(x, cache=cache)
     print(y)
+    print(sae.freqs.freqs)
 
 
 if __name__ == "__main__":

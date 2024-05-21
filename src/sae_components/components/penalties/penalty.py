@@ -8,7 +8,7 @@ from abc import abstractmethod
 
 class Penalty(cl.PassThroughModule):
 
-    def process_data(self, x, *, cache, **kwargs):
+    def process_data(self, x, *, cache: SAECache, **kwargs):
         cache.sparsity_penalty = self.penalty(x)
 
     @abstractmethod
