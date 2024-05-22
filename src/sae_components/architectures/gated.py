@@ -70,9 +70,11 @@ def gated_sae(d_data, d_dict):
     )
 
     # decoder
-    decoder = Seq(
-        weight=ReuseForward(MatMul(W_dec)),
-        bias=cl.ops.Add(b_dec),
+    decoder = ReuseForward(
+        Seq(
+            weight=MatMul(W_dec),
+            bias=cl.ops.Add(b_dec),
+        )
     )
 
     # models
