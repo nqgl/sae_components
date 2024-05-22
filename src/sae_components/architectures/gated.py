@@ -26,6 +26,7 @@ from sae_components.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
 from sae_components.components.ops import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
+from sae_components.core import Seq
 
 
 def lprint(x):
@@ -37,67 +38,69 @@ def lprint(x):
 
 
 def gated_sae(d_data, d_dict):
-    mm_W_enc = ReuseForward(
-        MatMul(
-            nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict))),
-        )
-    )
-    mm_W_dec = ReuseForward(
-        MatMul(nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data))))
-    )
+    # parameters
+    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
+    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
     b_enc_mag = nn.Parameter(torch.zeros(d_dict))
-    b_enc_gate = nn.Parameter(torch.zeros(d_dict))
 
+    b_enc_gate = nn.Parameter(torch.zeros(d_dict))
     r_gate = nn.Parameter(torch.ones(d_dict))
+
     b_dec = nn.Parameter(torch.zeros(d_data))
 
+    # shared components
     sub_enc_shared_pre_bias = ReuseForward(Sub(b_dec))
+    mm_W_enc = ReuseForward(MatMul(W_enc))
 
-    enc_mag = cl.Seq(
+    # encoders
+    enc_mag = Seq(
         pre_bias=sub_enc_shared_pre_bias,
         weight=mm_W_enc,
         bias=Add(b_enc_mag),
         nonlinearity=nn.ReLU(),
     )
 
-    enc_gate = cl.Seq(
+    enc_gate = Seq(
         pre_bias=sub_enc_shared_pre_bias,
         weight=mm_W_enc,
         r_mul=Mul(r_gate),
         bias=Add(b_enc_gate),
         nonlinearity=nn.ReLU(),
     )
-    enc_full = cl.ops.Parallel(
-        magnitude=enc_mag,
-        gate=Thresh(enc_gate),
-    ).reduce(
-        lambda x, y: x * y,
-    )
 
-    decoder = cl.Seq(
-        weight=mm_W_dec,
+    # decoder
+    decoder = Seq(
+        weight=ReuseForward(MatMul(W_dec)),
         bias=cl.ops.Add(b_dec),
     )
 
-    # resampler = Resampler()
-    model = cl.Seq(
-        encoder=enc_full,
+    # models
+    gated_model = Seq(
+        encoder=cl.Parallel(
+            magnitude=enc_mag,
+            gate=Thresh(enc_gate),
+        ).reduce(
+            lambda x, y: x * y,
+        ),
         freqs=EMAFreqTracker(),
         decoder=decoder,
     )
-    model_aux = cl.Seq(
-        encoder=enc_gate,
+
+    model_aux = Seq(  # this one is just used for training the gate appropriately
+        encoder=enc_gate,  # oh and it's missing 1-2 detaches
         l1=L1Penalty(),
         freqs=EMAFreqTracker(),
         decoder=decoder,
     )
-    losses = cl.ops.AddParallel(
-        L2=L2Loss(model),
+
+    # losses
+    losses = cl.Parallel(
+        L2=L2Loss(gated_model),
         L2_aux=L2Loss(model_aux),
         sparsisty=SparsityPenaltyLoss(model_aux),
-    )
-    return model, losses
+    ).reduce(torch.sum)
+    return gated_model, losses
 
 
 def main():
@@ -122,7 +125,7 @@ def main():
 
 #     mmm = MatMul(nn.Parameter(torch.randn(768, 768 * 16)))
 #     rmmm = ReuseForward(mmm)
-#     model = cl.Seq(
+#     model = Seq(
 #         mm1=rmmm,
 #         mm2=MatMul(nn.Parameter(torch.randn(768 * 16, 768))),
 #     ).cuda()

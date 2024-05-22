@@ -6,6 +6,8 @@ from sae_components.core.collections.propagator import Propagator
 
 
 def sequential_rule(x, l, **k):
+    if len(l) == 0:
+        return x
     return l[-1]
 
 
