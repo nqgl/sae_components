@@ -2,59 +2,53 @@ from typing import Any
 import torch.nn as nn
 from sae_components.core.cache import Cache
 from sae_components.core.module import Module
+from sae_components.core.collections.propagator import Propagator
 
 
-class Seq(Module):
-    def __init__(self, *modules, **named_modules):
-        assert (len(modules) > 0) ^ (
-            len(named_modules) > 0
-        ), "Either unnamed or named modules should be provided, but not both"
-        super().__init__()
+def sequential_rule(x, l, **k):
+    return l[-1]
 
-        if len(modules) > 0:
-            d = {str(i): module for i, module in enumerate(modules)}
-        else:
-            d = named_modules
-        self._sequence = nn.ModuleDict(d)
 
-    def forward(self, x, *, cache: Cache = None, **kwargs):
-        for i, module in enumerate(self._sequence.values()):
-            if isinstance(module, Module):
-                x = module(x, cache=cache[i], **kwargs)
-            else:
-                x = module(x)
-        return x
+class Seq(Propagator):
+    def __init__(
+        self,
+        *collection_list,
+        _support_parameters=False,
+        _support_modules=True,
+        **collection_dict,
+    ):
+        super().__init__(
+            *collection_list,
+            _support_parameters=_support_parameters,
+            _support_modules=_support_modules,
+            **collection_dict,
+        )
+        self.propagate(sequential_rule)
+        self.reduce(lambda *l: l[-1])
 
-    def __getitem__(self, key):
-        if isinstance(key, int):
-            return list(self._sequence.values())[key]
-        return self._sequence[key]
 
-    def __getattr__(self, key):
-        if key in super().__getattr__("_sequence"):
-            return super().__getattr__("_sequence")[key]
-        return super().__getattr__(key)
-
-    # @property
-    # def in_features(self):
-    #     return self[0].in_features
-
-    # @property
-    # def out_features(self):
-    #     return self[-1].out_features
+# TODO: check/test this
+def residual_output_rule(out, x, l, **k):
+    if len(l) == 0:
+        return out + x
+    return out + l[-1]
 
 
 class ResidualSeq(Seq):
-    def __init__(self, *modules, names=None, **named_modules):
-        raise NotImplementedError("ResidualSeq is not implemented yet")
-        super().__init__(*modules, names=names, **named_modules)
+    ### I was wrong about the way this can be implemented by propagate rule,
+    # it's at least a bit different
 
-
-class AppendSeq(Seq):
-    def __init__(self, *modules, names=None, **named_modules):
-        raise NotImplementedError("ResidualSeq is not implemented yet")
-        super().__init__(*modules, names=names, **named_modules)
-
-
-# def __getattr__(self, name: str) -> Any:
-#     return super().__getattr__(name)
+    def __init__(
+        self,
+        *collection_list,
+        _support_parameters=False,
+        _support_modules=True,
+        **collection_dict,
+    ):
+        super().__init__(
+            *collection_list,
+            _support_parameters=_support_parameters,
+            _support_modules=_support_modules,
+            **collection_dict,
+        )
+        self._output_rule = residual_output_rule

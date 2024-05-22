@@ -35,7 +35,7 @@ class Add(AddParallel):
         # assert not isinstance(bias, nn.Module)
         super().__init__(
             identity=Identity(),
-            addparam=bias,
+            bias=bias,
         )
 
 
@@ -43,8 +43,8 @@ class Neg(Parallel):
     def __init__(self, item):
         super().__init__(
             negated_item=item,
-            support_modules=True,
-            support_parameters=True,
+            _support_modules=True,
+            _support_parameters=True,
         )
         self.reduce(lambda x: -x)
 
@@ -67,6 +67,6 @@ class MatMul(Parallel):
         super().__init__(
             input=Identity(),
             weight=weight,
-            support_parameters=True,
+            _support_parameters=True,
         )
         self.reduce(lambda x, y: x @ y)

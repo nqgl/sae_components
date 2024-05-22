@@ -70,25 +70,20 @@ def gated_sae(d_data, d_dict):
     )
     enc_full = cl.ops.Parallel(
         magnitude=enc_mag,
-        gatle=Thresh(enc_gate),
+        gate=Thresh(enc_gate),
     ).reduce(
         lambda x, y: x * y,
     )
 
     decoder = cl.Seq(
-        p3=lprint(3),
-        weight=cl.ops.MatMul(mm_W_dec),
-        p4=lprint(4),
+        weight=mm_W_dec,
         bias=cl.ops.Add(b_dec),
-        p5=lprint(5),
     )
 
     # resampler = Resampler()
     model = cl.Seq(
         encoder=enc_full,
-        p1=lprint(1),
         freqs=EMAFreqTracker(),
-        p2=lprint(2),
         decoder=decoder,
     )
     model_aux = cl.Seq(

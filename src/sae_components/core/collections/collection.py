@@ -11,15 +11,20 @@ import torch.nn as nn
 class Collection(Module):
     def __init__(
         self,
-        collection: Union[dict[nn.Parameter, nn.Module], list[nn.Parameter, nn.Module]],
-        support_parameters=True,
-        support_modules=True,
+        *collection_list: Union[nn.Parameter, nn.Module],
+        _support_parameters=True,
+        _support_modules=True,
+        **collection_dict: Union[nn.Parameter, nn.Module],
     ):
         super().__init__()
-        if isinstance(collection, list):
-            d = {"item" + str(i): module for i, module in enumerate(collection)}
+        assert (len(collection_list) > 0) ^ (
+            len(collection_dict) > 0
+        ), "Either unnamed or named modules should be provided, but not both"
+
+        if len(collection_list) > 0:
+            d = {"item" + str(i): module for i, module in enumerate(collection_list)}
         else:
-            d = collection
+            d = collection_dict
 
         self._collection_names = list(d.keys())
         self._collection = d  # kind of is useless but maybe this is good to have
@@ -29,13 +34,13 @@ class Collection(Module):
                     f"Attribute {name} already exists in {self.__class__.__name__}"
                 )
             if isinstance(module, Module):
-                if not support_modules:
+                if not _support_modules:
                     raise ValueError(
                         "This collection type does not support modules, but module provided"
                     )
                 self.add_module(name, module)
             elif isinstance(module, nn.Parameter):
-                if not support_parameters:
+                if not _support_parameters:
                     raise ValueError(
                         "This collection type does not support parameters, but parameter provided"
                     )
