@@ -14,15 +14,14 @@ class ReuseForward(Module):
         super().__init__()
         self.module = module
 
-    def forward(self, *args, cache: ReuseCache, **kwargs):
-        key = (self.module, args)
+    def forward(self, x: torch.Tensor, *, cache: ReuseCache, **kwargs):
+        key = (id(self.module), x)
         if not cache._ancestor.has.forward_reuse_dict:
-
             cache._ancestor.forward_reuse_dict = {}
         elif key in cache._ancestor.forward_reuse_dict:
             print("reuse cache hit")
             return cache._ancestor.forward_reuse_dict[key]
-        output = self.module(*args, cache=cache, **kwargs)
+        output = self.module(x, cache=cache, **kwargs)
         if cache._ancestor.has.forward_reuse_dict:
             cache._ancestor.forward_reuse_dict[key] = output
         else:

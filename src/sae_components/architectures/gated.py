@@ -122,31 +122,5 @@ def main():
     print(y)
 
 
-# def main():
-#     import tqdm
-
-#     mmm = MatMul(nn.Parameter(torch.randn(768, 768 * 16)))
-#     rmmm = ReuseForward(mmm)
-#     model = Seq(
-#         mm1=rmmm,
-#         mm2=MatMul(nn.Parameter(torch.randn(768 * 16, 768))),
-#     ).cuda()
-
-#     print(model)
-#     o = torch.optim.Adam(model.parameters())
-#     x = torch.randn(2 * 4096, 768).cuda()
-#     for i in tqdm.tqdm(range(1000)):
-#         x = x - 0.01
-#         cache = SAECache()
-#         cache += ReuseCache()
-#         cache.input = ...
-#         y = model(x, cache=cache)
-#         loss = (100 - y.sum()) ** 2
-#         loss.backward()
-#         o.step()
-#         o.zero_grad()
-#     print(cache._subcaches)
-
-
 if __name__ == "__main__":
     main()

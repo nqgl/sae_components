@@ -39,6 +39,7 @@ def residual_output_rule(out, x, l, **k):
 class ResidualSeq(Seq):
     ### I was wrong about the way this can be implemented by propagate rule,
     # it's at least a bit different
+    # so I switched to the output rule
 
     def __init__(
         self,

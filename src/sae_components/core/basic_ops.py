@@ -18,11 +18,13 @@ class Mul(MulParallel):
     Multiplies the input by mul.
     """
 
+    multiplier: nn.Parameter
+
     def __init__(self, mul):
         assert not isinstance(mul, nn.Module)
         super().__init__(
             identity=Identity(),
-            mulparam=mul,
+            multiplier=mul,
         )
 
 
@@ -30,6 +32,8 @@ class Add(AddParallel):
     """
     Adds bias to the input.
     """
+
+    bias: nn.Parameter
 
     def __init__(self, bias):
         # assert not isinstance(bias, nn.Module)
@@ -63,6 +67,8 @@ class Sub(Add):
 
 
 class MatMul(Parallel):
+    weight: nn.Parameter
+
     def __init__(self, weight):
         super().__init__(
             input=Identity(),
