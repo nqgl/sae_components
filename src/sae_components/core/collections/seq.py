@@ -31,7 +31,6 @@ class Seq(Module):
         return self._sequence[key]
 
     def __getattr__(self, key):
-        print(key)
         if key in super().__getattr__("_sequence"):
             return super().__getattr__("_sequence")[key]
         return super().__getattr__(key)

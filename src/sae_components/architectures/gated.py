@@ -97,11 +97,11 @@ def gated_sae(d_data, d_dict):
         freqs=EMAFreqTracker(),
         decoder=decoder,
     )
-    losses = [
-        L2Loss(model),
-        L2Loss(model_aux),
-        SparsityPenaltyLoss(model_aux),
-    ]
+    losses = cl.ops.AddParallel(
+        L2=L2Loss(model),
+        L2_aux=L2Loss(model_aux),
+        sparsisty=SparsityPenaltyLoss(model_aux),
+    )
     return model, losses
 
 
@@ -123,18 +123,28 @@ def main():
 
 
 # def main():
-#     mmm = ReuseForward(MatMul(nn.Parameter(torch.randn(10, 10))))
+#     import tqdm
+
+#     mmm = MatMul(nn.Parameter(torch.randn(768, 768 * 16)))
+#     rmmm = ReuseForward(mmm)
 #     model = cl.Seq(
-#         mm1=Parallel(p1=mmm, p2=mmm, p3=mmm).reduce(lambda x, y, z: x + y + z),
-#         mm2=MatMul(nn.Parameter(torch.randn(10, 10))),
-#     )
+#         mm1=rmmm,
+#         mm2=MatMul(nn.Parameter(torch.randn(768 * 16, 768))),
+#     ).cuda()
 
 #     print(model)
-#     x = torch.randn(10)
-#     cache = SAECache()
-#     cache += ReuseCache()
-#     cache.input = ...
-#     y = model(x, cache=cache)
+#     o = torch.optim.Adam(model.parameters())
+#     x = torch.randn(2 * 4096, 768).cuda()
+#     for i in tqdm.tqdm(range(1000)):
+#         x = x - 0.01
+#         cache = SAECache()
+#         cache += ReuseCache()
+#         cache.input = ...
+#         y = model(x, cache=cache)
+#         loss = (100 - y.sum()) ** 2
+#         loss.backward()
+#         o.step()
+#         o.zero_grad()
 #     print(cache._subcaches)
 
 

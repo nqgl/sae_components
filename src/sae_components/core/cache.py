@@ -140,6 +140,7 @@ class Cache:
     _ignored_names = ...
     _write_callbacks = ...
     _lazy_read_funcs = ...
+    _name: str = ...
     has: CacheHas  # TypeVar this so it knows it's contents
     watching: CacheWatching
 
@@ -153,6 +154,13 @@ class Cache:
         self._subcache_index = subcache_index
         super().__setattr__("has", CacheHas(self))
         super().__setattr__("watching", CacheWatching(self))
+
+    @property
+    def _name(self):
+        if self._subcache_index is None:
+            return "root"
+        n = self._subcache_index
+        return f"{self._parent._name}.{n}"
 
     def _watch(self, _name: str = None):
         if isinstance(_name, list):
@@ -254,11 +262,40 @@ class Cache:
         assert self._NULL_ATTR == other._NULL_ATTR
         return self
 
+    def parent_iadd(self, other: "Cache"):
+        if not isinstance(other, Cache):
+            raise TypeError(
+                f"Cannot add {other.__class__} to Cache. Must be Cache or subclass"
+            )
+        o_watching, o_values = other._getfields()
+        for watch in o_watching:
+            if not self._watching(watch):
+                self.__setattr__(watch, ...)
+        # Commenting the below out so we just copy watched status
+
+        # for name, value in o_values.items():
+        #     self.__setattr__(name, value)
+        self._write_callbacks = dlmerge(self._write_callbacks, other._write_callbacks)
+        # self._unwatched_writes = self._unwatched_writes.union(other._unwatched_writes)
+        self._ignored_names = self._ignored_names.union(other._ignored_names)
+        self._lazy_read_funcs = dlmerge(
+            self._lazy_read_funcs, other._lazy_read_funcs
+        )  # Maybe should rm this too or make it more explicit
+        if other._parent is not None and self._parent is not other:
+            raise NotImplementedError("cache copy receiving _parent not yet supported")
+        if not other._subcaches == {} and self._parent is not other:
+            raise NotImplementedError(
+                "cache copy recieving _subcaches not yet supported"
+            )
+        assert self._NULL_ATTR == other._NULL_ATTR
+        return self
+
     def __getitem__(self, i):
         if i in self._subcaches:
             return self._subcaches[i]
         else:
             subcache = self.clone(parent=True)
+            subcache._subcache_index = i
             self._subcaches[i] = subcache
             return subcache
 
@@ -292,7 +329,9 @@ class Cache:
         clone = self.__class__()
         if parent:
             clone._parent = self
-        clone += self
+            clone.parent_iadd(self)
+        else:
+            clone += self
         return clone
 
     # def __iter__ ?
