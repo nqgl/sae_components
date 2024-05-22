@@ -1,11 +1,11 @@
 from typing import Any
 import torch.nn as nn
 from sae_components.core.cache import Cache
-from sae_components.core.cache_layer import Module
+from sae_components.core.module import Module
 
 
 class Seq(Module):
-    def __init__(self, *modules, names=None, **named_modules):
+    def __init__(self, *modules, **named_modules):
         assert (len(modules) > 0) ^ (
             len(named_modules) > 0
         ), "Either unnamed or named modules should be provided, but not both"
@@ -45,14 +45,17 @@ class Seq(Module):
     #     return self[-1].out_features
 
 
-class NamedSequential(Module):
-    def forward(self, x, *, cache: Cache = None, **kwargs):
-        for i, (name, module) in enumerate(self._sequence):
-            if isinstance(module, Module):
-                x = module(x, cache=cache[name], **kwargs)
-            else:
-                x = module(x)
-        return x
+class ResidualSeq(Seq):
+    def __init__(self, *modules, names=None, **named_modules):
+        raise NotImplementedError("ResidualSeq is not implemented yet")
+        super().__init__(*modules, names=names, **named_modules)
 
-    # def __getattr__(self, name: str) -> Any:
-    #     return super().__getattr__(name)
+
+class AppendSeq(Seq):
+    def __init__(self, *modules, names=None, **named_modules):
+        raise NotImplementedError("ResidualSeq is not implemented yet")
+        super().__init__(*modules, names=names, **named_modules)
+
+
+# def __getattr__(self, name: str) -> Any:
+#     return super().__getattr__(name)

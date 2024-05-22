@@ -213,6 +213,7 @@ class Cache:
                         __value = o
         if self._watching(_name):
             super().__setattr__(_name, __value)
+        return __value
 
     def _getfields(self):
         values = {}

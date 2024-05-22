@@ -6,7 +6,7 @@
 #     def reset(self): ...
 
 
-from sae_components.core.cache_layer import Module
+from sae_components.core.module import Module
 
 
 from abc import abstractmethod

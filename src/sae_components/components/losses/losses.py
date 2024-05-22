@@ -3,7 +3,8 @@ import torch.nn as nn
 from sae_components.components.sae_cache import SAECache
 from torch import Tensor
 from jaxtyping import Float
-from sae_components.components.reused_forward import ReuseForward
+import sae_components.core.module
+from sae_components.core.reused_forward import ReuseForward
 from typing import Protocol, runtime_checkable, List
 from abc import abstractmethod
 import sae_components.core as cl
@@ -11,7 +12,7 @@ import sae_components.core as cl
 # Not sure about this, should return to after the structure of gated example is more pinned down
 
 
-class Loss(nn.Module):
+class Loss(sae_components.core.module.Module):
     def __init__(
         self,
         module,
@@ -21,7 +22,7 @@ class Loss(nn.Module):
         self.module = ReuseForward(module)
         # self.loss_coefficient = loss_coefficient
 
-    def forward(self, x, y=None, cache: SAECache = None):
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
         assert cache is not None
         pred = self.module(x, cache=cache)
         if y is None:

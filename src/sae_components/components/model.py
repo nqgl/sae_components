@@ -1,4 +1,4 @@
-import sae_components.core as cl
+import sae_components.core.module as cl
 from abc import abstractmethod
 from typing import List
 from sae_components.components import Loss

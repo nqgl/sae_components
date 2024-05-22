@@ -1,3 +1,4 @@
+from sae_components.core.module import Module
 from sae_components.core.cache import Cache
 
 
@@ -9,7 +10,6 @@ from dataclasses import dataclass
 from typing import Tuple, Any, Union, Optional, List
 import einops
 from unpythonic import box
-from abc import abstractmethod, ABC
 
 
 class ActsCache(Cache):
@@ -25,13 +25,7 @@ class CacheLayerConfig:
 
 # TODO: consider making this a protocol, otherwise make sure to inherit from it instead of nn.Module
 # or maybe add the pre- and post- step hook behaviors to this class
-class Module(torch.nn.Module, ABC):
-    @abstractmethod
-    # TODO: Recently changed *x -> x
-    def forward(self, x, *, cache: Cache, **kwargs):
-        raise NotImplementedError
-
-    #
+#
 
 
 class CacheLayer(Module):

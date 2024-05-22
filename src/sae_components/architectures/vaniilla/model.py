@@ -19,14 +19,15 @@ from sae_components.components import (
     SparsityPenaltyLoss,
     SAECache,
 )
+import sae_components.core.module
 from sae_components.core.linear import Bias, NegBias, Affine, MatMul
 from typing import Optional
 
 
 class SAE(cl.Seq):
-    encoder: cl.Module
-    penalty: cl.Module
-    decoder: cl.Module
+    encoder: sae_components.core.module.Module
+    penalty: sae_components.core.module.Module
+    decoder: sae_components.core.module.Module
 
     def __init__(self, encoder, penalty, decoder):
         super().__init__(
@@ -75,7 +76,7 @@ class EncoderLayer(cl.Seq):
     #     return self.affine.in_features
 
 
-class Resampled(cl.Module):
+class Resampled(sae_components.core.module.Module):
     def __init__(self, module):
         super().__init__()
         self.module = module

@@ -1,3 +1,4 @@
+import sae_components.core.module
 from sae_components.core.cache import Cache
 import sae_components.core as cl
 
@@ -32,7 +33,7 @@ class FromDimsTied(FromDims):
         return self._parameter
 
 
-class Bias(cl.Module):
+class Bias(sae_components.core.module.Module):
     def __init__(self, bias):
         super().__init__()
         assert isinstance(bias, nn.Parameter)
@@ -65,7 +66,7 @@ class NegBias(Bias):
         return Bias(self.bias)
 
 
-class MatMul(cl.Module):
+class MatMul(sae_components.core.module.Module):
     def __init__(self, W):
         super().__init__()
         assert isinstance(W, nn.Parameter)
@@ -111,7 +112,7 @@ class Affine(cl.Seq):
         return self._bias.bias
 
 
-class Linear(cl.Module):
+class Linear(sae_components.core.module.Module):
     def __init__(self, d_in, d_out, bias=True):
         super().__init__()
         self.weight = nn.Parameter(torch.empty(d_in, d_out))
@@ -129,7 +130,7 @@ class CacheLayerConfig:
     inst: Optional[List[int]] = None
 
 
-class CacheLinear(cl.Module):
+class CacheLinear(sae_components.core.module.Module):
     def __init__(
         self,
         W: Float[Tensor, "*inst d_in d_out"],
@@ -171,7 +172,7 @@ class CacheLinear(cl.Module):
         cache.acts = (
             acts := (
                 self.nonlinearity(pre_acts, cache=cache)
-                if isinstance(self.nonlinearity, cl.Module)
+                if isinstance(self.nonlinearity, sae_components.core.module.Module)
                 else self.nonlinearity(pre_acts)
             )
         )

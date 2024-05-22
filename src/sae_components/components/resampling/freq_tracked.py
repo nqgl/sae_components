@@ -11,10 +11,15 @@ from sae_components.components.resampling.freq_tracker import (
 )
 
 from sae_components.components.resampling.ema import EMAFreqTracker
+import sae_components.core.module
 
 
-class FreqTracked(cl.Module):
-    def __init__(self, module: cl.CacheLayer, freq_tracker: cl.Module = None):
+class FreqTracked(sae_components.core.module.Module):
+    def __init__(
+        self,
+        module: cl.CacheLayer,
+        freq_tracker: sae_components.core.module.Module = None,
+    ):
         super().__init__()
         self.module = module
         self.freq_tracker: FreqTracker = freq_tracker or EMAFreqTracker()

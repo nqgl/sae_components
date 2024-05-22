@@ -1,4 +1,4 @@
-import sae_components.core as cl
+import sae_components.core.module as cl
 from sae_components.core import Cache
 import torch
 import wandb

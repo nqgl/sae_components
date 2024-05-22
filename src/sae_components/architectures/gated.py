@@ -4,7 +4,9 @@ from abc import ABC, abstractmethod
 from torch import Tensor
 from jaxtyping import Float
 
+from sae_components.components.ops.detach import Thresh
 import sae_components.core as cl
+import sae_components.core.module
 from sae_components.core.collections.parallel import Parallel
 from sae_components.components import (
     Penalty,
@@ -18,60 +20,75 @@ from sae_components.components import (
     SparsityPenaltyLoss,
     SAECache,
 )
-from sae_components.core.linear import Bias, NegBias, Affine, MatMul
+
+# from sae_components.core.linear import Bias, NegBias, Affine, MatMul
+from sae_components.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
-
-from sae_components.components.reused_forward import ReuseForward
-
-
-class Detach: ...
+from sae_components.components.ops import Lambda
+from sae_components.core.reused_forward import ReuseForward, ReuseCache
 
 
-class Mul: ...
+def lprint(x):
+    def l(i):
+        print(x)
+        return i
 
-
-class Thresh: ...
+    return Lambda(cl.ops.Identity(), l)
 
 
 def gated_sae(d_data, d_dict):
-    W_enc = ReuseForward(
-        MatMul(nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict))))
+    mm_W_enc = ReuseForward(
+        MatMul(
+            nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict))),
+        )
     )
-    W_dec = MatMul(nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data))))
+    mm_W_dec = ReuseForward(
+        MatMul(nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data))))
+    )
 
-    b_enc_mag = Bias(nn.Parameter(torch.zeros(d_dict)))
+    b_enc_mag = nn.Parameter(torch.zeros(d_dict))
+    b_enc_gate = nn.Parameter(torch.zeros(d_dict))
 
-    b_enc_gate = Bias(nn.Parameter(torch.zeros(d_dict)))
-    r_gate = Mul(nn.Parameter(torch.zeros(d_dict)))
-    b_dec = Bias(nn.Parameter(torch.zeros(d_data)))
-    b_dec_neg = ReuseForward(b_dec.tied_negative())
+    r_gate = nn.Parameter(torch.ones(d_dict))
+    b_dec = nn.Parameter(torch.zeros(d_data))
+
+    sub_enc_shared_pre_bias = ReuseForward(Sub(b_dec))
 
     enc_mag = cl.Seq(
-        pre_bias=b_dec_neg,
-        weight=W_enc,
-        bias=b_enc_mag,
+        pre_bias=sub_enc_shared_pre_bias,
+        weight=mm_W_enc,
+        bias=Add(b_enc_mag),
         nonlinearity=nn.ReLU(),
     )
 
     enc_gate = cl.Seq(
-        pre_bias=b_dec_neg,
-        weight=W_enc,
-        r_mul=r_gate,
-        bias=b_enc_gate,
+        pre_bias=sub_enc_shared_pre_bias,
+        weight=mm_W_enc,
+        r_mul=Mul(r_gate),
+        bias=Add(b_enc_gate),
         nonlinearity=nn.ReLU(),
     )
+    enc_full = cl.ops.Parallel(
+        magnitude=enc_mag,
+        gatle=Thresh(enc_gate),
+    ).reduce(
+        lambda x, y: x * y,
+    )
 
-    enc_full = Parallel(enc_mag, Thresh(enc_gate)).set_reduction(lambda x, y: x * y)
-
-    decoder = Affine(
-        weight=W_dec,
-        bias=b_dec,
+    decoder = cl.Seq(
+        p3=lprint(3),
+        weight=cl.ops.MatMul(mm_W_dec),
+        p4=lprint(4),
+        bias=cl.ops.Add(b_dec),
+        p5=lprint(5),
     )
 
     # resampler = Resampler()
     model = cl.Seq(
         encoder=enc_full,
+        p1=lprint(1),
         freqs=EMAFreqTracker(),
+        p2=lprint(2),
         decoder=decoder,
     )
     model_aux = cl.Seq(
@@ -85,4 +102,41 @@ def gated_sae(d_data, d_dict):
         L2Loss(model_aux),
         SparsityPenaltyLoss(model_aux),
     ]
-    return sae
+    return model, losses
+
+
+def main():
+    d_data = 100
+    d_dict = 50
+    model, losses = gated_sae(d_data, d_dict)
+    print(model)
+    print(losses)
+
+    print(model.state_dict())
+
+    x = torch.randn(7, d_data)
+    cache = SAECache()
+    cache += ReuseCache()
+    y = model(x, cache=cache)
+
+    print(y)
+
+
+# def main():
+#     mmm = ReuseForward(MatMul(nn.Parameter(torch.randn(10, 10))))
+#     model = cl.Seq(
+#         mm1=Parallel(p1=mmm, p2=mmm, p3=mmm).reduce(lambda x, y, z: x + y + z),
+#         mm2=MatMul(nn.Parameter(torch.randn(10, 10))),
+#     )
+
+#     print(model)
+#     x = torch.randn(10)
+#     cache = SAECache()
+#     cache += ReuseCache()
+#     cache.input = ...
+#     y = model(x, cache=cache)
+#     print(cache._subcaches)
+
+
+if __name__ == "__main__":
+    main()
