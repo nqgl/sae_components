@@ -27,6 +27,7 @@ from typing import Optional
 from sae_components.components.ops import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
 from sae_components.core import Seq
+import sae_components.components.decoder_normalization.features as ft
 
 
 def lprint(x):
@@ -51,13 +52,13 @@ def gated_sae(d_data, d_dict):
 
     # shared components
     sub_enc_shared_pre_bias = ReuseForward(Sub(b_dec))
-    mm_W_enc = ReuseForward(MatMul(W_enc))
+    mm_W_enc = ReuseForward(ft.EncoderWeights(W_enc).resampled())
 
     # encoders
     enc_mag = Seq(
         pre_bias=sub_enc_shared_pre_bias,
         weight=mm_W_enc,
-        bias=Add(b_enc_mag),
+        bias=ft.EncoderBias(b_enc_mag).resampled(),
         nonlinearity=nn.ReLU(),
     )
 
@@ -65,14 +66,18 @@ def gated_sae(d_data, d_dict):
         pre_bias=sub_enc_shared_pre_bias,
         weight=mm_W_enc,
         r_mul=Mul(r_gate),
-        bias=Add(b_enc_gate),
+        bias=ft.EncoderBias(b_enc_gate).resampled(),
         nonlinearity=nn.ReLU(),
     )
 
     # decoder
     decoder = ReuseForward(
         Seq(
-            weight=MatMul(W_dec),
+            weight=ft.OrthogonalizeFeatureGrads(
+                ft.NormFeatures(
+                    ft.DecoderWeights(W_dec).resampled(),
+                )
+            ),
             bias=cl.ops.Add(b_dec),
         )
     )
@@ -91,35 +96,82 @@ def gated_sae(d_data, d_dict):
 
     model_aux = Seq(  # this one is just used for training the gate appropriately
         encoder=enc_gate,  # oh and it's missing 1-2 detaches
-        l1=L1Penalty(),
+        L1=L1Penalty(),
+        # L0_aux=Lambda(cl.ops.Identity(), lambda x: (x > 0).sum(0).float().mean()),
         freqs=EMAFreqTracker(),
         decoder=decoder,
     )
 
     # losses
-    losses = cl.Parallel(
-        L2=L2Loss(gated_model),
-        L2_aux=L2Loss(model_aux),
-        sparsisty=SparsityPenaltyLoss(model_aux),
-    ).reduce(torch.sum)
+    losses = dict(
+        L2_loss=L2Loss(gated_model),
+        L2_aux_loss=L2Loss(model_aux),
+        sparsisty_loss=SparsityPenaltyLoss(model_aux),
+    )
     return gated_model, losses
 
 
 def main():
-    d_data = 100
-    d_dict = 50
+    d_data = 1000 * 5
+    d_dict = 500 * 5
     model, losses = gated_sae(d_data, d_dict)
+    model = model.cuda()
     print(model)
     print(losses)
 
     print(model.state_dict())
 
-    x = torch.randn(7, d_data)
+    x = torch.randn(7000, d_data).cuda()
     cache = SAECache()
     cache += ReuseCache()
     y = model(x, cache=cache)
 
     print(y)
+
+
+def test_train(model, losses):
+    d_data = 768
+    d_dict = 8 * d_data
+    features = torch.randn(d_dict, d_data).cuda()
+    from sae_components.trainer.trainer import Trainer, Trainable
+    import tqdm
+    import wandb
+
+    trainer = Trainer({}, Trainable([model], losses).cuda())
+    batch_size = 4096 * 4
+
+    @torch.no_grad()
+    def data_generator():
+        for i in tqdm.trange(10000):
+            rand = torch.rand(batch_size, d_dict, device="cuda")
+            x = rand @ features
+            yield x
+
+    trainer.train(data_generator())
+
+
+def main():
+    d_data = 768
+    d_dict = 8 * d_data
+    features = torch.randn(d_dict, d_data).cuda()
+    model, losses = gated_sae(d_data, d_dict)
+    from sae_components.trainer.trainer import Trainer, Trainable
+    import tqdm
+    import wandb
+
+    trainer = Trainer({}, Trainable([model], losses).cuda())
+    batch_size = 4096 * 4
+
+    @torch.no_grad()
+    def data_generator():
+        rand = torch.rand(batch_size, d_dict, device="cuda")
+        for i in tqdm.trange(10000):
+            rand[:] = rand + 0.001
+            x = rand @ features
+            yield x
+
+    # for i in data_generator():
+    #     pass
 
 
 if __name__ == "__main__":

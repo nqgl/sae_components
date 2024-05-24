@@ -70,9 +70,13 @@ class MatMul(Parallel):
     weight: nn.Parameter
 
     def __init__(self, weight):
+        assert isinstance(weight, nn.Parameter)
         super().__init__(
             input=Identity(),
             weight=weight,
             _support_parameters=True,
         )
-        self.reduce(lambda x, y: x @ y)
+        self.reduce(lambda input, weight: input @ weight)
+
+
+from typing import Protocol, TypeVar

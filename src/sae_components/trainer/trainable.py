@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 class Trainable(cl.Module):
     losses: List[Loss]
+    model: cl.Module
     models: nn.ModuleList[cl.Module]
 
     def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:

@@ -53,7 +53,7 @@ class Collection(Module):
             raise KeyError(f"{key} not found in {self.__class__.__name__}")
         return getattr(self, key)
 
-    def __getattr__(self, key):
-        if key in super().__getattr__("_collection"):
-            return super().__getattr__("_collection")[key]
-        return super().__getattr__(key)
+    # def __getattr__(self, key):
+    #     if key in super().__getattr__("_collection"):
+    #         return super().__getattr__("_collection")[key]
+    #     return super().__getattr__(key)

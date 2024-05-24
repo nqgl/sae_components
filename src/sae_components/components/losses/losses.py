@@ -22,7 +22,7 @@ class Loss(sae_components.core.module.Module):
         self.module = ReuseForward(module)
         # self.loss_coefficient = loss_coefficient
 
-    def forward(self, x, *, cache: cl.Cache, **kwargs):
+    def forward(self, x, *, y=None, cache: cl.Cache, **kwargs):
         assert cache is not None
         pred = self.module(x, cache=cache)
         if y is None:
@@ -46,11 +46,11 @@ class L2Loss(Loss):
 
 class SparsityPenaltyLoss(Loss):
     def loss(self, x, y, y_pred, cache: SAECache):
-        sparsity_losses = [c for c in cache.search("sparsity_penalty")]
+        sparsity_losses = [c for c in cache._ancestor.search("sparsity_penalty")]
         assert (
             len(sparsity_losses) == 1
         ), "Expected exactly one sparsity penalty. We may want to support >1 in the future, so this may or may not be a bug."
-        return sparsity_losses[0]
+        return sparsity_losses[0].sparsity_penalty
 
 
 @runtime_checkable

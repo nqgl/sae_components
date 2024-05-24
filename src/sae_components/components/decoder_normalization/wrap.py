@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+import sae_components.core as cl
 
 
-class WrapsModule(nn.Module):
+class WrapsModule(cl.Module):
     wrapped: nn.Module
 
     def __init__(self, module):
@@ -13,9 +14,9 @@ class WrapsModule(nn.Module):
         except AttributeError:
             pass
         object.__setattr__(self, "module", module)
-        self._parameters = module._parameters.copy()
-        self._buffers = module._buffers.copy()
-        self._modules = module._modules.copy()
+        # self._parameters = module._parameters.copy()
+        # self._buffers = module._buffers.copy()
+        # self._modules = module._modules.copy()
         self.wrapped = module
         # self.register_buffer("module", module)
 
@@ -29,7 +30,7 @@ class WrapsModule(nn.Module):
         try:
             return super().__getattr__(name)
         except AttributeError:
-            return getattr(super().__getattr__("module"), name)
+            return getattr(super().__getattr__("wrapped"), name)
 
 
 def combination(default, new, original):
@@ -47,8 +48,8 @@ class WrapMix:
         # type(name, (cls, base), {})
         # new = object.__new__(type(name, (cls, base), {}))
         new = super().__new__(cls)
-        new.__class__ = type(name, (cls, base), {})
-        new.__dict__.update(module.__dict__)
+        new.__class__ = type(name, (cls, base), module.__dict__)
+        # new.__dict__.update(module.__dict__)
         # print("sss")
         # default = set(nn.Module().__dict__.keys())
         # new = set(nn.Module().__dict__.keys())
@@ -56,12 +57,11 @@ class WrapMix:
         # n = 0
         # while hasattr(module, f"extra_methods{n}"):
         #     n += 1
-
+        nn.Module.__init__(new)
         return new
 
     def __init__(self, module):
         # self.module = module
-        super().__init__()
         self.wrapped = module
 
 
@@ -119,24 +119,32 @@ def main():
         def post_backward_hook(self):
             print("Bwm")
 
-    from sae_components.components.decoder_normalization.post_backward_normalization import (
+    from sae_components.trainer.post_backward_normalization import (
         post_backward,
     )
 
-    a = A()
+    a = cl.Seq(
+        Add(nn.Parameter(torch.tensor(1.0))),
+        Mul(nn.Parameter(torch.tensor(2.0))),
+        Sub(nn.Parameter(torch.tensor(3.0))),
+    )
+    # a = A()
     model1 = BMix(a)
     model2 = Bwm(a)
     print(model1)
-    model1.apply(post_backward)
+    print("a")
+    # model1.apply(post_backward)
     print(model2)
     model2.apply(post_backward)
     www = Bwm(Bwm(Bwm(A(a))))
+    # www = BMix(BMix(BMix(A(a))))
 
     print(www)
     www.apply(post_backward)
     print(www.wrapped)
     print(www.wrapped.wrapped.wrapped)
     print([p for p in www.named_parameters()])
+    # print(model1)
 
 
 if __name__ == "__main__":
