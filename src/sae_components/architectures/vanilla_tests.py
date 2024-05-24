@@ -36,7 +36,7 @@ def lprint(x):
         print(x)
         return i
 
-    return Lambda(cl.ops.Identity(), l)
+    return Lambda(l)
 
 
 def vanilla_sae(d_data, d_dict):
@@ -45,7 +45,6 @@ def vanilla_sae(d_data, d_dict):
     W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
     b_enc = nn.Parameter(torch.zeros(d_dict))
-
     b_dec = nn.Parameter(torch.zeros(d_data))
 
     # model
@@ -82,7 +81,6 @@ def vanilla_sae(d_data, d_dict):
     W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
     b_enc = nn.Parameter(torch.zeros(d_dict))
-
     b_dec = nn.Parameter(torch.zeros(d_data))
 
     # model
@@ -93,7 +91,7 @@ def vanilla_sae(d_data, d_dict):
             bias=ft.EncoderBias(b_enc),
             nonlinearity=nn.ReLU(),
         ),
-        # freqs=EMAFreqTracker(),
+        freqs=EMAFreqTracker(),
         L1=L1Penalty(),
         decoder=Seq(
             weight=ft.DecoderWeights(W_dec),
@@ -104,7 +102,6 @@ def vanilla_sae(d_data, d_dict):
     # losses
     losses = dict(
         L2_loss=L2Loss(model),
-        # sparsisty_loss=L2Loss(model),
         sparsisty_loss=SparsityPenaltyLoss(model),
     )
     return model, losses

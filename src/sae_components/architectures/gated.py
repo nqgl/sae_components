@@ -30,14 +30,6 @@ from sae_components.core import Seq
 import sae_components.components.decoder_normalization.features as ft
 
 
-def lprint(x):
-    def l(i):
-        print(x)
-        return i
-
-    return Lambda(cl.ops.Identity(), l)
-
-
 def gated_sae(d_data, d_dict):
     # parameters
     W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
@@ -129,7 +121,7 @@ def main():
     print(y)
 
 
-def test_train(model, losses):
+def test_train(model, losses, data):
     d_data = 768
     d_dict = 8 * d_data
     features = torch.randn(d_dict, d_data).cuda()
@@ -138,16 +130,9 @@ def test_train(model, losses):
     import wandb
 
     trainer = Trainer({}, Trainable([model], losses).cuda())
-    batch_size = 4096 * 4
+    batch_size = 4096
 
-    @torch.no_grad()
-    def data_generator():
-        for i in tqdm.trange(10000):
-            rand = torch.rand(batch_size, d_dict, device="cuda")
-            x = rand @ features
-            yield x
-
-    trainer.train(data_generator())
+    trainer.train(data)
 
 
 def main():
@@ -160,7 +145,7 @@ def main():
     import wandb
 
     trainer = Trainer({}, Trainable([model], losses).cuda())
-    batch_size = 4096 * 4
+    batch_size = 4096
 
     @torch.no_grad()
     def data_generator():

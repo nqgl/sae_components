@@ -4,12 +4,17 @@ import sae_components.core.module
 
 
 class Lambda(cl.Module):
-    def __init__(self, module, func):
+    def __init__(self, func, module=None):
         super().__init__()
         self.module = module
         self.func = func
 
+    def _get_name(self):
+        return super()._get_name() + f"[{self.func.__name__}]"
+
     def forward(self, x, *, cache: cl.Cache, **kwargs):
+        if self.module is None:
+            return self.func(x)
         if isinstance(self.module, cl.Module):
             return self.func(self.module(x, cache=cache, **kwargs))
         return self.func(self.module(x))
@@ -31,7 +36,7 @@ class Lambda(cl.Module):
 
 class Thresh(Lambda):
     def __init__(self, module):
-        super().__init__(module, lambda x: (x > 0).float())
+        super().__init__(lambda x: (x > 0).float(), module=module)
 
 
 def main():
