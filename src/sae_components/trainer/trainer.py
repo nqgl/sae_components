@@ -99,11 +99,13 @@ class Trainer:
             self.full_log(cache)
             self.t += 1
             print(f"loss: {loss.item()}")
-            for key in [k for k in cache.forward_reuse_dict.keys()]:
-                del cache.forward_reuse_dict[key]
-                del key
             del cache.forward_reuse_dict
-            del x, y, loss, cache
+            cache.destroy_children()
+            del cache
+            # for key in [k for k in cache.forward_reuse_dict.keys()]:
+            #     del cache.forward_reuse_dict[key]
+            #     del key
+            # del x, y, loss, cache
 
     def full_log(self, cache: Cache):
         if self.t % 10 != 0:

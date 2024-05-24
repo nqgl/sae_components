@@ -405,6 +405,13 @@ class Cache:
             a = a._parent
         return a
 
+    def destroy_children(self):
+        for k, cache in [i for i in self._subcaches.items()]:
+            cache.destroy_children()
+            del self._subcaches[k]
+            del cache
+        del self.__dict__
+
 
 class CacheSpec(Cache):
     def __init__(self):

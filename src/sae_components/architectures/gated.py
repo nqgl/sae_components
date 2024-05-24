@@ -173,6 +173,8 @@ def main():
     # for i in data_generator():
     #     pass
 
+    trainer.train(data_generator())
+
 
 if __name__ == "__main__":
     main()
