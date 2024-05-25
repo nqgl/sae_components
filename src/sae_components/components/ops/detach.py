@@ -1,23 +1,7 @@
 import torch.nn as nn
+from sae_components.components.ops.fnlambda import Lambda
 import sae_components.core as cl
 import sae_components.core.module
-
-
-class Lambda(cl.Module):
-    def __init__(self, func, module=None):
-        super().__init__()
-        self.module = module
-        self.func = func
-
-    def _get_name(self):
-        return super()._get_name() + f"[{self.func.__name__}]"
-
-    def forward(self, x, *, cache: cl.Cache, **kwargs):
-        if self.module is None:
-            return self.func(x)
-        if isinstance(self.module, cl.Module):
-            return self.func(self.module(x, cache=cache, **kwargs))
-        return self.func(self.module(x))
 
 
 # class Lambda(cl.Module):
@@ -29,9 +13,9 @@ class Lambda(cl.Module):
 #         return self.func(x)
 
 
-# class Detach(Lambda):
-#     def __init__(self):
-#         super().__init__(lambda x: x.detach())
+class Detached(Lambda):
+    def __init__(self, module):
+        super().__init__(lambda x: x.detach(), module=module)
 
 
 class Thresh(Lambda):

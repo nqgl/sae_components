@@ -18,6 +18,11 @@ class WrapsModule(cl.Module):
         # self._buffers = module._buffers.copy()
         # self._modules = module._modules.copy()
         self.wrapped = module
+        # self.__class__ = type(
+        #     f"{self.__class__.__name__}[{module.__class__.__name__}]",
+        #     (self.__class__, module.__class__),
+        #     {},
+        # )
         # self.register_buffer("module", module)
 
     def _get_name(self):

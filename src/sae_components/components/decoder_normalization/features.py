@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-from sae_components.components.decoder_normalization.wrap import WrapsModule
+from sae_components.components.wrap import WrapsModule
 from typing import Protocol, runtime_checkable, Optional
 import sae_components.core as cl
 from abc import ABC, abstractmethod

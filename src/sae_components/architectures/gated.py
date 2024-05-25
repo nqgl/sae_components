@@ -24,10 +24,12 @@ from sae_components.components import (
 # from sae_components.core.linear import Bias, NegBias, Affine, MatMul
 from sae_components.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
-from sae_components.components.ops import Lambda
+from sae_components.components.ops.fnlambda import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
 from sae_components.core import Seq
 import sae_components.components.decoder_normalization.features as ft
+
+import sae_components.components as co
 
 
 def gated_sae(d_data, d_dict):
@@ -38,7 +40,7 @@ def gated_sae(d_data, d_dict):
     b_enc_mag = nn.Parameter(torch.zeros(d_dict))
 
     b_enc_gate = nn.Parameter(torch.zeros(d_dict))
-    r_gate = nn.Parameter(torch.ones(d_dict))
+    r_mag = nn.Parameter(torch.ones(d_dict))
 
     b_dec = nn.Parameter(torch.zeros(d_data))
 
@@ -50,6 +52,12 @@ def gated_sae(d_data, d_dict):
     enc_mag = Seq(
         pre_bias=sub_enc_shared_pre_bias,
         weight=mm_W_enc,
+        r_mag=Mul(
+            Lambda(
+                func=lambda x: torch.exp(x),
+                module=r_mag,
+            )
+        ),
         bias=ft.EncoderBias(b_enc_mag).resampled(),
         nonlinearity=nn.ReLU(),
     )
@@ -57,22 +65,20 @@ def gated_sae(d_data, d_dict):
     enc_gate = Seq(
         pre_bias=sub_enc_shared_pre_bias,
         weight=mm_W_enc,
-        r_mul=Mul(r_gate),
         bias=ft.EncoderBias(b_enc_gate).resampled(),
         nonlinearity=nn.ReLU(),
     )
 
     # decoder
-    decoder = ReuseForward(
-        Seq(
+    def decoder(W_dec, b_dec):
+        return Seq(
             weight=ft.OrthogonalizeFeatureGrads(
                 ft.NormFeatures(
-                    ft.DecoderWeights(W_dec).resampled(),
+                    ft.DecoderWeights(MatMul(W_dec)).resampled(),
                 )
             ),
             bias=cl.ops.Add(b_dec),
         )
-    )
 
     # models
     gated_model = Seq(
@@ -83,15 +89,18 @@ def gated_sae(d_data, d_dict):
             lambda x, y: x * y,
         ),
         freqs=EMAFreqTracker(),
-        decoder=decoder,
+        metrics=co.metrics.ActMetrics(),
+        decoder=decoder(W_dec, b_dec),
     )
 
     model_aux = Seq(  # this one is just used for training the gate appropriately
         encoder=enc_gate,  # oh and it's missing 1-2 detaches
         L1=L1Penalty(),
-        # L0_aux=Lambda(cl.ops.Identity(), lambda x: (x > 0).sum(0).float().mean()),
         freqs=EMAFreqTracker(),
-        decoder=decoder,
+        decoder=Seq(
+            weight=MatMul(W_dec.detach().cuda()),
+            bias=cl.ops.Add(b_dec.detach().cuda()),
+        ),
     )
 
     # losses

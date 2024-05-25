@@ -20,6 +20,7 @@ class Mul(MulParallel):
 
     multiplier: nn.Parameter
 
+    #
     def __init__(self, mul):
         assert not isinstance(mul, nn.Module)
         super().__init__(

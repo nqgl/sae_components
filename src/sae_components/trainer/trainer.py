@@ -7,7 +7,7 @@ from typing import Protocol, runtime_checkable
 from sae_components.components.losses import Loss, L2Loss, SparsityPenaltyLoss
 from dataclasses import dataclass
 from sae_components.trainer.post_backward_normalization import post_backward, post_step
-
+import torch.nn as nn
 
 # @runtime_checkable
 # class TrainableModel(Protocol, cl.Module):
@@ -23,11 +23,11 @@ class Trainable(cl.Module):
     model: cl.Module
     models: list[cl.Module]
 
-    def __init__(self, models, losses):
+    def __init__(self, models: list[cl.Module], losses: dict[Loss]):
         super().__init__()
-        self.losses = losses
+        self.losses = nn.ModuleDict(losses)
         self.model = models[0]
-        self.models = models
+        self.models = nn.ModuleList(models)
 
     def loss(self, x, *, cache, y=None, coeffs={}):
         coeffs = dict(coeffs)

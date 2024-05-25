@@ -7,3 +7,8 @@ from sae_components.components.resampling import (
     ResampledLayer,
 )
 from sae_components.components.sae_cache import SAECache
+from sae_components.components.ops.fnlambda import Lambda
+from .metrics import metrics
+from .metrics.metrics import Metrics
+
+from . import ops

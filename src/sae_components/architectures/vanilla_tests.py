@@ -24,10 +24,11 @@ from sae_components.components import (
 # from sae_components.core.linear import Bias, NegBias, Affine, MatMul
 from sae_components.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
-from sae_components.components.ops import Lambda
+from sae_components.components.ops.fnlambda import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
 from sae_components.core import Seq
 import sae_components.components.decoder_normalization.features as ft
+import sae_components.components as co
 
 
 # from torch.utils.viz._cycles import
@@ -57,6 +58,7 @@ def vanilla_sae(d_data, d_dict):
         ),
         freqs=EMAFreqTracker(),
         L1=L1Penalty(),
+        metrics=co.metrics.ActMetrics(),
         decoder=Seq(
             weight=ft.OrthogonalizeFeatureGrads(
                 ft.NormFeatures(
@@ -75,36 +77,36 @@ def vanilla_sae(d_data, d_dict):
     return model, losses
 
 
-def vanilla_sae(d_data, d_dict):
-    # parameters
-    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
-    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
+# def vanilla_sae(d_data, d_dict):
+#     # parameters
+#     W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
+#     W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
-    b_enc = nn.Parameter(torch.zeros(d_dict))
-    b_dec = nn.Parameter(torch.zeros(d_data))
+#     b_enc = nn.Parameter(torch.zeros(d_dict))
+#     b_dec = nn.Parameter(torch.zeros(d_data))
 
-    # model
-    model = Seq(
-        encoder=Seq(
-            pre_bias=Sub(b_dec),
-            weight=ft.EncoderWeights(W_enc),
-            bias=ft.EncoderBias(b_enc),
-            nonlinearity=nn.ReLU(),
-        ),
-        freqs=EMAFreqTracker(),
-        L1=L1Penalty(),
-        decoder=Seq(
-            weight=ft.DecoderWeights(W_dec),
-            bias=cl.ops.Add(b_dec),
-        ),
-    )
+#     # model
+#     model = Seq(
+#         encoder=Seq(
+#             pre_bias=Sub(b_dec),
+#             weight=ft.EncoderWeights(W_enc),
+#             bias=ft.EncoderBias(b_enc),
+#             nonlinearity=nn.ReLU(),
+#         ),
+#         freqs=EMAFreqTracker(),
+#         L1=L1Penalty(),
+#         decoder=Seq(
+#             weight=ft.DecoderWeights(W_dec),
+#             bias=cl.ops.Add(b_dec),
+#         ),
+#     )
 
-    # losses
-    losses = dict(
-        L2_loss=L2Loss(model),
-        sparsisty_loss=SparsityPenaltyLoss(model),
-    )
-    return model, losses
+#     # losses
+#     losses = dict(
+#         L2_loss=L2Loss(model),
+#         sparsisty_loss=SparsityPenaltyLoss(model),
+#     )
+#     return model, losses
 
 
 d_data = 768
