@@ -97,11 +97,11 @@ class MatMulWeights(WrapsModule):
 
     @property
     def features(self) -> Tensor:
-        return self.features_transform(self.wrapped.weight.data)
+        return self.features_transform(self.wrapped.right.data)
 
     @property
     def features_grad(self) -> Optional[Tensor]:
-        grad = self.wrapped.weight.grad
+        grad = self.wrapped.right.grad
         if grad is None:
             return None
         return self.features_transform(grad)

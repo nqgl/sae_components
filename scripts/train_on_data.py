@@ -1,3 +1,6 @@
+# %%
+
+
 from sae_components.data.sc.dataset import DataConfig, SplitConfig
 from transformer_lens import HookedTransformer
 
@@ -22,16 +25,37 @@ import wandb
 
 
 def test_train(model, losses, data):
-    from sae_components.trainer.trainer import Trainer, Trainable
+    from sae_components.trainer.trainer import Trainer, Trainable, TrainConfig
 
+    cfg = TrainConfig(l0_target=9)
     trainable = Trainable([model], losses).cuda()
-    trainer = Trainer({}, trainable)
+    trainer = Trainer(cfg, trainable)
     wandb.init(project="sae-components", config={"model": repr(trainable)})
 
     trainer.train(data)
 
 
-# model, losses = vanilla_sae(768, 8 * 768)
-model, losses = gated_sae(768, 8 * 768)
+model, losses = vanilla_sae(768, 8 * 768)
 
+# model, losses = gated_sae(768, 8 * 768)
 test_train(model, losses, data)
+# %%
+
+
+# model.encoder.magnitude.weight.module.weight
+
+
+# %%
+model.decoder.weight.module.right.data == losses[
+    "L2_aux_loss"
+].module.module.decoder.weight.right.data
+# %%
+model.decoder.weight.module.right.data
+# %%
+losses[
+    "L2_aux_loss"
+].module.module.decoder.weight.right.requires_grad  # %% they are not synced up rn gotta fix that
+losses["L2_loss"].module.module.decoder.weight.right.requires_grad
+
+
+# %%

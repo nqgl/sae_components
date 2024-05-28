@@ -3,6 +3,23 @@ import sae_components.core as cl
 from sae_components.components import Lambda
 
 
+class GlobalizedCache:
+    def __init__(self, cache):
+        self._cache_to_globalize = cache
+
+    def __getattribute__(self, name: str):
+        if name in ["_cache_to_globalize", "_write"]:
+            return super().__getattribute__(name)
+        return self._cache_to_globalize.__getattribute__(name)
+
+    def _write(self, name, value):
+        self._cache_to_globalize._write(name, value)
+        self._cache_to_globalize._ancestor._write(name, value)
+
+    def __getitem__(self, name):
+        return self._cache_to_globalize[name]
+
+
 class Metrics(cl.Parallel):
     def __init__(
         self, *, _support_parameters=True, _support_modules=True, **collection_dict
@@ -40,5 +57,8 @@ class L1(Metric):
 
 
 class ActMetrics(Metrics):
-    def __init__(self):
+    def __init__(self, globalize_cache=True):
         super().__init__(L1=L1(), L0=L0())
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        return super().forward(x, cache=GlobalizedCache(cache), **kwargs)

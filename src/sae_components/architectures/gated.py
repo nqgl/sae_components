@@ -32,7 +32,12 @@ import sae_components.components.decoder_normalization.features as ft
 import sae_components.components as co
 
 
-def gated_sae(d_data, d_dict):
+def gated_sae(
+    d_data,
+    d_dict,
+    tied=True,
+    detach=True,
+):
     # parameters
     W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
     W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
@@ -52,32 +57,45 @@ def gated_sae(d_data, d_dict):
     enc_mag = Seq(
         pre_bias=sub_enc_shared_pre_bias,
         weight=mm_W_enc,
-        r_mag=Mul(
-            Lambda(
+        r_mag=cl.ops.MulParallel(
+            identity=cl.ops.Identity(),
+            exp_r=Lambda(
                 func=lambda x: torch.exp(x),
                 module=r_mag,
-            )
+            ),
         ),
         bias=ft.EncoderBias(b_enc_mag).resampled(),
         nonlinearity=nn.ReLU(),
     )
 
-    enc_gate = Seq(
-        pre_bias=sub_enc_shared_pre_bias,
-        weight=mm_W_enc,
-        bias=ft.EncoderBias(b_enc_gate).resampled(),
-        nonlinearity=nn.ReLU(),
+    enc_gate = ReuseForward(
+        Seq(
+            pre_bias=Parallel(left=cl.ops.Identity(), right=b_dec).reduce(
+                lambda l, r: l - r.detach()
+            ),
+            weight=mm_W_enc,
+            bias=ft.EncoderBias(b_enc_gate).resampled(),
+            nonlinearity=nn.ReLU(),
+        )
     )
 
     # decoder
-    def decoder(W_dec, b_dec):
+    def decoder(W_dec, b_dec, detach=False):
+        if detach:
+            dec = Parallel(left=cl.ops.Identity(), right=W_dec).reduce(
+                lambda l, r: l @ r.detach()
+            )
+            b = Parallel(left=cl.ops.Identity(), right=b_dec).reduce(
+                lambda l, r: l + r.detach()
+            )
+        else:
+            dec = ft.OrthogonalizeFeatureGrads(
+                ft.NormFeatures(ft.DecoderWeights(MatMul(W_dec)).resampled())
+            )
+            b = cl.ops.Add(b_dec)
         return Seq(
-            weight=ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(
-                    ft.DecoderWeights(MatMul(W_dec)).resampled(),
-                )
-            ),
-            bias=cl.ops.Add(b_dec),
+            weight=dec,
+            bias=b,
         )
 
     # models
@@ -97,17 +115,14 @@ def gated_sae(d_data, d_dict):
         encoder=enc_gate,  # oh and it's missing 1-2 detaches
         L1=L1Penalty(),
         freqs=EMAFreqTracker(),
-        decoder=Seq(
-            weight=MatMul(W_dec.detach().cuda()),
-            bias=cl.ops.Add(b_dec.detach().cuda()),
-        ),
+        decoder=decoder(W_dec, b_dec, detach=True),
     )
 
     # losses
     losses = dict(
         L2_loss=L2Loss(gated_model),
         L2_aux_loss=L2Loss(model_aux),
-        sparsisty_loss=SparsityPenaltyLoss(model_aux),
+        sparsity_loss=SparsityPenaltyLoss(model_aux),
     )
     return gated_model, losses
 

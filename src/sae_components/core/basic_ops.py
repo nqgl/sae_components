@@ -68,13 +68,13 @@ class Sub(Add):
 
 
 class MatMul(Parallel):
-    weight: nn.Parameter
+    right: nn.Parameter
 
-    def __init__(self, weight):
+    def __init__(self, weight, *, weight_module=None):
         assert isinstance(weight, nn.Parameter)
         super().__init__(
-            input=Identity(),
-            weight=weight,
+            left=Identity(),
+            right=weight,
             _support_parameters=True,
         )
         self.reduce(lambda input, weight: input @ weight)
