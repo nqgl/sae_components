@@ -4,6 +4,9 @@ from abc import ABC, abstractmethod
 from torch import Tensor
 from jaxtyping import Float
 
+from sae_components.architectures.tools import bias
+from sae_components.architectures.tools import weight
+from sae_components.architectures.tools import mlp_layer
 from sae_components.components.ops.detach import Thresh
 import sae_components.core as cl
 import sae_components.core.module
@@ -31,46 +34,16 @@ import sae_components.components.decoder_normalization.features as ft
 import sae_components.components as co
 
 
-# from torch.utils.viz._cycles import
-def lprint(x):
-    def l(i):
-        print(x)
-        return i
-
-    return Lambda(l)
-
-
-def bias(d):
-    return nn.Parameter(torch.zeros(d))
-
-
-def weight(d1, d2):
-    return nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d1, d2)))
-
-
 from sae_components.core.collections.seq import ResidualSeq
 
 
-def layer(d_in, d_out, nonlinearity=nn.LeakyReLU):
-    return Seq(
-        weight=(MatMul(weight(d_in, d_out))),
-        bias=Add(bias(d_out)),
-        nonlinearity=nonlinearity(),
-    )
-
-
-def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.LeakyReLU):
-    d_out = d_out or d_in
-    return Seq(
-        weight=MatMul(weight(d_in, d_hidden)),
-        bias=Add(bias(d_hidden)),
-        nonlinearity=nonlinearity(),
-        projection=MatMul(weight(d_hidden, d_out)),
-    )
-
-
 def resid_deep_sae(
-    d_data, d_dict, extra_layers=2, hidden_mult=2, layer_nonlinearity=nn.LeakyReLU
+    d_data,
+    d_dict,
+    extra_layers=2,
+    hidden_mult=2,
+    mlp_mult=2,
+    layer_nonlinearity=nn.LeakyReLU,
 ):
     # parameters
     d_hidden = d_data * hidden_mult
@@ -78,14 +51,17 @@ def resid_deep_sae(
     # model
     model = Seq(
         encoder=Seq(
-            pre_bias=Sub(b_dec),
-            project_up=MatMul(weight(d_data, d_hidden)),
+            pre_bias=Add(bias(d_data)),
+            **(
+                dict(project_up=MatMul(weight(d_data, d_hidden, scale=1)))
+                if d_data != d_hidden
+                else {}
+            ),
             layers=ResidualSeq(
                 *[
                     Seq(
-                        weight=mlp_layer(d_hidden, 4 * d_hidden),
-                        bias=Add(bias(d_hidden)),
-                        nonlinearity=layer_nonlinearity(),
+                        mlp_layer(d_hidden, d_hidden * mlp_mult, scale=1),
+                        nn.LayerNorm(d_hidden, device="cuda"),
                     )
                     for i in range(extra_layers)
                 ],

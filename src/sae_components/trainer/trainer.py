@@ -9,19 +9,18 @@ from dataclasses import dataclass, field
 from sae_components.trainer.post_backward_normalization import post_backward, post_step
 import torch.nn as nn
 
-# @runtime_checkable
-# class TrainableModel(Protocol, cl.Module):
-#     losses: list[Loss]
-#     model: cl.Module
-#     models: dict[cl.Module]
 
-#     def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor: ...
+@dataclass
+class OptimConfig:
+    lr: float = 1e-3
+    betas: tuple[float, float] = (0.9, 0.99)
 
 
 @dataclass
 class TrainConfig:
-    coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=1e-4))
+    coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=3e-3))
     l0_target: Optional[float] = None
+    optim_config: OptimConfig = OptimConfig()
 
 
 class TrainCache(SAECache):
@@ -72,7 +71,9 @@ class Trainer:
         # self.sae.provide("optim", self.optim)
         self.t = 1
         self.extra_calls = []
-        self.optim = torch.optim.Adam(self.model.parameters(), lr=1e-3)
+        self.optim = torch.optim.RAdam(
+            self.model.parameters(), lr=1e-3, betas=(0.9, 0.99)
+        )
 
     def post_backward(self):
         self.model.apply(post_backward)
@@ -91,7 +92,7 @@ class Trainer:
     def proc_cache_after_forward(self, cache: TrainCache):
         if self.cfg.l0_target is not None:
             self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
-                0.9993 if self.cfg.l0_target > cache.L0 else 1.0007
+                0.999 if self.cfg.l0_target > cache.L0 else 1.001
             )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 

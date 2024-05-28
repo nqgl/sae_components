@@ -21,21 +21,22 @@ data = data_cfg.train_data_batch_generator(model=model, batch_size=BATCH_SIZE)
 from sae_components.architectures.gated import gated_sae
 from sae_components.architectures.vanilla_tests import vanilla_sae
 from sae_components.architectures.deep.deep import deep_sae, resid_deep_sae
+from sae_components.architectures.deep.deep_resid_gated import deep_resid_gated
 import wandb
 
 
-def test_train(model, losses, data):
+def test_train(models, losses, data):
     from sae_components.trainer.trainer import Trainer, Trainable, TrainConfig
 
     cfg = TrainConfig(l0_target=9)
-    trainable = Trainable([model], losses).cuda()
+    trainable = Trainable(models, losses).cuda()
     trainer = Trainer(cfg, trainable)
     wandb.init(project="sae-components", config={"model": repr(trainable)})
 
     trainer.train(data)
 
 
-model, losses = resid_deep_sae(768, 8 * 768)
+model, losses = deep_resid_gated(768, 8 * 768)
 
 # model, losses = gated_sae(768, 8 * 768)
 test_train(model, losses, data)

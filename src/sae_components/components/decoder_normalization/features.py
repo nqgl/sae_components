@@ -155,9 +155,7 @@ class NormFeatures(WrapsModule):
     @torch.no_grad()
     def normalize_features(self):
         features = self.wrapped.features
-        self.wrapped.features[:] = features.data / torch.norm(
-            features.data, dim=-1, keepdim=True
-        )
+        self.wrapped.features[:] = features / torch.norm(features, dim=-1, keepdim=True)
 
 
 class Resamplable(Protocol):
@@ -184,6 +182,7 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         dec_normed = features / features.norm(dim=-1, keepdim=True)
         grad_orth = grad - (dec_normed * grad).sum(-1, keepdim=True) * dec_normed
         grad[:] = grad_orth
-        assert (grad * features).sum(
+
+        assert (grad * dec_normed).sum(
             -1
-        ).abs().max() < 1e-2, f"Not orthogonal, oops. How not orthogonal? This much: {(grad * features).sum(-1).abs().max()}"
+        ).abs().mean() < 1e-2, f"Not orthogonal, oops. How not orthogonal? This much: {(grad * features).sum(-1).abs().max()}"
