@@ -20,7 +20,7 @@ import torch.nn as nn
 
 @dataclass
 class TrainConfig:
-    coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=1e-2))
+    coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=1e-4))
     l0_target: Optional[float] = None
 
 
@@ -91,7 +91,7 @@ class Trainer:
     def proc_cache_after_forward(self, cache: TrainCache):
         if self.cfg.l0_target is not None:
             self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
-                0.999 if self.cfg.l0_target > cache.L0 else 1.001
+                0.9993 if self.cfg.l0_target > cache.L0 else 1.0007
             )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 

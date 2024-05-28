@@ -20,7 +20,7 @@ data = data_cfg.train_data_batch_generator(model=model, batch_size=BATCH_SIZE)
 
 from sae_components.architectures.gated import gated_sae
 from sae_components.architectures.vanilla_tests import vanilla_sae
-
+from sae_components.architectures.deep.deep import deep_sae, resid_deep_sae
 import wandb
 
 
@@ -35,7 +35,7 @@ def test_train(model, losses, data):
     trainer.train(data)
 
 
-model, losses = vanilla_sae(768, 8 * 768)
+model, losses = resid_deep_sae(768, 8 * 768)
 
 # model, losses = gated_sae(768, 8 * 768)
 test_train(model, losses, data)
