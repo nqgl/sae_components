@@ -38,7 +38,7 @@ def layer(d_in, d_out, nonlinearity=nn.LeakyReLU, scale=1.0):
     )
 
 
-def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.ReLU, scale=1.0):
+def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.LeakyReLU, scale=1.0):
     d_out = d_out or d_in
     return Seq(
         weight=MatMul(weight(d_in, d_hidden, scale=scale)),
