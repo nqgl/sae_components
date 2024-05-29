@@ -30,15 +30,15 @@ def reused(func):
     return f
 
 
-def layer(d_in, d_out, nonlinearity=nn.LeakyReLU):
+def layer(d_in, d_out, nonlinearity=nn.LeakyReLU, scale=1.0):
     return Seq(
-        weight=(MatMul(weight(d_in, d_out))),
+        weight=MatMul(weight(d_in, d_out, scale=scale)),
         bias=Add(bias(d_out)),
         nonlinearity=nonlinearity(),
     )
 
 
-def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.GELU, scale=1.0):
+def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.ReLU, scale=1.0):
     d_out = d_out or d_in
     return Seq(
         weight=MatMul(weight(d_in, d_hidden, scale=scale)),

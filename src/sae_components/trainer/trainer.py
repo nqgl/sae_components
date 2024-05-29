@@ -19,8 +19,9 @@ class OptimConfig:
 @dataclass
 class TrainConfig:
     coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=3e-3))
-    l0_target: Optional[float] = None
     optim_config: OptimConfig = OptimConfig()
+    l0_target: Optional[float] = None
+    l0_target_adjustment_size: float = 0.0003
 
 
 class TrainCache(SAECache):
@@ -69,10 +70,12 @@ class Trainer:
         self.cfg = cfg
         self.model = model
         # self.sae.provide("optim", self.optim)
+        wandb.init(project="sae-components", config={"model": repr(model), "cfg": cfg})
+
         self.t = 1
         self.extra_calls = []
         self.optim = torch.optim.RAdam(
-            self.model.parameters(), lr=1e-3, betas=(0.9, 0.99)
+            self.model.parameters(), lr=3e-4, betas=(0.9, 0.99)
         )
 
     def post_backward(self):
@@ -92,7 +95,9 @@ class Trainer:
     def proc_cache_after_forward(self, cache: TrainCache):
         if self.cfg.l0_target is not None:
             self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
-                0.999 if self.cfg.l0_target > cache.L0 else 1.001
+                1
+                + (-1 if self.cfg.l0_target > cache.L0 else 1)
+                * self.cfg.l0_target_adjustment_size
             )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 

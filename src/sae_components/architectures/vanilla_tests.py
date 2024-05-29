@@ -70,11 +70,12 @@ def vanilla_sae(d_data, d_dict):
     )
 
     # losses
+    models = [model]
     losses = dict(
         L2_loss=L2Loss(model),
         sparsity_loss=SparsityPenaltyLoss(model),
     )
-    return model, losses
+    return models, losses
 
 
 # def vanilla_sae(d_data, d_dict):
