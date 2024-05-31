@@ -1,4 +1,4 @@
-import sae_components.core.module as cl
+import sae_components.core as cl
 from sae_components.core import Cache
 from sae_components.components.sae_cache import SAECache
 import torch
@@ -7,6 +7,7 @@ from typing import Protocol, runtime_checkable, Optional
 from sae_components.components.losses import Loss, L2Loss, SparsityPenaltyLoss
 from dataclasses import dataclass, field
 from sae_components.trainer.post_backward_normalization import post_backward, post_step
+from sae_components.trainer.normalizers import Normalizer, ConstL2Normalizer, Normalized
 import torch.nn as nn
 
 
@@ -39,12 +40,31 @@ class Trainable(cl.Module):
     losses: dict[Loss]
     model: cl.Module
     models: list[cl.Module]
+    normalizer: Normalizer
 
-    def __init__(self, models: list[cl.Module], losses: dict[Loss]):
+    def __init__(
+        self, models: list[cl.Module], losses: dict[Loss], normalizer: Normalizer = None
+    ):
         super().__init__()
-        self.losses = nn.ModuleDict(losses)
-        self.model = models[0]
+        self.normalizer = normalizer or ConstL2Normalizer()
+        assert not any(
+            isinstance(m, Normalized) for m in list(losses.values()) + models
+        ), "models and losses should not be normalized, the Trainable object is responsible for normalization."
+        self.losses = nn.ModuleDict(
+            {
+                name: self.normalizer.input_normalize(loss)
+                for name, loss in losses.items()
+            }
+        )
+        self.model = self.normalizer.io_normalize(models[0])
         self.models = nn.ModuleList(models)
+
+    def _normalizeIO(mth):
+        def wrapper(self, x: torch.Tensor, *, cache: TrainCache, **kwargs):
+            x = self.normalizer(x)
+            return mth(self, x, cache=cache, **kwargs)
+
+        return wrapper
 
     def loss(self, x, *, cache: TrainCache, y=None, coeffs={}):
         coeffs = dict(coeffs)
@@ -57,7 +77,8 @@ class Trainable(cl.Module):
         assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
         return loss
 
-    def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor: ...
+    def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+        return self.model(x, cache=cache)
 
 
 class Trainer:
@@ -102,6 +123,8 @@ class Trainer:
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
     def train(self, buffer):
+        if self.t <= 1:
+            self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
         for bn in buffer:
             if isinstance(bn, tuple):

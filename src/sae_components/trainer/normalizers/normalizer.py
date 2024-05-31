@@ -32,7 +32,7 @@ class Normalizer(cl.Module, ABC):
     def io_normalize(self, module) -> "NormalizedIO":
         return NormalizedIO(model=module, normalizer=self)
 
-    def inputs_normalize(self, module) -> "NormalizedInputs":
+    def input_normalize(self, module) -> "NormalizedInputs":
         return NormalizedInputs(model=module, normalizer=self)
 
 
@@ -57,7 +57,12 @@ class ConstL2Normalizer(Normalizer):
         return self.est_norm
 
 
-class NormalizedIO(cl.Seq):
+class Normalized(cl.Seq):
+    model: cl.Module
+    normalizer: Normalizer
+
+
+class NormalizedIO(Normalized):
     def __init__(self, model, normalizer):
         assert isinstance(normalizer, Normalizer)
         super().__init__(
@@ -68,7 +73,7 @@ class NormalizedIO(cl.Seq):
         )
 
 
-class NormalizedInputs(cl.Seq):
+class NormalizedInputs(Normalized):
     def __init__(self, model, normalizer):
         assert isinstance(normalizer, Normalizer)
         super().__init__(
