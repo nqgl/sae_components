@@ -152,6 +152,13 @@ class DataConfig:
             self.trainsplit, batch_size=batch_size, nsteps=nsteps
         )
 
+    def train_data_batch_generator2(self, model, batch_size, nsteps=None):
+        gen = self.train_data_batch_generator(model, batch_size, nsteps)
+        current = next(gen)
+        for nex in gen:
+            yield current
+            current = nex
+
 
 class TokensData:
     def __init__(self, cfg: DataConfig, model: HookedTransformer):
@@ -280,7 +287,11 @@ class ActsData:
         print("\nProgress bar activation batch count is approximate\n")
         progress = tqdm.trange(nsteps or split.approx_num_tokens // batch_size)
         for p in range(piler.num_piles):
+
+            print("get next pile")
             pile = piler[p]
+
+            print("got next pile")
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                 yield pile[i : i + batch_size].cuda()
                 progress.update()

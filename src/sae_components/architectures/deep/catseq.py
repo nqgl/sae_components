@@ -37,7 +37,7 @@ from sae_components.core.collections.seq import ResidualSeq, CatSeq, CatSeqResid
 def deep_catseq(
     d_data,
     d_dict,
-    extra_layers=4,
+    extra_layers=3,
     hidden_mult=3,
     mlp_mult=2,
     layer_nonlinearity=nn.GELU,
@@ -93,9 +93,9 @@ def deep_catseq(
 def deep_catseq_resid(
     d_data,
     d_dict,
-    extra_layers=6,
-    hidden_mult=6,
-    mlp_mult=3,
+    extra_layers=3,
+    hidden_mult=3,
+    mlp_mult=2,
     layer_nonlinearity=nn.LeakyReLU,
 ):
     d_hidden = d_data * hidden_mult

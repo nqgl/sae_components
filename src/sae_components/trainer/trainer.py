@@ -22,7 +22,7 @@ class TrainConfig:
     coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=3e-3))
     optim_config: OptimConfig = OptimConfig()
     l0_target: Optional[float] = None
-    l0_target_adjustment_size: float = 0.0003
+    l0_target_adjustment_size: float = 0.0001
 
 
 class TrainCache(SAECache):
@@ -37,13 +37,17 @@ class TrainCache(SAECache):
 
 
 class Trainable(cl.Module):
+
     losses: dict[Loss]
     model: cl.Module
     models: list[cl.Module]
     normalizer: Normalizer
 
     def __init__(
-        self, models: list[cl.Module], losses: dict[Loss], normalizer: Normalizer = None
+        self,
+        models: list[cl.Module],
+        losses: dict[Loss],
+        normalizer: Normalizer = None,
     ):
         super().__init__()
         self.normalizer = normalizer or ConstL2Normalizer()
@@ -56,6 +60,7 @@ class Trainable(cl.Module):
                 for name, loss in losses.items()
             }
         )
+
         self.model = self.normalizer.io_normalize(models[0])
         self.models = nn.ModuleList(models)
 
@@ -86,13 +91,21 @@ class Trainer:
         self,
         cfg: TrainConfig,
         model: Trainable,
+        namestuff=None,
         # optim: torch.optim.Optimizer,
     ):
         self.cfg = cfg
         self.model = model
         # self.sae.provide("optim", self.optim)
-        wandb.init(project="sae-components", config={"model": repr(model), "cfg": cfg})
-
+        wandb.init(
+            project="sae-components",
+            config={"model": repr(model), "cfg": cfg},
+            reinit=True,
+        )
+        if namestuff is not None:
+            wandb.run.name = (
+                f"{namestuff}[{cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
+            )
         self.t = 1
         self.extra_calls = []
         self.optim = torch.optim.RAdam(

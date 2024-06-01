@@ -88,7 +88,7 @@ def resid_deep_sae(
         L2_loss=L2Loss(model),
         sparsity_loss=SparsityPenaltyLoss(model),
     )
-    return model, losses
+    return [model], losses
 
 
 def deep_sae(

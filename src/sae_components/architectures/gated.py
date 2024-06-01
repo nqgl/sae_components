@@ -124,7 +124,7 @@ def gated_sae(
         L2_aux_loss=L2Loss(model_aux),
         sparsity_loss=SparsityPenaltyLoss(model_aux),
     )
-    return gated_model, losses
+    return [gated_model, model_aux], losses
 
 
 def main():

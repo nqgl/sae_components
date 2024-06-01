@@ -50,8 +50,6 @@ class Propagator(Collection):
 
     def _propagate(self, x, l, *a, **k):
         # decision: assuming no variation in first layer case desired behavior
-        if len(l) == 0:
-            return x
         return self._propagate_rule(x=x, l=l, *a, **k)
 
     def forward(self, x, *, cache: Cache, **kwargs):

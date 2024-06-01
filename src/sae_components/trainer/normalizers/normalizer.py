@@ -67,7 +67,7 @@ class NormalizedIO(Normalized):
         assert isinstance(normalizer, Normalizer)
         super().__init__(
             normalizer=cl.ReuseForward(normalizer),
-            fwd_and_denormalize=cl.Router(
+            normalized=cl.Router(
                 model=cl.ReuseForward(model), factor=cl.ops.Identity()
             ).reduce(lambda pred_normed, scale: pred_normed * scale),
         )
@@ -78,7 +78,7 @@ class NormalizedInputs(Normalized):
         assert isinstance(normalizer, Normalizer)
         super().__init__(
             normalizer=cl.ReuseForward(normalizer),
-            router=cl.Router(
+            normalized=cl.Router(
                 model=cl.ReuseForward(model), factor=cl.ops.Identity()
             ).reduce(lambda *l: l[0]),
         )
