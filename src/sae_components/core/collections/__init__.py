@@ -6,3 +6,6 @@ from sae_components.core.collections.parallel import (
     AddParallel,
     MulParallel,
 )
+from sae_components.core.collections.router import Router
+
+from .seq import Seq

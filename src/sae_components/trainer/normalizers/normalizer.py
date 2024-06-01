@@ -46,7 +46,7 @@ class ConstL2Normalizer(Normalizer):
         super().__init__()
         self.register_buffer("est_avg_norm", torch.zeros(0))
 
-    def prime_normalizer(self, buffer, n=10):
+    def prime_normalizer(self, buffer, n=100):
         norms = []
         for _ in range(n):
             sample = next(buffer)
@@ -67,9 +67,9 @@ class NormalizedIO(Normalized):
         assert isinstance(normalizer, Normalizer)
         super().__init__(
             normalizer=cl.ReuseForward(normalizer),
-            fwd_and_denormalize=cl.Route(model=model, factor=cl.ops.Identity()).reduce(
-                lambda pred_normed, scale: pred_normed * scale
-            ),
+            fwd_and_denormalize=cl.Router(
+                model=cl.ReuseForward(model), factor=cl.ops.Identity()
+            ).reduce(lambda pred_normed, scale: pred_normed * scale),
         )
 
 
@@ -77,8 +77,8 @@ class NormalizedInputs(Normalized):
     def __init__(self, model, normalizer):
         assert isinstance(normalizer, Normalizer)
         super().__init__(
-            normalizer=normalizer,
-            router=cl.Route(model=model, factor=cl.ops.Identity()).reduce(
-                lambda *l: l[0]
-            ),
+            normalizer=cl.ReuseForward(normalizer),
+            router=cl.Router(
+                model=cl.ReuseForward(model), factor=cl.ops.Identity()
+            ).reduce(lambda *l: l[0]),
         )

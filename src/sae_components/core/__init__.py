@@ -1,18 +1,18 @@
-from sae_components.core.module import Module
-from sae_components.core.component_layer import ComponentLayer
-from sae_components.core.cache import Cache
-from sae_components.core.cache_layer import (
+from .module import Module
+from .component_layer import ComponentLayer
+from .cache import Cache
+from .cache_layer import (
     CacheLayer,
     CacheLayerConfig,
     CacheProcLayer,
 )
-from sae_components.core.component_layer.layercomponent import LayerComponent
-from sae_components.core.collections.seq import Seq
-from sae_components.core.collections import Parallel
-from sae_components.core.pass_through import PassThroughModule
-from sae_components.core.reused_forward import ReuseForward
+from .component_layer.layercomponent import LayerComponent
+from .collections import Parallel, Seq, Router
+from . import collections
+from .pass_through import PassThroughModule
+from .reused_forward import ReuseForward
 
-import sae_components.core.basic_ops as ops
+from . import basic_ops as ops
 
 
-from sae_components.core.proc_appropriately import proc_appropriately
+from .proc_appropriately import proc_appropriately

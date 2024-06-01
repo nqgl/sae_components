@@ -12,7 +12,7 @@ import sae_components.core as cl
 # Not sure about this, should return to after the structure of gated example is more pinned down
 
 
-class Loss(sae_components.core.module.Module):
+class Loss(cl.Module):
     def __init__(
         self,
         module,
