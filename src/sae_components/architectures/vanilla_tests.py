@@ -27,8 +27,9 @@ from typing import Optional
 from sae_components.components.ops.fnlambda import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
 from sae_components.core import Seq
-import sae_components.components.decoder_normalization.features as ft
+import sae_components.components.features.features as ft
 import sae_components.components as co
+from sae_components.trainer.trainable import Trainable
 
 
 # from torch.utils.viz._cycles import
@@ -116,7 +117,7 @@ d_dict = 8 * d_data
 
 def test_train(model, losses):
     features = torch.randn(d_dict, d_data).cuda()
-    from sae_components.trainer.trainer import Trainer, Trainable
+    from sae_components.trainer.trainer import Trainer
     import tqdm
     import wandb
 

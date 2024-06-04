@@ -30,11 +30,12 @@ from typing import Optional
 from sae_components.components.ops.fnlambda import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
 from sae_components.core import Seq
-import sae_components.components.decoder_normalization.features as ft
+import sae_components.components.features.features as ft
 import sae_components.components as co
 
 
 from sae_components.core.collections.seq import ResidualSeq
+from sae_components.trainer.trainable import Trainable
 
 
 def resid_deep_sae(
@@ -43,7 +44,7 @@ def resid_deep_sae(
     extra_layers=2,
     hidden_mult=2,
     mlp_mult=2,
-    layer_nonlinearity=nn.LeakyReLU,
+    layer_nonlinearity=nn.ReLU,
 ):
     # parameters
     d_hidden = d_data * hidden_mult
@@ -53,20 +54,25 @@ def resid_deep_sae(
         encoder=Seq(
             pre_bias=Add(bias(d_data)),
             **(
-                dict(project_up=MatMul(weight(d_data, d_hidden, scale=1)))
+                dict(project_up=MatMul(weight(d_data, d_hidden, scale=2 ** (-0.5))))
                 if d_data != d_hidden
                 else {}
             ),
             layers=ResidualSeq(
                 *[
                     Seq(
-                        mlp_layer(d_hidden, d_hidden * mlp_mult, scale=1),
-                        nn.LayerNorm(d_hidden, device="cuda"),
+                        mlp_layer(
+                            d_hidden,
+                            d_hidden * mlp_mult,
+                            scale=1,
+                            nonlinearity=layer_nonlinearity,
+                        ),
+                        # nn.LayerNorm(d_hidden, device="cuda"),
                     )
                     for i in range(extra_layers)
                 ],
             ),
-            weight=MatMul(weight(d_hidden, d_dict)),
+            weight=MatMul(weight(d_hidden, d_dict, scale=2 ** (-0.5))),
             bias=ft.EncoderBias(bias(d_dict)).resampled(),
             nonlinearity=nn.ReLU(),
         ),
@@ -146,7 +152,7 @@ d_dict = 8 * d_data
 
 def test_train(model, losses):
     features = torch.randn(d_dict, d_data).cuda()
-    from sae_components.trainer.trainer import Trainer, Trainable
+    from sae_components.trainer.trainer import Trainer
     import tqdm
     import wandb
 

@@ -28,7 +28,7 @@ from sae_components.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
 from sae_components.core.reused_forward import ReuseCache
 from sae_components.core import Seq
-import sae_components.components.decoder_normalization.features as ft
+import sae_components.components.features.features as ft
 
 import sae_components.components as co
 from sae_components.core.collections.seq import ResidualSeq, CatSeq, CatSeqResid

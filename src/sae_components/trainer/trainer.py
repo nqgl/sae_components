@@ -1,89 +1,57 @@
-import sae_components.core as cl
 from sae_components.core import Cache
-from sae_components.components.sae_cache import SAECache
 import torch
 import wandb
 from typing import Protocol, runtime_checkable, Optional
-from sae_components.components.losses import Loss, L2Loss, SparsityPenaltyLoss
+from sae_components.components.losses import L2Loss, SparsityPenaltyLoss
 from dataclasses import dataclass, field
+from sae_components.trainer.train_cache import TrainCache
+from sae_components.trainer.trainable import Trainable
 from sae_components.trainer.post_backward_normalization import post_backward, post_step
-from sae_components.trainer.normalizers import Normalizer, ConstL2Normalizer, Normalized
-import torch.nn as nn
+from .recons import get_recons_loss
+from transformer_lens import HookedTransformer
+from sae_components.data.sc.dataset import DataConfig, SplitConfig, TokensData
 
 
 @dataclass
 class OptimConfig:
     lr: float = 1e-3
-    betas: tuple[float, float] = (0.9, 0.99)
+    betas: tuple[float, float] = (0.9, 0.999)
+
+
+@dataclass
+class ModelConfig:
+    layer: int = 6
+    model_name: str = "gpt2-small"
+    site: str = "resid-pre"
+    # d_data: int = 768
+    # expansion_factor: int = 8
+
+    def __post_init__(self):
+        model = None
+
+        def getmodel():
+            nonlocal model
+            if model is None:
+                model = HookedTransformer.from_pretrained(self.model_name)
+            return model
+
+        self._getmodel = getmodel
+
+    @property
+    def model(self) -> HookedTransformer:
+        return self._getmodel()
 
 
 @dataclass
 class TrainConfig:
-    coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=3e-3))
+    coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=1e-3))
     optim_config: OptimConfig = OptimConfig()
     l0_target: Optional[float] = None
-    l0_target_adjustment_size: float = 0.0001
-
-
-class TrainCache(SAECache):
-    L2_loss = ...
-    sparsity_penalty = ...
-    L2_aux_loss = ...
-    loss = ...
-    L1 = ...
-    L0 = ...
-    L1_full = ...
-    L0_aux = ...
-
-
-class Trainable(cl.Module):
-
-    losses: dict[Loss]
-    model: cl.Module
-    models: list[cl.Module]
-    normalizer: Normalizer
-
-    def __init__(
-        self,
-        models: list[cl.Module],
-        losses: dict[Loss],
-        normalizer: Normalizer = None,
-    ):
-        super().__init__()
-        self.normalizer = normalizer or ConstL2Normalizer()
-        assert not any(
-            isinstance(m, Normalized) for m in list(losses.values()) + models
-        ), "models and losses should not be normalized, the Trainable object is responsible for normalization."
-        self.losses = nn.ModuleDict(
-            {
-                name: self.normalizer.input_normalize(loss)
-                for name, loss in losses.items()
-            }
-        )
-
-        self.model = self.normalizer.io_normalize(models[0])
-        self.models = nn.ModuleList(models)
-
-    def _normalizeIO(mth):
-        def wrapper(self, x: torch.Tensor, *, cache: TrainCache, **kwargs):
-            x = self.normalizer(x)
-            return mth(self, x, cache=cache, **kwargs)
-
-        return wrapper
-
-    def loss(self, x, *, cache: TrainCache, y=None, coeffs={}):
-        coeffs = dict(coeffs)
-        loss = 0
-        for k, L in self.losses.items():
-            l = L(x, y=y, cache=cache[k]) * coeffs.pop(k, 1)
-            setattr(cache, k, l)
-            loss += l
-        cache.loss = loss.item()
-        assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
-        return loss
-
-    def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
-        return self.model(x, cache=cache)
+    l0_target_adjustment_size: float = 0.0003
+    use_autocast: bool = False
+    model_cfg: ModelConfig = field(default_factory=ModelConfig)
+    data_cfg: DataConfig = field(default_factory=DataConfig)
+    lr: float = 3e-4
 
 
 class Trainer:
@@ -92,7 +60,7 @@ class Trainer:
         cfg: TrainConfig,
         model: Trainable,
         namestuff=None,
-        # optim: torch.optim.Optimizer,
+        optim: torch.optim.Optimizer = None,
     ):
         self.cfg = cfg
         self.model = model
@@ -100,6 +68,7 @@ class Trainer:
         wandb.init(
             project="sae-components",
             config={"model": repr(model), "cfg": cfg},
+            # entity="sae_all",
             reinit=True,
         )
         if namestuff is not None:
@@ -108,9 +77,15 @@ class Trainer:
             )
         self.t = 1
         self.extra_calls = []
-        self.optim = torch.optim.RAdam(
-            self.model.parameters(), lr=3e-4, betas=(0.9, 0.99)
+        self.optim = optim or torch.optim.RAdam(
+            self.model.parameters(), lr=cfg.lr, betas=(0.9, 0.999)
         )
+
+        self.llm_val_tokens = TokensData(
+            self.cfg.data_cfg, self.cfg.model_cfg.model
+        ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
+        self.intermittent_metric_freq = 1000
+        self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
 
     def post_backward(self):
         self.model.apply(post_backward)
@@ -135,11 +110,21 @@ class Trainer:
             )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def train(self, buffer):
+    def get_databuffer(self, num_batches=None):
+        return self.cfg.data_cfg.train_data_batch_generator(
+            model=self.cfg.model_cfg.model, batch_size=4096, nsteps=num_batches
+        )
+
+    def train(self, buffer=None):
+        if buffer is None:
+            buffer = self.cfg.data_cfg.train_data_batch_generator(
+                model=self.cfg.model_cfg.model, batch_size=4096
+            )
         if self.t <= 1:
             self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
         for bn in buffer:
+            self.optim.zero_grad()
             if isinstance(bn, tuple):
                 x, y = bn
             else:
@@ -147,23 +132,53 @@ class Trainer:
                 y = x
 
             cache = TrainCache()
-            loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+            if self.cfg.use_autocast:
+                with torch.cuda.amp.autocast():
+                    loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+            else:
+                loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+
             self.proc_cache_after_forward(cache)
-            loss.backward()
+            if self.cfg.use_autocast:
+                self.gradscaler.scale(loss).backward()
+            else:
+                loss.backward()
             self.post_backward()
-            self.optim.step()
+            if self.cfg.use_autocast:
+                self.gradscaler.step(self.optim)
+                self.gradscaler.update()
+            else:
+                self.optim.step()
             self.post_step()
-            self.optim.zero_grad()
             self.full_log(cache)
             self.t += 1
             print(f"loss: {loss.item()}")
             del cache.forward_reuse_dict
             cache.destroy_children()
             del cache
+            if self.t % self.intermittent_metric_freq == 0:
+                self.log_recons("recons/with_bos/", True)
+                self.log_recons("recons/no_bos/", False)
             # for key in [k for k in cache.forward_reuse_dict.keys()]:
             #     del cache.forward_reuse_dict[key]
             #     del key
             # del x, y, loss, cache
+
+    def log_recons(self, label, proc_bos, num_batches=5):
+        self.log(
+            {
+                (label + k): v
+                for k, v in get_recons_loss(
+                    self.cfg.model_cfg.model,
+                    self.model,
+                    buffer=None,
+                    all_tokens=self.llm_val_tokens,
+                    cfg=self.cfg.data_cfg.acts_config,
+                    bos_processed_with_hook=proc_bos,
+                    num_batches=num_batches,
+                ).items()
+            }
+        )
 
     def full_log(self, cache: Cache):
         if self.t % 10 != 0:

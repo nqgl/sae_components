@@ -28,7 +28,7 @@ from sae_components.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
 from sae_components.core.reused_forward import ReuseCache
 from sae_components.core import Seq
-import sae_components.components.decoder_normalization.features as ft
+import sae_components.components.features.features as ft
 
 import sae_components.components as co
 from sae_components.core.collections.seq import ResidualSeq
@@ -144,7 +144,10 @@ def deep_resid_gated2(
                 deep=Seq(
                     pre_bias=Add(bias(d_data)),
                     **(
-                        dict(project_up=MatMul(weight(d_data, d_hidden, scale=1)))
+                        dict(
+                            project_up=MatMul(weight(d_data, d_hidden, scale=1)),
+                            proj_ln=nn.LayerNorm(d_hidden, device="cuda"),
+                        )
                         if d_data != d_hidden
                         else {}
                     ),
@@ -216,3 +219,28 @@ def deep_resid_gated2(
         sparsity_loss=SparsityPenaltyLoss(model_aux),
     )
     return [gated_model, model_aux], losses
+
+
+def deep_resid_gated2_deeper(
+    d_data,
+    d_dict,
+):
+    return deep_resid_gated2(d_data, d_dict, extra_layers=4, hidden_mult=3, mlp_mult=2)
+
+
+def deep_resid_gated2_deeper_still(
+    d_data,
+    d_dict,
+):
+    return deep_resid_gated2(d_data, d_dict, extra_layers=6, hidden_mult=3, mlp_mult=4)
+
+
+def deep_resid_gated2_wider(
+    d_data,
+    d_dict,
+):
+    return deep_resid_gated2(d_data, d_dict, extra_layers=2, hidden_mult=6, mlp_mult=3)
+
+
+def deep_resid_gated2_wider2(d_data, d_dict):
+    return deep_resid_gated2(d_data, d_dict, extra_layers=1, hidden_mult=8, mlp_mult=4)

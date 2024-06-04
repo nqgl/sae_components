@@ -27,9 +27,11 @@ from typing import Optional
 from sae_components.components.ops.fnlambda import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
 from sae_components.core import Seq
-import sae_components.components.decoder_normalization.features as ft
+import sae_components.components.features.features as ft
+from sae_components.architectures.tools import reused, weight, bias, mlp_layer, layer
 
 import sae_components.components as co
+from sae_components.trainer.trainable import Trainable
 
 
 def gated_sae(
@@ -71,7 +73,7 @@ def gated_sae(
     enc_gate = ReuseForward(
         Seq(
             pre_bias=Parallel(left=cl.ops.Identity(), right=b_dec).reduce(
-                lambda l, r: l - r.detach()
+                (lambda l, r: l - r.detach()) if detach else (lambda l, r: l - r)
             ),
             weight=mm_W_enc,
             bias=ft.EncoderBias(b_enc_gate).resampled(),
@@ -79,8 +81,8 @@ def gated_sae(
         )
     )
 
-    # decoder
-    def decoder(W_dec, b_dec, detach=False):
+    @reused
+    def decoder():
         if detach:
             dec = Parallel(left=cl.ops.Identity(), right=W_dec).reduce(
                 lambda l, r: l @ r.detach()
@@ -108,14 +110,14 @@ def gated_sae(
         ),
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),
-        decoder=decoder(W_dec, b_dec),
+        decoder=decoder(),
     )
 
     model_aux = Seq(  # this one is just used for training the gate appropriately
         encoder=enc_gate,  # oh and it's missing 1-2 detaches
         L1=L1Penalty(),
         freqs=EMAFreqTracker(),
-        decoder=decoder(W_dec, b_dec, detach=True),
+        decoder=decoder(),
     )
 
     # losses
@@ -125,6 +127,10 @@ def gated_sae(
         sparsity_loss=SparsityPenaltyLoss(model_aux),
     )
     return [gated_model, model_aux], losses
+
+
+def gated_sae_no_detach(d_data, d_dict):
+    return gated_sae(d_data, d_dict, detach=False)
 
 
 def main():
@@ -149,7 +155,7 @@ def test_train(model, losses, data):
     d_data = 768
     d_dict = 8 * d_data
     features = torch.randn(d_dict, d_data).cuda()
-    from sae_components.trainer.trainer import Trainer, Trainable
+    from sae_components.trainer.trainer import Trainer
     import tqdm
     import wandb
 
@@ -164,7 +170,7 @@ def main():
     d_dict = 8 * d_data
     features = torch.randn(d_dict, d_data).cuda()
     model, losses = gated_sae(d_data, d_dict)
-    from sae_components.trainer.trainer import Trainer, Trainable
+    from sae_components.trainer.trainer import Trainer
     import tqdm
     import wandb
 

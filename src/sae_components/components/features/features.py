@@ -182,7 +182,6 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         dec_normed = features / features.norm(dim=-1, keepdim=True)
         grad_orth = grad - (dec_normed * grad).sum(-1, keepdim=True) * dec_normed
         grad[:] = grad_orth
-
         assert (grad * dec_normed).sum(
             -1
         ).abs().mean() < 1e-2, f"Not orthogonal, oops. How not orthogonal? This much: {(grad * features).sum(-1).abs().max()}"

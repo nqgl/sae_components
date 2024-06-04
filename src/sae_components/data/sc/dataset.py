@@ -70,8 +70,8 @@ class DataConfig:
         default_factory=lambda: SplitConfig(
             splitname="train",
             start=0,
-            end=50,
-            tokens_from_split=450_000_000,
+            end=40,
+            tokens_from_split=100_000_000,
         )
     )
     testsplit: SplitConfig = field(
