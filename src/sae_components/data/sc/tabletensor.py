@@ -69,7 +69,14 @@ class AppendDiskTensor:
         self.path.unlink()
 
     def readtensor(self):
-        return torch.load(str(self.path).split(".")[0] + ".pt")
+        return torch.load(
+            str(self.path).split(".")[0] + ".pt",
+            map_location=(
+                torch.device("cpu")
+                if self.dtype == torch.float16
+                else torch.device("cpu")
+            ),
+        )
 
 
 class Piler:

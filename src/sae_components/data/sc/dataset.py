@@ -71,7 +71,7 @@ class DataConfig:
             splitname="train",
             start=0,
             end=40,
-            tokens_from_split=100_000_000,
+            tokens_from_split=25_000_000,
         )
     )
     testsplit: SplitConfig = field(
@@ -96,8 +96,6 @@ class DataConfig:
 
     def __post_init__(self):
         self.validate_splits()
-
-    def get_train_data(self): ...
 
     def validate_splits(self):  # TODO
         return
@@ -152,12 +150,8 @@ class DataConfig:
             self.trainsplit, batch_size=batch_size, nsteps=nsteps
         )
 
-    def train_data_batch_generator2(self, model, batch_size, nsteps=None):
-        gen = self.train_data_batch_generator(model, batch_size, nsteps)
-        current = next(gen)
-        for nex in gen:
-            yield current
-            current = nex
+    def train_dataset(self, model, batch_size):
+        return ActsDataset(ActsData(self, model), self.trainsplit, batch_size)
 
 
 class TokensData:
@@ -279,21 +273,43 @@ class ActsData:
         )
         return acts.half()
 
-    def acts_generator(self, split: SplitConfig, batch_size, nsteps=None):
+    def acts_generator(
+        self, split: SplitConfig, batch_size, nsteps=None, id=None, nw=None
+    ):
         if not self.cfg._acts_piles_path(split).exists():
             self._store_split(split)
+        assert id == nw == None or id is not None and nw is not None
+        id = id or 0
+        nw = nw or 1
         piler = self.cfg.acts_piler(split)
         assert nsteps == None or nsteps <= split.approx_num_tokens // batch_size
         print("\nProgress bar activation batch count is approximate\n")
         progress = tqdm.trange(nsteps or split.approx_num_tokens // batch_size)
-        for p in range(piler.num_piles):
-
+        for p in range(id, piler.num_piles, nw):
             print("get next pile")
+            print(id, nw, p)
             pile = piler[p]
-
+            assert pile.dtype == torch.float16
             print("got next pile")
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-                yield pile[i : i + batch_size].cuda()
+                yield pile[i : i + batch_size]
                 progress.update()
             if nsteps is not None and progress.n >= nsteps:
                 break
+
+
+class ActsDataset(torch.utils.data.IterableDataset):
+    def __init__(self, acts: ActsData, split: SplitConfig, batch_size):
+        self.acts = acts
+        self.split = split
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+
+        if worker_info is None:
+            return self.acts.acts_generator(self.split, self.batch_size)
+
+        return self.acts.acts_generator(
+            self.split, self.batch_size, id=worker_info.id, nw=worker_info.num_workers
+        )

@@ -1,3 +1,4 @@
+import torch.utils
 from sae_components.core import Cache
 import torch
 import wandb
@@ -48,10 +49,11 @@ class TrainConfig:
     optim_config: OptimConfig = OptimConfig()
     l0_target: Optional[float] = None
     l0_target_adjustment_size: float = 0.0003
-    use_autocast: bool = False
+    use_autocast: bool = True
     model_cfg: ModelConfig = field(default_factory=ModelConfig)
     data_cfg: DataConfig = field(default_factory=DataConfig)
     lr: float = 3e-4
+    batch_size: int = 4096
 
 
 class Trainer:
@@ -110,20 +112,47 @@ class Trainer:
             )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def get_databuffer(self, num_batches=None):
+    def get_databuffer(self, num_batches=None, num_workers=0):
+        ds = self.cfg.data_cfg.train_dataset(
+            self.cfg.model_cfg.model, batch_size=self.cfg.batch_size
+        )
+        return torch.utils.data.DataLoader(ds, num_workers=num_workers)
+
         return self.cfg.data_cfg.train_data_batch_generator(
             model=self.cfg.model_cfg.model, batch_size=4096, nsteps=num_batches
         )
 
     def train(self, buffer=None):
         if buffer is None:
-            buffer = self.cfg.data_cfg.train_data_batch_generator(
-                model=self.cfg.model_cfg.model, batch_size=4096
-            )
+            buffer = self.get_databuffer(num_workers=0)
+            buffer = iter(buffer)
+            # buffer = self.cfg.data_cfg.train_data_batch_generator(
+            #     model=self.cfg.model_cfg.model, batch_size=self.cfg.batch_size
+            # )
         if self.t <= 1:
             self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
+
+        def tocuda(buffer):
+            for bn in buffer:
+                yield bn.cuda()
+
+        def bufferize_fn(buffer):
+            def buf_fn():
+                p = next(buffer)
+                for bn in buffer:
+                    # bn = bn.cuda()
+                    yield p
+                    p = bn
+
+            return buf_fn()
+
+        buffer = tocuda(buffer)
+        for _ in range(100):
+            buffer = bufferize_fn(buffer)
+
         for bn in buffer:
+            # bn = bn.cuda()
             self.optim.zero_grad()
             if isinstance(bn, tuple):
                 x, y = bn
@@ -135,24 +164,36 @@ class Trainer:
             if self.cfg.use_autocast:
                 with torch.cuda.amp.autocast():
                     loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+                    self.proc_cache_after_forward(cache)
+
             else:
                 loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+                self.proc_cache_after_forward(cache)
 
-            self.proc_cache_after_forward(cache)
+            # self.proc_cache_after_forward(cache)
             if self.cfg.use_autocast:
                 self.gradscaler.scale(loss).backward()
             else:
                 loss.backward()
-            self.post_backward()
+            # if self.cfg.use_autocast:
+            #     with torch.cuda.amp.autocast():
+            #         self.post_backward()
+            # else:
+            #     self.post_backward()
+
             if self.cfg.use_autocast:
                 self.gradscaler.step(self.optim)
                 self.gradscaler.update()
             else:
                 self.optim.step()
-            self.post_step()
+            # if self.cfg.use_autocast:
+            #     with torch.cuda.amp.autocast():
+            #         self.post_step()
+            # else:
+            #     self.post_step()
             self.full_log(cache)
             self.t += 1
-            print(f"loss: {loss.item()}")
+            # print(f"loss: {loss.item()}")
             del cache.forward_reuse_dict
             cache.destroy_children()
             del cache
