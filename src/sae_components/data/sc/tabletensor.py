@@ -26,7 +26,7 @@ class AppendDiskTensor:
     ):
         if isinstance(path, str):
             path = Path(path)
-        self.path = path
+        self.path: Path = path
         self.dtype = dtype
         self.fixed_shape = fixed_shape
 
@@ -61,6 +61,15 @@ class AppendDiskTensor:
         t = t[torch.randperm(t.shape[0])]
         self.init_file(force=True)
         self.write(t)
+
+    def shufflekill(self):
+        t = self.read()
+        t = t[torch.randperm(t.shape[0])]
+        torch.save(t, str(self.path).split(".")[0] + ".pt")
+        self.path.unlink()
+
+    def readtensor(self):
+        return torch.load(str(self.path).split(".")[0] + ".pt")
 
 
 class Piler:
@@ -99,7 +108,7 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
 
         for pile in tqdm.tqdm(self.piles):
-            pile.shuffle()
+            pile.shufflekill()
 
     def __getitem__(self, i):
         if isinstance(i, int):
@@ -108,7 +117,9 @@ class Piler:
             piles = [self.piles[j] for j in i]
         else:
             piles = self.piles[i]
-        return torch.cat([p.read() for p in piles])
+        if len(piles) == 1:
+            return piles[0].readtensor()
+        return torch.cat([p.readtensor() for p in piles])
 
 
 def main():
