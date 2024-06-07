@@ -164,6 +164,7 @@ class LinEncoder(LinWeights):
 class EncoderBias(WrapsModule):
     wrapped: cl.ops.Add
 
+    # TODO maybe make this wrap a param instead of the Add op
     def __init__(self, wrapped: cl.ops.Add):
         if isinstance(wrapped, nn.Parameter):
             wrapped = cl.ops.Add(wrapped)

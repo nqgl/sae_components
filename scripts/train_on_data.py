@@ -69,7 +69,7 @@ models = [deep_resid_gated2_wider2, deep_resid_gated2_wider]
 models = [vanilla_sae]
 models = [deep_sae]
 models = [gated_sae_no_detach, gated_sae]
-models = [basic_vanilla_sae_lin_no_orth]
+models = [basic_vanilla_sae_lin, basic_vanilla_sae_lin_no_orth]
 
 # test_train(
 #     *deep_resid_gated2(768, 768 * 8),

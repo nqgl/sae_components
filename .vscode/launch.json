@@ -18,7 +18,15 @@
             "request": "launch",
             "program": "scripts/train_on_data.py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Run LARS Training",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "scripts/lars_train_on_data.py",
+            "console": "integratedTerminal"
         }
+
 
 
     ]

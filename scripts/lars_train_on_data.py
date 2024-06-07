@@ -14,6 +14,7 @@ from sae_components.architectures.gated import gated_sae, gated_sae_no_detach
 from sae_components.architectures.vanilla_tests import (
     vanilla_sae,
     basic_vanilla_sae_lin,
+    basic_vanilla_sae_lin_no_orth,
 )
 from sae_components.architectures.deep.deep import deep_sae, resid_deep_sae
 from sae_components.architectures.deep.deep_resid_gated import (
@@ -25,9 +26,12 @@ from sae_components.architectures.deep.deep_resid_gated import (
     deep_resid_gated2_wider,
     deep_resid_gated2_wider2,
 )
+from sae_components.architectures.topk import topk_sae
+from sae_components.architectures.remax import remax_sae, remax1_sae
 from sae_components.architectures.deep.catseq import deep_catseq, deep_catseq_resid
 import wandb
 import torch
+from sae_components.architectures.tools import Initializer
 
 # def test_train(models, losses, name, l0_target=45, lr=3e-4):
 #     from sae_components.trainer.trainer import Trainer, TrainConfig
@@ -414,13 +418,14 @@ from torchlars import LARS
 
 
 # %%
+PROJECT = "nn.Linear Check"
 
 
 def train_lars(model_fn, l0_target=45, lr=3e-4):
     from sae_components.trainer.trainer import Trainer, TrainConfig
 
     name = "(lars)" + model_fn.__name__
-    models, losses = model_fn(768, 768 * 8)
+    models, losses = model_fn(Initializer(768, dict_mult=8))
 
     cfg = TrainConfig(
         l0_target=l0_target,
@@ -429,8 +434,9 @@ def train_lars(model_fn, l0_target=45, lr=3e-4):
         },
         lr=lr,
         use_autocast=True,
+        wandb_cfg=dict(project=PROJECT),
     )
-    trainable = Trainable(models, losses).cuda()
+    trainable = Trainable(models, losses, normalizer=L2Normalizer()).cuda()
     trainer = Trainer(cfg, trainable, namestuff=name + f"_{lr:.0e}")
     buf = iter(trainer.get_databuffer())
     trainable.normalizer.prime_normalizer(buf)
@@ -440,4 +446,16 @@ def train_lars(model_fn, l0_target=45, lr=3e-4):
     trainer.train(buf)
 
 
+# train_lars(basic_vanilla_sae_lin_no_orth, l0_target=45, lr=1e-3)
+# train_lars(basic_vanilla_sae_lin, l0_target=45, lr=1e-3)
+train_lars(remax1_sae, l0_target=45, lr=1e-3)
+train_lars(remax_sae, l0_target=45, lr=1e-3)
+
+train_lars(topk_sae, l0_target=45, lr=1e-3)
+
+train_lars(gated_sae_no_detach, l0_target=45, lr=1e-3)
+
+
 train_lars(basic_vanilla_sae_lin, l0_target=45, lr=1e-3)
+
+train_lars(deep_resid_gated2, l0_target=45, lr=1e-3)

@@ -44,7 +44,7 @@ def resid_deep_sae(
     extra_layers=2,
     hidden_mult=2,
     mlp_mult=2,
-    layer_nonlinearity=nn.ReLU,
+    layer_nonlinearity=nn.PReLU,
 ):
     # parameters
     d_hidden = d_data * hidden_mult
@@ -54,7 +54,15 @@ def resid_deep_sae(
         encoder=Seq(
             pre_bias=Add(bias(d_data)),
             **(
-                dict(project_up=MatMul(weight(d_data, d_hidden, scale=2 ** (-0.5))))
+                dict(
+                    project_up=MatMul(
+                        nn.Parameter(
+                            torch.eye(
+                                d_data, device="cuda", dtype=torch.float32
+                            ).repeat(1, 2)
+                        )
+                    )
+                )
                 if d_data != d_hidden
                 else {}
             ),
@@ -67,7 +75,7 @@ def resid_deep_sae(
                             scale=1,
                             nonlinearity=layer_nonlinearity,
                         ),
-                        # nn.LayerNorm(d_hidden, device="cuda"),
+                        nn.LayerNorm(d_hidden, device="cuda"),
                     )
                     for i in range(extra_layers)
                 ],
@@ -105,8 +113,8 @@ def deep_sae(
 
     # model
     model = Seq(
-        encoder=Seq(
-            pre_bias=Add(bias(d_data)),
+        pre_bias=Add(bias(d_data)),
+        encoder=Parallel(
             layers=Seq(
                 *[
                     Seq(
@@ -121,10 +129,11 @@ def deep_sae(
                     for i in range(extra_layers)
                 ],
             ),
-            weight=MatMul(weight(d_hidden, d_dict)),
-            bias=ft.EncoderBias(bias(d_dict)).resampled(),
-            nonlinearity=nn.ReLU(),
-        ),
+            identity=cl.ops.Identity(),
+        ).reduce(lambda a, b: torch.cat((a, b), dim=-1)),
+        weight=MatMul(weight(d_hidden + d_data, d_dict)),
+        bias=ft.EncoderBias(bias(d_dict)).resampled(),
+        nonlinearity=nn.ReLU(),
         freqs=EMAFreqTracker(),
         L1=L1Penalty(),
         metrics=co.metrics.ActMetrics(),
@@ -143,7 +152,7 @@ def deep_sae(
         L2_loss=L2Loss(model),
         sparsity_loss=SparsityPenaltyLoss(model),
     )
-    return model, losses
+    return [model], losses
 
 
 d_data = 768
