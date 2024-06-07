@@ -28,77 +28,54 @@ from sae_components.components.ops.fnlambda import Lambda
 from sae_components.core.reused_forward import ReuseForward, ReuseCache
 from sae_components.core import Seq
 import sae_components.components.features.features as ft
-from sae_components.architectures.tools import reused, weight, bias, mlp_layer, layer
+from sae_components.architectures.tools import (
+    reused,
+    weight,
+    bias,
+    mlp_layer,
+    layer,
+    Initializer,
+)
 
 import sae_components.components as co
 from sae_components.trainer.trainable import Trainable
 
 
 def gated_sae(
-    d_data,
-    d_dict,
-    tied=True,
+    init: Initializer,
     detach=True,
 ):
-    # parameters
-    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
-    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
 
-    b_enc_mag = nn.Parameter(torch.zeros(d_dict))
+    init._encoder.bias = False
+    init._encoder.add_wrapper(ReuseForward)
 
-    b_enc_gate = nn.Parameter(torch.zeros(d_dict))
-    r_mag = nn.Parameter(torch.ones(d_dict))
-
-    b_dec = nn.Parameter(torch.zeros(d_data))
-
-    # shared components
-    sub_enc_shared_pre_bias = ReuseForward(Sub(b_dec))
-    mm_W_enc = ReuseForward(ft.EncoderWeights(W_enc).resampled())
-
-    # encoders
     enc_mag = Seq(
-        pre_bias=sub_enc_shared_pre_bias,
-        weight=mm_W_enc,
+        pre_bias=ReuseForward(init._decoder.sub_bias()),
         r_mag=cl.ops.MulParallel(
-            identity=cl.ops.Identity(),
+            identity=ReuseForward(init.encoder),
             exp_r=Lambda(
                 func=lambda x: torch.exp(x),
-                module=r_mag,
+                module=init.dict_bias(),
             ),
         ),
-        bias=ft.EncoderBias(b_enc_mag).resampled(),
+        bias=init.new_encoder_bias().resampled(),
         nonlinearity=nn.ReLU(),
     )
 
     enc_gate = ReuseForward(
         Seq(
-            pre_bias=Parallel(left=cl.ops.Identity(), right=b_dec).reduce(
-                (lambda l, r: l - r.detach()) if detach else (lambda l, r: l - r)
+            pre_bias=(
+                Parallel(left=cl.ops.Identity(), right=init.decoder.bias).reduce(
+                    (lambda l, r: l - r.detach())
+                )
+                if detach
+                else ReuseForward(init._decoder.sub_bias())
             ),
-            weight=mm_W_enc,
-            bias=ft.EncoderBias(b_enc_gate).resampled(),
+            weight=ReuseForward(init.encoder),
+            bias=init.new_encoder_bias().resampled(),
             nonlinearity=nn.ReLU(),
         )
     )
-
-    @reused
-    def decoder():
-        if detach:
-            dec = Parallel(left=cl.ops.Identity(), right=W_dec).reduce(
-                lambda l, r: l @ r.detach()
-            )
-            b = Parallel(left=cl.ops.Identity(), right=b_dec).reduce(
-                lambda l, r: l + r.detach()
-            )
-        else:
-            dec = ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(ft.DecoderWeights(MatMul(W_dec)).resampled())
-            )
-            b = cl.ops.Add(b_dec)
-        return Seq(
-            weight=dec,
-            bias=b,
-        )
 
     # models
     gated_model = Seq(
@@ -110,14 +87,14 @@ def gated_sae(
         ),
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),
-        decoder=decoder(),
+        decoder=init.decoder,
     )
 
     model_aux = Seq(  # this one is just used for training the gate appropriately
         encoder=enc_gate,  # oh and it's missing 1-2 detaches
         L1=L1Penalty(),
         freqs=EMAFreqTracker(),
-        decoder=decoder(),
+        decoder=init._decoder.detached if detach else init.decoder,
     )
 
     # losses
@@ -129,8 +106,8 @@ def gated_sae(
     return [gated_model, model_aux], losses
 
 
-def gated_sae_no_detach(d_data, d_dict):
-    return gated_sae(d_data, d_dict, detach=False)
+def gated_sae_no_detach(init):
+    return gated_sae(init, detach=False)
 
 
 def main():

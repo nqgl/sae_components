@@ -1,5 +1,5 @@
 import torch
-from sae_components.components.penalties.penalty import Penalty
+from .penalty import Penalty
 from torch import Tensor
 
 

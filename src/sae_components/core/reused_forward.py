@@ -16,7 +16,10 @@ def _reuse(*, x, keyobj, callable, cache: ReuseCache, **kwargs):
     elif key in cache._ancestor.forward_reuse_dict:
         # print("reuse cache hit")
         return cache._ancestor.forward_reuse_dict[key]
-    output = callable(x, cache=cache, **kwargs)
+    if isinstance(callable, Module):
+        output = callable(x, cache=cache, **kwargs)
+    else:
+        output = callable(x, **kwargs)
     if cache._ancestor.has.forward_reuse_dict:
         cache._ancestor.forward_reuse_dict[key] = output
     else:

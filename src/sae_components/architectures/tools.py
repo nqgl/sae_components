@@ -123,7 +123,7 @@ class LinearFactory:
         self._bias = bias
         self._linear = None
         self._linear_raw = None
-        self.wrappers = []
+        self.wrappers = wrappers
         self._weight_tie: Optional[Tied] = None
         self._bias_tie: Optional[Tied] = None
 
