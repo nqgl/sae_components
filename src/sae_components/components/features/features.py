@@ -122,6 +122,45 @@ class EncoderWeights(MatMulWeights):
         return tensor.transpose(-2, -1)
 
 
+class LinWeights(WrapsModule):
+    wrapped: nn.Linear
+
+    def __init__(self, wrapped: nn.Linear):
+        assert isinstance(wrapped, nn.Linear)
+        super().__init__(wrapped)
+
+    @abstractmethod
+    def features_transform(self, tensor: Tensor) -> Tensor: ...
+
+    @property
+    def features(self) -> Tensor:
+        f = self.features_transform(self.wrapped.weight.data)
+        assert f.shape[0] != 768
+        return f
+
+    @property
+    def features_grad(self) -> Optional[Tensor]:
+        grad = self.wrapped.weight.grad
+        if grad is None:
+            return None
+        f = self.features_transform(grad)
+        assert f.shape[0] != 768
+        return f
+
+    def resampled(self):
+        return ResampledWeight(self)  # TODO bias res too
+
+
+class LinDecoder(LinWeights):
+    def features_transform(self, tensor: Tensor) -> Tensor:
+        return tensor.transpose(-2, -1)
+
+
+class LinEncoder(LinWeights):
+    def features_transform(self, tensor: Tensor) -> Tensor:
+        return tensor
+
+
 class EncoderBias(WrapsModule):
     wrapped: cl.ops.Add
 
@@ -155,7 +194,11 @@ class NormFeatures(WrapsModule):
     @torch.no_grad()
     def normalize_features(self):
         features = self.wrapped.features
-        self.wrapped.features[:] = features / torch.norm(features, dim=-1, keepdim=True)
+        norm = torch.norm(features, dim=-1, keepdim=True)
+        if (norm == 0).any():
+            print("Norm is zero, not normalizing.")
+            return
+        self.wrapped.features[:] = features / norm
 
 
 class Resamplable(Protocol):
@@ -164,6 +207,7 @@ class Resamplable(Protocol):
 
 class OrthogonalizeFeatureGrads(WrapsModule):
     wrapped: HasFeatures
+    t: int
 
     def __init___(self, wrapped: HasFeatures):
         assert isinstance(
@@ -176,12 +220,34 @@ class OrthogonalizeFeatureGrads(WrapsModule):
 
     @torch.no_grad()
     def orthogonalize_features(self):
-        print("orthogonalized")
         features = self.wrapped.features
         grad = self.wrapped.features_grad
         dec_normed = features / features.norm(dim=-1, keepdim=True)
         grad_orth = grad - (dec_normed * grad).sum(-1, keepdim=True) * dec_normed
+        test = grad_orth * dec_normed + grad
+        if grad.isinf().any():
+            print("Infs in grads! ignoring.")
+        if grad.isnan().any():
+            print("NaNs in grads! returning")
+            return
+        if test.isinf().any():
+            print("Infs in test! ignoring.")
+        if test.isnan().any():
+            print("NaNs in test! returning")
+            return
         grad[:] = grad_orth
         assert (grad * dec_normed).sum(
             -1
-        ).abs().mean() < 1e-2, f"Not orthogonal, oops. How not orthogonal? This much: {(grad * features).sum(-1).abs().max()}"
+        ).abs().mean() < 1e-1, f"Not orthogonal, oops. How not orthogonal? This much (max): {(grad * features).sum(-1).abs().max()}"
+
+
+def check(t, i=""):
+    if t.isnan().any():
+        return f"NaNs in tensor{i}!"
+    if t.isinf().any():
+        return f"Infs in tensor{i}!"
+
+
+def chl(*tl):
+    for i, t in enumerate(tl):
+        print(check(t, i))

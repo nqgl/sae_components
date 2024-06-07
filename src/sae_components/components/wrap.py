@@ -28,7 +28,10 @@ class WrapsModule(cl.Module):
     def _get_name(self):
         return f"{self.__class__.__name__}[{self.wrapped._get_name()}]"
 
-    def forward(self, *args, **kwargs):
+    def forward(self, *args, **kwargs):  # TODO do this differently less jank
+        if isinstance(self.wrapped, cl.Module):
+            return self.wrapped(*args, **kwargs)
+        kwargs.pop("cache", None)
         return self.wrapped(*args, **kwargs)
 
     def __getattr__(self, name: str) -> torch.Any:
@@ -125,7 +128,7 @@ def main():
             print("Bwm")
 
     from sae_components.trainer.post_backward_normalization import (
-        post_backward,
+        do_post_backward,
     )
 
     a = cl.Seq(
@@ -140,12 +143,12 @@ def main():
     print("a")
     # model1.apply(post_backward)
     print(model2)
-    model2.apply(post_backward)
+    model2.apply(do_post_backward)
     www = Bwm(Bwm(Bwm(A(a))))
     # www = BMix(BMix(BMix(A(a))))
 
     print(www)
-    www.apply(post_backward)
+    www.apply(do_post_backward)
     print(www.wrapped)
     print(www.wrapped.wrapped.wrapped)
     print([p for p in www.named_parameters()])

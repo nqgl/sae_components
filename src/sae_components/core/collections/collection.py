@@ -33,7 +33,7 @@ class Collection(Module):
                 raise AttributeError(
                     f"Attribute {name} already exists in {self.__class__.__name__}"
                 )
-            if isinstance(module, Module):
+            if isinstance(module, nn.Module):
                 if not _support_modules:
                     raise ValueError(
                         "This collection type does not support modules, but module provided"
@@ -45,6 +45,10 @@ class Collection(Module):
                         "This collection type does not support parameters, but parameter provided"
                     )
                 self.register_parameter(name, module)
+            else:
+                raise ValueError(
+                    "Only nn.Modules and nn.Parameters are allowed in collections"
+                )
 
     def __getitem__(self, key):
         if isinstance(key, int):

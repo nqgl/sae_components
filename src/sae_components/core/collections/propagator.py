@@ -54,7 +54,8 @@ class Propagator(Collection):
 
     def forward(self, x, *, cache: Cache, **kwargs):
         l = []
-        for name, module in self._collection.items():
+        for name in self._collection_names:
+            module = getattr(self, name)
             next_in = self._propagate(x, l, **kwargs)
             l.append(
                 self._output_rule(

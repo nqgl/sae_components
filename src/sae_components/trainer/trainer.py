@@ -7,7 +7,10 @@ from sae_components.components.losses import L2Loss, SparsityPenaltyLoss
 from dataclasses import dataclass, field
 from sae_components.trainer.train_cache import TrainCache
 from sae_components.trainer.trainable import Trainable
-from sae_components.trainer.post_backward_normalization import post_backward, post_step
+from sae_components.trainer.post_backward_normalization import (
+    do_post_backward,
+    do_post_step,
+)
 from .recons import get_recons_loss
 from transformer_lens import HookedTransformer
 from sae_components.data.sc.dataset import DataConfig, SplitConfig, TokensData
@@ -46,14 +49,16 @@ class ModelConfig:
 @dataclass
 class TrainConfig:
     coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=1e-3))
-    optim_config: OptimConfig = OptimConfig()
+    # optim_config: OptimConfig = OptimConfig()
     l0_target: Optional[float] = None
     l0_target_adjustment_size: float = 0.0003
     use_autocast: bool = True
     model_cfg: ModelConfig = field(default_factory=ModelConfig)
     data_cfg: DataConfig = field(default_factory=DataConfig)
-    lr: float = 3e-4
     batch_size: int = 4096
+    wandb_cfg: dict = field(default_factory=dict(project="sae-components"))
+    lr: float = 3e-4
+    betas: tuple[float, float] = (0.9, 0.999)
 
 
 class Trainer:
@@ -68,7 +73,7 @@ class Trainer:
         self.model = model
         # self.sae.provide("optim", self.optim)
         wandb.init(
-            project="sae-components",
+            **cfg.wandb_cfg,
             config={"model": repr(model), "cfg": cfg},
             # entity="sae_all",
             reinit=True,
@@ -80,7 +85,9 @@ class Trainer:
         self.t = 1
         self.extra_calls = []
         self.optim = optim or torch.optim.RAdam(
-            self.model.parameters(), lr=cfg.lr, betas=(0.9, 0.999)
+            self.model.parameters(),
+            lr=cfg.lr,
+            betas=cfg.betas,
         )
 
         self.llm_val_tokens = TokensData(
@@ -90,10 +97,10 @@ class Trainer:
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
 
     def post_backward(self):
-        self.model.apply(post_backward)
+        do_post_backward(self.model)
 
     def post_step(self):
-        self.model.apply(post_step)
+        do_post_step(self.model)
 
     def log(self, d):
         if wandb.run is not None:
@@ -135,7 +142,7 @@ class Trainer:
 
         def tocuda(buffer):
             for bn in buffer:
-                yield bn.cuda()
+                yield bn.cuda().squeeze(0)
 
         def bufferize_fn(buffer):
             def buf_fn():
@@ -148,8 +155,8 @@ class Trainer:
             return buf_fn()
 
         buffer = tocuda(buffer)
-        for _ in range(100):
-            buffer = bufferize_fn(buffer)
+        # for _ in range(100):
+        #     buffer = bufferize_fn(buffer)
 
         for bn in buffer:
             # bn = bn.cuda()
@@ -162,7 +169,7 @@ class Trainer:
 
             cache = TrainCache()
             if self.cfg.use_autocast:
-                with torch.cuda.amp.autocast():
+                with torch.autocast(device_type="cuda"):
                     loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
                     self.proc_cache_after_forward(cache)
 
@@ -175,22 +182,14 @@ class Trainer:
                 self.gradscaler.scale(loss).backward()
             else:
                 loss.backward()
-            # if self.cfg.use_autocast:
-            #     with torch.cuda.amp.autocast():
-            #         self.post_backward()
-            # else:
-            #     self.post_backward()
+            self.post_backward()
 
             if self.cfg.use_autocast:
                 self.gradscaler.step(self.optim)
                 self.gradscaler.update()
             else:
                 self.optim.step()
-            # if self.cfg.use_autocast:
-            #     with torch.cuda.amp.autocast():
-            #         self.post_step()
-            # else:
-            #     self.post_step()
+            self.post_step()
             self.full_log(cache)
             self.t += 1
             # print(f"loss: {loss.item()}")

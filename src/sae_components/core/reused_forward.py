@@ -14,7 +14,7 @@ def _reuse(*, x, keyobj, callable, cache: ReuseCache, **kwargs):
     if not cache._ancestor.has.forward_reuse_dict:
         cache._ancestor.forward_reuse_dict = {}
     elif key in cache._ancestor.forward_reuse_dict:
-        print("reuse cache hit")
+        # print("reuse cache hit")
         return cache._ancestor.forward_reuse_dict[key]
     output = callable(x, cache=cache, **kwargs)
     if cache._ancestor.has.forward_reuse_dict:

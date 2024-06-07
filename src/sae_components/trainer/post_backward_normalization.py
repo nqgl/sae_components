@@ -8,11 +8,24 @@ from jaxtyping import Float
 import sae_components.core as cl
 
 
-def post_backward(module: nn.Module):
-    if hasattr(module, "post_backward_hook"):
-        module.post_backward_hook()
+def find_and_call_attr_on_modules(module: nn.Module, attr: str, *args, **kwargs):
+    """
+    Calls a method on all modules in a module that have the method.
+    Skips duplicates.
+    """
+    fns = {}
+
+    def appl_fn(m):
+        if hasattr(m, attr):
+            fns[getattr(m, attr)] = m
+
+    module.apply(appl_fn)
+    return {m: fn(*args, **kwargs) for fn, m in fns.items()}
 
 
-def post_step(module: nn.Module):
-    if hasattr(module, "post_step_hook"):
-        return module.post_step_hook()
+def do_post_backward(module: nn.Module):
+    find_and_call_attr_on_modules(module, "post_backward_hook")
+
+
+def do_post_step(module: nn.Module):
+    find_and_call_attr_on_modules(module, "post_step_hook")
