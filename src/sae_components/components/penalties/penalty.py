@@ -12,4 +12,13 @@ class Penalty(cl.PassThroughModule):
         cache.sparsity_penalty = self.penalty(x)
 
     @abstractmethod
-    def penalty(self, x, *, cache, **kwargs): ...
+    def penalty(self, x): ...
+
+
+class LambdaPenalty(Penalty):
+    def __init__(self, penalty):
+        super().__init__()
+        self._penalty = penalty
+
+    def penalty(self, x):
+        return self._penalty(x)
