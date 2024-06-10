@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Tuple
-from transformer_lens import HookedTransformer, utils
+from transformer_lens import HookedTransformer
+from saeco.data.sc.model_cfg import ActsDataConfig, ModelConfig
 from saeco.data.sc.tabletensor import Piler
 import datasets
 import torch
@@ -51,21 +52,11 @@ class SplitConfig:
 
 
 @dataclass
-class ActsDataConfig:
-    d_data: int = 768
-    excl_first: bool = False
-    layer_num: int = 6
-    site: str = "resid_pre"
-
-    @property
-    def hook_site(self):
-        return utils.get_act_name(self.site, self.layer_num)
-
-
-@dataclass
 class DataConfig:
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"
     model_name: str = "gpt2"
+    model_cfg: ModelConfig = field(default_factory=ModelConfig)
+    # model_cfg.acts_cfg: ActsDataConfig = field(default_factory=ActsDataConfig)
     trainsplit: SplitConfig = field(
         default_factory=lambda: SplitConfig(
             splitname="train",
@@ -91,8 +82,6 @@ class DataConfig:
     set_bos: bool = True
     seq_mul: int = 2
     seq_len: int = 128
-
-    acts_config: ActsDataConfig = field(default_factory=ActsDataConfig)
 
     def __post_init__(self):
         self.validate_splits()
@@ -133,13 +122,13 @@ class DataConfig:
     ) -> Piler:
         bytes_per_pile = target_gb_per_pile * 2**30
         dtype_bytes = 2  # hardcoded assumption of float16
-        b_per_act = self.acts_config.d_data * dtype_bytes
+        b_per_act = self.model_cfg.acts_cfg.d_data * dtype_bytes
         total_b = split.approx_num_tokens * b_per_act
         num_piles = (total_b + bytes_per_pile - 1) // bytes_per_pile
         return Piler(
             self._acts_piles_path(split),
             dtype=torch.float16,
-            fixed_shape=[self.acts_config.d_data],
+            fixed_shape=[self.model_cfg.acts_cfg.d_data],
             num_piles=(num_piles if write else None),
         )
 
@@ -261,11 +250,11 @@ class ActsData:
                 ):
                     self.model.run_with_hooks(
                         tokens[i : i + llm_batch_size],
-                        stop_at_layer=self.cfg.acts_config.layer_num + 1,
-                        fwd_hooks=[(self.cfg.acts_config.hook_site, hook_fn)],
+                        stop_at_layer=self.cfg.model_cfg.acts_cfg.layer_num + 1,
+                        fwd_hooks=[(self.cfg.model_cfg.acts_cfg.hook_site, hook_fn)],
                     )
         acts = torch.cat(acts_list, dim=0)
-        if self.cfg.acts_config.excl_first:
+        if self.cfg.model_cfg.acts_cfg.excl_first:
             acts = acts[:, 1:]
         acts = einops.rearrange(
             acts,

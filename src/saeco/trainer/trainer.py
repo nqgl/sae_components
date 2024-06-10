@@ -5,6 +5,7 @@ import wandb
 from typing import Protocol, runtime_checkable, Optional
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from dataclasses import dataclass, field
+from saeco.data.sc.model_cfg import ModelConfig
 from saeco.trainer.train_cache import TrainCache
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.post_backward_normalization import (
@@ -12,7 +13,6 @@ from saeco.trainer.post_backward_normalization import (
     do_post_step,
 )
 from .recons import get_recons_loss
-from transformer_lens import HookedTransformer
 from saeco.data.sc.dataset import DataConfig, SplitConfig, TokensData
 
 
@@ -20,30 +20,6 @@ from saeco.data.sc.dataset import DataConfig, SplitConfig, TokensData
 class OptimConfig:
     lr: float = 1e-3
     betas: tuple[float, float] = (0.9, 0.999)
-
-
-@dataclass
-class ModelConfig:
-    layer: int = 6
-    model_name: str = "gpt2-small"
-    site: str = "resid-pre"
-    # d_data: int = 768
-    # expansion_factor: int = 8
-
-    def __post_init__(self):
-        model = None
-
-        def getmodel():
-            nonlocal model
-            if model is None:
-                model = HookedTransformer.from_pretrained(self.model_name)
-            return model
-
-        self._getmodel = getmodel
-
-    @property
-    def model(self) -> HookedTransformer:
-        return self._getmodel()
 
 
 @dataclass
@@ -91,10 +67,14 @@ class Trainer:
         )
 
         self.llm_val_tokens = TokensData(
-            self.cfg.data_cfg, self.cfg.model_cfg.model
+            self.cfg.data_cfg, self.subject_model
         ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
         self.intermittent_metric_freq = 1000
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
+
+    @property
+    def subject_model(self):
+        return self.cfg.data_cfg.model_cfg.model
 
     def post_backward(self):
         do_post_backward(self.model)
@@ -121,12 +101,12 @@ class Trainer:
 
     def get_databuffer(self, num_batches=None, num_workers=0):
         ds = self.cfg.data_cfg.train_dataset(
-            self.cfg.model_cfg.model, batch_size=self.cfg.batch_size
+            self.subject_model, batch_size=self.cfg.batch_size
         )
         return torch.utils.data.DataLoader(ds, num_workers=num_workers)
 
         return self.cfg.data_cfg.train_data_batch_generator(
-            model=self.cfg.model_cfg.model, batch_size=4096, nsteps=num_batches
+            model=self.subject_model, batch_size=4096, nsteps=num_batches
         )
 
     def train(self, buffer=None):
@@ -134,7 +114,7 @@ class Trainer:
             buffer = self.get_databuffer(num_workers=0)
             buffer = iter(buffer)
             # buffer = self.cfg.data_cfg.train_data_batch_generator(
-            #     model=self.cfg.model_cfg.model, batch_size=self.cfg.batch_size
+            #     model=self.subject_model, batch_size=self.cfg.batch_size
             # )
         if self.t <= 1:
             self.model.normalizer.prime_normalizer(buffer)
@@ -209,11 +189,11 @@ class Trainer:
             {
                 (label + k): v
                 for k, v in get_recons_loss(
-                    self.cfg.model_cfg.model,
+                    self.subject_model,
                     self.model,
                     buffer=None,
                     all_tokens=self.llm_val_tokens,
-                    cfg=self.cfg.data_cfg.acts_config,
+                    cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
                     bos_processed_with_hook=proc_bos,
                     num_batches=num_batches,
                 ).items()
