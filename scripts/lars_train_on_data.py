@@ -1,23 +1,23 @@
 # %%
 
 
-from sae_components.data.sc.dataset import DataConfig, SplitConfig
+from saeco.data.sc.dataset import DataConfig, SplitConfig
 from transformer_lens import HookedTransformer
 
-from sae_components.trainer.trainable import Trainable
+from saeco.trainer.trainable import Trainable
 
 gpt2 = HookedTransformer.from_pretrained("gpt2")
 BATCH_SIZE = 4096
 
 
-from sae_components.architectures.gated import gated_sae, gated_sae_no_detach
-from sae_components.architectures.vanilla_tests import (
+from saeco.architectures.gated import gated_sae, gated_sae_no_detach
+from saeco.architectures.vanilla_tests import (
     vanilla_sae,
     basic_vanilla_sae_lin,
     basic_vanilla_sae_lin_no_orth,
 )
-from sae_components.architectures.deep.deep import deep_sae, resid_deep_sae
-from sae_components.architectures.deep.deep_resid_gated import (
+from saeco.architectures.deep.deep import deep_sae, resid_deep_sae
+from saeco.architectures.deep.deep_resid_gated import (
     deep_resid_gated,
     deep_resid_gated2,
     deep_resid_gated2_wider,
@@ -26,15 +26,15 @@ from sae_components.architectures.deep.deep_resid_gated import (
     deep_resid_gated2_wider,
     deep_resid_gated2_wider2,
 )
-from sae_components.architectures.topk import topk_sae
-from sae_components.architectures.remax import remax_sae, remax1_sae
-from sae_components.architectures.deep.catseq import deep_catseq, deep_catseq_resid
+from saeco.architectures.topk import topk_sae
+from saeco.architectures.remax import remax_sae, remax1_sae
+from saeco.architectures.deep.catseq import deep_catseq, deep_catseq_resid
 import wandb
 import torch
-from sae_components.architectures.tools import Initializer
+from saeco.architectures.tools import Initializer
 
 # def test_train(models, losses, name, l0_target=45, lr=3e-4):
-#     from sae_components.trainer.trainer import Trainer, TrainConfig
+#     from saeco.trainer.trainer import Trainer, TrainConfig
 
 #     cfg = TrainConfig(
 #         l0_target=l0_target,
@@ -164,13 +164,13 @@ from abc import ABC, abstractmethod
 from torch import Tensor
 from jaxtyping import Float
 
-from sae_components.architectures.tools import bias
-from sae_components.architectures.tools import weight
-from sae_components.architectures.tools import mlp_layer
-from sae_components.components.ops.detach import Thresh
-import sae_components.core as cl
-from sae_components.core.collections.parallel import Parallel
-from sae_components.components import (
+from saeco.architectures.tools import bias
+from saeco.architectures.tools import weight
+from saeco.architectures.tools import mlp_layer
+from saeco.components.ops.detach import Thresh
+import saeco.core as cl
+from saeco.core.collections.parallel import Parallel
+from saeco.components import (
     Penalty,
     L1Penalty,
     FreqTracked,
@@ -183,18 +183,18 @@ from sae_components.components import (
     SAECache,
 )
 
-# from sae_components.core.linear import Bias, NegBias, Affine, MatMul
-from sae_components.core.basic_ops import Add, MatMul, Sub, Mul
+# from saeco.core.linear import Bias, NegBias, Affine, MatMul
+from saeco.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
-from sae_components.components.ops.fnlambda import Lambda
-from sae_components.core.reused_forward import ReuseForward, ReuseCache
-from sae_components.core import Seq
-import sae_components.components.features.features as ft
-import sae_components.components as co
+from saeco.components.ops.fnlambda import Lambda
+from saeco.core.reused_forward import ReuseForward, ReuseCache
+from saeco.core import Seq
+import saeco.components.features.features as ft
+import saeco.components as co
 
 
-from sae_components.core.collections.seq import ResidualSeq
-from sae_components.trainer.trainable import Trainable
+from saeco.core.collections.seq import ResidualSeq
+from saeco.trainer.trainable import Trainable
 
 # %%
 d_data = 768
@@ -383,7 +383,7 @@ def conditioned_groups(model, d_data, lr=1e-3, perturb_fn=perturb_element):
 #     l0_target=45,
 #     lr=1e-3,
 # )
-from sae_components.trainer.normalizers import (
+from saeco.trainer.normalizers import (
     ConstL2Normalizer,
     Normalized,
     Normalizer,
@@ -392,7 +392,7 @@ from sae_components.trainer.normalizers import (
 
 
 def train_cond(model_fn, l0_target=45, lr=3e-4):
-    from sae_components.trainer.trainer import Trainer, TrainConfig
+    from saeco.trainer.trainer import Trainer, TrainConfig
 
     name = "(cond)" + model_fn.__name__
     models, losses = model_fn(768, 768 * 8)
@@ -422,7 +422,7 @@ PROJECT = "nn.Linear Check"
 
 
 def train_lars(model_fn, l0_target=45, lr=3e-4):
-    from sae_components.trainer.trainer import Trainer, TrainConfig
+    from saeco.trainer.trainer import Trainer, TrainConfig
 
     name = "(lars)" + model_fn.__name__
     models, losses = model_fn(Initializer(768, dict_mult=8))

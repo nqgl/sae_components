@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from transformer_lens import HookedTransformer
-from sae_components.trainer import Trainable
-from sae_components.components.losses import L2Loss, SparsityPenaltyLoss
+from saeco.trainer import Trainable
+from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 
 
 @dataclass

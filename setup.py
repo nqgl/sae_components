@@ -5,7 +5,7 @@ from setuptools import find_packages, setup, find_namespace_packages
 requirements = Path("requirements.txt").read_text("utf-8").splitlines()
 
 setup(
-    name="sae_components",
+    name="saeco",
     version="0.0.1",
     description="SAE modular components.",
     long_description=Path("README.md").read_text("utf-8"),

@@ -1,0 +1,6 @@
+from saeco.core.cache import Cache
+
+
+class SAECache(Cache):
+    forward_reuse_dict: dict = ...
+    sparsity_penalty: float = ...

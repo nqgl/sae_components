@@ -1,23 +1,23 @@
 # %%
 
-from sae_components.data.sc.dataset import DataConfig, SplitConfig
+from saeco.data.sc.dataset import DataConfig, SplitConfig
 from transformer_lens import HookedTransformer
 
-from sae_components.trainer.trainable import Trainable
+from saeco.trainer.trainable import Trainable
 
 gpt2 = HookedTransformer.from_pretrained("gpt2")
 BATCH_SIZE = 4096
 
 
-from sae_components.architectures.gated import gated_sae, gated_sae_no_detach
-from sae_components.architectures.vanilla_tests import (
+from saeco.architectures.gated import gated_sae, gated_sae_no_detach
+from saeco.architectures.vanilla_tests import (
     vanilla_sae,
     basic_vanilla_sae,
     basic_vanilla_sae_lin,
     basic_vanilla_sae_lin_no_orth,
 )
-from sae_components.architectures.deep.deep import deep_sae, resid_deep_sae
-from sae_components.architectures.deep.deep_resid_gated import (
+from saeco.architectures.deep.deep import deep_sae, resid_deep_sae
+from saeco.architectures.deep.deep_resid_gated import (
     deep_resid_gated,
     deep_resid_gated2,
     deep_resid_gated2_wider,
@@ -26,7 +26,7 @@ from sae_components.architectures.deep.deep_resid_gated import (
     deep_resid_gated2_wider,
     deep_resid_gated2_wider2,
 )
-from sae_components.architectures.deep.catseq import deep_catseq, deep_catseq_resid
+from saeco.architectures.deep.catseq import deep_catseq, deep_catseq_resid
 import wandb
 
 import torch
@@ -42,7 +42,7 @@ PROJECT = "nn.Linear Check"
 
 
 def test_train(models, losses, name, l0_target=45, lr=3e-4):
-    from sae_components.trainer.trainer import Trainer, TrainConfig
+    from saeco.trainer.trainer import Trainer, TrainConfig
 
     cfg = TrainConfig(
         l0_target=l0_target,
