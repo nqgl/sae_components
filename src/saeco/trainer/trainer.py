@@ -29,7 +29,7 @@ class TrainConfig:
     l0_target: Optional[float] = None
     l0_target_adjustment_size: float = 0.0003
     use_autocast: bool = True
-    model_cfg: ModelConfig = field(default_factory=ModelConfig)
+    # model_cfg: ModelConfig = field(default_factory=ModelConfig)
     data_cfg: DataConfig = field(default_factory=DataConfig)
     batch_size: int = 4096
     wandb_cfg: dict = field(default_factory=dict(project="sae-components"))
@@ -100,14 +100,21 @@ class Trainer:
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
     def get_databuffer(self, num_batches=None, num_workers=0):
+        return self.cfg.data_cfg.get_databuffer(batch_size=self.cfg.batch_size)
         ds = self.cfg.data_cfg.train_dataset(
-            self.subject_model, batch_size=self.cfg.batch_size
+            self.cfg.data_cfg.model_cfg.model, batch_size=self.cfg.batch_size
         )
         return torch.utils.data.DataLoader(ds, num_workers=num_workers)
 
         return self.cfg.data_cfg.train_data_batch_generator(
             model=self.subject_model, batch_size=4096, nsteps=num_batches
         )
+
+    def get_cache(self):
+        c = TrainCache()
+        for k in self.model.get_losses_and_metrics_names():
+            setattr(c, k, ...)
+        return c
 
     def train(self, buffer=None):
         if buffer is None:
@@ -147,7 +154,7 @@ class Trainer:
                 x = bn
                 y = x
 
-            cache = TrainCache()
+            cache = self.get_cache()
             if self.cfg.use_autocast:
                 with torch.autocast(device_type="cuda"):
                     loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
@@ -177,20 +184,31 @@ class Trainer:
             cache.destroy_children()
             del cache
             if self.t % self.intermittent_metric_freq == 0:
-                self.log_recons("recons/with_bos/", True)
-                self.log_recons("recons/no_bos/", False)
+                self.do_intermittent_metrics()
             # for key in [k for k in cache.forward_reuse_dict.keys()]:
             #     del cache.forward_reuse_dict[key]
             #     del key
             # del x, y, loss, cache
 
-    def log_recons(self, label, proc_bos, num_batches=5):
+    def do_intermittent_metrics(self):
+        self.log_recons("recons/with_bos/", True)
+        self.log_recons("recons/no_bos/", False)
+        self.log_recons("recons_re/with_bos/", True, dumb_rescaled=True)
+        self.log_recons("recons_re/no_bos/", False, dumb_rescaled=True)
+
+    def log_recons(self, label, proc_bos, num_batches=5, dumb_rescaled=False):
+        def run_rescaled_model(x):
+            cache = self.get_cache()
+            cache.scale = ...
+            cache.scale = True
+            return self.model(x, cache=cache)
+
         self.log(
             {
                 (label + k): v
                 for k, v in get_recons_loss(
                     self.subject_model,
-                    self.model,
+                    run_rescaled_model if dumb_rescaled else self.model,
                     buffer=None,
                     all_tokens=self.llm_val_tokens,
                     cfg=self.cfg.data_cfg.model_cfg.acts_cfg,

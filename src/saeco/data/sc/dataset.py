@@ -142,6 +142,16 @@ class DataConfig:
     def train_dataset(self, model, batch_size):
         return ActsDataset(ActsData(self, model), self.trainsplit, batch_size)
 
+    def get_databuffer(self, num_batches=None, num_workers=0, batch_size=4096):
+        ds = self.train_dataset(self.model_cfg.model, batch_size=batch_size)
+        dl = torch.utils.data.DataLoader(ds, num_workers=num_workers)
+
+        def squeezeyielder():
+            for bn in dl:
+                yield bn.cuda().squeeze(0)
+
+        return squeezeyielder()
+
 
 class TokensData:
     def __init__(self, cfg: DataConfig, model: HookedTransformer):
