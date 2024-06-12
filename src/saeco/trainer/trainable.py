@@ -1,5 +1,10 @@
 import saeco.core as cl
-from saeco.components.losses import Loss, L2Loss, SparsityPenaltyLoss
+from saeco.components.losses import (
+    Loss,
+    L2Loss,
+    SparsityPenaltyLoss,
+    CosineSimilarityLoss,
+)
 from saeco.core import Cache
 from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
 from saeco.trainer.train_cache import TrainCache
@@ -19,8 +24,9 @@ class Trainable(cl.Module):
     def __init__(
         self,
         models: list[cl.Module],
-        losses: dict[Loss] = None,
-        extra_losses: dict[Loss] = None,
+        losses: dict[str, Loss] = None,
+        extra_losses: dict[str, Loss] = None,
+        metrics: dict[str, Loss] = None,
         normalizer: Normalizer = None,
     ):
         super().__init__()
@@ -28,11 +34,11 @@ class Trainable(cl.Module):
         assert not any(
             isinstance(m, Normalized) for m in list(losses.values()) + models
         ), "models and losses should not be normalized, the Trainable object is responsible for normalization."
-        self.model = self.normalizer.io_normalize(models[0])
         self.models = nn.ModuleList(models)
+        model = models[0]
         losses = losses or {
-            "l2_loss": L2Loss(self.model),
-            "sparsity_loss": L2Loss(self.model),
+            "L2_loss": L2Loss(model),
+            "sparsity_loss": SparsityPenaltyLoss(model),
         }
         assert extra_losses is None or losses is None
         self.losses = nn.ModuleDict(
@@ -44,6 +50,16 @@ class Trainable(cl.Module):
                 **(extra_losses or {}),
             }
         )
+        metrics = metrics or {"cosim": CosineSimilarityLoss(model)}
+        if not "L2_loss" in self.losses:
+            metrics["L2_loss"] = L2Loss(model)
+        self.metrics = nn.ModuleDict(
+            {
+                name: self.normalizer.input_normalize(metric)
+                for name, metric in metrics.items()
+            }
+        )
+        self.model = self.normalizer.io_normalize(models[0])
 
     def _normalizeIO(mth):
         def wrapper(self, x: torch.Tensor, *, cache: TrainCache, **kwargs):
@@ -56,10 +72,15 @@ class Trainable(cl.Module):
         coeffs = dict(coeffs)
         loss = 0
         for k, L in self.losses.items():
-            l = L(x, y=y, cache=cache[k]) * coeffs.pop(k, 1)
-            setattr(cache, k, l)
-            loss += l
+            m = L(x, y=y, cache=cache[k]) * coeffs.pop(k, 1)
+            setattr(cache, k, m)
+            loss += m
         cache.loss = loss.item()
+        # with torch.no_grad():
+        for k, L in self.metrics.items():
+            m = L(x, y=y, cache=cache[k]) * coeffs.pop(k, 1)
+            setattr(cache, k, m)
+
         assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
         return loss
 
@@ -67,3 +88,6 @@ class Trainable(cl.Module):
         if cache is None:
             cache = TrainCache()
         return self.model(x, cache=cache)
+
+    def get_losses_and_metrics_names(self):
+        return list(self.losses.keys()) + list(self.metrics.keys())
