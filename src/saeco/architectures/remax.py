@@ -4,7 +4,8 @@ from abc import ABC, abstractmethod
 from torch import Tensor
 from jaxtyping import Float
 
-from saeco.architectures.tools import bias, weight, mlp_layer, Initializer
+from saeco.architectures.initialization.initializer import Initializer
+from saeco.architectures.initialization.tools import bias, weight, mlp_layer
 from saeco.components.ops.detach import Thresh
 import saeco.core as cl
 import saeco.core.module
@@ -35,35 +36,88 @@ import saeco.components as co
 
 from saeco.core.collections.seq import ResidualSeq
 from saeco.trainer.trainable import Trainable
-from saeco.components.ops.nonlinearities.softlu_remax import ReMax, ReMax1
+from saeco.components.ops.nonlinearities.softlu_remax import (
+    ReMax,
+    ReMax1,
+    ReMaxK,
+    ReMaxKv,
+)
 
 
-def remax_sae(init: Initializer, remax1=False):
+def useif(cond, **kwargs):
+    return kwargs if cond else {}
+
+
+class L2RescaledLoss(Loss):
+    def loss(self, x, y, y_pred, cache: SAECache):
+        with torch.no_grad():
+            yn = y.norm(dim=1, keepdim=True)
+            y_predn = y_pred.norm(dim=1, keepdim=True)
+            scaling = 0.99 * yn / y_predn
+        return ((y - y_pred * scaling) ** 2).mean()
+
+
+class Rescale(cl.Module):
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        y_pred = self.module(x, cache=cache, **kwargs)
+        if cache._ancestor.has.scale and cache._ancestor.scale:
+            with torch.no_grad():
+                scale = x.norm(dim=1, keepdim=True) / y_pred.norm(dim=1, keepdim=True)
+        else:
+            return y_pred
+        return y_pred * scale
+
+
+def remax_sae(init: Initializer, remax_fn=None, **remax_kwargs):
     scalenet = Seq(
         relu=nn.ReLU(),
         scale=nn.Linear(init.d_dict, 1),
         nonlinearity=Lambda(lambda x: torch.relu(x) + init.d_data**0.5),
     )
 
+    init._decoder.bias = False
+    # b_dec = init.data_bias()
+    scaleparam = nn.Parameter(torch.ones(1))
     model = Seq(
-        encoder=Seq(
-            pre_bias=Sub(init.decoder.bias),
-            lin=init.encoder,
-            nonlinearity=(ReMax1 if remax1 else ReMax)(scale=1),
-            # scale=Mul(nn.Parameter(torch.ones(1))),
-            scale=cl.ops.MulParallel(
-                mag=scalenet,
-                input=cl.ops.Identity(),
-            ),
+        pre_bias=Sub(init.b_dec),
+        resc=Rescale(
+            Seq(
+                encoder=Seq(
+                    lin=init.encoder,
+                    nonlinearity=(remax_fn or ReMax)(
+                        scale=init.d_data**0.5 * 5, **remax_kwargs
+                    ),
+                    # scale=cl.ops.MulParallel(
+                    #     identity=cl.ops.Identity(),
+                    #     scale_exp=Seq(
+                    #         _support_parameters=True,
+                    #         scaleparam=scaleparam,
+                    #         exp=Lambda(torch.exp),
+                    #     ),
+                    # ),
+                    # scale=cl.ops.MulParallel(
+                    #     mag=scalenet,
+                    #     input=cl.ops.Identity(),
+                    # ),
+                ),
+                freqs=EMAFreqTracker(),
+                metrics=co.metrics.ActMetrics(),
+                # null_penalty=LambdaPenalty(lambda x: 0),  # "no sparsity penalty"
+                sparsity_scale_penalty=LambdaPenalty(
+                    lambda x: scaleparam.exp().pow(2).sum()
+                ),
+                decoder=ft.OrthogonalizeFeatureGrads(
+                    ft.NormFeatures(
+                        init.decoder,
+                    ),
+                ),
+            )
         ),
-        freqs=EMAFreqTracker(),
-        metrics=co.metrics.ActMetrics(),
-        null_penalty=LambdaPenalty(lambda x: 0),  # "no sparsity penalty"
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
-                init.decoder,
-            ),
-        ),
+        post_bias=Add(init.b_dec),
     )
 
     models = [model]
@@ -71,8 +125,28 @@ def remax_sae(init: Initializer, remax1=False):
         L2_loss=L2Loss(model),
         sparsity_loss=SparsityPenaltyLoss(model),
     )
+    # losses = dict(
+    #     L2_rescaled_loss=L2RescaledLoss(model),
+    #     sparsity_loss=SparsityPenaltyLoss(model),
+    # )
     return models, losses
 
 
 def remax1_sae(init: Initializer):
     return remax_sae(init, remax1=True)
+
+
+def remaxk_sae(init: Initializer):
+    return remax_sae(init, remax_fn=ReMaxK, norm=2, k=init.l0_target)
+
+
+def remaxkv_sae(init: Initializer):
+    return remax_sae(init, remax_fn=ReMaxKv, k=init.l0_target)
+
+
+def remaxkB_sae(init: Initializer):
+    return remax_sae(init, remax_fn=ReMaxK, norm=2, k=init.l0_target, b=True)
+
+
+def remaxkvB_sae(init: Initializer):
+    return remax_sae(init, remax_fn=ReMaxKv, k=init.l0_target, b=True)
