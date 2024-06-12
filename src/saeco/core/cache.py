@@ -5,7 +5,7 @@ from torch import Tensor, NumberType
 
 # from beartype import beartype as typechecker
 from typeguard import typechecked as typechecker
-
+import inspect
 
 # @dataclass
 
@@ -411,6 +411,28 @@ class Cache:
             del self._subcaches[k]
             del cache
         del self.__dict__
+
+    def __call__(self, obj) -> "SubCacher":
+        return SubCacher(cache=self, obj=obj)
+
+
+class SubCacher:
+    def __init__(self, cache, obj):
+        self._cache: Cache = cache
+        self._obj = obj
+
+    def __getattribute__(self, name: str) -> Any:
+        if name.startswith("_"):
+            return super().__getattribute__(name)
+        obj = getattr(self._obj, name)
+        subcache = self._cache[name]
+        return SubCacher(cache=subcache, obj=obj)
+
+    def __call__(self, *args, **kwargs):
+        assert "cache" not in kwargs
+        if "cache" in inspect.signature(self._obj).parameters:
+            kwargs["cache"] = self._cache
+        return self._obj(*args, **kwargs)
 
 
 class CacheSpec(Cache):
