@@ -24,19 +24,6 @@ from saeco.core.linear import Bias, NegBias, Affine, MatMul
 from typing import Optional
 
 
-class SAE(cl.Seq):
-    encoder: saeco.core.module.Module
-    penalty: saeco.core.module.Module
-    decoder: saeco.core.module.Module
-
-    def __init__(self, encoder, penalty, decoder):
-        super().__init__(
-            encoder=encoder,
-            penalty=penalty,
-            decoder=decoder,
-        )
-
-
 class EncoderLayer(cl.Seq):
     pre_bias: Optional[NegBias]
     affine: Affine
@@ -63,26 +50,6 @@ class EncoderLayer(cl.Seq):
     @property
     def bias(self):
         return self.affine.bias
-
-    # @property
-    # def out_features(self):
-    #     print("called out_features")
-    #     print("self.affine", self.affine)
-    #     print("2")
-    #     return self.affine.out_features
-
-    # @property
-    # def in_features(self):
-    #     return self.affine.in_features
-
-
-class Resampled(saeco.core.module.Module):
-    def __init__(self, module):
-        super().__init__()
-        self.module = module
-
-    def forward(self, x, *, cache: SAECache, **kwargs):
-        return self.module(x, cache=cache, **kwargs)
 
 
 class Resampler:

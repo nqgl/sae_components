@@ -4,7 +4,8 @@ from abc import ABC, abstractmethod
 from torch import Tensor
 from jaxtyping import Float
 
-from saeco.architectures.tools import bias, weight, mlp_layer, Initializer
+from saeco.architectures.initialization.initializer import Initializer
+from saeco.architectures.initialization.tools import bias, weight, mlp_layer
 from saeco.components.ops.detach import Thresh
 import saeco.core as cl
 import saeco.core.module
@@ -45,13 +46,13 @@ def TopK(k):
     return Lambda(_topk)
 
 
-def topk_sae(init: Initializer, cfg={"k": 45}):
+def topk_sae(init: Initializer):
     model = Seq(
         encoder=Seq(
             pre_bias=Sub(init.decoder.bias),
             lin=init.encoder,
             nonlinearity=nn.ReLU(),
-            topk=TopK(cfg["k"]),
+            topk=TopK(init.l0_target),
         ),
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),

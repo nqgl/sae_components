@@ -4,9 +4,9 @@ from abc import ABC, abstractmethod
 from torch import Tensor
 from jaxtyping import Float
 
-from saeco.architectures.tools import bias
-from saeco.architectures.tools import weight
-from saeco.architectures.tools import mlp_layer
+from saeco.architectures.initialization.tools import bias
+from saeco.architectures.initialization.tools import weight
+from saeco.architectures.initialization.tools import mlp_layer
 from saeco.components.ops.detach import Thresh
 import saeco.core as cl
 import saeco.core.module

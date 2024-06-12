@@ -50,12 +50,17 @@ class SparsityPenaltyLoss(Loss):
         assert (
             len(sparsity_losses) == 1
         ), "Expected exactly one sparsity penalty. We may want to support >1 in the future, so this may or may not be a bug."
-        return sparsity_losses[0].sparsity_penalty
+        return sparsity_losses[0].sparsity_penalty.squeeze()
 
 
 @runtime_checkable
 class HasLosses(Protocol):
     losses: List[Loss]
+
+
+class CosineSimilarityLoss(Loss):
+    def loss(self, x, y, y_pred, cache: SAECache):
+        return torch.cosine_similarity(y, y_pred, dim=-1).mean()
 
 
 # # Maybe the losses should just be functions and take (model, x, cache) as arguments
