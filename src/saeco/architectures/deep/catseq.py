@@ -5,7 +5,13 @@ from torch import Tensor
 from jaxtyping import Float
 from saeco.components.ops.fnlambda import Lambda
 
-from saeco.architectures.tools import reused, weight, bias, mlp_layer, layer
+from saeco.architectures.initialization.tools import (
+    reused,
+    weight,
+    bias,
+    mlp_layer,
+    layer,
+)
 from saeco.components.ops.detach import Thresh
 import saeco.core as cl
 import saeco.core.module
