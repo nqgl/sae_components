@@ -25,7 +25,15 @@
             "request": "launch",
             "program": "scripts/lars_train_on_data.py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Run Training with Runner",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/saeco/trainer/runner.py",
+            "console": "integratedTerminal"
         }
+
 
 
 

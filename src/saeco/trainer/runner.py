@@ -123,7 +123,7 @@ cfg = TrainConfig(
     coeffs={
         "sparsity_loss": 2e-3 if l0_target is None else 14e-4,
     },
-    lr=1e-3,
+    lr=3e-4,
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
     l0_target_adjustment_size=0.001,

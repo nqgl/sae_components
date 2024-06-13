@@ -45,11 +45,15 @@ class L2Loss(Loss):
 
 
 class SparsityPenaltyLoss(Loss):
+    def __init__(self, module, num_expeted=1):
+        self.num_expected = num_expeted
+        super().__init__(module)
+
     def loss(self, x, y, y_pred, cache: SAECache):
         sparsity_losses = [c for c in cache._ancestor.search("sparsity_penalty")]
         assert (
-            len(sparsity_losses) == 1
-        ), "Expected exactly one sparsity penalty. We may want to support >1 in the future, so this may or may not be a bug."
+            len(sparsity_losses) == self.num_expected
+        ), f"Expected exactly one (or self.num_expected) sparsity penalt(y/ies), but got {len(sparsity_losses)}. We may want to support >1 in the future, so this may or may not be a bug."
         return sparsity_losses[0].sparsity_penalty.squeeze()
 
 
