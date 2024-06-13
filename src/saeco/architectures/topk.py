@@ -56,7 +56,7 @@ def topk_sae(init: Initializer):
         ),
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),
-        null_penalty=LambdaPenalty(lambda x: 0),  # "no sparsity penalty"
+        null_penalty=LambdaPenalty(lambda x: torch.zeros(1)),  # "no sparsity penalty"
         decoder=ft.OrthogonalizeFeatureGrads(
             ft.NormFeatures(
                 init.decoder,

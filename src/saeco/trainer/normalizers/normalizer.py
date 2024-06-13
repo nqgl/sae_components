@@ -36,6 +36,20 @@ class Normalizer(cl.Module, ABC):
         return NormalizedInputs(model=module, normalizer=self)
 
 
+class Normalizer2(Protocol):
+    def forward(self, x, *, cache: cl.Cache):
+        return self.normalize(x, cache=cache)
+
+    def prime_normalizer(self, buffer, n=100):
+        pass
+
+    def io_normalize(self, module) -> "NormalizedIO":
+        return NormalizedIO(model=module, normalizer=self)
+
+    def input_normalize(self, module) -> "NormalizedInputs":
+        return NormalizedInputs(model=module, normalizer=self)
+
+
 class L2Normalizer(Normalizer):
     def _get_normalization_factor(self, x):
         return torch.linalg.vector_norm(x, dim=-1, ord=2, keepdim=True)

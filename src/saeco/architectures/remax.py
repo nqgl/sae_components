@@ -44,10 +44,6 @@ from saeco.components.ops.nonlinearities.softlu_remax import (
 )
 
 
-def useif(cond, **kwargs):
-    return kwargs if cond else {}
-
-
 class L2RescaledLoss(Loss):
     def loss(self, x, y, y_pred, cache: SAECache):
         with torch.no_grad():
@@ -72,7 +68,22 @@ class Rescale(cl.Module):
         return y_pred * scale
 
 
-def remax_sae(init: Initializer, remax_fn=None, **remax_kwargs):
+class RangeLimited(cl.Module):
+    def __init__(self, param, min, max):
+        super().__init__()
+        self.param = param
+        self.min = min
+        self.max = max
+
+    @torch.no_grad()
+    def post_step_hook(self):
+        self.param.data.clamp_(self.min, self.max)
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        return self.param
+
+
+def remax_sae(init: Initializer, remax_fn=None, basescale=50, **remax_kwargs):
     scalenet = Seq(
         relu=nn.ReLU(),
         scale=nn.Linear(init.d_dict, 1),
@@ -88,8 +99,9 @@ def remax_sae(init: Initializer, remax_fn=None, **remax_kwargs):
             Seq(
                 encoder=Seq(
                     lin=init.encoder,
-                    nonlinearity=(remax_fn or ReMax)(
-                        scale=init.d_data**0.5 * 5, **remax_kwargs
+                    nonlinearity=(remax_fn or ReMax)(scale=basescale, **remax_kwargs),
+                    scale=cl.ops.Mul(
+                        RangeLimited(scaleparam, 0.9, 1.05),
                     ),
                     # scale=cl.ops.MulParallel(
                     #     identity=cl.ops.Identity(),
@@ -107,9 +119,7 @@ def remax_sae(init: Initializer, remax_fn=None, **remax_kwargs):
                 freqs=EMAFreqTracker(),
                 metrics=co.metrics.ActMetrics(),
                 # null_penalty=LambdaPenalty(lambda x: 0),  # "no sparsity penalty"
-                sparsity_scale_penalty=LambdaPenalty(
-                    lambda x: scaleparam.exp().pow(2).sum()
-                ),
+                sparsity_scale_penalty=LambdaPenalty(lambda x: torch.zeros(1)),
                 decoder=ft.OrthogonalizeFeatureGrads(
                     ft.NormFeatures(
                         init.decoder,
@@ -132,21 +142,21 @@ def remax_sae(init: Initializer, remax_fn=None, **remax_kwargs):
     return models, losses
 
 
-def remax1_sae(init: Initializer):
-    return remax_sae(init, remax1=True)
+def remax1_sae(init: Initializer, **kwargs):
+    return remax_sae(init, remax1=True, **kwargs)
 
 
-def remaxk_sae(init: Initializer):
-    return remax_sae(init, remax_fn=ReMaxK, norm=2, k=init.l0_target)
+def remaxk_sae(init: Initializer, **kwargs):
+    return remax_sae(init, remax_fn=ReMaxK, norm=1, k=init.l0_target, **kwargs)
 
 
-def remaxkv_sae(init: Initializer):
-    return remax_sae(init, remax_fn=ReMaxKv, k=init.l0_target)
+def remaxkv_sae(init: Initializer, **kwargs):
+    return remax_sae(init, remax_fn=ReMaxKv, k=init.l0_target, **kwargs)
 
 
-def remaxkB_sae(init: Initializer):
-    return remax_sae(init, remax_fn=ReMaxK, norm=2, k=init.l0_target, b=True)
+def remaxkB_sae(init: Initializer, **kwargs):
+    return remax_sae(init, remax_fn=ReMaxK, norm=1, k=init.l0_target, b=True, **kwargs)
 
 
-def remaxkvB_sae(init: Initializer):
-    return remax_sae(init, remax_fn=ReMaxKv, k=init.l0_target, b=True)
+def remaxkvB_sae(init: Initializer, **kwargs):
+    return remax_sae(init, remax_fn=ReMaxKv, k=init.l0_target, b=True, **kwargs)

@@ -10,6 +10,7 @@ BATCH_SIZE = 4096
 
 from saeco.architectures.initialization.geo_med import getmed, getmean
 from saeco.architectures.gated import gated_sae, gated_sae_no_detach
+from saeco.architectures.gate_hierarch import gate_two_weights
 from saeco.architectures.vanilla_tests import (
     vanilla_sae,
     basic_vanilla_sae,
@@ -36,7 +37,7 @@ from saeco.architectures.remax import (
     remaxkB_sae,
     remaxkvB_sae,
 )
-
+from saeco.architectures.topk import topk_sae
 import torch
 import sys
 from saeco.architectures.initialization.initializer import Initializer
@@ -47,7 +48,6 @@ from saeco.trainer.normalizers import (
     L2Normalizer,
 )
 
-sys.setrecursionlimit(10**5)
 
 torch.set_float32_matmul_precision("medium")
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -77,7 +77,7 @@ PROJECT = "nn.Linear Check"
 #     trainer.train()
 
 
-def test_train(model_fn, l0_target=45, lr=3e-4, normalizer=None):
+def test_train(model_fn, l0_target=45, lr=3e-4, normalizer=None, **kwargs):
     from saeco.trainer.trainer import Trainer, TrainConfig
 
     normalizer = normalizer or ConstL2Normalizer()
@@ -92,8 +92,10 @@ def test_train(model_fn, l0_target=45, lr=3e-4, normalizer=None):
         lr=lr,
         use_autocast=True,
         wandb_cfg=dict(project=PROJECT),
-        l0_target_adjustment_size=0.003,
+        l0_target_adjustment_size=0.001,
         batch_size=4096,
+        use_lars=True,
+        kwargs=kwargs,
     )
     buf = iter(cfg.data_cfg.get_databuffer())
     normalizer.prime_normalizer(buf)
@@ -103,7 +105,8 @@ def test_train(model_fn, l0_target=45, lr=3e-4, normalizer=None):
             dict_mult=8,
             l0_target=l0_target,
             median=getmed(buf=buf, normalizer=normalizer),
-        )
+        ),
+        **kwargs,
     )
 
     trainable = Trainable(models, losses, normalizer=normalizer).cuda()
@@ -113,7 +116,17 @@ def test_train(model_fn, l0_target=45, lr=3e-4, normalizer=None):
     trainer.train(buf)
 
 
+# test_train(gated_sae, l0_target=45)
+test_train(topk_sae, l0_target=45)
+test_train(gate_two_weights, lr=1e-3, l0_target=45)
+
+# for i in range(20, 85, 5):
+#     test_train(remaxk_sae, lr=1e-3, l0_target=45, basescale=i)
+# for i in range(20, 85, 5):
+#     test_train(remaxk_sae, l0_target=45, basescale=i)
+
 # models = [resid_deep_sae, deep_resid_gated2, gated_sae]
+
 # models = [deep_catseq_resid, vanilla_sae, deep_catseq]
 models = [deep_resid_gated2_deeper]
 models = [deep_resid_gated2_deeper_still]
@@ -123,10 +136,14 @@ models = [deep_sae]
 models = [gated_sae_no_detach, gated_sae]
 models = [
     remaxk_sae,
+    remax_sae,
+    remaxk_sae,
     remaxkB_sae,
     remaxkv_sae,
     remaxkvB_sae,
 ]
+models = [gate_two_weights]
+
 
 # test_train(
 #     *deep_resid_gated2(768, 768 * 8),

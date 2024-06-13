@@ -42,8 +42,8 @@ class ReMaxK(nn.Module):
 
     def forward(self, x):
         v = torch.relu(x)
-        v, i = x.topk(self.k, dim=-1, sorted=False)
-        vk = torch.zeros_like(x).scatter_(-1, i, v)
+        val, i = x.topk(self.k, dim=-1, sorted=False)
+        vk = torch.zeros_like(x).scatter_(-1, i, val)
 
         mag = (
             v.sum(dim=-1, keepdim=True)
@@ -59,7 +59,8 @@ class ReMaxK(nn.Module):
             out = vk / (1 + mag - magk)
         else:
             # out = vk / mag * magk
-            out = vk / (mag - magk / (2**0.5) + 1e-7)
+            # out = vk / (mag - magk / (2**0.5) + 1e-7)
+            out = vk / mag
 
         return torch.where(torch.isnan(out) | torch.isinf(out), 0, out) * self.scale
 

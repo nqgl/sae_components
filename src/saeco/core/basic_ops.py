@@ -22,7 +22,7 @@ class Mul(MulParallel):
 
     #
     def __init__(self, mul):
-        assert not isinstance(mul, nn.Module)
+        # assert not isinstance(mul, nn.Module)
         super().__init__(
             identity=Identity(),
             multiplier=mul,

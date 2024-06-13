@@ -33,6 +33,7 @@ class Tied:
             dst_param = getattr(other, self.site)
             assert isinstance(self.target, torch.Tensor)
             dst_param.data[:] = self.target
+            return
         src_param = getattr(self.target.raw, self.site)
         if self.tie_type == self.INIT:
             dst_param = getattr(other, self.site)
@@ -88,7 +89,12 @@ class LinearFactory:
             self._weight_tie(lin)
         if self.bias and self._bias_tie is not None:
             self._bias_tie(lin)
-        self._linear_raw = lin
+        if self._linear_raw is not None:
+            lin.weight.data[:] = self._linear_raw.weight.data
+            if self.bias:
+                lin.bias.data[:] = self._linear_raw.bias.data
+        else:
+            self._linear_raw = lin
         for w in self.wrappers:
             lin = w(lin)
         return lin

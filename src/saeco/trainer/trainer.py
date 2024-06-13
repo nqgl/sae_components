@@ -35,6 +35,8 @@ class TrainConfig:
     wandb_cfg: dict = field(default_factory=dict(project="sae-components"))
     lr: float = 3e-4
     betas: tuple[float, float] = (0.9, 0.999)
+    use_lars: bool = False
+    kwargs: dict = field(default_factory=dict)
 
 
 class Trainer:
@@ -55,8 +57,9 @@ class Trainer:
             reinit=True,
         )
         if namestuff is not None:
+            lars = "(lars)" if cfg.use_lars else ""
             wandb.run.name = (
-                f"{namestuff}[{cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
+                f"{lars}{namestuff}[{cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
             )
         self.t = 1
         self.extra_calls = []
@@ -65,6 +68,11 @@ class Trainer:
             lr=cfg.lr,
             betas=cfg.betas,
         )
+        if self.cfg.use_lars:
+            from torchlars import LARS
+
+            self.optim = LARS(self.optim)
+            assert optim is None or not isinstance(optim, LARS)
 
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model
@@ -100,14 +108,8 @@ class Trainer:
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
     def get_databuffer(self, num_batches=None, num_workers=0):
-        return self.cfg.data_cfg.get_databuffer(batch_size=self.cfg.batch_size)
-        ds = self.cfg.data_cfg.train_dataset(
-            self.cfg.data_cfg.model_cfg.model, batch_size=self.cfg.batch_size
-        )
-        return torch.utils.data.DataLoader(ds, num_workers=num_workers)
-
-        return self.cfg.data_cfg.train_data_batch_generator(
-            model=self.subject_model, batch_size=4096, nsteps=num_batches
+        return self.cfg.data_cfg.get_databuffer(
+            num_workers=num_workers, batch_size=self.cfg.batch_size
         )
 
     def get_cache(self):
@@ -127,26 +129,8 @@ class Trainer:
             self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
 
-        def tocuda(buffer):
-            for bn in buffer:
-                yield bn.cuda().squeeze(0)
-
-        def bufferize_fn(buffer):
-            def buf_fn():
-                p = next(buffer)
-                for bn in buffer:
-                    # bn = bn.cuda()
-                    yield p
-                    p = bn
-
-            return buf_fn()
-
-        buffer = tocuda(buffer)
-        # for _ in range(100):
-        #     buffer = bufferize_fn(buffer)
-
         for bn in buffer:
-            # bn = bn.cuda()
+            bn = bn.cuda()
             self.optim.zero_grad()
             if isinstance(bn, tuple):
                 x, y = bn

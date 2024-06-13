@@ -12,3 +12,4 @@ from .metrics import metrics
 from .metrics.metrics import Metrics
 from .features.features import LinDecoder, LinEncoder, EncoderBias
 from . import ops
+from .utils import useif
