@@ -11,7 +11,11 @@ from saeco.trainer.trainer import Trainer, TrainConfig
 
 from saeco.architectures.initialization.geo_med import getmed, getmean
 from saeco.architectures.gated import gated_sae, gated_sae_no_detach
-from saeco.architectures.gate_hierarch import gate_two_weights, hierarchical
+from saeco.architectures.gate_hierarch import (
+    gate_two_weights,
+    hierarchical,
+    hierarchical_l1scale,
+)
 from saeco.architectures.vanilla_tests import (
     vanilla_sae,
     basic_vanilla_sae,
@@ -123,14 +127,14 @@ cfg = TrainConfig(
     coeffs={
         "sparsity_loss": 2e-3 if l0_target is None else 14e-4,
     },
-    lr=3e-4,
+    lr=1e-3,
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.001,
+    l0_target_adjustment_size=0.0003,
     batch_size=4096,
     use_lars=True,
 )
-tr = TrainingRunner(cfg, hierarchical)
+tr = TrainingRunner(cfg, hierarchical_l1scale)
 tr.normalizer = ConstL2Normalizer()
 tr.trainer
 # %%

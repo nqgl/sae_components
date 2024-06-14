@@ -41,6 +41,7 @@ from saeco.architectures.initialization.tools import (
 import saeco.components as co
 from saeco.trainer.trainable import Trainable
 import einops
+from saeco.components.gated import HGated, Gated
 
 
 def gate_two_weights(init: Initializer, detach=True, untied=True):
@@ -103,15 +104,8 @@ class HierarchicalInitializer(Initializer):
 
 
 def hierarchical(init: Initializer, detach=True, untied=True):
-    # init._encoder.bias = False
     init._encoder.add_wrapper(ReuseForward)
-    # init._decoder.add_wrapper(
-    # init._decoder.add_wrapper(
-    # W_dec = ex
-    # ft.NormFeatures
-
-    #     ft.OrthogonalizeFeatureGrads
-    BF = 2**7
+    BF = 2**4
     tl_init = Initializer(init.d_data, init.d_dict // BF)
     init._decoder.bias = False
 
@@ -139,25 +133,12 @@ def hierarchical(init: Initializer, detach=True, untied=True):
         return er
 
     def mul(er, param):
-        # param  # d1 d2
-        # want to re to d1/4 d2 * 4
-        # einops.rearrange(param, "(a m) b -> a (m b)", m=4)
-
-        # einops.rearrange(param, "(d1 d2) o -> d1 (d2 o)", d1=BF, d2=init.d_dict // BF)
-        # o = einops.einsum(
-        #     er,
-        #     einops.rearrange(
-        #         param, "(d1 d2) o -> d1 (d2 o)", d1=BF, d2=init.d_dict // BF
-        #     ),
-        #     "a b, b o -> a o",
-        # )
         return einops.einsum(er, param, "b hl ll, hl ll d -> b hl d")
 
     sub_b_dec = ReuseForward(Sub(init.b_dec))
     add_b_dec = ReuseForward(Add(init.b_dec))
-    directions = ReuseForward(
+    directions = ReuseForward(  # There is no norming or orthogonalization here
         Seq(
-            # pre_bias=ReuseForward(sub_b_dec),
             enc=enc_mag,
             metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
             l1_shrink=Parallel(
@@ -216,3 +197,76 @@ def hierarchical(init: Initializer, detach=True, untied=True):
     )
 
     return [full_model, model_aux], losses
+
+
+def hierarchical_l1scale(init: Initializer, detach=True, untied=True):
+    init._encoder.add_wrapper(ReuseForward)
+    init._decoder.add_wrapper(ft.NormFeatures)
+    init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+    BF = 2**4
+    tl_init = Initializer(init.d_data, init.d_dict // BF)
+    # init._decoder.bias = False
+
+    enc_mag = Seq(
+        lin=init.encoder,
+        nonlinearity=nn.ReLU(),
+    )
+
+    enc_gate = Seq(
+        lin=init._encoder.make_new(),
+        nonlinearity=nn.ReLU(),
+    )
+
+    enc_hl = ReuseForward(
+        Seq(
+            lin=(tl_init.encoder),
+            nonlinearity=nn.ReLU(),
+        )
+    )
+    LL = BF
+    HL = init.d_dict // BF
+
+    def model(enc, penalties, metrics):
+        return Seq(
+            pre_bias=ReuseForward(init._decoder.sub_bias()),
+            encoder=enc,
+            freqs=EMAFreqTracker(),
+            **penalties,
+            metrics=metrics,
+            decoder=init.decoder,
+        )
+
+    gated = Gated(gate=enc_gate, mag=enc_mag)
+    hgated = HGated(hl=enc_hl, ll=gated, bf=BF)
+
+    model_aux0 = model(
+        gated.aux(),
+        penalties=dict(l1=L1Penalty()),
+        metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
+    )
+
+    model_aux1 = model(
+        hgated.aux(),
+        penalties=dict(l1=L1Penalty()),
+        metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
+    )
+
+    model_full = model(
+        hgated.full(),
+        penalties={},
+        metrics=co.metrics.ActMetrics(),
+    )
+
+    models = [model_full, model_aux0, model_aux1]
+
+    losses = dict(
+        L2_loss=L2Loss(model_full),
+        L2_aux_loss0=L2Loss(model_aux0),
+        L2_aux_loss1=L2Loss(model_aux1),
+        sparsity_loss=SparsityPenaltyLoss(model_aux0, num_expeted=2),
+    )
+    return models, losses
+
+
+# if __name__ == "__main__":
+#     from saeco.trainer.runner import TrainingRunner
