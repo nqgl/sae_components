@@ -39,7 +39,7 @@ from saeco.components.gated import HGated, Gated
 
 
 def hierarchical_l1scale(
-    init: Initializer, num_levels=2, BF=2**5, detach=True, untied=True
+    init: Initializer, num_levels=2, BF=2**5, detach=False, untied=True
 ):
     init._encoder.add_wrapper(ReuseForward)
     init._decoder.add_wrapper(ft.NormFeatures)
@@ -48,14 +48,14 @@ def hierarchical_l1scale(
 
     def model(enc, penalties, metrics, detach=False):
         return Seq(
-            pre_bias=ReuseForward(init._decoder.sub_bias()),
-            **(
-                dict(
-                    detach=co.ops.Lambda(lambda x: x.detach()),
-                )
-                if detach
-                else {}
-            ),
+            # pre_bias=ReuseForward(init._decoder.sub_bias()),
+            # **(
+            #     dict(
+            #         detach=co.ops.Lambda(lambda x: x.detach()),
+            #     )
+            #     if detach
+            #     else {}
+            # ),
             encoder=enc,
             freqs=EMAFreqTracker(),
             **penalties,
@@ -74,19 +74,19 @@ def hierarchical_l1scale(
     )
     gated = Gated(gate=enc_gate, mag=enc_mag)
 
-    model_aux0 = model(
-        gated.aux(),
-        penalties=dict(l1=L1Penalty()),
-        metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
-        detach=detach,
-    )
+    # model_aux0 = model(
+    #     gated.aux(),
+    #     penalties=dict(l1=L1Penalty()),
+    #     metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
+    #     detach=detach,
+    # )
 
-    losses = {
-        "L2_aux_loss0": L2Loss(model_aux0),
-    }
+    # losses = {
+    #     "L2_aux_loss0": L2Loss(model_aux0),
+    # }
 
-    models = [model_aux0]
-    encoders = [gated.full()]
+    layer = gated
+    losses = {}
     for l in range(1, num_levels + 1):
         bf = BF**l
         enc_hl = ReuseForward(
@@ -96,20 +96,21 @@ def hierarchical_l1scale(
             )
         )
 
-        hgated = HGated(hl=enc_hl, ll=encoders[-1], bf=bf)
-
-        hl_model_aux = model(
-            hgated.aux(),
-            penalties=dict(l1=L1Penalty(2.2**l)),
+        layer = HGated(hl=enc_hl, ll=layer, bf=bf)
+    L1_SCALE_BASE = 1
+    models = []
+    for l in range(num_levels + 1):
+        aux_model = model(
+            enc=layer.aux(num_levels - l),
+            penalties=dict(l1=L1Penalty(L1_SCALE_BASE**l)),
             metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
             detach=detach,
         )
-        models.append(hl_model_aux)
-        encoders.append(hgated.full())
-        losses[f"L2_aux_loss{l}"] = L2Loss(hl_model_aux)
+        losses[f"L2_aux_loss{l}"] = L2Loss(aux_model)
+        models.append(aux_model)
 
     model_full = model(
-        hgated.full(), penalties={}, metrics=co.metrics.ActMetrics(), detach=False
+        layer.full(), penalties={}, metrics=co.metrics.ActMetrics(), detach=False
     )
 
     models = [model_full, *models]

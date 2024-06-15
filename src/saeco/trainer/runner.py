@@ -127,13 +127,13 @@ cfg = TrainConfig(
     coeffs={
         "sparsity_loss": 2e-3 if l0_target is None else 8e-4,
     },
-    lr=3e-4,
+    lr=1e-3,
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.0001,
+    l0_target_adjustment_size=0.0003,
     batch_size=4096,
     use_lars=True,
-    betas=(0.9, 0.99),
+    betas=(0.9, 0.999),
 )
 tr = TrainingRunner(cfg, hierarchical_l1scale)
 

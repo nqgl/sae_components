@@ -16,7 +16,8 @@ class Gated(cl.Parallel):
         self.cond = cond
         self.reduce(lambda g, v: self.cond(g) * v)
 
-    def aux(self):
+    def aux(self, i=0):
+        assert i == 0
         return self.gate
 
     def full(self):
@@ -87,7 +88,7 @@ class HGateExpand(cl.Module):
 
 
 class HGated:
-    def __init__(self, hl, ll, bf, normalization=2):
+    def __init__(self, hl, ll, bf, normalization=1):
         self.hl = cl.ReuseForward(
             HGateExpand(
                 gate=cl.Seq(
@@ -110,17 +111,22 @@ class HGated:
             else normalization
         )
 
-    def aux(self):
-        return cl.ops.MulParallel(
-            gate_aux=self.hl,
-            directions=cl.Seq(
-                ll=self.ll,
-                normalization=self.normalization,
-            ),
+    def aux(self, i):
+        if i == 0:
+            return cl.ops.MulParallel(
+                gate_aux=self.hl,
+                directions=cl.Seq(
+                    ll=self.ll.module.full(),
+                    normalization=self.normalization,
+                ),
+            )
+        return Gated(
+            gate=self.hl,
+            mag=self.ll.module.aux(i - 1),
         )
 
     def full(self):
         return Gated(
             gate=self.hl,
-            mag=self.ll,
+            mag=self.ll.module.full(),
         )
