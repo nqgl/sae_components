@@ -17,11 +17,24 @@ class DetachedLinear(nn.Module):
         )
 
 
-class Tied:
+class BiasDetachedLinear(nn.Module):
+    def __init__(self, lin):
+        super().__init__()
+        self.lin = lin
 
+    def forward(self, x):
+        return torch.nn.functional.linear(
+            x,
+            self.lin.weight,
+            self.lin.bias.detach(),
+        )
+
+
+class Tied:
     INIT = 0
     TIED = 1
     TO_VALUE = 2
+    INIT_FN = 3
 
     def __init__(self, target: "LinearFactory", tie_type, site: str):
         self.target = target
@@ -33,6 +46,12 @@ class Tied:
             dst_param = getattr(other, self.site)
             assert isinstance(self.target, torch.Tensor)
             dst_param.data[:] = self.target
+            return
+        if self.tie_type == self.INIT_FN:
+            dst_param = getattr(other, self.site)
+            o = self.target(dst_param.data)
+            if o is not None:
+                dst_param.data = o
             return
         src_param = getattr(self.target.raw, self.site)
         if self.tie_type == self.INIT:
@@ -117,6 +136,10 @@ class LinearFactory:
     @property
     def detached(self):
         return DetachedLinear(self.lin)  # should this use raw?
+
+    @property
+    def biasdetached(self):
+        return BiasDetachedLinear(self.lin)  # should this use raw?
 
     def tie_weights(self, other):
         assert self.unset

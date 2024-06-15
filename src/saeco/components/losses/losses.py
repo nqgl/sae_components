@@ -54,7 +54,10 @@ class SparsityPenaltyLoss(Loss):
         assert (
             len(sparsity_losses) == self.num_expected
         ), f"Expected exactly one (or self.num_expected) sparsity penalt(y/ies), but got {len(sparsity_losses)}. We may want to support >1 in the future, so this may or may not be a bug."
-        return sparsity_losses[0].sparsity_penalty.squeeze()
+        l = 0
+        for sp_cache in sparsity_losses:
+            l += sp_cache.sparsity_penalty.squeeze()
+        return l
 
 
 @runtime_checkable

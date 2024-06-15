@@ -1,13 +1,12 @@
 from saeco.core.cache import Cache
 from saeco.core.module import Module
-
+from saeco.misc.exception_location_hint import locate_cache_exception
 import torch
 import torch.nn as nn
 
 
-CE_STR = "CacheExceptionLocationInfo: Except inside of subcache path: "
-
-
+# TODO unify/merge this and cache.__call__
+# either merge, or make the behaviors identical to avoid inconsistent behavioir
 def proc_appropriately(module, name, x, cache: Cache, **kwargs):
     try:
         if isinstance(module, Module):
@@ -18,8 +17,5 @@ def proc_appropriately(module, name, x, cache: Cache, **kwargs):
             val = module(x)
         cache._write(name, val)
     except Exception as e:
-        if not any([CE_STR in a for a in e.args]):
-            e.args = e.args + (f"{CE_STR}{cache._name}.{name}",)
-
-        raise e
+        raise locate_cache_exception(e, cache, name)
     return val

@@ -1,5 +1,6 @@
 # %%
 
+from saeco.architectures.gate_two_weights import gate_two_weights
 from saeco.data.sc.dataset import DataConfig, SplitConfig
 from transformer_lens import HookedTransformer
 
@@ -12,8 +13,6 @@ from saeco.trainer.trainer import Trainer, TrainConfig
 from saeco.architectures.initialization.geo_med import getmed, getmean
 from saeco.architectures.gated import gated_sae, gated_sae_no_detach
 from saeco.architectures.gate_hierarch import (
-    gate_two_weights,
-    hierarchical,
     hierarchical_l1scale,
 )
 from saeco.architectures.vanilla_tests import (
@@ -81,6 +80,7 @@ class TrainingRunner:
             dict_mult=8,
             l0_target=self.cfg.l0_target,
             median=getmed(buf=self.buf, normalizer=self.normalizer),
+            # weight_scale=2,
         )
 
     @defer_to_and_set("_model_fn_output")
@@ -125,16 +125,18 @@ PROJECT = "nn.Linear Check"
 cfg = TrainConfig(
     l0_target=l0_target,
     coeffs={
-        "sparsity_loss": 2e-3 if l0_target is None else 14e-4,
+        "sparsity_loss": 2e-3 if l0_target is None else 8e-4,
     },
-    lr=1e-3,
+    lr=3e-4,
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.0003,
+    l0_target_adjustment_size=0.0001,
     batch_size=4096,
     use_lars=True,
+    betas=(0.9, 0.99),
 )
 tr = TrainingRunner(cfg, hierarchical_l1scale)
+
 tr.normalizer = ConstL2Normalizer()
 tr.trainer
 # %%

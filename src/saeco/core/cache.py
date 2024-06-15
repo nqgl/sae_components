@@ -1,13 +1,16 @@
-from typing import Any, List
+from typing import Any, List, TypeVar
 from dataclasses import dataclass, field, Field
 from jaxtyping import Float, jaxtyped
 from torch import Tensor, NumberType
+from saeco.misc.exception_location_hint import locate_cache_exception
 
 # from beartype import beartype as typechecker
 from typeguard import typechecked as typechecker
 import inspect
 
 # @dataclass
+
+T = TypeVar("T")
 
 
 class CacheHas:
@@ -412,7 +415,9 @@ class Cache:
             del cache
         del self.__dict__
 
-    def __call__(self, obj) -> "SubCacher":
+    def __call__(self, obj: T) -> "SubCacher | T":
+        # the typing is not technically correct here
+        # but it gets the fields right in the IDE
         return SubCacher(cache=self, obj=obj)
 
 
@@ -430,9 +435,18 @@ class SubCacher:
 
     def __call__(self, *args, **kwargs):
         assert "cache" not in kwargs
-        if "cache" in inspect.signature(self._obj).parameters:
+        if (
+            "cache" in inspect.signature(self._obj).parameters
+            or hasattr(self._obj, "forward")
+            and "cache" in inspect.signature(self._obj.forward).parameters
+        ):
             kwargs["cache"] = self._cache
-        return self._obj(*args, **kwargs)
+        try:
+            v = self._obj(*args, **kwargs)
+        except Exception as e:
+            raise locate_cache_exception(e, self._cache)
+
+        return v
 
 
 class CacheSpec(Cache):

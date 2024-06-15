@@ -41,11 +41,11 @@ def l1normalize(ll, bf):
 
 
 class SafeNormalized(cl.Module):
-    def __init__(self, bf, norm, noise=None, detach=False):
+    def __init__(self, bf, norm, noise=None, detach=True):
         super().__init__()
         self.bf = bf
         self.norm = norm
-        self.noise = noise or (lambda x: x + 1e-5)
+        self.noise = noise or (lambda x: x)
         self.detach = detach
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
@@ -54,8 +54,8 @@ class SafeNormalized(cl.Module):
         structured = struc(self.noise(x), self.bf)
         norm = self.norm(structured)
         out = unstruc(structured / norm)
+        return torch.where(~out.isnan(), out, 0)
         return out
-        # return torch.where(~out.isnan(), out, 1 / self.bf)
 
 
 def l1norm(structured):
@@ -87,12 +87,15 @@ class HGateExpand(cl.Module):
 
 
 class HGated:
-    def __init__(self, hl, ll, bf, normalization=1):
+    def __init__(self, hl, ll, bf, normalization=2):
         self.hl = cl.ReuseForward(
             HGateExpand(
-                gate=hl,
+                gate=cl.Seq(
+                    gate=hl,
+                    metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
+                ),
                 branching_factor=bf,
-            )
+            ),
         )
         self.ll = cl.ReuseForward(ll)
         self.bf = bf

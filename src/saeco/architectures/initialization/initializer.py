@@ -9,7 +9,13 @@ import torch.nn as nn
 
 class Initializer:
     def __init__(
-        self, d_data, d_dict=None, dict_mult=None, l0_target=None, median=None
+        self,
+        d_data,
+        d_dict=None,
+        dict_mult=None,
+        l0_target=None,
+        median=None,
+        weight_scale=None,
     ):
         self.d_data = d_data
         d_dict = d_dict or d_data * dict_mult
@@ -19,7 +25,6 @@ class Initializer:
         self.tied_init = True
         self.tied_weights = False
         self.encoder_init_weights = None
-
         self._decoder: LinearFactory = LinearFactory(
             d_dict, d_data, wrappers=[co.LinDecoder]
         )
@@ -34,6 +39,11 @@ class Initializer:
         if median is not None:
             self._decoder._bias_tie = Tied(median, Tied.TO_VALUE, "bias")
         self._b_dec = None
+        if weight_scale is not None:
+            assert self._encoder._weight_tie is None
+            self._encoder._weight_tie = Tied(
+                lambda x: x * weight_scale, Tied.INIT_FN, "weight"
+            )
 
     @property
     def encoder(self):

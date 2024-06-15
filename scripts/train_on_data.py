@@ -10,7 +10,7 @@ BATCH_SIZE = 4096
 
 from saeco.architectures.initialization.geo_med import getmed, getmean
 from saeco.architectures.gated import gated_sae, gated_sae_no_detach
-from saeco.architectures.gate_hierarch import gate_two_weights
+from saeco.architectures.gate_two_weights import gate_two_weights
 from saeco.architectures.vanilla_tests import (
     vanilla_sae,
     basic_vanilla_sae,

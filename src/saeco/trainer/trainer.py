@@ -177,8 +177,8 @@ class Trainer:
     def do_intermittent_metrics(self):
         self.log_recons("recons/with_bos/", True)
         self.log_recons("recons/no_bos/", False)
-        self.log_recons("recons_re/with_bos/", True, dumb_rescaled=True)
-        self.log_recons("recons_re/no_bos/", False, dumb_rescaled=True)
+        # self.log_recons("recons_re/with_bos/", True, dumb_rescaled=True)
+        # self.log_recons("recons_re/no_bos/", False, dumb_rescaled=True)
 
     def log_recons(self, label, proc_bos, num_batches=5, dumb_rescaled=False):
         def run_rescaled_model(x):
