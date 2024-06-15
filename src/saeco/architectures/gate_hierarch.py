@@ -78,6 +78,7 @@ def hierarchical_l1scale(
         gated.aux(),
         penalties=dict(l1=L1Penalty()),
         metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
+        detach=detach,
     )
 
     losses = {
@@ -88,10 +89,9 @@ def hierarchical_l1scale(
     encoders = [gated.full()]
     for l in range(1, num_levels + 1):
         bf = BF**l
-        tl_init = Initializer(init.d_data, init.d_dict // bf, weight_scale=1.5**l)
         enc_hl = ReuseForward(
             Seq(
-                lin=(tl_init.encoder),
+                lin=(init._encoder.make_hierarchical(bf=bf)),
                 nonlinearity=nn.ReLU(),
             )
         )

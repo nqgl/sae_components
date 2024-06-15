@@ -118,6 +118,17 @@ class LinearFactory:
             lin = w(lin)
         return lin
 
+    def make_hierarchical(self, bf):
+        assert self.d_out % bf == 0
+        import einops
+
+        lin = nn.Linear(self.d_in, self.d_out // bf, bias=self.bias)
+        ll = self.raw.weight.data
+        # v = einops.rearrange(ll, "(i bf) q -> i bf q", bf=bf).sum(dim=-2)
+        v = einops.rearrange(ll, "(bf i) q -> bf i q", bf=bf).sum(dim=0)
+        lin.weight.data[:] = v * (ll.std() / v.std())
+        return lin
+
     def get(self) -> nn.Linear:
         if self._linear is None:
             self._linear = self.make_new()
