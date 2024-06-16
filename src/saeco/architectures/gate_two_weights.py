@@ -11,6 +11,8 @@ from saeco.core.reused_forward import ReuseForward
 
 import torch.nn as nn
 
+import saeco.misc.utils
+
 
 def gate_two_weights(init: Initializer, detach=True, untied=True):
     # init._encoder.bias = False
@@ -25,7 +27,7 @@ def gate_two_weights(init: Initializer, detach=True, untied=True):
 
     enc_gate = ReuseForward(
         Seq(
-            **co.useif(
+            **saeco.misc.utils.useif(
                 detach,
                 detach=Lambda(lambda x: x.detach()),
             ),

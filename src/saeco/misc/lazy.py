@@ -69,8 +69,7 @@ def defer_to_and_set(field):
     return wrapper
 
 
-@functools.wraps(property)
-def lazyprop(mth, name=None):
+def lazycall(mth, name=None):
     """
     @lazyprop
     def field(self):
@@ -84,9 +83,18 @@ def lazyprop(mth, name=None):
         return self._field
     """
     if isinstance(mth, str):
-        return lambda x: lazyprop(x, name=mth)
+        return lambda x: lazycall(x, name=mth)
     name = name or f"_{mth.__name__}"
-    prop = property(defer_to_and_set(name)(mth))
+    return defer_to_and_set(name)(mth)
+
+
+@functools.wraps(property)
+def lazyprop(mth, name=None):
+
+    if isinstance(mth, str):
+        return lambda x: lazyprop(x, name=mth)
+
+    prop = property(lazycall(mth, name=name))
 
     def setter(self, value):
         setattr(self, name, value)

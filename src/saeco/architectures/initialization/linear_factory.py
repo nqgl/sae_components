@@ -2,6 +2,7 @@ from saeco.core.basic_ops import Sub
 import torch
 from typing import Optional
 import torch.nn as nn
+from saeco.misc.lazy import lazyprop, lazycall
 
 
 class DetachedLinear(nn.Module):
@@ -122,11 +123,12 @@ class LinearFactory:
         assert self.d_out % bf == 0
         import einops
 
-        lin = nn.Linear(self.d_in, self.d_out // bf, bias=self.bias)
+        lin = nn.Linear(self.d_in, self.d_out // bf, bias=True)
         ll = self.raw.weight.data
         # v = einops.rearrange(ll, "(i bf) q -> i bf q", bf=bf).sum(dim=-2)
-        v = einops.rearrange(ll, "(bf i) q -> bf i q", bf=bf).sum(dim=0)
-        lin.weight.data[:] = v * (ll.std() / v.std())
+        # v = einops.rearrange(ll, "(bf i) q -> bf i q", bf=bf).sum(dim=0)
+        # lin.weight.data[:] = v * (ll.std() / v.std(dim=0, keepdim=True))
+        # lin.bias.data[:] = lin.bias.data - 0.25
         return lin
 
     def get(self) -> nn.Linear:
@@ -171,5 +173,6 @@ class LinearFactory:
         # else:
         #     self.lin.weight.data[:] = other.lin.weight.data.transpose(-2, -1)
 
+    @lazycall
     def sub_bias(self) -> Sub:
         return Sub(self.lin.bias)

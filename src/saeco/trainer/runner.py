@@ -79,7 +79,8 @@ class TrainingRunner:
             768,
             dict_mult=8,
             l0_target=self.cfg.l0_target,
-            median=getmed(buf=self.buf, normalizer=self.normalizer),
+            median=getmean(buf=self.buf, normalizer=self.normalizer),
+            # median=getmed(buf=self.buf, normalizer=self.normalizer),
             # weight_scale=2,
         )
 
@@ -125,23 +126,24 @@ PROJECT = "nn.Linear Check"
 cfg = TrainConfig(
     l0_target=l0_target,
     coeffs={
-        "sparsity_loss": 2e-3 if l0_target is None else 8e-4,
+        "sparsity_loss": 2e-3 if l0_target is None else 1.2e-3,
+        "L2_loss": 10,
     },
     lr=1e-3,
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.0003,
-    batch_size=4096,
+    l0_target_adjustment_size=0.001,
+    batch_size=2048,
     use_lars=True,
-    betas=(0.9, 0.999),
+    betas=(0.9, 0.99),
 )
+
 tr = TrainingRunner(cfg, hierarchical_l1scale)
 
 tr.normalizer = ConstL2Normalizer()
 tr.trainer
 # %%
 tr.trainer.train()
-# %%
 
 
 def norm_consts(mean, std, geo_med, std_from_med, elementwise_std=False):

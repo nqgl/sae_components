@@ -131,6 +131,8 @@ class Trainer:
 
         for bn in buffer:
             bn = bn.cuda()
+            if not self.cfg.use_autocast:
+                bn = bn.float()
             self.optim.zero_grad()
             if isinstance(bn, tuple):
                 x, y = bn
@@ -148,7 +150,6 @@ class Trainer:
                 loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
                 self.proc_cache_after_forward(cache)
 
-            # self.proc_cache_after_forward(cache)
             if self.cfg.use_autocast:
                 self.gradscaler.scale(loss).backward()
             else:

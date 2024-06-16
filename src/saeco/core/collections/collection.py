@@ -47,7 +47,7 @@ class Collection(Module):
                 self.register_parameter(name, module)
             else:
                 raise ValueError(
-                    "Only nn.Modules and nn.Parameters are allowed in collections"
+                    f"Only nn.Modules and nn.Parameters are allowed in collections.\nError@ {name}={module}"
                 )
 
     def __getitem__(self, key):

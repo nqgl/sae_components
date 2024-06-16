@@ -35,27 +35,44 @@ from saeco.architectures.initialization.tools import (
 import saeco.components as co
 from saeco.trainer.trainable import Trainable
 import einops
-from saeco.components.gated import HGated, Gated
+from saeco.components.gated import HGated, Gated, ClassicGated
+from saeco.misc import useif
+import saeco.core as cl
+from saeco.components.penalties.l1_penalizer import L0TargetingL1Penalty
 
 
 def hierarchical_l1scale(
-    init: Initializer, num_levels=2, BF=2**5, detach=False, untied=True
+    init: Initializer,
+    num_levels=5,
+    BF=2**2,
+    detach=False,
+    untied=True,
+    pre_bias=False,
+    classic=False,
+    full_mode=False,
+    soft=False,
 ):
     init._encoder.add_wrapper(ReuseForward)
     init._decoder.add_wrapper(ft.NormFeatures)
     init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+    if classic:
+        init._encoder.bias = False
     # BF = 2**4
+    detached_pre_bias = cl.Parallel(
+        left=cl.ops.Identity(), right=init.decoder.bias
+    ).reduce((lambda l, r: l - r.detach()))
+    l1_penalties = [L1Penalty()]
 
     def model(enc, penalties, metrics, detach=False):
         return Seq(
-            # pre_bias=ReuseForward(init._decoder.sub_bias()),
-            # **(
-            #     dict(
-            #         detach=co.ops.Lambda(lambda x: x.detach()),
-            #     )
-            #     if detach
-            #     else {}
-            # ),
+            **useif(
+                pre_bias,
+                pre_bias=(
+                    ReuseForward(detached_pre_bias)
+                    if detach
+                    else cl.ReuseForward(init._decoder.sub_bias())
+                ),
+            ),
             encoder=enc,
             freqs=EMAFreqTracker(),
             **penalties,
@@ -63,46 +80,43 @@ def hierarchical_l1scale(
             decoder=init._decoder.detached if detach else init.decoder,
         )
 
-    enc_mag = Seq(
-        lin=init.encoder,
-        nonlinearity=nn.ReLU(),
-    )
+    if classic:
+        gated = ClassicGated(init=init)
+    else:
+        enc_mag = Seq(
+            lin=init.encoder,
+            nonlinearity=nn.ReLU(),
+        )
 
-    enc_gate = Seq(
-        lin=init._encoder.make_new(),
-        nonlinearity=nn.ReLU(),
-    )
-    gated = Gated(gate=enc_gate, mag=enc_mag)
-
-    # model_aux0 = model(
-    #     gated.aux(),
-    #     penalties=dict(l1=L1Penalty()),
-    #     metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
-    #     detach=detach,
-    # )
-
-    # losses = {
-    #     "L2_aux_loss0": L2Loss(model_aux0),
-    # }
+        enc_gate = Seq(
+            lin=init._encoder.make_new(),
+            nonlinearity=nn.ReLU(),
+        )
+        gated = Gated(gate=enc_gate, mag=enc_mag)
+        # gated = HGated(hl=enc_gate, ll=enc_mag, bf=1)
 
     layer = gated
     losses = {}
+    L1_SCALE_BASE = 1.5
     for l in range(1, num_levels + 1):
         bf = BF**l
+        l1_penalties.append(
+            L0TargetingL1Penalty(init.d_dict // bf / 4, L1_SCALE_BASE**l)
+        )
         enc_hl = ReuseForward(
             Seq(
                 lin=(init._encoder.make_hierarchical(bf=bf)),
                 nonlinearity=nn.ReLU(),
+                read_l0_for_l1=co.Lambda(l1_penalties[-1].update_l0),
             )
         )
 
         layer = HGated(hl=enc_hl, ll=layer, bf=bf)
-    L1_SCALE_BASE = 1
     models = []
     for l in range(num_levels + 1):
         aux_model = model(
-            enc=layer.aux(num_levels - l),
-            penalties=dict(l1=L1Penalty(L1_SCALE_BASE**l)),
+            enc=layer.aux(num_levels - l, full_mode=full_mode, soft=soft),
+            penalties=dict(l1=l1_penalties[l]),
             metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
             detach=detach,
         )
