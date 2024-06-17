@@ -12,9 +12,7 @@ from saeco.trainer.trainer import Trainer, TrainConfig
 
 from saeco.architectures.initialization.geo_med import getmed, getmean
 from saeco.architectures.gated import gated_sae, gated_sae_no_detach
-from saeco.architectures.gate_hierarch import (
-    hierarchical_l1scale,
-)
+from saeco.architectures.gate_hierarch import hierarchical_l1scale, hierarchical_softaux
 from saeco.architectures.vanilla_tests import (
     vanilla_sae,
     basic_vanilla_sae,
@@ -138,7 +136,7 @@ cfg = TrainConfig(
     betas=(0.9, 0.99),
 )
 
-tr = TrainingRunner(cfg, hierarchical_l1scale)
+tr = TrainingRunner(cfg, hierarchical_softaux)
 
 tr.normalizer = ConstL2Normalizer()
 tr.trainer

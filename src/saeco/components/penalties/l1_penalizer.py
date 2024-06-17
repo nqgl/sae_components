@@ -23,6 +23,8 @@ class L0TargetingL1Penalty(Penalty):
         return x.abs().mean(dim=0).sum() * self.scale
 
     def update_l0(self, x: Tensor):
+        if self.target is None:
+            return x
         l0 = x.count_nonzero() / x.shape[0]
         if l0 > self.target:
             self.scale *= 1 + self.increment

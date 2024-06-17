@@ -6,7 +6,10 @@ import torch.nn as nn
 from saeco.architectures.initialization.initializer import Initializer
 from saeco.misc import useif
 
-SOFT_CLS = nn.Sigmoid
+SOFT_CLS = lambda x: cl.Seq(x, nn.Sigmoid())
+SOFT_CLS = lambda x: cl.Seq(
+    x, co.Lambda(lambda x: x + torch.randn_like(x) * 0.05), nn.Sigmoid()
+)
 
 
 class Gated(cl.Parallel):
@@ -34,7 +37,7 @@ class Gated(cl.Parallel):
         return Gated(
             gate=self.gate_aux,
             mag=self.mag,
-            thresh_cls=lambda x: cl.Seq(x, SOFT_CLS()),
+            thresh_cls=SOFT_CLS,
         )
 
 
@@ -98,13 +101,13 @@ class SafeNormalized(cl.Module):
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         # return x
-        if self.detach:
-            x = x.detach()
-            return x
+        # if self.detach:
+        #     x = x.detach()
+        # return x
         structured = struc(self.noise(x), self.bf)
         norm = self.norm(structured)
-        normed = structured / (norm + 1e-3)
-        normed = torch.where(norm > 1e-5, normed, 0)
+        normed = structured / (norm + 1e-6)
+        # normed = torch.where(norm > 1e-5, normed, 0)
         out = unstruc(normed)
         return torch.where(
             ~out.isnan(),
@@ -195,5 +198,5 @@ class HGated:
         return Gated(
             gate=self.hl,
             mag=self.ll.module.full_soft(),
-            thresh_cls=lambda x: cl.Seq(x, SOFT_CLS()),
+            thresh_cls=SOFT_CLS,
         )
