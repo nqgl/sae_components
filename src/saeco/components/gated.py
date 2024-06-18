@@ -7,8 +7,16 @@ from saeco.architectures.initialization.initializer import Initializer
 from saeco.misc import useif
 
 SOFT_CLS = lambda x: cl.Seq(x, nn.Sigmoid())
-SOFT_CLS = lambda x: cl.Seq(
-    x, co.Lambda(lambda x: x + torch.randn_like(x) * 0.05), nn.Sigmoid()
+SOFT_CLS = lambda module: cl.Seq(
+    module, co.Lambda(lambda x: x + torch.randn_like(x) * 0.05), nn.Sigmoid()
+)
+SOFT_CLS = lambda module: cl.Seq(
+    module,
+    co.Lambda(
+        lambda x: torch.where(
+            torch.rand_like(x) > 0.2, torch.sigmoid(x), (x > 0).float()
+        )
+    ),
 )
 
 
@@ -67,7 +75,7 @@ class ClassicGated(Gated):
                 weight=cl.ReuseForward(init.encoder),
                 bias=init.new_encoder_bias().resampled(),
                 # nonlinearity=nn.ReLU(),
-                base_gate_metrics=co.metrics.ActMetrics("base_gate_classic"),
+                base_gate_metrics=co.metrics.ActMetrics("Gate0"),
                 **useif(
                     penalize_inside_gate,
                     penalty=co.L1Penalty(),

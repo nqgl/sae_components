@@ -124,7 +124,7 @@ PROJECT = "nn.Linear Check"
 cfg = TrainConfig(
     l0_target=l0_target,
     coeffs={
-        "sparsity_loss": 2e-3 if l0_target is None else 2e-3,
+        "sparsity_loss": 2e-3 if l0_target is None else 3e-4,
         "L2_loss": 10,
     },
     lr=1e-3,

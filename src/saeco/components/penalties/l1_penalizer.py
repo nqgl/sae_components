@@ -17,7 +17,7 @@ class L0TargetingL1Penalty(Penalty):
         super().__init__()
         self.scale = scale
         self.target = target
-        self.increment = 0.0003
+        self.increment = 0.00003
 
     def penalty(self, x: Tensor):
         return x.relu().mean(dim=0).sum() * self.scale

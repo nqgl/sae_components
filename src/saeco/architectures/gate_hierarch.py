@@ -164,7 +164,7 @@ def get_hgates(
     l1_penalties = [L1Penalty()]
 
     if classic:
-        gated = ClassicGated(init=init, penalize_inside_gate=penalize_inside_gate)
+        gated = ClassicGated(init=init)
     else:
         enc_mag = Seq(
             lin=init.encoder,
@@ -282,13 +282,13 @@ def hierarchical_l1scale(
 def hierarchical_softaux(
     init: Initializer,
     num_levels=2,
-    BF=2**4,
-    detach=False,
+    BF=2**5,
+    detach=True,
     untied=True,
     pre_bias=False,
     classic=True,
-    l1_scale_base=1,
-    penalize_inside_gate=True,
+    l1_scale_base=1.1,
+    penalize_inside_gate=False,
     target_hierarchical_l0_ratio=0.5,
     aux0=True,
 ):
@@ -338,7 +338,8 @@ def hierarchical_softaux(
 
     model_aux = model(
         enc=layer.aux(num_levels, soft=True) if aux0 else layer.full_soft(),
-        penalties={},
+        # penalties={},
+        penalties={"aux_l1": l1_penalties[0]},
         metrics=co.metrics.ActMetrics("aux_model"),
         detach=detach,
     )
