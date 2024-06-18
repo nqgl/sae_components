@@ -48,7 +48,8 @@ def gated_sae(
 
     init._encoder.bias = False
     init._encoder.add_wrapper(ReuseForward)
-
+    init._decoder.add_wrapper(ft.NormFeatures)
+    init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
     enc_mag = Seq(
         pre_bias=ReuseForward(init._decoder.sub_bias()),
         r_mag=cl.ops.MulParallel(

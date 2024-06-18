@@ -62,7 +62,7 @@ class DataConfig:
             splitname="train",
             start=0,
             end=40,
-            tokens_from_split=100_000_000,
+            tokens_from_split=400_000_000,
         )
     )
     testsplit: SplitConfig = field(

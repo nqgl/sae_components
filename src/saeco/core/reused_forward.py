@@ -10,7 +10,7 @@ class ReuseCache(Cache):
 
 
 def _reuse(*, x, keyobj, callable, cache: ReuseCache, **kwargs):
-    key = (id(keyobj), x)
+    key = (id(keyobj), id(x))
     if not cache._ancestor.has.forward_reuse_dict:
         cache._ancestor.forward_reuse_dict = {}
     elif key in cache._ancestor.forward_reuse_dict:

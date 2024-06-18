@@ -170,10 +170,6 @@ class Trainer:
             del cache
             if self.t % self.intermittent_metric_freq == 0:
                 self.do_intermittent_metrics()
-            # for key in [k for k in cache.forward_reuse_dict.keys()]:
-            #     del cache.forward_reuse_dict[key]
-            #     del key
-            # del x, y, loss, cache
 
     def do_intermittent_metrics(self):
         self.log_recons("recons/with_bos/", True)

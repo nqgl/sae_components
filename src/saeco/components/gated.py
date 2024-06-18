@@ -25,7 +25,14 @@ class Gated(cl.Parallel):
 
     def aux(self, i=0, full_mode=True, soft=False):
         assert i == 0
-        return self.gate_aux
+        if not soft:
+            return self.gate_aux
+        return cl.Seq(self.gate_aux, nn.ReLU())
+        return Gated(
+            gate=self.gate_aux,
+            mag=co.Lambda(lambda x: x.detach(), self.mag),
+            thresh_cls=SOFT_CLS,
+        )
 
     def full(self, soft=False):
         if soft:
@@ -42,7 +49,7 @@ class Gated(cl.Parallel):
 
 
 class ClassicGated(Gated):
-    def __init__(self, *, init: Initializer):
+    def __init__(self, *, init: Initializer, penalize_inside_gate=False):
         enc_mag = cl.Seq(
             scaled_encoder=cl.ops.MulParallel(
                 encoder=cl.ReuseForward(init.encoder),
@@ -59,9 +66,11 @@ class ClassicGated(Gated):
             cl.Seq(
                 weight=cl.ReuseForward(init.encoder),
                 bias=init.new_encoder_bias().resampled(),
-                nonlinearity=nn.ReLU(),
-                base_gate_metrics=co.metrics.Metrics(
-                    L0=co.metrics.L0(), L1=co.metrics.L1()
+                # nonlinearity=nn.ReLU(),
+                base_gate_metrics=co.metrics.ActMetrics("base_gate_classic"),
+                **useif(
+                    penalize_inside_gate,
+                    penalty=co.L1Penalty(),
                 ),
             )
         )
@@ -147,12 +156,12 @@ class HGateExpand(cl.Module):
 
 
 class HGated:
-    def __init__(self, hl, ll, bf, normalization=1):
+    def __init__(self, hl, ll, bf, num, normalization=1):
         self.hl = cl.ReuseForward(
             HGateExpand(
                 hgate=cl.Seq(
                     gate_enc=hl,
-                    metrics=co.metrics.Metrics(L0=co.metrics.L0(), L1=co.metrics.L1()),
+                    metrics=co.metrics.ActMetrics(f"HGate{num}"),
                 ),
                 branching_factor=bf,
             ),
@@ -183,6 +192,10 @@ class HGated:
             return Gated(
                 gate=self.hl,
                 mag=self.ll.module.aux(i - 1, full_mode=full_mode, soft=soft),
+                **useif(
+                    soft,
+                    thresh_cls=SOFT_CLS,
+                ),
             )
         return self.ll.module.aux(i - 1, full_mode=full_mode, soft=soft)
 

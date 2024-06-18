@@ -11,11 +11,11 @@ def get_recons_loss(
     encoder,
     buffer,
     all_tokens=None,
-    num_batches=5,
+    num_batches=10,
     local_encoder=None,
     cfg: ActsDataConfig = None,
     bos_processed_with_hook=False,
-    batch_size=64,
+    batch_size=16,
 ):
     cfg = cfg or encoder.cfg
     if local_encoder is None:

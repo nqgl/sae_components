@@ -4,17 +4,21 @@ from saeco.components import Lambda
 
 
 class GlobalizedCache:
-    def __init__(self, cache):
+    def __init__(self, cache, subname=None):
         self._cache_to_globalize = cache
+        self._subname = subname
 
     def __getattribute__(self, name: str):
-        if name in ["_cache_to_globalize", "_write"]:
+        if name in ["_cache_to_globalize", "_write", "_subname"]:
             return super().__getattribute__(name)
         return self._cache_to_globalize.__getattribute__(name)
 
     def _write(self, name, value):
         self._cache_to_globalize._write(name, value)
-        self._cache_to_globalize._ancestor._write(name, value)
+        if self._subname is not None:
+            self._cache_to_globalize._ancestor[self._subname]._write(name, value)
+        else:
+            self._cache_to_globalize._ancestor._write(name, value)
 
     def __getitem__(self, name):
         return self._cache_to_globalize[name]
@@ -48,7 +52,7 @@ class Metric(Lambda):
 
 class L0(Metric):
     def __init__(self):
-        super().__init__(lambda x: (x != 0).sum(-1).float().mean(0).sum())
+        super().__init__(lambda x: (x > 0).sum(-1).float().mean(0).sum())
 
 
 class L1(Metric):
@@ -57,8 +61,12 @@ class L1(Metric):
 
 
 class ActMetrics(Metrics):
-    def __init__(self, globalize_cache=True):
+    def __init__(self, name=None, globalize_cache=True):
+        self.name = name
         super().__init__(L1=L1(), L0=L0())
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        return super().forward(x, cache=GlobalizedCache(cache), **kwargs)
+
+        return super().forward(
+            x, cache=GlobalizedCache(cache, subname=self.name), **kwargs
+        )

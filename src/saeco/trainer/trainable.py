@@ -85,9 +85,15 @@ class Trainable(cl.Module):
         return loss
 
     def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+        made_cache = False
         if cache is None:
             cache = TrainCache()
-        return self.model(x, cache=cache)
+            made_cache = True
+        out = self.model(x, cache=cache)
+        if made_cache:
+            cache.destroy_children()
+            del cache
+        return out
 
     def get_losses_and_metrics_names(self):
         return list(self.losses.keys()) + list(self.metrics.keys())

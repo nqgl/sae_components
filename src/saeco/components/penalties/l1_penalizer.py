@@ -9,7 +9,7 @@ class L1Penalty(Penalty):
         self.scale = scale
 
     def penalty(self, x: Tensor):
-        return x.abs().mean(dim=0).sum() * self.scale
+        return x.relu().mean(dim=0).sum() * self.scale
 
 
 class L0TargetingL1Penalty(Penalty):
@@ -20,12 +20,12 @@ class L0TargetingL1Penalty(Penalty):
         self.increment = 0.0003
 
     def penalty(self, x: Tensor):
-        return x.abs().mean(dim=0).sum() * self.scale
+        return x.relu().mean(dim=0).sum() * self.scale
 
     def update_l0(self, x: Tensor):
         if self.target is None:
             return x
-        l0 = x.count_nonzero() / x.shape[0]
+        l0 = (x > 0).sum(dim=-1).float().mean(0).sum()
         if l0 > self.target:
             self.scale *= 1 + self.increment
         else:

@@ -357,7 +357,7 @@ class Cache:
             elif isinstance(v, int) or isinstance(v, float):
                 values[k] = v
         subcaches = [
-            v.logdict(name=f"{name}/[{repr(k)}]", excluded=excluded, itemize=itemize)
+            v.logdict(name=f"{name}/{k}", excluded=excluded, itemize=itemize)
             for k, v in self._subcaches.items()
         ]
         cache = {f"{name}/{k}": v for k, v in values.items()}

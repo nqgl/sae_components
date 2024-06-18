@@ -124,7 +124,7 @@ PROJECT = "nn.Linear Check"
 cfg = TrainConfig(
     l0_target=l0_target,
     coeffs={
-        "sparsity_loss": 2e-3 if l0_target is None else 1.2e-3,
+        "sparsity_loss": 2e-3 if l0_target is None else 2e-3,
         "L2_loss": 10,
     },
     lr=1e-3,
@@ -135,6 +135,27 @@ cfg = TrainConfig(
     use_lars=True,
     betas=(0.9, 0.99),
 )
+# from torch.utils.viz._cycles import warn_tensor_cycles
+#
+# warn_tensor_cycles()
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class SAEConfig:
+    d_data: int
+    dict_mult: int
+
+    @lazyprop
+    def d_dict(self):
+        return self.d_data * self.dict_mult
+
+    @d_dict.setter
+    def d_dict(self, value):
+        assert self.dict_mult is None
+        setattr(self, "_d_dict", value)
+
 
 tr = TrainingRunner(cfg, hierarchical_softaux)
 
