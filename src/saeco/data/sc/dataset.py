@@ -9,7 +9,7 @@ import torch
 from unpythonic import box
 
 from saeco.sweeps import SweepableConfig
-
+from typing import Optional
 
 from saeco.data.sc.locations import DATA_DIRS
 
@@ -24,7 +24,7 @@ class SplitConfig(SweepableConfig):
     end: int
     split_key: str = "train"
     documents_per_chunk: int = 2**18  # 128 * 1m // 2 = 32 mtok in the default case
-    tokens_from_split: int = None
+    tokens_from_split: Optional[int] = None
     tokens_per_pile: int = 2**27
     acts_per_pile: int = 2**18
     approx_tokens_per_percent: int = 30_000_000 * 256 // 100

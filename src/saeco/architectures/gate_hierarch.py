@@ -33,7 +33,6 @@ from saeco.architectures.initialization.tools import (
 )
 
 import saeco.components as co
-from saeco.trainer.trainable import Trainable
 import einops
 from saeco.components.gated import HGated, Gated, ClassicGated
 from saeco.misc import useif

@@ -37,7 +37,7 @@ class TrainConfig(SweepableConfig):
     lr: float = 3e-4
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
-    kwargs: dict = {Field(default_factory=dict)}
+    kwargs: dict = Field(default_factory=dict)
 
 
 class Trainer:

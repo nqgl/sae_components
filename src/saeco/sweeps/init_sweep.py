@@ -19,40 +19,27 @@ def initialize_sweep(d):
 
 
 # %%
-def run():
-    wandb.init()
-    scfg = ConfigFromSweep(**wandb.config)
-    cfg, lgcfg = get_configs_from_sweep(scfg=scfg)
-    # if cfg.sae_cfg.sae_type != "VanillaSAE":
-    #     cfg.neuron_dead_threshold = -1
-    cfg.l1_coeff = cfg.l1_coeff * sparsity_coeff_adjustment(scfg)
-    wandb.config.update({"adjusted_l1_coeff": cfg.l1_coeff})
-
-    nice_name = wandb.config["sae_type"]
-    wandb.finish()
-
-    l0_target = 45
-    cfg = TrainConfig(
-        l0_target=l0_target,
-        coeffs={
-            "sparsity_loss": 2e-3 if l0_target is None else 3e-4,
-            "L2_loss": 10,
-        },
-        lr=1e-3,
-        use_autocast=True,
-        wandb_cfg=dict(project=PROJECT),
-        l0_target_adjustment_size=0.001,
-        batch_size=2048,
-        use_lars=True,
-        betas=(0.9, 0.99),
-    )
+from saeco.trainer import TrainingRunner
 
 
-# from torch.utils.viz._cycles import warn_tensor_cycles
-#
-# warn_tensor_cycles()
+def mksweeprun(model_fn): ...
 
-from dataclasses import dataclass, field
+
+# import mksweeprun
+# run = mksweeprun(model_fn)
+
+
+def mkrun(sweepfile_module):
+    def run():
+        wandb.init()
+        basecfg: BaseModel = sweepfile_module.cfg
+        runfn: callable = sweepfile_module.run
+        cfg = basecfg.model_validate(wandb.config)
+        runfn(cfg)
+        wandb.finish()
+
+    return run
+
 
 sweep_id = open("sweeps/sweep_id.txt").read().strip()
 

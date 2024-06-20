@@ -1,3 +1,4 @@
+# %%
 from saeco.architectures.gate_hierarch import (
     hierarchical_softaux,
     HierarchicalSoftAuxConfig,
@@ -12,7 +13,7 @@ train_cfg = TrainConfig(
         "sparsity_loss": 3e-4,
         "L2_loss": 10,
     },
-    lr=1e-3,
+    lr=Swept[float](1e-3, 3e-4),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
     l0_target_adjustment_size=0.001,
@@ -20,11 +21,12 @@ train_cfg = TrainConfig(
     use_lars=True,
     betas=(0.9, 0.99),
 )
-cfg = RunConfig(
+cfg = RunConfig[HierarchicalSoftAuxConfig](
     train_cfg=train_cfg,
     arch_cfg=HierarchicalSoftAuxConfig(),
 )
 
 
-tr = TrainingRunner(cfg, hierarchical_softaux)
-tr.trainer.train()
+def run(cfg):
+    tr = TrainingRunner(cfg, hierarchical_softaux)
+    tr.trainer.train()

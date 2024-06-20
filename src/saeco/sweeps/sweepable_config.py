@@ -35,10 +35,11 @@ class SweptMeta(mc.ModelMetaclass):
         _create_model_module: str | None = None,
         **kwargs: Any,
     ) -> type:
-        namespace["__annotations__"] = {
-            name: Sweepable(annotation)
-            for name, annotation in namespace["__annotations__"].items()
-        }
+        if "__annotations__" in namespace:
+            namespace["__annotations__"] = {
+                name: Sweepable(annotation)
+                for name, annotation in namespace["__annotations__"].items()
+            }
         return super().__new__(
             mcs,
             cls_name,
@@ -51,8 +52,42 @@ class SweptMeta(mc.ModelMetaclass):
         )
 
 
-SweepableConfig = BaseModel
+class ParametersForWandb(BaseModel):
+    parameters: dict[str, Any]
+
+
+def _to_swept_fields(target: BaseModel):
+    for name, field in target.model_fields.items():
+        attr = getattr(target, name)
+        if isinstance(attr, Swept):
+            continue
+        if isinstance(attr, BaseModel):
+            _to_swept_fields(attr)
+            new_swept = ParametersForWandb(parameters=attr)
+        else:
+            new_swept = Swept[type(attr)](attr)
+        setattr(target, name, new_swept)
+    return target
+
+
+def _to_swept_dict(target: BaseModel):
+    d = {}
+    for name, field in target.model_fields.items():
+        attr = getattr(target, name)
+        if isinstance(attr, Swept):
+            subdict = attr.model_dump()
+        elif isinstance(attr, BaseModel):
+            subdict = dict(parameters=_to_swept_dict(attr))
+        else:
+            subdict = Swept[type(attr)](attr).model_dump()
+        d[name] = subdict
+    return d
+
+
 if TYPE_CHECKING:
+    SweepableConfig = BaseModel
+else:
+    ...
 
     class SweepableConfig(BaseModel, metaclass=SweptMeta):
         __ignore_this: int = 0
@@ -67,3 +102,8 @@ if TYPE_CHECKING:
                     if not self.is_concrete(attr):
                         return False
             return True
+
+        def sweep(self):
+            copy = self.model_copy(deep=True)
+            return _to_swept_dict(copy)
+            return copy

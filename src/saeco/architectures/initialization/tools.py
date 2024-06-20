@@ -33,7 +33,6 @@ from saeco.components.ops.fnlambda import Lambda
 from saeco.core.reused_forward import ReuseForward, ReuseCache
 from saeco.core import Seq
 import saeco.components.features.features as ft
-from saeco.trainer.trainable import Trainable
 
 
 def bias(d):

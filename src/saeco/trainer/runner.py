@@ -9,9 +9,8 @@ from saeco.trainer.trainable import Trainable
 gpt2 = HookedTransformer.from_pretrained("gpt2")
 BATCH_SIZE = 4096
 from saeco.trainer.trainer import Trainer, TrainConfig
-
+from typing import Generic, TypeVar
 from saeco.architectures.initialization.geo_med import getmed, getmean
-from saeco.architectures.gated import gated_sae, gated_sae_no_detach
 from saeco.architectures.gate_hierarch import hierarchical_l1scale, hierarchical_softaux
 from saeco.architectures.vanilla_tests import (
     vanilla_sae,
@@ -52,7 +51,7 @@ from saeco.trainer.normalizers import (
 )
 from saeco.misc.lazy import lazyprop, defer_to_and_set
 from saeco.sweeps import SweepableConfig
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
 class SAEConfig(SweepableConfig):
@@ -70,9 +69,12 @@ class SAEConfig(SweepableConfig):
         setattr(self, "_d_dict", value)
 
 
-class RunConfig(SweepableConfig):
+T = TypeVar("T", bound=SweepableConfig)
+
+
+class RunConfig(SweepableConfig, Generic[T]):
     train_cfg: TrainConfig
-    arch_cfg: SweepableConfig
+    arch_cfg: T
     sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 
