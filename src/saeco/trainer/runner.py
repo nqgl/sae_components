@@ -48,12 +48,36 @@ from saeco.trainer.normalizers import (
     Normalized,
     Normalizer,
     L2Normalizer,
+    NORMALIZERS,
 )
 from saeco.misc.lazy import lazyprop, defer_to_and_set
+from saeco.sweeps import SweepableConfig
+from pydantic import Field
+
+
+class SAEConfig(SweepableConfig):
+    d_data: int = 768
+    dict_mult: int = 8
+    normalizer: str = "ConstL2Normalizer"
+
+    @lazyprop
+    def d_dict(self):
+        return self.d_data * self.dict_mult
+
+    @d_dict.setter
+    def d_dict(self, value):
+        assert self.dict_mult is None
+        setattr(self, "_d_dict", value)
+
+
+class RunConfig(SweepableConfig):
+    train_cfg: TrainConfig
+    arch_cfg: SweepableConfig
+    sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 
 class TrainingRunner:
-    def __init__(self, cfg, model_fn):
+    def __init__(self, cfg: RunConfig, model_fn):
         self.cfg = cfg
         self.model_fn = model_fn
         self._models = None
@@ -65,18 +89,18 @@ class TrainingRunner:
 
     @lazyprop
     def name(self):
-        return f"{self.model_name}{self.cfg.lr}"
+        return f"{self.model_name}{self.cfg.train_cfg.lr}"
 
     @lazyprop
     def buf(self) -> iter:
-        return iter(self.cfg.data_cfg.get_databuffer())
+        return iter(self.cfg.train_cfg.data_cfg.get_databuffer())
 
     @lazyprop
     def initializer(self) -> Initializer:
         return Initializer(
-            768,
-            dict_mult=8,
-            l0_target=self.cfg.l0_target,
+            self.cfg.sae_cfg.d_data,
+            dict_mult=self.cfg.sae_cfg.dict_mult,
+            l0_target=self.cfg.train_cfg.l0_target,
             median=getmean(buf=self.buf, normalizer=self.normalizer),
             # median=getmed(buf=self.buf, normalizer=self.normalizer),
             # weight_scale=2,
@@ -85,7 +109,9 @@ class TrainingRunner:
     @defer_to_and_set("_model_fn_output")
     def get_model_fn_output(self):
         assert self._models is self._losses is None
-        return self.model_fn(self.initializer)
+        if self.cfg.arch_cfg is None:
+            return self.model_fn(self.initializer)
+        return self.model_fn(self.initializer, self.cfg.arch_cfg)
 
     @lazyprop
     def models(self):
@@ -103,7 +129,7 @@ class TrainingRunner:
 
     @lazyprop
     def normalizer(self):
-        normalizer = ConstL2Normalizer()
+        normalizer = NORMALIZERS[self.cfg.sae_cfg.normalizer]()
         normalizer.prime_normalizer(self.buf)
         return normalizer
 
@@ -114,55 +140,40 @@ class TrainingRunner:
 
     @lazyprop
     def trainer(self):
-        trainer = Trainer(self.cfg, self.trainable, namestuff=self.name)
+        trainer = Trainer(self.cfg.train_cfg, self.trainable, namestuff=self.name)
         trainer.post_step()
         return trainer
 
 
-l0_target = 45
-PROJECT = "nn.Linear Check"
-cfg = TrainConfig(
-    l0_target=l0_target,
-    coeffs={
-        "sparsity_loss": 2e-3 if l0_target is None else 3e-4,
-        "L2_loss": 10,
-    },
-    lr=1e-3,
-    use_autocast=True,
-    wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.001,
-    batch_size=2048,
-    use_lars=True,
-    betas=(0.9, 0.99),
-)
-# from torch.utils.viz._cycles import warn_tensor_cycles
-#
-# warn_tensor_cycles()
+def main():
+    l0_target = 45
+    PROJECT = "nn.Linear Check"
+    cfg = TrainConfig(
+        l0_target=l0_target,
+        coeffs={
+            "sparsity_loss": 2e-3 if l0_target is None else 3e-4,
+            "L2_loss": 10,
+        },
+        lr=1e-3,
+        use_autocast=True,
+        wandb_cfg=dict(project=PROJECT),
+        l0_target_adjustment_size=0.001,
+        batch_size=2048,
+        use_lars=True,
+        betas=(0.9, 0.99),
+    )
+    # from torch.utils.viz._cycles import warn_tensor_cycles
+    #
+    # warn_tensor_cycles()
 
-from dataclasses import dataclass, field
+    from dataclasses import dataclass, field
 
+    tr = TrainingRunner(cfg, hierarchical_softaux)
 
-@dataclass
-class SAEConfig:
-    d_data: int
-    dict_mult: int
-
-    @lazyprop
-    def d_dict(self):
-        return self.d_data * self.dict_mult
-
-    @d_dict.setter
-    def d_dict(self, value):
-        assert self.dict_mult is None
-        setattr(self, "_d_dict", value)
-
-
-tr = TrainingRunner(cfg, hierarchical_softaux)
-
-tr.normalizer = ConstL2Normalizer()
-tr.trainer
-# %%
-tr.trainer.train()
+    tr.normalizer = ConstL2Normalizer()
+    tr.trainer
+    # %%
+    tr.trainer.train()
 
 
 def norm_consts(mean, std, geo_med, std_from_med, elementwise_std=False):

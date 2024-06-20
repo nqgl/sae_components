@@ -4,7 +4,7 @@ import torch
 import wandb
 from typing import Protocol, runtime_checkable, Optional
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
-from dataclasses import dataclass, field
+from dataclasses import dataclass, Field
 from saeco.data.sc.model_cfg import ModelConfig
 from saeco.trainer.train_cache import TrainCache
 from saeco.trainer.trainable import Trainable
@@ -14,6 +14,8 @@ from saeco.trainer.post_backward_normalization import (
 )
 from .recons import get_recons_loss
 from saeco.data.sc.dataset import DataConfig, SplitConfig, TokensData
+from saeco.sweeps import SweepableConfig
+from pydantic import Field
 
 
 @dataclass
@@ -22,21 +24,20 @@ class OptimConfig:
     betas: tuple[float, float] = (0.9, 0.999)
 
 
-@dataclass
-class TrainConfig:
-    coeffs: dict[str, float] = field(default_factory=lambda: dict(sparsity_loss=1e-3))
+class TrainConfig(SweepableConfig):
+    data_cfg: DataConfig = Field(default_factory=DataConfig)
+    wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae-components"))
+    coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
     # optim_config: OptimConfig = OptimConfig()
     l0_target: Optional[float] = None
     l0_target_adjustment_size: float = 0.0003
     use_autocast: bool = True
-    # model_cfg: ModelConfig = field(default_factory=ModelConfig)
-    data_cfg: DataConfig = field(default_factory=DataConfig)
+    # model_cfg: ModelConfig = Field(default_factory=ModelConfig)
     batch_size: int = 4096
-    wandb_cfg: dict = field(default_factory=dict(project="sae-components"))
     lr: float = 3e-4
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
-    kwargs: dict = field(default_factory=dict)
+    kwargs: dict = {Field(default_factory=dict)}
 
 
 class Trainer:

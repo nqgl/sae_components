@@ -1,4 +1,5 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from pydantic import Field
 from typing import Tuple
 from transformer_lens import HookedTransformer
 from saeco.data.sc.model_cfg import ActsDataConfig, ModelConfig
@@ -7,6 +8,8 @@ import datasets
 import torch
 from unpythonic import box
 
+from saeco.sweeps import SweepableConfig
+
 
 from saeco.data.sc.locations import DATA_DIRS
 
@@ -14,8 +17,8 @@ import einops
 import tqdm
 
 
-@dataclass
-class SplitConfig:
+# @dataclass
+class SplitConfig(SweepableConfig):
     splitname: str
     start: int
     end: int
@@ -51,13 +54,13 @@ class SplitConfig:
         return self.tokens_from_split or self._approx_num_tokens_in_dataset_split
 
 
-@dataclass
-class DataConfig:
+# @dataclass
+class DataConfig(SweepableConfig):
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"
     model_name: str = "gpt2"
-    model_cfg: ModelConfig = field(default_factory=ModelConfig)
-    # model_cfg.acts_cfg: ActsDataConfig = field(default_factory=ActsDataConfig)
-    trainsplit: SplitConfig = field(
+    model_cfg: ModelConfig = Field(default_factory=ModelConfig)
+    # model_cfg.acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
+    trainsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
             splitname="train",
             start=0,
@@ -65,14 +68,14 @@ class DataConfig:
             tokens_from_split=400_000_000,
         )
     )
-    testsplit: SplitConfig = field(
+    testsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
             splitname="test",
             start=80,
             end=90,
         )
     )
-    valsplit: SplitConfig = field(
+    valsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
             splitname="val",
             start=90,

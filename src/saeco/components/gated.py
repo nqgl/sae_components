@@ -14,10 +14,13 @@ SOFT_CLS = lambda module: cl.Seq(
     module,
     co.Lambda(
         lambda x: torch.where(
-            torch.rand_like(x) > 0.2, torch.sigmoid(x), (x > 0).float()
+            torch.rand_like(x) > 0.2,
+            torch.sigmoid(x) + torch.randn_like(x) * 0.05,
+            (x > 0).float(),
         )
     ),
 )
+# SOFT_CLS = lambda module: cl.Seq(module, nn.Sigmoid())
 
 
 class Gated(cl.Parallel):

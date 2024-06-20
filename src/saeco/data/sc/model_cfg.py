@@ -1,11 +1,11 @@
 from transformer_lens import HookedTransformer, utils
+from pydantic import Field
+
+from dataclasses import dataclass
+from saeco.sweeps import SweepableConfig
 
 
-from dataclasses import dataclass, field
-
-
-@dataclass
-class ActsDataConfig:
+class ActsDataConfig(SweepableConfig):
     d_data: int = 768
     site: str = "resid_pre"
     layer_num: int = 6
@@ -16,13 +16,13 @@ class ActsDataConfig:
         return utils.get_act_name(self.site, self.layer_num)
 
 
-@dataclass
-class ModelConfig:
+class ModelConfig(SweepableConfig):
     model_name: str = "gpt2-small"
-    acts_cfg: ActsDataConfig = field(default_factory=ActsDataConfig)
+    acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
     # d_data: int = 768
 
-    def __post_init__(self):
+    def __init__(self, /, **data: utils.Any) -> None:
+        super().__init__(**data)
         model = None
 
         def getmodel():
