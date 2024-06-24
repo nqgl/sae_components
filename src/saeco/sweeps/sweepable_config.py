@@ -84,6 +84,43 @@ def _to_swept_dict(target: BaseModel):
     return d
 
 
+def has_sweep(target: BaseModel):
+    for name, field in target.model_fields.items():
+        attr = getattr(target, name)
+        if isinstance(attr, Swept):
+            return True
+        elif isinstance(attr, BaseModel):
+            if has_sweep(attr):
+                return True
+    return False
+
+
+def _to_swept_selective_dict(target: BaseModel):
+    d = {}
+    target.model_copy
+    for name, field in target.model_fields.items():
+        attr = getattr(target, name)
+        if isinstance(attr, Swept):
+            subdict = attr.model_dump()
+        elif isinstance(attr, BaseModel) and has_sweep(attr):
+            subdict = dict(parameters=_to_swept_selective_dict(attr))
+        else:
+            continue
+        d[name] = subdict
+    return d
+
+
+def _merge_dicts_left(orig, new):
+    for key, value in new.items():
+        if key in orig and isinstance(value, dict):
+            orig[key] = _merge_dicts_left(orig[key], value)
+        else:
+            if key not in orig:
+                print(f"key {key} not in original dict, adding")
+            orig[key] = value
+    return orig
+
+
 if TYPE_CHECKING:
     SweepableConfig = BaseModel
 else:
@@ -105,5 +142,10 @@ else:
 
         def sweep(self):
             copy = self.model_copy(deep=True)
-            return _to_swept_dict(copy)
+            return _to_swept_selective_dict(copy)
             return copy
+
+        def from_selective_sweep(self, sweep: dict):
+            mydict = self.model_dump()
+            _merge_dicts_left(mydict, sweep)
+            return self.model_validate(mydict)

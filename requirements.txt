@@ -5,3 +5,4 @@ opt-einsum
 pytest
 tables
 torchlars
+pydantic

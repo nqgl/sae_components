@@ -1,22 +1,19 @@
-# %%
-
 from saeco.architectures.gate_two_weights import gate_two_weights
 from saeco.data.sc.dataset import DataConfig, SplitConfig
 from transformer_lens import HookedTransformer
 
 from saeco.trainer.trainable import Trainable
 
-gpt2 = HookedTransformer.from_pretrained("gpt2")
-BATCH_SIZE = 4096
 from saeco.trainer.trainer import Trainer, TrainConfig
 from typing import Generic, TypeVar
 from saeco.architectures.initialization.geo_med import getmed, getmean
-from saeco.architectures.gate_hierarch import hierarchical_l1scale, hierarchical_softaux
+from saeco.architectures.gate_hierarch import (
+    hierarchical_l1scale,
+    hierarchical_softaux,
+    HierarchicalSoftAuxConfig,
+)
 from saeco.architectures.vanilla_tests import (
-    vanilla_sae,
-    basic_vanilla_sae,
     basic_vanilla_sae_lin,
-    basic_vanilla_sae_lin_no_orth,
 )
 from saeco.architectures.deep.deep import deep_sae, resid_deep_sae
 from saeco.architectures.deep.deep_resid_gated import (
@@ -150,7 +147,7 @@ class TrainingRunner:
 def main():
     l0_target = 45
     PROJECT = "nn.Linear Check"
-    cfg = TrainConfig(
+    tcfg = TrainConfig(
         l0_target=l0_target,
         coeffs={
             "sparsity_loss": 2e-3 if l0_target is None else 3e-4,
@@ -164,18 +161,22 @@ def main():
         use_lars=True,
         betas=(0.9, 0.99),
     )
-    # from torch.utils.viz._cycles import warn_tensor_cycles
-    #
-    # warn_tensor_cycles()
-
+    cfg = RunConfig(
+        train_cfg=tcfg,
+        arch_cfg=HierarchicalSoftAuxConfig(),
+        sae_cfg=SAEConfig(normalizer="L2Normalizer"),
+    )
     from dataclasses import dataclass, field
 
     tr = TrainingRunner(cfg, hierarchical_softaux)
 
     tr.normalizer = ConstL2Normalizer()
     tr.trainer
-    # %%
     tr.trainer.train()
+
+
+if __name__ == "__main__":
+    main()
 
 
 def norm_consts(mean, std, geo_med, std_from_med, elementwise_std=False):

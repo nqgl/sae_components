@@ -18,13 +18,7 @@ class Sweeper:
         return sweepfile
 
     def initialize_sweep(self):
-        print("\n\n\n\nBEFORE\n\n\n\n")
-        print(self.sweepfile.cfg)
-        print("\n\n\n\n...\n\n\n\n")
-        print(self.sweepfile.cfg.sweep())
-        print("\n\n\n\n...\n\n\n\n")
         dump = self.sweepfile.cfg.sweep()
-        # print(dump)
         sweep_id = wandb.sweep(
             sweep={
                 "parameters": dump,
@@ -43,7 +37,9 @@ class Sweeper:
     def run(self):
         wandb.init()
         basecfg = self.sweepfile.cfg
-        cfg = basecfg.model_validate(dict(wandb.config))
+
+        cfg = basecfg.from_selective_sweep(dict(wandb.config))
+        wandb.config.update(cfg.model_dump())
         print(dict(wandb.config))
         self.sweepfile.run(cfg)
         wandb.finish()
@@ -62,12 +58,24 @@ def main():
     parser = argparse.ArgumentParser(description="Sweeper for Saeco")
     parser.add_argument("path", type=str)
     parser.add_argument("--init", action="store_true")
+    parser.add_argument("--runpod-n-instances", type=int)
     args = parser.parse_args()
     sw = Sweeper(args.path)
     if args.init:
         sw.initialize_sweep()
     else:
         sw.start_agent()
+    if args.runpod_n_instances:
+        assert args.init
+        from ezpod import Pods
+
+        pods = Pods.All()
+        pods.make_new_pods(args.runpod_n_instances)
+        pods.sync()
+        pods.setup()
+        print("running!")
+        pods.runpy(f"src/saeco/sweeps/sweeper.py {args.path}")
+        pods.purge()
 
 
 if __name__ == "__main__":

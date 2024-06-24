@@ -28,11 +28,9 @@ class TrainConfig(SweepableConfig):
     data_cfg: DataConfig = Field(default_factory=DataConfig)
     wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae-components"))
     coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
-    # optim_config: OptimConfig = OptimConfig()
     l0_target: Optional[float] = None
     l0_target_adjustment_size: float = 0.0003
     use_autocast: bool = True
-    # model_cfg: ModelConfig = Field(default_factory=ModelConfig)
     batch_size: int = 4096
     lr: float = 3e-4
     betas: tuple[float, float] = (0.9, 0.999)
@@ -50,13 +48,12 @@ class Trainer:
     ):
         self.cfg = cfg
         self.model = model
-        # self.sae.provide("optim", self.optim)
-        wandb.init(
-            **cfg.wandb_cfg,
-            config={"model": repr(model), "cfg": cfg},
-            # entity="sae_all",
-            reinit=True,
-        )
+        if wandb.run is None:
+            wandb.init(
+                **cfg.wandb_cfg,
+                config={"model": repr(model), "cfg": cfg},
+                reinit=True,
+            )
         if namestuff is not None:
             lars = "(lars)" if cfg.use_lars else ""
             wandb.run.name = (
@@ -122,10 +119,6 @@ class Trainer:
     def train(self, buffer=None):
         if buffer is None:
             buffer = self.get_databuffer(num_workers=0)
-            buffer = iter(buffer)
-            # buffer = self.cfg.data_cfg.train_data_batch_generator(
-            #     model=self.subject_model, batch_size=self.cfg.batch_size
-            # )
         if self.t <= 1:
             self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
@@ -165,7 +158,6 @@ class Trainer:
             self.post_step()
             self.full_log(cache)
             self.t += 1
-            # print(f"loss: {loss.item()}")
             del cache.forward_reuse_dict
             cache.destroy_children()
             del cache
@@ -175,8 +167,6 @@ class Trainer:
     def do_intermittent_metrics(self):
         self.log_recons("recons/with_bos/", True)
         self.log_recons("recons/no_bos/", False)
-        # self.log_recons("recons_re/with_bos/", True, dumb_rescaled=True)
-        # self.log_recons("recons_re/no_bos/", False, dumb_rescaled=True)
 
     def log_recons(self, label, proc_bos, num_batches=5, dumb_rescaled=False):
         def run_rescaled_model(x):
@@ -203,17 +193,6 @@ class Trainer:
     def full_log(self, cache: Cache):
         if self.t % 10 != 0:
             return
-        # d = cache.logdict(
-        #     excluded=[
-        #         "acts",
-        #         "y_pred",
-        #         "x",
-        #         "y",
-        #         "resample",
-        #         "nonlinear_argsmaxed",
-        #         "acts_spoof",
-        #     ]
-        # )
         if wandb.run is not None:
             wandb.log(cache.logdict(), step=self.t)
 
