@@ -34,85 +34,12 @@ from saeco.trainer.trainable import Trainable
 from saeco.architectures.initialization.tools import bias, weight, mlp_layer
 
 
-# from torch.utils.viz._cycles import
 def lprint(x):
     def l(i):
         print(x)
         return i
 
     return Lambda(l)
-
-
-def vanilla_sae(d_data, d_dict):
-    # parameters
-    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
-    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
-
-    b_enc = nn.Parameter(torch.zeros(d_dict))
-    b_dec = nn.Parameter(torch.zeros(d_data))
-
-    # model
-    model = Seq(
-        encoder=Seq(
-            pre_bias=Sub(b_dec),
-            weight=ft.EncoderWeights(W_enc).resampled(),
-            bias=ft.EncoderBias(b_enc).resampled(),
-            nonlinearity=nn.ReLU(),
-        ),
-        freqs=EMAFreqTracker(),
-        L1=L1Penalty(),
-        metrics=co.metrics.ActMetrics(),
-        decoder=Seq(
-            weight=ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(
-                    ft.DecoderWeights(W_dec).resampled(),
-                )
-            ),
-            bias=cl.ops.Add(b_dec),
-        ),
-    )
-
-    # losses
-    models = [model]
-    losses = dict(
-        L2_loss=L2Loss(model),
-        sparsity_loss=SparsityPenaltyLoss(model),
-    )
-    return models, losses
-
-
-def basic_vanilla_sae(d_data, d_dict):
-    # parameters
-    W_enc = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_data, d_dict)))
-    W_dec = nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d_dict, d_data)))
-
-    b_enc = nn.Parameter(torch.zeros(d_dict))
-    b_dec = nn.Parameter(torch.zeros(d_data))
-
-    # model
-    model = Seq(
-        encoder=Seq(
-            pre_bias=Sub(b_dec),
-            weight=ft.EncoderWeights(W_enc).resampled(),
-            bias=ft.EncoderBias(b_enc).resampled(),
-            nonlinearity=nn.ReLU(),
-        ),
-        freqs=EMAFreqTracker(),
-        L1=L1Penalty(),
-        metrics=co.metrics.ActMetrics(),
-        decoder=Seq(
-            weight=ft.DecoderWeights(W_dec).resampled(),
-            bias=cl.ops.Add(b_dec),
-        ),
-    )
-
-    # losses
-    models = [model]
-    losses = dict(
-        L2_loss=L2Loss(model),
-        sparsity_loss=SparsityPenaltyLoss(model),
-    )
-    return models, losses
 
 
 def basic_vanilla_sae_lin(init: Initializer):
@@ -156,29 +83,6 @@ def classed_basic_vanilla_sae_lin(init: Initializer):
             ft.NormFeatures(
                 init.decoder,
             ),
-        ),
-    )
-
-    models = [model]
-    losses = dict(
-        L2_loss=L2Loss(model),
-        sparsity_loss=SparsityPenaltyLoss(model),
-    )
-    return models, losses
-
-
-def basic_vanilla_sae_lin_no_orth(init: Initializer):
-    model = Seq(
-        encoder=Seq(
-            pre_bias=Sub(init.decoder.bias),
-            lin=init.encoder,
-            nonlinearity=nn.ReLU(),
-        ),
-        freqs=EMAFreqTracker(),
-        L1=L1Penalty(),
-        metrics=co.metrics.ActMetrics(),
-        decoder=ft.NormFeatures(
-            init.decoder,
         ),
     )
 

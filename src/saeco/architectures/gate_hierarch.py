@@ -9,20 +9,12 @@ from saeco.architectures.initialization.initializer import Initializer
 import saeco.core.module
 from saeco.core.collections.parallel import Parallel
 from saeco.components import (
-    Penalty,
     L1Penalty,
-    FreqTracked,
     EMAFreqTracker,
-    FreqTracker,
-    ResampledLayer,
-    Loss,
     L2Loss,
     SparsityPenaltyLoss,
-    SAECache,
 )
 
-# from saeco.core.linear import Bias, NegBias, Affine, MatMul
-from saeco.core.basic_ops import Add, MatMul, Sub, Mul
 from typing import Optional
 from saeco.core.reused_forward import ReuseForward, ReuseCache
 from saeco.core import Seq

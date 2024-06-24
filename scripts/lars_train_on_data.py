@@ -12,9 +12,7 @@ BATCH_SIZE = 4096
 
 from saeco.architectures.gated import gated_sae, gated_sae_no_detach
 from saeco.architectures.vanilla_tests import (
-    vanilla_sae,
     basic_vanilla_sae_lin,
-    basic_vanilla_sae_lin_no_orth,
 )
 from saeco.architectures.vanilla.unshrink import rescaling_vanilla
 from saeco.architectures.deep.deep import deep_sae, resid_deep_sae
