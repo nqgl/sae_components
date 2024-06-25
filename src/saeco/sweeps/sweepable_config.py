@@ -6,7 +6,28 @@ from pydantic import BaseModel, create_model, dataclasses
 T = TypeVar("T")
 
 
-class Swept(BaseModel, Generic[T]):
+class SweptCheckerMeta(mc.ModelMetaclass):
+    def __instancecheck__(self, instance: Any) -> bool:
+        if mc.ModelMetaclass.__instancecheck__(self, instance):
+            return True
+        if self is Swept:
+            return False
+        if not isinstance(instance, Swept):
+            return False
+        iT = instance.__pydantic_generic_metadata__["args"]
+        sT = self.__pydantic_generic_metadata__["args"]
+        if len(iT) == len(sT) == 1:
+            try:
+                if issubclass(iT[0], sT[0]):
+                    return True
+            except TypeError:
+                pass
+        if len(sT) == 1 and all(isinstance(v, sT) for v in instance.values):
+            return True
+        return False
+
+
+class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
     values: list[T]
 
     def __init__(self, *values, **kwargs):
