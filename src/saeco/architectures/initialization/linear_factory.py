@@ -65,7 +65,14 @@ class Tied:
             else:
                 dst_param.data[:] = src_param.data.transpose(-2, -1)
         elif self.tie_type == self.TIED:
-            setattr(other, self.site, src_param)
+            dst_param = getattr(other, self.site)
+            assert (dst_param.data.shape == src_param.data.shape) ^ (
+                dst_param.data.shape == src_param.data.transpose(-2, -1).shape
+            )
+            if dst_param.data.shape == src_param.data.shape:
+                dst_param.data = src_param.data
+            else:
+                dst_param.data = src_param.data.transpose(-2, -1)
         else:
             raise ValueError("Invalid tie type")
 
