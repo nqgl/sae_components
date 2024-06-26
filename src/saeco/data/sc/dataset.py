@@ -97,10 +97,22 @@ class DataConfig(SweepableConfig):
         return f"{self.dataset.replace('/', '_')}_{self.seq_len}_{self.seq_mul}_{self.set_bos}_{self.model_name}"
 
     def _get_tokens_split_path(self, split: SplitConfig):
-        return DATA_DIRS._CHUNKS_DIR / self.idstr() / split.split_dir_id / "tokens"
+        return (
+            DATA_DIRS._CHUNKS_DIR
+            / self.idstr()
+            / self.model_cfg.modelstring
+            / split.split_dir_id
+            / "tokens"
+        )
 
     def _get_acts_split_path(self, split: SplitConfig):
-        return DATA_DIRS._CHUNKS_DIR / self.idstr() / split.split_dir_id / "acts"
+        return (
+            DATA_DIRS._CHUNKS_DIR
+            / self.idstr()
+            / self.model_cfg.modelstring
+            / split.split_dir_id
+            / "acts"
+        )
 
     def _tokens_piles_path(self, split: SplitConfig):
         return self._get_tokens_split_path(split) / "piles"

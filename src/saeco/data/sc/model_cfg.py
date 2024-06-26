@@ -15,6 +15,10 @@ class ActsDataConfig(SweepableConfig):
     def hook_site(self):
         return utils.get_act_name(self.site, self.layer_num)
 
+    @property
+    def actstring(self):
+        return f"{self.site}_{self.layer_num}_{self.excl_first}"
+
 
 class ModelConfig(SweepableConfig):
     model_name: str = "gpt2-small"
@@ -46,3 +50,7 @@ class ModelConfig(SweepableConfig):
     @model.setter
     def model(self, m: HookedTransformer):
         self._setmodel(m)
+
+    @property
+    def modelstring(self):
+        return f"{self.model_name}_{self.acts_cfg.actstring}"
