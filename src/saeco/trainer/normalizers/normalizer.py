@@ -10,54 +10,101 @@ import saeco.core as cl
 
 
 class Normalizer(cl.Module, ABC):
-    def normalize(self, x, *, cache: cl.Cache, **kwargs):
-        x_normed, nfac = self._normalize(x)
-        cache.normalization_factor = nfac
-        return x_normed, nfac
-
-    def _normalize(self, x):
-        fac = self._get_normalization_factor(x) / (x.shape[-1] ** 0.5)
-        return x / fac, fac
+    def __init__(self, init):
+        super().__init__()
 
     @abstractmethod
-    def _get_normalization_factor(self, x):
+    def invert(self, x, *, cache: cl.Cache, **kwargs):
+        raise NotImplementedError
+
+    @abstractmethod
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        raise NotImplementedError
+
+    def prime_normalizer(self, buffer, n=100):
+        pass
+
+    def io_normalize(self, module) -> "NormalizedIO":
+        return NormalizedIO(model=module, normalizer=self)
+
+    def input_normalize(self, module) -> "NormalizedInputs":
+        return NormalizedInputs(model=module, normalizer=self)
+
+
+class Normalized(cl.Module):
+    model: cl.Module
+    normalizer: Normalizer
+
+    def __init__(self, model: cl.Module, normalizer: Normalizer):
+        super().__init__()
+        self.model = cl.ReuseForward(model)
+        self.normalizer = cl.ReuseForward(normalizer)
+        self._normalizer = normalizer
+
+
+class NormalizedIO(Normalized):
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        x_normed = self.normalizer(x, cache=cache["normalization"])
+        return self._normalizer.invert(
+            self.model(x_normed, cache=cache["normalization"]),
+            cache=cache["normalization"],
+        )
+
+
+class NormalizedInputs(Normalized):
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        x_normed = self.normalizer(x, cache=cache["normalization"])
+        return self.model(x_normed, cache=cache["normalization"])
+
+
+class AffineNormalizer(Normalizer):
+    def shift(self, x, *, cache) -> Tensor:
+        raise NotImplementedError
+
+    def scale(self, x, *, cache) -> Tensor:
         raise NotImplementedError
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        return self.normalize(x, cache=cache)
+        shift = self.shift(x, cache=cache)
+        x_s = x - shift
+        scale = self.scale(x_s, cache=cache)
+        cache.shift = ...  # force watching for now
+        cache.scale = ...  # may integrate cacheproc-like behavior later
+        cache.shift = shift
+        cache.scale = scale
+        return (x_s) / scale
 
-    def prime_normalizer(self, buffer, n=100):
-        pass
-
-    def io_normalize(self, module) -> "NormalizedIO":
-        return NormalizedIO(model=module, normalizer=self)
-
-    def input_normalize(self, module) -> "NormalizedInputs":
-        return NormalizedInputs(model=module, normalizer=self)
-
-
-class Normalizer2(Protocol):
-    def forward(self, x, *, cache: cl.Cache):
-        return self.normalize(x, cache=cache)
-
-    def prime_normalizer(self, buffer, n=100):
-        pass
-
-    def io_normalize(self, module) -> "NormalizedIO":
-        return NormalizedIO(model=module, normalizer=self)
-
-    def input_normalize(self, module) -> "NormalizedInputs":
-        return NormalizedInputs(model=module, normalizer=self)
+    def invert(self, x, *, cache: cl.Cache, **kwargs):
+        return x * cache.scale + cache.shift
 
 
-class L2Normalizer(Normalizer):
-    def _get_normalization_factor(self, x):
-        return torch.linalg.vector_norm(x, dim=-1, ord=2, keepdim=True)
+class LNNormalizer(AffineNormalizer):
+    def __init__(self, init, eps=1e-07):
+        super().__init__(init)
+        self.eps = eps
+
+    def shift(self, x, *, cache) -> Tensor:
+        return x.mean(dim=-1, keepdim=True)
+
+    def scale(self, x: Tensor, *, cache) -> Tensor:
+        return x.std(dim=-1, keepdim=True, unbiased=False) + self.eps
 
 
-class ConstL2Normalizer(Normalizer):
-    def __init__(self):
-        super().__init__()
+class L2Normalizer(AffineNormalizer):
+    def __init__(self, init, eps=1e-07):
+        super().__init__(init)
+        self.eps = eps
+
+    def shift(self, x, *, cache) -> Tensor:
+        return 0
+
+    def scale(self, x: Tensor, *, cache) -> Tensor:
+        return x.std(dim=-1, keepdim=True, unbiased=False) + self.eps
+
+
+class ConstL2Normalizer(AffineNormalizer):
+    def __init__(self, init):
+        super().__init__(init)
         self.register_buffer("est_avg_norm", torch.zeros(0))
 
     def prime_normalizer(self, buffer, n=100):
@@ -71,28 +118,255 @@ class ConstL2Normalizer(Normalizer):
         return self.est_norm
 
 
-class Normalized(cl.Seq):
-    model: cl.Module
-    normalizer: Normalizer
+class ConstLNNormalizer(AffineNormalizer):
+    def __init__(self, init):
+        super().__init__(init)
+        self.register_buffer("mean", torch.zeros(init.d_data))
+        self.register_buffer("est_avg_norm", torch.zeros(0))
+
+    @torch.no_grad()
+    def prime_normalizer(self, buffer, n=100):
+        means = []
+        samples = []
+        for _ in range(n):
+            sample = next(buffer)
+            samples.append(sample)
+            means.append(sample.mean(dim=0))
+        self.mean = torch.stack(means).mean(dim=0)
+        norms = []
+        for sample in samples:
+            norms.append((sample - self.mean).std(dim=-1).mean())
+        self.est_norm = torch.tensor(norms).mean()
+
+    def scale(self, x, *, cache) -> Tensor:
+        return self.est_norm
+
+    def shift(self, x, *, cache) -> Tensor:
+        return self.mean
 
 
-class NormalizedIO(Normalized):
-    def __init__(self, model, normalizer):
-        assert isinstance(normalizer, Normalizer)
-        super().__init__(
-            normalizer=cl.ReuseForward(normalizer),
-            normalized=cl.Router(
-                model=cl.ReuseForward(model), factor=cl.ops.Identity()
-            ).reduce(lambda pred_normed, scale: pred_normed * scale),
-        )
+class ElementwiseZdistNormalizer(AffineNormalizer):
+    def __init__(self, init):
+        super().__init__()
+        self.register_buffer("std", torch.zeros(init.d_data))
+        self.register_buffer("mean", torch.zeros(init.d_data))
+
+    def prime_normalizer(self, buffer, n=100):
+        means = []
+        samples = []
+        for _ in range(n):
+            sample = next(buffer)
+            samples.append(sample)
+            means.append(sample.mean(dim=0))
+        self.mean = torch.stack(means).mean(dim=0)
+        norms = []
+        for sample in samples:
+            norms.append((sample - self.mean).std(dim=-1).mean())
+        self.est_norm = torch.tensor(norms).mean()
+
+    def _get_normalization_factor(self, x):
+        return self.est_norm
 
 
-class NormalizedInputs(Normalized):
-    def __init__(self, model, normalizer):
-        assert isinstance(normalizer, Normalizer)
-        super().__init__(
-            normalizer=cl.ReuseForward(normalizer),
-            normalized=cl.Router(
-                model=cl.ReuseForward(model), factor=cl.ops.Identity()
-            ).reduce(lambda *l: l[0]),
-        )
+class BatchNormalizer(AffineNormalizer):
+    def __init__(self, init, eps=1e-07):
+        super().__init__(init)
+        self.eps = eps
+
+    def shift(self, x, *, cache) -> Tensor:
+        return x.mean(dim=0, keepdim=True)
+
+    def scale(self, x: Tensor, *, cache) -> Tensor:
+        return x.std(dim=0, keepdim=True, unbiased=False) + self.eps
+
+
+from saeco.sweeps import SweepableConfig
+
+
+# class Aggregation(SweepableConfig):
+#     primed: bool
+#     running: bool
+#     batch: bool
+
+
+from jaxtyping import Float
+
+from enum import IntEnum
+
+
+class GNConfig(SweepableConfig):
+    class Aggregation(IntEnum):
+        DONTUSE = 0
+        PRIMED = 1
+        RUNNING_AVG = 2
+        BATCH_AVG = 3
+        LEARNED = 4
+
+    mu_s: bool
+    mu_e: Aggregation
+    std_s: bool
+    std_e: Aggregation
+
+
+Aggregation = GNConfig.Aggregation
+
+
+class GeneralizedNormalizer(Normalizer):
+    def __init__(self, init, cfg: GNConfig, eps=1e-07):
+        super().__init__(init)
+        self.eps = eps
+        self.cfg = cfg
+        if cfg.mu_e in (Aggregation.PRIMED, Aggregation.RUNNING_AVG):
+            self.register_buffer("_mu_e", torch.zeros(init.d_data))
+        elif cfg.mu_e == Aggregation.LEARNED:
+            self._mu_e = nn.Parameter(torch.zeros(init.d_data))
+        if cfg.std_e in (Aggregation.PRIMED, Aggregation.RUNNING_AVG):
+            self.register_buffer("_std_e", torch.zeros(init.d_data))
+        elif cfg.std_e == Aggregation.LEARNED:
+            self._std_e = nn.Parameter(torch.zeros(init.d_data))
+        self.sandwich = True
+
+    @torch.no_grad()
+    def prime_normalizer(self, buffer, n=100):
+
+        samples = [next(buffer) for _ in range(n)]
+        x = torch.cat(samples, dim=0)
+        # samples = [x - self.mu_s(x) for x in samples]
+        if self.sandwich:
+            x = x - self.mu_s(x)
+
+        if self.cfg.mu_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
+            # mu_es = [self.elementwise_mean(x) for x in samples]
+            self._mu_e.data = self.elementwise_mean(x)
+
+        # samples = [x - self.mu_e(x) for x in samples]
+        x = x - self.mu_e(x)
+        x = x - self.mu_s(x)
+        # samples = [x - self.mu_s(x) for x in samples]
+        if self.sandwich:
+
+            x = x / self.std_s(x)
+        if self.cfg.std_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
+            # std_es = [self.elementwise_std(x) for x in samples]
+            self._std_e.data = self.elementwise_std(x)
+            # x = x / self.std_e(x)
+            # x = x / self.std_s(x)
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        # cache.mu_e = ...
+        # cache.mu_e = mu_e
+        # mu_e = self.mu_e(x, cache=cache)
+        # x = x - mu_e
+
+        # cache.mu_s = ...
+        # cache.mu_s = mu_s
+        # mu_s = self.mu_s(x, cache=cache)
+        # x = x - mu_s
+
+        # cache.std_e = ...
+        # cache.std_e = std_e
+        # std_e = self.std_e(x, cache=cache)
+        # x = x / std_e
+
+        # cache.std_s = ...
+        # cache.std_s = std_s
+        # std_s = self.std_s(x, cache=cache)
+        # x = x / std_s
+        ####
+        if not self.sandwich:
+            x = x - cache(self, force_watch=True).mu_e(x)
+            x = x - cache(self, force_watch=True).mu_s(x)
+            x = x / cache(self, force_watch=True).std_e(x)
+            x = x / cache(self, force_watch=True).std_s(x)
+            return x
+        x0 = x
+
+        mu_s_1 = self.mu_s(x)
+        x = x - mu_s_1
+
+        x = x - cache(self, force_watch=True).mu_e(x)
+
+        mu_s_2 = self.mu_s(x)
+        x = x - mu_s_2
+
+        cache.mu_s = ...
+        cache.mu_s = mu_s_1 + mu_s_2
+
+        std_s_1 = self.std_s(x)
+        x = x / std_s_1
+
+        x = x / cache(self, force_watch=True).std_e(x)
+
+        std_s_2 = self.std_s(x)
+        x = x / std_s_2
+
+        cache.std_s = ...
+        cache.std_s = std_s_1 * std_s_2
+
+        return (x0 - (cache.mu_s + cache.mu_e)) / (cache.std_s * cache.std_e)
+
+    def sample_mean(self, x):
+        return x.mean(dim=-1, keepdim=True)
+
+    def elementwise_mean(self, x):
+        return x.mean(dim=0, keepdim=True)
+
+    def sample_std(self, x):
+        return x.std(dim=-1, keepdim=True, unbiased=False) + self.eps
+
+    def elementwise_std(self, x):
+        return x.std(dim=0, keepdim=True, unbiased=False) + self.eps
+
+    def invert(self, x, *, cache: cl.Cache, **kwargs):
+        return x * (cache.std_s * cache.std_e) + (cache.mu_s + cache.mu_e)
+
+    def mu_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
+        if not self.cfg.mu_s:
+            return 0
+        return self.sample_mean(x)
+
+    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
+        if not self.cfg.std_s:
+            return 1
+        return self.sample_std(x)
+
+    def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
+        if self.cfg.mu_e == Aggregation.DONTUSE:
+            return 0
+        if self.cfg.mu_e == Aggregation.RUNNING_AVG:
+            self._mu_e.data.lerp_(self.elementwise_mean(x), 0.003)
+        if self.cfg.mu_e == Aggregation.BATCH_AVG:
+            return self.elementwise_mean(x)
+        return self._mu_e
+
+    def std_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
+        if self.cfg.std_e == Aggregation.DONTUSE:
+            return 1
+        if self.cfg.std_e == Aggregation.RUNNING_AVG:
+            self._std_e.data.lerp_(self.elementwise_std(x), 0.003)
+        if self.cfg.std_e == Aggregation.BATCH_AVG:
+            return self.elementwise_std(x)
+        return self._std_e
+
+
+def main():
+    class C: ...
+
+    init = C()
+    setattr(init, "d_data", 768)
+
+    cfg = GNConfig(
+        mu_s=True, mu_e=Aggregation.BATCH_AVG, std_s=True, std_e=Aggregation.BATCH_AVG
+    )
+    normalizer = GeneralizedNormalizer(init, cfg)
+    cache = cl.Cache()
+    x = torch.randn(10, 768, dtype=torch.float16) * 100
+    x = x.cuda()
+    with torch.autocast(device_type="cuda"):
+        xn = normalizer(x, cache=cache)
+        xdn = normalizer.invert(xn, cache=cache)
+        print(x - xdn)
+
+
+if __name__ == "__main__":
+    main()

@@ -46,6 +46,8 @@ from saeco.trainer.normalizers import (
     Normalizer,
     L2Normalizer,
     NORMALIZERS,
+    GeneralizedNormalizer,
+    GNConfig,
 )
 from saeco.misc.lazy import lazyprop, defer_to_and_set
 from saeco.sweeps import SweepableConfig
@@ -55,7 +57,6 @@ from pydantic import BaseModel, Field
 class SAEConfig(SweepableConfig):
     d_data: int = 768
     dict_mult: int = 8
-    normalizer: str = "ConstL2Normalizer"
 
     @lazyprop
     def d_dict(self):
@@ -73,6 +74,7 @@ T = TypeVar("T", bound=SweepableConfig)
 class RunConfig(SweepableConfig, Generic[T]):
     train_cfg: TrainConfig
     arch_cfg: T
+    normalizer_cfg: GNConfig
     sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 
@@ -101,7 +103,6 @@ class TrainingRunner:
             self.cfg.sae_cfg.d_data,
             dict_mult=self.cfg.sae_cfg.dict_mult,
             l0_target=self.cfg.train_cfg.l0_target,
-            median=getmean(buf=self.buf, normalizer=self.normalizer),
             # median=getmed(buf=self.buf, normalizer=self.normalizer),
             # weight_scale=2,
         )
@@ -129,7 +130,11 @@ class TrainingRunner:
 
     @lazyprop
     def normalizer(self):
-        normalizer = NORMALIZERS[self.cfg.sae_cfg.normalizer]()
+        # normalizer = NORMALIZERS[self.cfg.sae_cfg.normalizer]()
+        normalizer = GeneralizedNormalizer(
+            init=self.initializer, cfg=self.cfg.normalizer_cfg
+        )
+
         normalizer.prime_normalizer(self.buf)
         return normalizer
 

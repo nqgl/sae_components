@@ -165,13 +165,11 @@ class Cache:
         n = self._subcache_index
         return f"{self._parent._name}.{n}"
 
-    def _watch(self, _name: str = None):
+    def _watch(self, _name: str | list[str]):
         if isinstance(_name, list):
             for name in _name:
                 self._watch(name)
             return self
-        if _name is None:
-            return self._watching(_name)
         if _name in self._lazy_read_funcs:
             raise AttributeError(f"Attribute {_name} is lazy-rendered")
         self.__setattr__(_name, ...)
@@ -415,23 +413,28 @@ class Cache:
             del cache
         del self.__dict__
 
-    def __call__(self, obj: T) -> "SubCacher | T":
+    def __call__(self, obj: T, force_watch=False) -> "SubCacher | T":
         # the typing is not technically correct here
         # but it gets the fields right in the IDE
-        return SubCacher(cache=self, obj=obj)
+        return SubCacher(cache=self, obj=obj, force_watch=force_watch)
 
 
 class SubCacher:
-    def __init__(self, cache, obj):
+    def __init__(self, cache, obj, record=False, force_watch=None):
         self._cache: Cache = cache
         self._obj = obj
+        self._record = record or force_watch
+        self._force_watch = force_watch
+        # assert not force_watch or record  # force_watch -> record
 
     def __getattribute__(self, name: str) -> Any:
         if name.startswith("_"):
             return super().__getattribute__(name)
         obj = getattr(self._obj, name)
         subcache = self._cache[name]
-        return SubCacher(cache=subcache, obj=obj)
+        return SubCacher(
+            cache=subcache, obj=obj, record=self._record, force_watch=self._force_watch
+        )
 
     def __call__(self, *args, **kwargs):
         assert "cache" not in kwargs
@@ -445,7 +448,13 @@ class SubCacher:
             v = self._obj(*args, **kwargs)
         except Exception as e:
             raise locate_cache_exception(e, self._cache)
-
+        if self._record:
+            record_location = self._cache._subcache_index
+            if isinstance(self._record, str):
+                record_location += self._record
+            if self._force_watch:
+                self._cache._parent._watch(record_location)
+            setattr(self._cache._parent, record_location, v)
         return v
 
 
