@@ -5,13 +5,15 @@ from saeco.misc import lazyprop
 
 
 class Sweeper:
-    def __init__(self, path):
+    def __init__(self, path, module_name="sweepfile"):
+        module_name = module_name.replace(".py", "")
         self.path = Path(path)
+        self.module_name = module_name
 
     @lazyprop
     def sweepfile(self):
         spec = importlib.util.spec_from_file_location(
-            "sweepfile", str(self.path / "sweepfile.py")
+            f"{self.module_name}", str(self.path / f"{self.module_name}.py")
         )
         sweepfile = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sweepfile)
@@ -59,8 +61,9 @@ def main():
     parser.add_argument("path", type=str)
     parser.add_argument("--init", action="store_true")
     parser.add_argument("--runpod-n-instances", type=int)
+    parser.add_argument("--module-name", type=str, default="sweepfile")
     args = parser.parse_args()
-    sw = Sweeper(args.path)
+    sw = Sweeper(args.path, module_name=args.module_name)
     if args.init:
         sw.initialize_sweep()
     else:

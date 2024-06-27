@@ -26,7 +26,7 @@ SOFT_CLS = lambda module: cl.Seq(
 class Gated(cl.Parallel):
     def __init__(self, *, gate, mag=None, thresh_cls=None):
         super().__init__(
-            gate=(thresh_cls or co.ops.Thresh)(gate),
+            gate=cl.ReuseForward((thresh_cls or co.ops.Thresh)(gate)),
             mag=mag or cl.ops.Identity(),
             _support_parameters=True,
             _support_modules=True,
@@ -50,8 +50,14 @@ class Gated(cl.Parallel):
             self.full_soft()
         return self
 
-    def full_soft(self):
+    def full_soft(self, detach=True):
         # return self
+        if detach:
+            return Gated(
+                gate=self.gate_aux,
+                mag=co.Lambda(lambda x: x.detach(), self.mag),
+                thresh_cls=SOFT_CLS,
+            )
         return Gated(
             gate=self.gate_aux,
             mag=self.mag,

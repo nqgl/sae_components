@@ -51,7 +51,6 @@ def debug_enter(self, field, current):
 
 def defer_to_and_set(field):
     def wrapper(fn):
-        print("funcname", fn.__name__)
 
         @functools.wraps(fn)
         def inner(self):

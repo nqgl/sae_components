@@ -11,6 +11,7 @@ from saeco.architectures.gate_hierarch import (
     hierarchical_l1scale,
     hierarchical_softaux,
     HierarchicalSoftAuxConfig,
+    HGatesConfig,
 )
 from saeco.architectures.vanilla_tests import (
     basic_vanilla_sae_lin,
@@ -150,8 +151,8 @@ def main():
     tcfg = TrainConfig(
         l0_target=l0_target,
         coeffs={
-            "sparsity_loss": 2e-3 if l0_target is None else 3e-4,
-            "L2_loss": 10,
+            "sparsity_loss": 3e-4,
+            "L2_loss": 1,
         },
         lr=1e-3,
         use_autocast=True,
@@ -163,10 +164,20 @@ def main():
     )
     cfg = RunConfig(
         train_cfg=tcfg,
-        arch_cfg=HierarchicalSoftAuxConfig(),
+        arch_cfg=HierarchicalSoftAuxConfig(
+            hgates=HGatesConfig(
+                l1_scale_base=1,
+                num_levels=2,
+                BF=2**4,
+                untied=False,
+                classic=True,
+                penalize_inside_gate=False,
+                target_hierarchical_l0_ratio=0.5,
+                relu_gate_encoders=False,
+            )
+        ),
         sae_cfg=SAEConfig(normalizer="L2Normalizer"),
     )
-    from dataclasses import dataclass, field
 
     tr = TrainingRunner(cfg, hierarchical_softaux)
 

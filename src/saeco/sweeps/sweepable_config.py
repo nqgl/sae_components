@@ -1,5 +1,15 @@
 import pydantic._internal._model_construction as mc
-from typing import TypeVar, Generic, Type, List, Annotated, Union, Any, TYPE_CHECKING
+from typing import (
+    Literal,
+    TypeVar,
+    Generic,
+    Type,
+    List,
+    Annotated,
+    Union,
+    Any,
+    TYPE_CHECKING,
+)
 from pydantic import BaseModel, create_model, dataclasses
 
 
@@ -27,6 +37,9 @@ class SweptCheckerMeta(mc.ModelMetaclass):
         return False
 
 
+from typing import Set, Dict
+
+
 class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
     values: list[T]
 
@@ -36,6 +49,41 @@ class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
                 raise Exception("two sources of values in Swept initialization!")
             kwargs["values"] = values
         return super().__init__(**kwargs)
+
+    def model_dump(
+        self,
+        *,
+        mode: str = "python",
+        include: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
+        exclude: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        by_alias: bool = False,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        round_trip: bool = False,
+        warnings: bool | Literal["none"] | Literal["warn"] | Literal["error"] = True,
+        serialize_as_any: bool = False,
+    ) -> dict[str, Any]:
+        dump = super().model_dump(
+            mode=mode,
+            include=include,
+            exclude=exclude,
+            context=context,
+            by_alias=by_alias,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+            round_trip=round_trip,
+            warnings=warnings,
+            serialize_as_any=serialize_as_any,
+        )
+        # T_args = self.__pydantic_generic_metadata__["args"]
+        # if T_args:
+        for i, v in enumerate(dump["values"]):
+            if isinstance(v, bool):
+                dump["values"][i] = int(v)
+        return dump
 
 
 def Sweepable(type):

@@ -154,6 +154,7 @@ def get_hgates(
         init._decoder.add_wrapper(ft.NormFeatures)
         init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
     else:
+        init._decoder._weight_tie = None
         init._decoder.tie_weights(init._encoder)
     if cfg.classic:
         init._encoder.bias = False
