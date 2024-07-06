@@ -95,5 +95,5 @@ class Trainable(cl.Module):
             del cache
         return out
 
-    def get_losses_and_metrics_names(self):
+    def get_losses_and_metrics_names(self) -> list[str]:
         return list(self.losses.keys()) + list(self.metrics.keys())

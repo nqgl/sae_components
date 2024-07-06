@@ -166,13 +166,28 @@ def has_sweep(target: BaseModel):
 
 def _to_swept_selective_dict(target: BaseModel):
     d = {}
-    target.model_copy
     for name, field in target.model_fields.items():
         attr = getattr(target, name)
         if isinstance(attr, Swept):
             subdict = attr.model_dump()
         elif isinstance(attr, BaseModel) and has_sweep(attr):
             subdict = dict(parameters=_to_swept_selective_dict(attr))
+        else:
+            continue
+        d[name] = subdict
+    return d
+
+
+def _to_randomly_selected_dict(target: BaseModel):
+    d = {}
+    import random
+
+    for name, field in target.model_fields.items():
+        attr = getattr(target, name)
+        if isinstance(attr, Swept):
+            subdict = random.choice(attr.model_dump()["values"])
+        elif isinstance(attr, BaseModel):
+            subdict = _to_randomly_selected_dict(attr)
         else:
             continue
         d[name] = subdict
@@ -195,26 +210,29 @@ if TYPE_CHECKING:
 else:
     ...
 
-    class SweepableConfig(BaseModel, metaclass=SweptMeta):
-        __ignore_this: int = 0
 
-        def is_concrete(self, search_target: BaseModel = None):
-            search_target = search_target or self
-            for name, field in search_target.model_fields.items():
-                attr = getattr(search_target, name)
-                if isinstance(attr, Swept):
+class SweepableConfig(BaseModel, metaclass=SweptMeta):
+    __ignore_this: int = 0
+
+    def is_concrete(self, search_target: BaseModel = None):
+        search_target = search_target or self
+        for name, field in search_target.model_fields.items():
+            attr = getattr(search_target, name)
+            if isinstance(attr, Swept):
+                return False
+            elif isinstance(attr, BaseModel):
+                if not self.is_concrete(attr):
                     return False
-                elif isinstance(attr, BaseModel):
-                    if not self.is_concrete(attr):
-                        return False
-            return True
+        return True
 
-        def sweep(self):
-            copy = self.model_copy(deep=True)
-            return _to_swept_selective_dict(copy)
-            return copy
+    def sweep(self):
+        copy = self.model_copy(deep=True)
+        return _to_swept_selective_dict(copy)
 
-        def from_selective_sweep(self, sweep: dict):
-            mydict = self.model_dump()
-            _merge_dicts_left(mydict, sweep)
-            return self.model_validate(mydict)
+    def from_selective_sweep(self, sweep: dict):
+        mydict = self.model_dump()
+        _merge_dicts_left(mydict, sweep)
+        return self.model_validate(mydict)
+
+    def random_sweep_configuration(self):
+        return self.from_selective_sweep(_to_randomly_selected_dict(self))

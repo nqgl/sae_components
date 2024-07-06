@@ -36,6 +36,7 @@ class TrainConfig(SweepableConfig):
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
     kwargs: dict = Field(default_factory=dict)
+    run_length: Optional[int] = 100e3
 
 
 class Trainer:
@@ -46,7 +47,7 @@ class Trainer:
         namestuff=None,
         optim: torch.optim.Optimizer = None,
     ):
-        self.cfg = cfg
+        self.cfg: TrainConfig = cfg
         self.model = model
         if wandb.run is None:
             wandb.init(
@@ -112,8 +113,9 @@ class Trainer:
 
     def get_cache(self):
         c = TrainCache()
-        for k in self.model.get_losses_and_metrics_names():
-            setattr(c, k, ...)
+        c._watch(self.model.get_losses_and_metrics_names())
+        # for k in self.model.get_losses_and_metrics_names():
+        # setattr(c, k, ...)
         return c
 
     def train(self, buffer=None):
@@ -123,16 +125,11 @@ class Trainer:
             self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
 
-        for bn in buffer:
-            bn = bn.cuda()
+        for x in buffer:
+            x = x.cuda()
             if not self.cfg.use_autocast:
-                bn = bn.float()
+                x = x.float()
             self.optim.zero_grad()
-            if isinstance(bn, tuple):
-                x, y = bn
-            else:
-                x = bn
-                y = x
 
             cache = self.get_cache()
             if self.cfg.use_autocast:
@@ -163,6 +160,8 @@ class Trainer:
             del cache
             if self.t % self.intermittent_metric_freq == 0:
                 self.do_intermittent_metrics()
+            if self.cfg.run_length and self.t > self.cfg.run_length:
+                break
 
     def do_intermittent_metrics(self):
         self.log_recons("recons/with_bos/", True)

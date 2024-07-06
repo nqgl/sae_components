@@ -71,7 +71,7 @@ model_fn = ln_sae
 PROJECT = "sae sweeps"
 train_cfg = TrainConfig(
     data_cfg=DataConfig(
-        model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=False))
+        model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
     ),
     l0_target=45,
     coeffs={
@@ -85,26 +85,40 @@ train_cfg = TrainConfig(
     batch_size=4096,
     use_lars=True,
     betas=(0.9, 0.99),
+    run_length=20e3,
 )
 acfg = Config(
-    pre_bias=False,
+    pre_bias=Swept[bool](False),
 )
 cfg = RunConfig[Config](
     train_cfg=train_cfg,
     arch_cfg=acfg,
     normalizer_cfg=GNConfig(
-        mu_s=Swept[bool](True, False),
-        mu_e=Swept[GNConfig.Aggregation](0, 1, 3),
-        std_s=Swept[bool](True, False),
-        std_e=Swept[GNConfig.Aggregation](0, 1, 3),
+        mu_s=Swept[GNConfig.SAggregation](0, 1, 5),
+        mu_e=Swept[GNConfig.Aggregation](0, 1),
+        std_s=Swept[GNConfig.SAggregation](0, 1, 5),
+        std_e=Swept[GNConfig.Aggregation](0, 1),
     ),
 )
+
+# cfg = RunConfig[Config](
+#     train_cfg=train_cfg,
+#     arch_cfg=acfg,
+#     normalizer_cfg=GNConfig(
+#         mu_s=Swept[GNConfig.SAggregation](1),
+#         mu_e=Swept[GNConfig.Aggregation](1),
+#         std_s=Swept[GNConfig.SAggregation](1),
+#         std_e=Swept[GNConfig.Aggregation](1),
+#     ),
+# )
 
 
 def run(cfg):
     tr = TrainingRunner(cfg, model_fn=model_fn)
     tr.trainer.train()
 
+
+# run(cfg.random_sweep_configuration())
 
 if __name__ == "__main__":
     do_sweep(True)
