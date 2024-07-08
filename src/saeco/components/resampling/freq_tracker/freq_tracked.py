@@ -6,11 +6,11 @@ from torch import Tensor
 from jaxtyping import Float
 
 from typing import Tuple, Any, Union, Optional, List
-from saeco.components.resampling.freq_tracker import (
+from saeco.components.resampling.freq_tracker.freq_tracker import (
     FreqTracker,
 )
 
-from saeco.components.resampling.ema import EMAFreqTracker
+from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
 import saeco.core.module
 
 
