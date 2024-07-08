@@ -1,6 +1,6 @@
-from saeco.components.features.features import HasFeatures, ResampledWeight, Resamplable
+from saeco.components.features.features import ResampledWeight
 from saeco.components.wrap import WrapsModule
-from typing import Any, Optional
+from typing import Optional
 
 import torch.nn as nn
 from torch import Tensor

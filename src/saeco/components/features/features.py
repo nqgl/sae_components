@@ -4,7 +4,6 @@ from torch import Tensor
 from saeco.components.wrap import WrapsModule
 from typing import Protocol, runtime_checkable, Optional
 import saeco.core as cl
-from abc import ABC
 
 
 # class Features:

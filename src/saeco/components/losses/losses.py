@@ -1,9 +1,5 @@
 import torch
-import torch.nn as nn
 from saeco.components.sae_cache import SAECache
-from torch import Tensor
-from jaxtyping import Float
-import saeco.core.module
 from saeco.core.reused_forward import ReuseForward
 from typing import Protocol, runtime_checkable, List
 from abc import abstractmethod

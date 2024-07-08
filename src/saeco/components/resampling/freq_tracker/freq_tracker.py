@@ -1,5 +1,4 @@
 import torch
-from typing import Protocol, runtime_checkable
 from abc import ABC, abstractmethod
 from saeco.core import PassThroughModule
 

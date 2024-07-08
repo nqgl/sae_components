@@ -1,4 +1,4 @@
-from typing import Protocol, runtime_checkable, Optional
+from typing import Optional
 import torch
 import torch.nn as nn
 from .freq_tracker import FreqTracker
@@ -32,9 +32,8 @@ def find_matching_submodules(module: nn.Module, matchfn):
     return matches
 
 
-from saeco.sweeps import SweepableConfig
-from abc import ABC, abstractmethod
-from saeco.misc import lazyprop, lazycall
+from abc import ABC
+from saeco.misc import lazycall
 
 
 class Resampler(ABC):

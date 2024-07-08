@@ -1,5 +1,4 @@
 import saeco.core.module as cl
-from abc import abstractmethod
 from typing import List
 from saeco.components import Loss
 

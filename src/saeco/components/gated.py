@@ -114,8 +114,6 @@ def unstruc(ll):
 # def unstruc(ll):
 #     return einops.rearrange(ll, "b i bf -> b (bf i)")
 
-from saeco.components.ops.nonlinearities.softlu_remax import ReMax
-
 
 class SafeNormalized(cl.Module):
     def __init__(self, bf, norm, noise=None, detach=True):

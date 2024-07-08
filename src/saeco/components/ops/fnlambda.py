@@ -1,6 +1,5 @@
 import saeco.core as cl
 import torch.nn as nn
-from saeco.components.wrap import WrapsModule
 
 
 class Lambda(cl.Module):

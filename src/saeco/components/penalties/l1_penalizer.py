@@ -1,4 +1,3 @@
-import torch
 from .penalty import Penalty
 from torch import Tensor
 

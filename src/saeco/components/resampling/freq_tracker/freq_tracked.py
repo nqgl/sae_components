@@ -1,11 +1,5 @@
-import torch
-import torch.nn as nn
 import saeco.core as cl
-from saeco.components.sae_cache import SAECache
-from torch import Tensor
-from jaxtyping import Float
 
-from typing import Tuple, Any, Union, Optional, List
 from saeco.components.resampling.freq_tracker.freq_tracker import (
     FreqTracker,
 )

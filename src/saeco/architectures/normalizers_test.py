@@ -1,6 +1,5 @@
 import torch.nn as nn
 
-from saeco.architectures.base import SAE
 from saeco.architectures.initialization.initializer import Initializer
 from saeco.components import (
     L1Penalty,
@@ -9,12 +8,11 @@ from saeco.components import (
     SparsityPenaltyLoss,
 )
 from saeco.trainer.normalizers import GNConfig
-from saeco.core.reused_forward import ReuseForward, ReuseCache
+from saeco.core.reused_forward import ReuseForward
 from saeco.core import Seq
 import saeco.components.features.features as ft
 import saeco.components as co
 from saeco.misc import useif
-import saeco.core as cl
 from saeco.sweeps import SweepableConfig
 
 

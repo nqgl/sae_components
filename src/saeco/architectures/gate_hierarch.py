@@ -1,13 +1,6 @@
-import torch
 import torch.nn as nn
-from abc import ABC, abstractmethod
-from torch import Tensor
-from jaxtyping import Float
 
-from saeco.architectures.base import SAE
 from saeco.architectures.initialization.initializer import Initializer
-import saeco.core.module
-from saeco.core.collections.parallel import Parallel
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
@@ -16,16 +9,11 @@ from saeco.components import (
 )
 
 from typing import Optional
-from saeco.core.reused_forward import ReuseForward, ReuseCache
+from saeco.core.reused_forward import ReuseForward
 from saeco.core import Seq
 import saeco.components.features.features as ft
-from saeco.architectures.initialization.tools import (
-    reused,
-    weight,
-)
 
 import saeco.components as co
-import einops
 from saeco.components.gated import HGated, Gated, ClassicGated
 from saeco.misc import useif
 import saeco.core as cl

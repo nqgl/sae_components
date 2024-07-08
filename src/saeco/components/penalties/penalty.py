@@ -1,7 +1,6 @@
 from saeco.components.sae_cache import SAECache
 
 
-import torch.nn as nn
 import saeco.core as cl
 from abc import abstractmethod
 
