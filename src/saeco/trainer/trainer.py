@@ -37,6 +37,7 @@ class TrainConfig(SweepableConfig):
     use_lars: bool = False
     kwargs: dict = Field(default_factory=dict)
     run_length: Optional[int] = 100e3
+    resample_freq: int = 1500
 
 
 class Trainer:
@@ -160,6 +161,8 @@ class Trainer:
             del cache
             if self.t % self.intermittent_metric_freq == 0:
                 self.do_intermittent_metrics()
+            if self.t % self.cfg.resample_freq == 0:
+                self.model.resampler.resample(buffer)
             if self.cfg.run_length and self.t > self.cfg.run_length:
                 break
 

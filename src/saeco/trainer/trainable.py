@@ -8,8 +8,8 @@ from saeco.components.losses import (
 from saeco.core import Cache
 from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
 from saeco.trainer.train_cache import TrainCache
-
-
+from saeco.components.resampling import Resampler, RandomResampler
+from typing import Optional
 import torch
 import torch.nn as nn
 
@@ -24,10 +24,11 @@ class Trainable(cl.Module):
     def __init__(
         self,
         models: list[cl.Module],
-        losses: dict[str, Loss] = None,
-        extra_losses: dict[str, Loss] = None,
-        metrics: dict[str, Loss] = None,
-        normalizer: Normalizer = None,
+        losses: Optional[dict[str, Loss]] = None,
+        extra_losses: Optional[dict[str, Loss]] = None,
+        metrics: Optional[dict[str, Loss]] = None,
+        normalizer: Optional[Normalizer] = None,
+        resampler: Optional[Resampler | bool] = None,
     ):
         super().__init__()
         self.normalizer = normalizer or ConstL2Normalizer()
@@ -60,6 +61,14 @@ class Trainable(cl.Module):
             }
         )
         self.model = self.normalizer.io_normalize(models[0])
+
+        if resampler:
+            self.resampler = resampler
+        elif resampler is None:
+            self.resampler = RandomResampler()
+            self.resampler.assign_model(self.model)
+        else:
+            self.resampler = None
 
     def _normalizeIO(mth):
         def wrapper(self, x: torch.Tensor, *, cache: TrainCache, **kwargs):

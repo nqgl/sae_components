@@ -174,7 +174,6 @@ from saeco.components import (
     FreqTracked,
     EMAFreqTracker,
     FreqTracker,
-    ResampledLayer,
     Loss,
     L2Loss,
     SparsityPenaltyLoss,

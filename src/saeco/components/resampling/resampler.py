@@ -2,8 +2,7 @@ from typing import Protocol, runtime_checkable, Optional
 import torch
 import torch.nn as nn
 from .freq_tracker import FreqTracker
-from saeco.components import LinDecoder, LinEncoder, EncoderBias
-from saeco.components.features import Resamplable
+from saeco.components.features import LinDecoder, LinEncoder, EncoderBias, Resamplable
 
 
 def get_resample_sites(model: nn.Module) -> set[Resamplable]:
@@ -38,7 +37,7 @@ from abc import ABC, abstractmethod
 from saeco.misc import lazyprop, lazycall
 
 
-class Resampler:
+class Resampler(ABC):
     """
     currently it is assumed that the freq tracker does not change after
     the first usage
@@ -80,6 +79,10 @@ class Resampler:
             r.resample(
                 indices=i, new_directions=d, bias_reset_value=self.bias_reset_value
             )
+
+    def assign_model(self, model):
+        self.model = model
+        return model
 
     def setup_resample_types(self, resample_types):
         encs = []
