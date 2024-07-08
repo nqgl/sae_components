@@ -38,7 +38,7 @@ T = TypeVar("T", bound=SweepableConfig)
 class RunConfig(SweepableConfig, Generic[T]):
     train_cfg: TrainConfig
     arch_cfg: T
-    normalizer_cfg: GNConfig
+    normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
     sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 

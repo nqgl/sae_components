@@ -2,7 +2,15 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from .freq_tracker import FreqTracker
-from saeco.components.features import LinDecoder, LinEncoder, EncoderBias, Resamplable
+from saeco.components.features import (
+    LinDecoder,
+    LinEncoder,
+    EncoderBias,
+    Resamplable,
+    ResampledWeight,
+)
+
+# from saeco.trainer.trainable import Trainable # TODO circular, maybe just define a protocol for the model passed to resampler
 
 
 def get_resample_sites(model: nn.Module) -> set[Resamplable]:
@@ -57,19 +65,20 @@ class Resampler(ABC):
         self._biases = None
         # self._freq_tracker = None
 
-        self.bias_reset_value = 0.0
+        self.bias_reset_value = -0.3
         self.dead_threshold = 3e-6
 
     def get_feature_indices_to_reset(self):
         return self.freq_tracker.freqs < self.dead_threshold
 
-    def get_reset_feature_directions(self, num_directions, data_source): ...
+    def get_reset_feature_directions(self, num_directions, data_source, model): ...
 
-    def resample(self, data_source):
+    def resample(self, data_source: iter, optimizer: torch.optim.Optimizer, model):
         i = self.get_feature_indices_to_reset()
         d = self.get_reset_feature_directions(
             num_directions=sum(i) if i.dtype is torch.bool else len(i),
             data_source=data_source,
+            model=model,
         )
         assert self.expected_encs == len(self.encs)
         assert self.expected_biases == self.n_biases
@@ -83,15 +92,15 @@ class Resampler(ABC):
         self.model = model
         return model
 
-    def setup_resample_types(self, resample_types):
+    def setup_resample_types(self):
         encs = []
         decs = []
         biases = []
 
-        for r in get_resample_sites(self.model):
-            if isinstance(r, LinEncoder):
+        for r in get_resample_sites(self.model):  # TODO
+            if isinstance(r, ResampledWeight) and isinstance(r.wrapped, LinEncoder):
                 encs.append(r)
-            elif isinstance(r, LinDecoder):
+            elif isinstance(r, ResampledWeight) and isinstance(r.wrapped, LinDecoder):
                 decs.append(r)
             elif isinstance(r, EncoderBias):
                 biases.append(r)
@@ -129,7 +138,7 @@ class Resampler(ABC):
     def encs(self) -> list[Resamplable]:
         if self._encs is None:
             self.setup_resample_types()
-        return self.encs
+        return self._encs
 
     def add_to_encs(self, enc):
         if self._encs is None:
@@ -141,7 +150,7 @@ class Resampler(ABC):
     def decs(self) -> list[Resamplable]:
         if self._decs is None:
             self.setup_resample_types()
-        return self.decs
+        return self._decs
 
     def add_to_decs(self, dec):
         if self._encs is None:
@@ -153,7 +162,7 @@ class Resampler(ABC):
     def biases(self) -> list[Resamplable]:
         if self._biases is None:
             self.setup_resample_types()
-        return self.biases
+        return self._biases
 
     def add_to_biases(self, bias):
         if self._encs is None:

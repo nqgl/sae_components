@@ -15,5 +15,9 @@ class EMAFreqTracker(FreqTracker):
             self.activation_freqs = torch.zeros_like(freqs).float() + 1e-5
         self.activation_freqs.lerp_(freqs, 1 - self.beta)
 
+    @property
+    def freqs(self):
+        return self.activation_freqs
+
     def reset(self):
         self.activation_freqs = torch.zeros_like(self.activation_freqs) + 1e-5

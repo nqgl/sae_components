@@ -1,4 +1,4 @@
-def do_sweep(purge_after=True):
+def do_sweep(purge_after=True, in_cmd=None):
     from saeco.sweeps import Sweeper
     import sys
 
@@ -10,9 +10,13 @@ def do_sweep(purge_after=True):
     sw = Sweeper(thispath, module_name=filename)
     # sw.start_agent()
     sw.initialize_sweep()
-    sweep_or_run = input("sweep?")
+    sweep_or_run = in_cmd or input("sweep?")
+
     if sweep_or_run == "run":
         sw.start_agent()
+    elif sweep_or_run == "rand":
+        sw.rand_run_no_agent()
+
     elif sweep_or_run in ("sweep", "yes"):
         n = input("create instances?")
         try:

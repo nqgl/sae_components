@@ -37,7 +37,8 @@ class TrainConfig(SweepableConfig):
     use_lars: bool = False
     kwargs: dict = Field(default_factory=dict)
     run_length: Optional[int] = 100e3
-    resample_freq: int = 1500
+    resample_freq: int = 2000
+    resample_dynamic_cooldown: int = 500
 
 
 class Trainer:
@@ -99,7 +100,10 @@ class Trainer:
         return self.cfg.coeffs
 
     def proc_cache_after_forward(self, cache: TrainCache):
-        if self.cfg.l0_target is not None:
+        if (
+            self.cfg.l0_target is not None
+            and self.t % self.cfg.resample_freq > self.cfg.resample_dynamic_cooldown
+        ):
             self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
                 1
                 + (-1 if self.cfg.l0_target > cache.L0 else 1)
@@ -162,7 +166,9 @@ class Trainer:
             if self.t % self.intermittent_metric_freq == 0:
                 self.do_intermittent_metrics()
             if self.t % self.cfg.resample_freq == 0:
-                self.model.resampler.resample(buffer)
+                self.model.resampler.resample(
+                    data_source=buffer, optimizer=self.optim, model=self.model
+                )
             if self.cfg.run_length and self.t > self.cfg.run_length:
                 break
 

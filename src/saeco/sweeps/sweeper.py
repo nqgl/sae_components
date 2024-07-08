@@ -53,6 +53,15 @@ class Sweeper:
             project=self.sweepfile.PROJECT,
         )
 
+    def rand_run_no_agent(self):
+        basecfg = self.sweepfile.cfg
+
+        cfg = basecfg.random_sweep_configuration()
+        wandb.init(config=cfg.model_dump())
+        # wandb.config.update(cfg.model_dump())
+        self.sweepfile.run(cfg)
+        wandb.finish()
+
 
 def main():
     import argparse

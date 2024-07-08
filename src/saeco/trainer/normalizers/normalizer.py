@@ -209,10 +209,10 @@ class GNConfig(SweepableConfig):
         # BATCH_AVG = 3
         # RUNNING_AVG = 4
 
-    mu_s: SAggregation
-    mu_e: Aggregation
-    std_s: SAggregation
-    std_e: Aggregation
+    mu_s: SAggregation = SAggregation.PRIMED
+    mu_e: Aggregation = Aggregation.DONTUSE
+    std_s: SAggregation = SAggregation.SAMPLE
+    std_e: Aggregation = Aggregation.DONTUSE
 
 
 Aggregation = GNConfig.Aggregation
@@ -278,7 +278,7 @@ class GeneralizedNormalizer(Normalizer):
         )
 
     @torch.no_grad()
-    def prime_normalizer(self, buffer, n=200):
+    def prime_normalizer(self, buffer, n=20):
 
         samples = [next(buffer) for _ in range(n)]
         x = torch.cat(samples, dim=0)

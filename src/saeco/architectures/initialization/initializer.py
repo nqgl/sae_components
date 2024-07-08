@@ -2,7 +2,6 @@ from saeco.architectures.initialization.linear_factory import LinearFactory, Tie
 import saeco.components as co
 from saeco.core.basic_ops import Add
 
-
 import torch
 import torch.nn as nn
 
@@ -46,11 +45,11 @@ class Initializer:
             )
 
     @property
-    def encoder(self):
+    def encoder(self) -> co.LinEncoder:
         return self._encoder.get()
 
     @property
-    def decoder(self):
+    def decoder(self) -> co.LinDecoder:
         return self._decoder.get()
 
     @property
