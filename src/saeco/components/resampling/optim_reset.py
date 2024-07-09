@@ -10,20 +10,35 @@ class OptimFieldResetValue(ABC):
 
     @abstractmethod
     def get_value(
-        self, param_state, param: "FeaturesParam", ft_optim_field_state, feat_mask
+        self,
+        param_state,
+        param: "FeaturesParam",
+        ft_optim_field_state,
+        feat_mask,
+        new_directions,
     ): ...
 
 
 class OptimFieldResetToZero(OptimFieldResetValue):
     def get_value(
-        self, param_state, param: "FeaturesParam", ft_optim_field_state, feat_mask
+        self,
+        param_state,
+        param: "FeaturesParam",
+        ft_optim_field_state,
+        feat_mask,
+        new_directions,
     ):
         return 0
 
 
 class OptimFieldResetToOtherMean(OptimFieldResetValue):
     def get_value(
-        self, param_state, param: "FeaturesParam", ft_optim_field_state, feat_mask
+        self,
+        param_state,
+        param: "FeaturesParam",
+        ft_optim_field_state,
+        feat_mask,
+        new_directions,
     ):
         if (feat_mask).all():
             return ft_optim_field_state.mean()
@@ -32,7 +47,12 @@ class OptimFieldResetToOtherMean(OptimFieldResetValue):
 
 class OptimFieldResetMeanFeatAx(OptimFieldResetValue):
     def get_value(
-        self, param_state, param: "FeaturesParam", ft_optim_field_state, feat_mask
+        self,
+        param_state,
+        param: "FeaturesParam",
+        ft_optim_field_state,
+        feat_mask,
+        new_directions,
     ):
         if (feat_mask).all():
             return ft_optim_field_state.mean(0)
@@ -41,7 +61,12 @@ class OptimFieldResetMeanFeatAx(OptimFieldResetValue):
 
 class OptimFieldResetSqMeanFeatAx(OptimFieldResetValue):
     def get_value(
-        self, param_state, param: "FeaturesParam", ft_optim_field_state, feat_mask
+        self,
+        param_state,
+        param: "FeaturesParam",
+        ft_optim_field_state,
+        feat_mask,
+        new_directions,
     ):
         if (feat_mask).all():
             return (ft_optim_field_state.pow(2).mean(0) + 1e-6).sqrt()
@@ -74,7 +99,14 @@ class FeaturesParam:
     def reverse_transform(self, tensor: Tensor) -> Tensor:
         return self.features_transform(tensor)
 
-    def reset_optim_features(self, optim, feat_mask):
+    def reset_optim_features(self, optim, feat_mask, new_directions=None):
+        try:
+            from torchlars import LARS
+
+            if isinstance(optim, LARS):
+                optim = optim.optim
+        except ImportError:
+            pass
         param_state = optim.state[self.param]
         fields = set(param_state.keys())
         print("fields", fields)
@@ -93,6 +125,7 @@ class FeaturesParam:
                 param=self,
                 ft_optim_field_state=feat_field_state,
                 feat_mask=feat_mask,
+                new_directions=new_directions,
             )
 
     @property
@@ -100,11 +133,14 @@ class FeaturesParam:
         return self.features_transform(self.param)
 
 
+from torchlars import LARS
+
 para = torch.nn.Parameter(torch.randn(20, 10))
 other_para = torch.nn.Parameter(torch.randn(20, 10))
-optim = torch.optim.Adam([para, other_para], lr=0.01)
+optim = torch.optim.RAdam([para, other_para], lr=0.01)
+optim = LARS(optim)
 
-reset_features = torch.zeros(10, dtype=torch.bool)
+reset_features = torch.zeros(20, dtype=torch.bool)
 reset_features[2] = True
 reset_features[3] = True
 
@@ -115,7 +151,7 @@ def l():
 
 # %%
 
-fp = FeaturesParam(para, 1)
+fp = FeaturesParam(para, 0)
 l().backward()
 optim.step()
 optim.zero_grad()
