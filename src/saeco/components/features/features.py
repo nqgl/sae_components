@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
+from saeco.components.features.optim_reset import FeaturesParam
 from saeco.components.wrap import WrapsModule
 from typing import Protocol, runtime_checkable, Optional
 import saeco.core as cl
@@ -26,16 +27,22 @@ import saeco.core as cl
 #         return self.transformation(self.features.grad)
 
 
+# @runtime_checkable
+# class HasFeatures(Protocol):
+#     @property
+#     def features(self) -> Tensor: ...
+
+#     @property
+#     def features_grad(self) -> Optional[Tensor]: ...
+
+
 @runtime_checkable
 class HasFeatures(Protocol):
     @property
-    def features(self) -> Tensor: ...
-
-    @property
-    def features_grad(self) -> Optional[Tensor]: ...
+    def features(self) -> dict[str, FeaturesParam]: ...
 
 
-@runtime_checkable
+@runtime_checkable  # TODO
 class Resamplable(Protocol):
     def resample(self, *, indices, new_directions, bias_reset_value): ...
 
@@ -46,7 +53,7 @@ class Resamplable(Protocol):
 #     def feature_indexed(self) -> Tensor: ...
 
 
-class ResampledWeight(WrapsModule):
+class ResampledWeight(WrapsModule):  # TODO
     wrapped: HasFeatures
 
     def __init__(self, wrapped: HasFeatures):
@@ -61,7 +68,7 @@ class ResampledWeight(WrapsModule):
         self.wrapped.features[indices] = new_directions
 
 
-class ResampledBias(WrapsModule):
+class ResampledBias(WrapsModule):  # TODO
     wrapped: HasFeatures
 
     def __init__(self, wrapped: HasFeatures):
@@ -84,13 +91,20 @@ class EncoderBias(WrapsModule):
         assert isinstance(wrapped, cl.ops.Add)
         super().__init__(wrapped)
 
-    def resampled(self):
+    def resampled(self):  # todo
+        raise NotImplementedError
         return ResampledBias(self)
 
     @property
-    def feature_indexed(self) -> Tensor:
-        assert self.wrapped.bias.data.ndim == 1
-        return self.wrapped.bias.data
+    def features(self) -> dict[str, FeaturesParam]:
+        return {
+            "bias": FeaturesParam(self.wrapped.bias, feature_index=0, fptype="bias")
+        }
+
+    # @property
+    # def feature_indexed(self) -> Tensor:
+    #     assert self.wrapped.bias.data.ndim == 1
+    #     return self.wrapped.bias.data
 
 
 class NormFeatures(WrapsModule):
@@ -107,12 +121,16 @@ class NormFeatures(WrapsModule):
 
     @torch.no_grad()
     def normalize_features(self):
-        features = self.wrapped.features
-        norm = torch.norm(features, dim=-1, keepdim=True)
+        fps = list(self.wrapped.features.values())
+        assert len(fps) == 1
+        fp = fps[0]
+        assert fp.type == "dec"
+        features = fp.features
+        norm = torch.norm(fp.features, dim=-1, keepdim=True)
         if (norm == 0).any():
             print("Norm is zero, not normalizing.")
             return
-        self.wrapped.features[:] = features / norm
+        fp.features[:] = fp.features / norm
 
 
 class OrthogonalizeFeatureGrads(WrapsModule):
@@ -126,18 +144,20 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         super().__init__(wrapped)
 
     def post_backward_hook(self):
-        self.orthogonalize_features()
+        self.orthogonalize_feature_grads()
 
     @torch.no_grad()
-    def orthogonalize_features(self):
-        features = self.wrapped.features
-        grad = self.wrapped.features_grad
-        dec_normed = features / features.norm(dim=-1, keepdim=True)
-        grad_orth = grad - (dec_normed * grad).sum(-1, keepdim=True) * dec_normed
-        test = grad_orth * dec_normed + grad
-        if grad.isinf().any():
+    def orthogonalize_feature_grads(self):
+        fps = list(self.wrapped.features.values())
+        assert len(fps) == 1
+        fp = fps[0]
+        assert fp.type == "dec"
+        dec_normed = fp.features / fp.features.norm(dim=-1, keepdim=True)
+        grad_orth = fp.grad - (dec_normed * fp.grad).sum(-1, keepdim=True) * dec_normed
+        test = grad_orth * dec_normed + fp.grad
+        if fp.grad.isinf().any():
             print("Infs in grads! ignoring.")
-        if grad.isnan().any():
+        if fp.grad.isnan().any():
             print("NaNs in grads! returning")
             return
         if test.isinf().any():
@@ -145,10 +165,10 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         if test.isnan().any():
             print("NaNs in test! returning")
             return
-        grad[:] = grad_orth
-        assert (grad * dec_normed).sum(
+        fp.grad[:] = grad_orth
+        assert (fp.grad * dec_normed).sum(
             -1
-        ).abs().mean() < 1e-1, f"Not orthogonal, oops. How not orthogonal? This much (max): {(grad * features).sum(-1).abs().max()}"
+        ).abs().mean() < 1e-1, f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
 
 
 def check(t, i=""):

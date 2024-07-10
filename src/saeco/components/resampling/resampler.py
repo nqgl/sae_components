@@ -8,16 +8,26 @@ from saeco.components.features import (
     EncoderBias,
     Resamplable,
     ResampledWeight,
+    HasFeatures,
+    FeaturesParam,
 )
 
 # from saeco.trainer.trainable import Trainable # TODO circular, maybe just define a protocol for the model passed to resampler
 
 
-def get_resample_sites(model: nn.Module) -> set[Resamplable]:
-    l = set()
+def get_resampled_params(model: nn.Module) -> set[FeaturesParam]:
+    l: set[FeaturesParam] = set()
     for m in model.modules():
-        if isinstance(m, Resamplable):
-            l.add(m)
+        if isinstance(m, HasFeatures):
+            l |= set(m.features.values())
+    d = {}
+    for fp in l:
+        if fp.param in d:
+            other = d[fp.param]
+            raise ValueError(
+                f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just deduplicate and check for inconsistency"
+            )
+        d[fp.param] = fp
     return l
 
 
@@ -81,7 +91,7 @@ class Resampler(ABC):
             model=model,
         )
         assert self.expected_encs == len(self.encs)
-        assert self.expected_biases == self.n_biases
+        assert self.expected_biases == len(self.biases)
         assert self.expected_decs == len(self.decs)
         for r in self.encs + self.decs + self.biases:
             r.resample(
@@ -96,18 +106,16 @@ class Resampler(ABC):
         encs = []
         decs = []
         biases = []
-
-        for r in get_resample_sites(self.model):  # TODO
-            if isinstance(r, ResampledWeight) and isinstance(r.wrapped, LinEncoder):
-                encs.append(r)
-            elif isinstance(r, ResampledWeight) and isinstance(r.wrapped, LinDecoder):
-                decs.append(r)
-            elif isinstance(r, EncoderBias):
-                biases.append(r)
+        for param in get_resampled_params(self.model):
+            if param.type == "enc":
+                encs.append(param)
+            elif param.type == "dec":
+                decs.append(param)
+            elif param.type == "bias":
+                biases.append(param)
             else:
                 raise ValueError(
-                    f"Unexpected resample site {r} of type {type(r)}\
-                    may just need to add support for matmul types here"
+                    f'Unexpected resample site {param} of type {param.type}"'
                 )
 
         if self._encs is None:
@@ -116,10 +124,6 @@ class Resampler(ABC):
             self._decs = decs
         if self._biases is None:
             self._biases = biases
-
-    @property
-    def n_biases(self):
-        return len(self.biases) + len([e for e in self.encs if e.bias is not None])
 
     @property
     @lazycall
