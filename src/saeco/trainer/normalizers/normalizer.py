@@ -211,7 +211,7 @@ class GNConfig(SweepableConfig):
 
     mu_s: SAggregation = SAggregation.PRIMED
     mu_e: Aggregation = Aggregation.DONTUSE
-    std_s: SAggregation = SAggregation.SAMPLE
+    std_s: SAggregation = SAggregation.PRIMED
     std_e: Aggregation = Aggregation.DONTUSE
 
 
@@ -224,6 +224,7 @@ class GeneralizedNormalizer(Normalizer):
         super().__init__(init)
         self.eps = eps
         self.cfg = cfg
+        self.primed = False
         if cfg.mu_e in (Aggregation.PRIMED, Aggregation.RUNNING_AVG):
             self.register_buffer(
                 "_mu_e",
@@ -279,7 +280,8 @@ class GeneralizedNormalizer(Normalizer):
 
     @torch.no_grad()
     def prime_normalizer(self, buffer, n=20):
-
+        assert not self.primed
+        self.primed = True
         samples = [next(buffer) for _ in range(n)]
         x = torch.cat(samples, dim=0)
         # samples = [x - self.mu_s(x) for x in samples]

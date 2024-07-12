@@ -126,7 +126,7 @@ class Trainer:
     def train(self, buffer=None):
         if buffer is None:
             buffer = self.get_databuffer(num_workers=0)
-        if self.t <= 1:
+        if not self.model.normalizer.primed:
             self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
 
@@ -199,7 +199,7 @@ class Trainer:
         )
 
     def full_log(self, cache: Cache):
-        if self.t % 10 != 0:
+        if self.t % 10 != 0 and self.t > 100:
             return
         if wandb.run is not None:
             wandb.log(cache.logdict(), step=self.t)

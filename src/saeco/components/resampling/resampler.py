@@ -62,10 +62,12 @@ class Resampler(ABC):
 
     def __init__(
         self,
+        cfg,
         expected_biases: Optional[int] = 1,
         expected_decs: Optional[int] = 1,
         expected_encs: Optional[int] = 1,
     ):
+        self.cfg = cfg
         self.expected_biases = expected_biases
         self.expected_decs = expected_decs
         self.expected_encs = expected_encs
@@ -75,7 +77,7 @@ class Resampler(ABC):
         self._biases = None
         # self._freq_tracker = None
 
-        self.bias_reset_value = -0.3
+        self.bias_reset_value = -0.1
         self.dead_threshold = 3e-6
 
     def get_feature_indices_to_reset(self):
@@ -95,7 +97,10 @@ class Resampler(ABC):
         assert self.expected_decs == len(self.decs)
         for r in self.encs + self.decs + self.biases:
             r.resample(
-                indices=i, new_directions=d, bias_reset_value=self.bias_reset_value
+                indices=i,
+                new_directions=d,
+                bias_reset_value=self.bias_reset_value,
+                optim=optimizer,
             )
 
     def assign_model(self, model):

@@ -53,7 +53,7 @@ class Resamplable(Protocol):
 #     def feature_indexed(self) -> Tensor: ...
 
 
-class ResampledWeight(WrapsModule):  # TODO
+class ResampledWeight(WrapsModule):  # TODO dep
     wrapped: HasFeatures
 
     def __init__(self, wrapped: HasFeatures):

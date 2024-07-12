@@ -8,7 +8,7 @@ from saeco.components.losses import (
 from saeco.core import Cache
 from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
 from saeco.trainer.train_cache import TrainCache
-from saeco.components.resampling import Resampler, RandomResampler
+from saeco.components.resampling import Resampler, RandomResampler, AnthResampler
 from typing import Optional
 import torch
 import torch.nn as nn
@@ -65,7 +65,7 @@ class Trainable(cl.Module):
         if resampler:
             self.resampler = resampler
         elif resampler is None:
-            self.resampler = RandomResampler()
+            self.resampler = AnthResampler()
             self.resampler.assign_model(self.model)
         else:
             self.resampler = None

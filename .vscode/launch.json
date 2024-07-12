@@ -32,9 +32,15 @@
             "request": "launch",
             "program": "src/saeco/trainer/runner.py",
             "console": "integratedTerminal"
+        },
+
+        {
+            "name": "Python Debugger: Run basic architecture",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/saeco/architectures/basic.py",
+            "console": "integratedTerminal"
         }
-
-
 
 
     ]

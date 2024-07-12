@@ -16,6 +16,10 @@ from saeco.trainer.normalizers import (
 from saeco.misc.lazy import lazyprop, defer_to_and_set
 from saeco.sweeps import SweepableConfig
 from pydantic import Field
+from saeco.components.resampling.anthropic_resampling import (
+    AnthResampler,
+    AnthResamplerConfig,
+)
 
 
 class SAEConfig(SweepableConfig):
@@ -39,6 +43,7 @@ class RunConfig(SweepableConfig, Generic[T]):
     train_cfg: TrainConfig
     arch_cfg: T
     normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
+    resampler_config: SweepableConfig = Field(default_factory=SweepableConfig)
     sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 
@@ -89,8 +94,26 @@ class TrainingRunner:
         return losses
 
     @lazyprop
-    def trainable(self):
-        return Trainable(self.models, self.losses, normalizer=self.normalizer).cuda()
+    def trainable(self) -> Trainable:
+        return Trainable(
+            self.models,
+            self.losses,
+            normalizer=self.normalizer,
+            resampler=self.resampler,
+        ).cuda()
+
+    @lazyprop
+    def resampler(self) -> AnthResampler:
+        res = AnthResampler(
+            AnthResamplerConfig(
+                resample_freq=self.cfg.train_cfg.resample_freq,
+                resample_dynamic_cooldown=self.cfg.train_cfg.resample_dynamic_cooldown,
+            ),
+        )
+        res.assign_model(
+            self.models[0]
+        )  # TODO not a big fan of this. maybe just remove the assigning model part of resample class
+        return res
 
     @lazyprop
     def normalizer(self):
