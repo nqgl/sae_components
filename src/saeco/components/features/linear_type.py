@@ -7,7 +7,7 @@ from torch import Tensor
 
 
 from abc import abstractmethod
-from saeco.components.features.optim_reset import FeaturesParam
+from saeco.components.features.features_param import FeaturesParam
 
 
 # @property

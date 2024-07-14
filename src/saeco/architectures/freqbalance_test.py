@@ -87,7 +87,7 @@ train_cfg = TrainConfig(
     batch_size=2048,
     use_lars=True,
     betas=Swept[tuple[float, float]]((0.9, 0.99)),
-    resample_freq=1000,
+    schedule.resample_period=1000,
 )
 acfg = Config(
     pre_bias=Swept[bool](True),

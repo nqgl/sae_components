@@ -9,6 +9,7 @@ from typing import (
     Union,
     Any,
     TYPE_CHECKING,
+    ClassVar,
 )
 from pydantic import BaseModel, create_model, dataclasses
 
@@ -87,6 +88,8 @@ class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
 
 
 def Sweepable(type):
+    if type is ClassVar:
+        return type
     assert not isinstance(
         type, Swept
     ), "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
@@ -210,29 +213,28 @@ if TYPE_CHECKING:
 else:
     ...
 
+    class SweepableConfig(BaseModel, metaclass=SweptMeta):
+        __ignore_this: int = 0
 
-class SweepableConfig(BaseModel, metaclass=SweptMeta):
-    __ignore_this: int = 0
-
-    def is_concrete(self, search_target: BaseModel = None):
-        search_target = search_target or self
-        for name, field in search_target.model_fields.items():
-            attr = getattr(search_target, name)
-            if isinstance(attr, Swept):
-                return False
-            elif isinstance(attr, BaseModel):
-                if not self.is_concrete(attr):
+        def is_concrete(self, search_target: BaseModel = None):
+            search_target = search_target or self
+            for name, field in search_target.model_fields.items():
+                attr = getattr(search_target, name)
+                if isinstance(attr, Swept):
                     return False
-        return True
+                elif isinstance(attr, BaseModel):
+                    if not self.is_concrete(attr):
+                        return False
+            return True
 
-    def sweep(self):
-        copy = self.model_copy(deep=True)
-        return _to_swept_selective_dict(copy)
+        def sweep(self):
+            copy = self.model_copy(deep=True)
+            return _to_swept_selective_dict(copy)
 
-    def from_selective_sweep(self, sweep: dict):
-        mydict = self.model_dump()
-        _merge_dicts_left(mydict, sweep)
-        return self.model_validate(mydict)
+        def from_selective_sweep(self, sweep: dict):
+            mydict = self.model_dump()
+            _merge_dicts_left(mydict, sweep)
+            return self.model_validate(mydict)
 
-    def random_sweep_configuration(self):
-        return self.from_selective_sweep(_to_randomly_selected_dict(self))
+        def random_sweep_configuration(self):
+            return self.from_selective_sweep(_to_randomly_selected_dict(self))

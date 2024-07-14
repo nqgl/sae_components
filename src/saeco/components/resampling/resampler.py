@@ -1,6 +1,12 @@
 from typing import Optional
 import torch
 import torch.nn as nn
+
+from saeco.components.features.features_param import FeaturesParam
+from saeco.components.features.optim_reset import (
+    OptimResetValues,
+    OptimResetValuesConfig,
+)
 from .freq_tracker import FreqTracker
 from saeco.components.features import (
     LinDecoder,
@@ -9,10 +15,7 @@ from saeco.components.features import (
     Resamplable,
     ResampledWeight,
     HasFeatures,
-    FeaturesParam,
 )
-
-# from saeco.trainer.trainable import Trainable # TODO circular, maybe just define a protocol for the model passed to resampler
 
 
 def get_resampled_params(model: nn.Module) -> set[FeaturesParam]:
@@ -52,6 +55,13 @@ def find_matching_submodules(module: nn.Module, matchfn):
 
 from abc import ABC
 from saeco.misc import lazycall
+from saeco.sweeps import SweepableConfig
+
+
+class ResamplerConfig(SweepableConfig):
+    optim_reset_cfg: OptimResetValuesConfig
+    bias_reset_value: float = 0
+    dead_threshold: float = 3e-6
 
 
 class Resampler(ABC):
@@ -62,7 +72,7 @@ class Resampler(ABC):
 
     def __init__(
         self,
-        cfg,
+        cfg: ResamplerConfig,
         expected_biases: Optional[int] = 1,
         expected_decs: Optional[int] = 1,
         expected_encs: Optional[int] = 1,
@@ -77,11 +87,8 @@ class Resampler(ABC):
         self._biases = None
         # self._freq_tracker = None
 
-        self.bias_reset_value = -0.1
-        self.dead_threshold = 3e-6
-
     def get_feature_indices_to_reset(self):
-        return self.freq_tracker.freqs < self.dead_threshold
+        return self.freq_tracker.freqs < self.cfg.dead_threshold
 
     def get_reset_feature_directions(self, num_directions, data_source, model): ...
 
@@ -96,10 +103,11 @@ class Resampler(ABC):
         assert self.expected_biases == len(self.biases)
         assert self.expected_decs == len(self.decs)
         for r in self.encs + self.decs + self.biases:
+            r.set_cfg(self.cfg)
             r.resample(
                 indices=i,
                 new_directions=d,
-                bias_reset_value=self.bias_reset_value,
+                bias_reset_value=self.cfg.bias_reset_value,
                 optim=optimizer,
             )
 

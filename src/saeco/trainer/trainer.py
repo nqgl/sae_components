@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable, Optional
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from dataclasses import dataclass, Field
 from saeco.data.sc.model_cfg import ModelConfig
+from saeco.trainer.schedule_cfg import RunSchedulingConfig
 from saeco.trainer.train_cache import TrainCache
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.post_backward_normalization import (
@@ -36,9 +37,7 @@ class TrainConfig(SweepableConfig):
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
     kwargs: dict = Field(default_factory=dict)
-    run_length: Optional[int] = 100e3
-    resample_freq: int = 2000
-    resample_dynamic_cooldown: int = 500
+    schedule: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
 
 
 class Trainer:
@@ -69,6 +68,9 @@ class Trainer:
             lr=cfg.lr,
             betas=cfg.betas,
         )
+        self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer=self.optim, lr_lambda=self.get_lr_lambda()
+        )
         if self.cfg.use_lars:
             from torchlars import LARS
 
@@ -80,6 +82,15 @@ class Trainer:
         ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
         self.intermittent_metric_freq = 1000
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
+
+    def get_lr_lambda(self):
+        def lrl(epoch):
+            lr_factor = self.cfg.schedule.lr_scale(self.t)
+            if self.t % 5 == 0:
+                self.log({"lr_factor": lr_factor})
+            return lr_factor
+
+        return lrl
 
     @property
     def subject_model(self):
@@ -100,14 +111,39 @@ class Trainer:
         return self.cfg.coeffs
 
     def proc_cache_after_forward(self, cache: TrainCache):
-        if (
-            self.cfg.l0_target is not None
-            and self.t % self.cfg.resample_freq > self.cfg.resample_dynamic_cooldown
-        ):
+        if self.cfg.l0_target is not None:
+            stepscale = 1
+            period = (
+                self.cfg.schedule.resample_dynamic_cooldown_period_override
+                or self.cfg.schedule.resample_period
+            )
+
+            if self.t % period < self.cfg.schedule.resample_dynamic_stop_after:
+                return
+
+            if self.t < period + self.cfg.schedule.resample_delay:
+                stepscale *= min(
+                    1,
+                    ((self.t % period) - self.cfg.schedule.resample_dynamic_stop_after)
+                    / (
+                        (period - self.cfg.schedule.resample_dynamic_stop_after)
+                        * self.cfg.schedule.resample_dynamic_cooldown
+                    ),
+                )
+
+            gentle_zone_radius = 5
+            distance = abs(cache.L0 - self.cfg.l0_target) / gentle_zone_radius
+            stepscale *= min(
+                1,
+                (distance**0.5 * 4 + distance * 2 + 1) / 7,
+            )
+
+            # if self.t % self.cfg.resample_freq < self.cfg.resample_freq * self.cfg.resample_dynamic_cooldown:
             self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
                 1
                 + (-1 if self.cfg.l0_target > cache.L0 else 1)
                 * self.cfg.l0_target_adjustment_size
+                * stepscale
             )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
@@ -157,6 +193,7 @@ class Trainer:
                 self.gradscaler.update()
             else:
                 self.optim.step()
+            self.lr_scheduler.step()
             self.post_step()
             self.full_log(cache)
             self.t += 1
@@ -165,11 +202,12 @@ class Trainer:
             del cache
             if self.t % self.intermittent_metric_freq == 0:
                 self.do_intermittent_metrics()
-            if self.t % self.cfg.resample_freq == 0:
+            if self.cfg.schedule.is_resample_step(self.t):
                 self.model.resampler.resample(
                     data_source=buffer, optimizer=self.optim, model=self.model
                 )
-            if self.cfg.run_length and self.t > self.cfg.run_length:
+                self.post_step()
+            if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
                 break
 
     def do_intermittent_metrics(self):
@@ -199,7 +237,7 @@ class Trainer:
         )
 
     def full_log(self, cache: Cache):
-        if self.t % 10 != 0 and self.t > 100:
+        if self.t % 10 != 0 and self.t % 23000 > 1000:
             return
         if wandb.run is not None:
             wandb.log(cache.logdict(), step=self.t)

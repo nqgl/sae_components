@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-from saeco.components.features.optim_reset import FeaturesParam
+from saeco.components.features.features_param import FeaturesParam
 from saeco.components.wrap import WrapsModule
 from typing import Protocol, runtime_checkable, Optional
 import saeco.core as cl

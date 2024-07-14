@@ -43,7 +43,7 @@ class RunConfig(SweepableConfig, Generic[T]):
     train_cfg: TrainConfig
     arch_cfg: T
     normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
-    resampler_config: SweepableConfig = Field(default_factory=SweepableConfig)
+    resampler_config: AnthResamplerConfig = Field(default_factory=SweepableConfig)
     sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 
@@ -104,12 +104,7 @@ class TrainingRunner:
 
     @lazyprop
     def resampler(self) -> AnthResampler:
-        res = AnthResampler(
-            AnthResamplerConfig(
-                resample_freq=self.cfg.train_cfg.resample_freq,
-                resample_dynamic_cooldown=self.cfg.train_cfg.resample_dynamic_cooldown,
-            ),
-        )
+        res = AnthResampler(self.cfg.resampler_config)
         res.assign_model(
             self.models[0]
         )  # TODO not a big fan of this. maybe just remove the assigning model part of resample class

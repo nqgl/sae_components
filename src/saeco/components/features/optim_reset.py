@@ -1,17 +1,17 @@
 # %%
 
 # %%
-import torch
-import torch.nn as nn
-from torch import Tensor
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from enum import Enum
+
+if TYPE_CHECKING:
+    from saeco.components.features.features_param import FeaturesParam
 
 
 class OptimFieldResetValue(ABC):
-    def __init__(self):
-        pass
+    def __init__(self, num=1):
+        self.num = num
 
     @abstractmethod
     def get_value(
@@ -23,7 +23,10 @@ class OptimFieldResetValue(ABC):
     ): ...
 
 
-class OptimFieldResetToZero(OptimFieldResetValue):
+class ResetToConst(OptimFieldResetValue):
+    def __init__(self, num=0):
+        super().__init__(num)
+
     def get_value(
         self,
         param: "FeaturesParam",
@@ -31,10 +34,10 @@ class OptimFieldResetToZero(OptimFieldResetValue):
         feat_mask,
         new_directions,
     ):
-        return 0
+        return self.num
 
 
-class OptimFieldResetToNewValue(OptimFieldResetValue):
+class ResetToDirections(OptimFieldResetValue):
     def get_value(
         self,
         param: "FeaturesParam",
@@ -46,11 +49,16 @@ class OptimFieldResetToNewValue(OptimFieldResetValue):
             other = ft_optim_field_state[:]
         else:
             other = ft_optim_field_state[~feat_mask]
-        mean_len = other.norm(dim=1).mean()
-        return new_directions / new_directions.norm(dim=1, keepdim=True) * mean_len * 5
+        # mean_len = other.norm(dim=-1).mean()
+        return (
+            new_directions
+            / new_directions.norm(dim=1, keepdim=True)
+            # * mean_len
+            * self.num
+        )
 
 
-class OptimFieldResetToOtherMean(OptimFieldResetValue):
+class ResetToMean(OptimFieldResetValue):
     def get_value(
         self,
         param: "FeaturesParam",
@@ -59,11 +67,11 @@ class OptimFieldResetToOtherMean(OptimFieldResetValue):
         new_directions,
     ):
         if (feat_mask).all():
-            return ft_optim_field_state[:].mean()
-        return ft_optim_field_state[~feat_mask].mean()
+            return ft_optim_field_state[:].mean() * self.num
+        return ft_optim_field_state[~feat_mask].mean() * self.num
 
 
-class OptimFieldResetMeanFeatAx(OptimFieldResetValue):
+class ResetToAxisMean(OptimFieldResetValue):
     def get_value(
         self,
         param: "FeaturesParam",
@@ -72,8 +80,10 @@ class OptimFieldResetMeanFeatAx(OptimFieldResetValue):
         new_directions,
     ):
         if (feat_mask).all():
-            return ft_optim_field_state[:].mean(0)
-        return ft_optim_field_state[~feat_mask].mean(0)
+            v = ft_optim_field_state[:].mean(0) * self.num
+        v = ft_optim_field_state[~feat_mask].mean(0) * self.num
+        assert v.ndim == 1 and v.shape == param.features[0].shape
+        return v
 
 
 class OptimFieldResetSqMeanFeatAx(OptimFieldResetValue):
@@ -85,8 +95,23 @@ class OptimFieldResetSqMeanFeatAx(OptimFieldResetValue):
         new_directions,
     ):
         if (feat_mask).all():
-            return (ft_optim_field_state[:].pow(2).mean(0)).sqrt()
-        return (ft_optim_field_state[~feat_mask].pow(2).mean(0)).sqrt()
+            v = ft_optim_field_state[:].pow(2).mean(0).sqrt() * self.num
+        v = ft_optim_field_state[~feat_mask].pow(2).mean(0).sqrt() * self.num
+        assert v.ndim == 1 and v.shape == param.features[0].shape
+        return v
+
+
+class OptimFieldResetSqMean(OptimFieldResetValue):
+    def get_value(
+        self,
+        param: "FeaturesParam",
+        ft_optim_field_state,
+        feat_mask,
+        new_directions,
+    ):
+        if (feat_mask).all():
+            return ft_optim_field_state[:].pow(2).mean(0).sqrt() * self.num
+        return ft_optim_field_state[~feat_mask].pow(2).mean(0).sqrt() * self.num
 
 
 class FeatureParamType(str, Enum):
@@ -95,26 +120,48 @@ class FeatureParamType(str, Enum):
     enc = "enc"
 
 
-class OptimResetConfig:
+from saeco.sweeps import SweepableConfig
+
+
+b2_techniques = dict(
+    mean=ResetToMean,
+    sq=OptimFieldResetSqMean,
+    axsq=OptimFieldResetSqMeanFeatAx,
+    axmean=ResetToAxisMean,
+)
+
+
+class OptimResetValuesConfig(SweepableConfig):
+    optim_momentum: float = 0
+    bias_momentum: float = 0
+    dec_momentum: bool = False
+    b2_technique: str = "mean"
+    b2_scale: float = 1.0
+
+
+class OptimResetValues:
     def __init__(
         self,
+        cfg: OptimResetValuesConfig,
         skips=set(["step"]),
-        handles: dict[str, OptimFieldResetValue] = dict(
-            momentum_buffer=OptimFieldResetToZero(),
-            exp_avg=OptimFieldResetToZero(),
-            exp_avg_sq=OptimFieldResetSqMeanFeatAx(),
-        ),
-        type_overrides: dict[
-            FeatureParamType,
-            dict[str, OptimFieldResetValue],
-        ] = dict(
-            bias=dict(exp_avg=OptimFieldResetToZero()),
-            enc=dict(exp_avg=OptimFieldResetToNewValue()),
-        ),
+        # handles: dict[str, OptimFieldResetValue] = None,
+        # type_overrides: dict[
+        #     FeatureParamType,
+        #     dict[str, OptimFieldResetValue],
+        # ] = None,
     ):
         self.skips = skips
-        self.handlers = handles
-        self.type_overrides = type_overrides
+
+        self.handlers = dict(
+            momentum_buffer=ResetToConst(cfg.bias_momentum),
+            exp_avg=ResetToDirections(cfg.optim_momentum),
+            exp_avg_sq=b2_techniques[cfg.b2_technique](cfg.b2_scale),
+        )
+
+        self.type_overrides = dict(
+            bias=dict(exp_avg=ResetToConst()),
+            dec=dict() if cfg.dec_momentum else dict(exp_avg=ResetToConst(0)),
+        )
 
     def get_value(self, field, param, ft_optim_field_state, feat_mask, new_directions):
         if (
@@ -137,191 +184,15 @@ class OptimResetConfig:
         raise KeyError(f"Field {field} not found in handlers")
 
 
-from typing import Mapping, Union, overload
+# print("fields", fields)
+# print(fields - self.field_handlers.skips)
+# if fields & set(self.field_handlers.skips):
+#     print("skipping", fields & set(self.field_handlers.skips))
+#     fields = fields
 
+# def __setitem__(self, i, v): ...
 
-IndexType = int | list[int]
-
-
-class OptimFieldFeatures:
-    def __init__(
-        self,
-        optim: torch.optim.Optimizer,
-        fp: "FeaturesParam",
-        field: Optional[str] = None,
-        index=None,
-    ):
-        self.optim = optim
-        self.fp = fp
-        self.index = index
-        self.field = field
-
-    @overload
-    def __getitem__(self, i: IndexType) -> Mapping[str, Tensor]: ...
-    @overload
-    def __getitem__(self, i: str) -> Mapping[IndexType, Tensor]: ...
-
-    def parse_index_field(self, i):
-        if isinstance(i, tuple) and any([isinstance(el, str) for el in i]):
-            assert len(i) == 2
-            if isinstance(i[0], str):
-                field, index = i
-            else:
-                index, field = i
-        elif isinstance(i, str):
-            field = i
-            index = None
-        else:
-            index = i
-            field = None
-        if index is not None and self.index is not None:
-            raise KeyError("Index already set")
-        if field is not None and self.field is not None:
-            raise KeyError("Field already set")
-
-        index = index if index is not None else self.index
-        field = field if field is not None else self.field
-        return index, field
-
-    def __getitem__(self, i: tuple) -> Tensor:
-        index, field = self.parse_index_field(i)
-        if None in (index, field):
-            return OptimFieldFeatures(self.optim, self.fp, field, index)
-        return self.fp.features_transform(self.pstate[field])[index]
-
-    def __setitem__(self, i, v):
-        index, field = self.parse_index_field(i)
-        if None in (index, field):
-            raise KeyError("Index or field not set")
-        self.fp.features_transform(self.pstate[field])[index] = v
-
-    @property
-    def pstate(self) -> Mapping[str, Tensor]:
-        return self.optim.state[self.fp.param]
-
-    def keys(self):
-        return self.pstate.keys()
-
-
-class FeaturesParam:
-    def __init__(
-        self,
-        param: nn.Parameter,
-        feature_index,
-        fptype: Optional[FeatureParamType] = None,
-        resampled=True,
-    ):
-        super().__init__()
-        self.param = param
-        self.feature_index = feature_index
-        self.field_handlers = OptimResetConfig()
-        self.resampled = resampled
-        self.type: Optional[FeatureParamType] = fptype and FeatureParamType(fptype)
-
-    def features_transform(self, tensor: Tensor) -> Tensor:
-        return tensor.transpose(0, self.feature_index)
-
-    def reverse_transform(self, tensor: Tensor) -> Tensor:
-        return self.features_transform(tensor)
-
-    # def reset_optim_features(self, optim, feat_mask, new_directions=None):
-    #     try:
-    #         from torchlars import LARS
-
-    #         if isinstance(optim, LARS):
-    #             optim = optim.optim
-    #     except ImportError:
-    #         pass
-    #     param_state = optim.state[self.param]
-    #     fields = set(param_state.keys())
-    #     print("fields", fields)
-    #     print(fields - self.field_handlers.skips)
-    #     if fields & set(self.field_handlers.skips):
-    #         print("skipping", fields & set(self.field_handlers.skips))
-    #         fields = fields - set(self.field_handlers.skips)
-    #     for field in fields:
-    #         field_state = param_state[field]
-    #         assert (
-    #             field_state.shape == self.param.shape
-    #         ), f"{field}: {field_state.shape} != {self.param.shape}"
-    #         feat_field_state = self.features_transform(field_state)
-    #         feat_field_state[feat_mask] = self.field_handlers.handlers[field].get_value(
-    #             param_state=param_state,
-    #             param=self,
-    #             ft_optim_field_state=,
-    #             feat_mask=feat_mask,
-    #             new_directions=new_directions,
-    #         )
-
-    @property
-    def features(self) -> Tensor:  # TODO is there a name with more clarity?
-        # is "data" right? thinking that might be kinda wrong
-        return self.features_transform(self.param)
-
-    @property
-    def grad(self) -> Tensor:
-        return self.features_transform(self.param.grad)
-
-    def optimstate(self, optim) -> OptimFieldFeatures:
-        try:
-            from torchlars import LARS
-
-            if isinstance(optim, LARS):
-                optim = optim.optim
-        except ImportError:
-            pass
-        return OptimFieldFeatures(optim, self)
-
-    @torch.no_grad()
-    def resample(
-        self, *, indices, new_directions, bias_reset_value, optim: torch.optim.Optimizer
-    ):
-        if isinstance(new_directions, tuple):
-            assert len(new_directions) == 2
-            if self.type == "enc":
-                new_directions = new_directions[0]
-            elif self.type == "dec":
-                new_directions = new_directions[1]
-        if not self.type == "bias":
-            new_directions = new_directions / new_directions.norm(dim=1, keepdim=True)
-        if self.type == "enc":
-            avg_other_norm = 1
-            if not indices.all():
-                avg_other_norm = self.features[~indices].norm(dim=1).mean()
-            new_directions *= avg_other_norm * 0.2
-
-        if self.type == FeatureParamType.bias:
-            self.param[indices] = bias_reset_value
-        else:
-            self.features[indices] = new_directions
-
-        optim_state = self.optimstate(optim)
-        fields = set(optim_state.keys()) - set(self.field_handlers.skips)
-
-        for field in fields:
-            field_state = optim_state[field]
-            assert (
-                field_state[:].shape == self.features.shape
-            ), f"{field}: {field_state[:].shape} != {self.features.shape}"
-
-            optim_state[field, indices] = self.field_handlers.get_value(
-                field=field,
-                param=self,
-                ft_optim_field_state=optim_state[field],
-                feat_mask=indices,
-                new_directions=new_directions,
-            )
-            print()
-
-        # print("fields", fields)
-        # print(fields - self.field_handlers.skips)
-        # if fields & set(self.field_handlers.skips):
-        #     print("skipping", fields & set(self.field_handlers.skips))
-        #     fields = fields
-
-    # def __setitem__(self, i, v): ...
-
-    # def __getitem__(self, i): ...
+# def __getitem__(self, i): ...
 
 
 # # class FPCollection

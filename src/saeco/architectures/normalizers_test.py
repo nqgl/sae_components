@@ -83,7 +83,7 @@ train_cfg = TrainConfig(
     batch_size=4096,
     use_lars=True,
     betas=(0.9, 0.99),
-    run_length=20e3,
+    schedule.run_length=20e3,
 )
 acfg = Config(
     pre_bias=Swept[bool](False),
