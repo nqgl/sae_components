@@ -39,6 +39,7 @@ def do_sweep(purge_after=True, in_cmd=None):
         pods.runpy(
             f"src/saeco/sweeps/sweeper.py {thispath} --module-name {filename}",
             purge_after=purge_after,
+            challenge_file="src/saeco/sweeps/challenge.py",
         )
     else:
         raise ValueError(f"Invalid input: {sweep_or_run}")
