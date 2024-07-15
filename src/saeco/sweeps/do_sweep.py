@@ -3,20 +3,24 @@ def do_sweep(purge_after=True, in_cmd=None):
     import sys
 
     swfpath = sys.argv[0]
+    print("args:", sys.argv)
     print(swfpath)
     thispath = "/".join(swfpath.split("/")[:-1])
     filename = swfpath.split("/")[-1]
     thispath = thispath.split("/sae_components/")[-1]
-    sw = Sweeper(thispath, module_name=filename)
     # sw.start_agent()
-    sw.initialize_sweep()
-    sweep_or_run = in_cmd or input("sweep?")
+    options = ["run", "rand", "sweep", "yes"]
+    sweep_or_run = -1
+    while sweep_or_run not in options:
+        sweep_or_run = in_cmd or input(f"sweep? ({', '.join(options)}):")
 
+    sw = Sweeper(thispath, module_name=filename)
+    if sweep_or_run == "rand":
+        sw.rand_run_no_agent()
+        return
+    sw.initialize_sweep()
     if sweep_or_run == "run":
         sw.start_agent()
-    elif sweep_or_run == "rand":
-        sw.rand_run_no_agent()
-
     elif sweep_or_run in ("sweep", "yes"):
         n = input("create instances?")
         try:

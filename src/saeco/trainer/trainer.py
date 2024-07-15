@@ -17,6 +17,8 @@ from .recons import get_recons_loss
 from saeco.data.sc.dataset import DataConfig, SplitConfig, TokensData
 from saeco.sweeps import SweepableConfig
 from pydantic import Field
+from .l0targeter import L0Targeter
+from saeco.misc import lazycall
 
 
 @dataclass
@@ -27,7 +29,7 @@ class OptimConfig:
 
 class TrainConfig(SweepableConfig):
     data_cfg: DataConfig = Field(default_factory=DataConfig)
-    wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae-components"))
+    wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
     coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
     l0_target: Optional[float] = None
     l0_target_adjustment_size: float = 0.0003
@@ -37,7 +39,12 @@ class TrainConfig(SweepableConfig):
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
     kwargs: dict = Field(default_factory=dict)
-    schedule: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
+    raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
+
+    @property
+    @lazycall
+    def schedule(self):
+        return self.raw_schedule_cfg.step_scheduler
 
 
 class Trainer:
@@ -82,6 +89,10 @@ class Trainer:
         ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
         self.intermittent_metric_freq = 1000
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
+        self.l0_targeter = L0Targeter(
+            l0_target=self.cfg.l0_target,
+            schedule=self.cfg.schedule,
+        )
 
     def get_lr_lambda(self):
         def lrl(epoch):
@@ -112,39 +123,48 @@ class Trainer:
 
     def proc_cache_after_forward(self, cache: TrainCache):
         if self.cfg.l0_target is not None:
-            stepscale = 1
-            period = (
-                self.cfg.schedule.resample_dynamic_cooldown_period_override
-                or self.cfg.schedule.resample_period
-            )
-
-            if self.t % period < self.cfg.schedule.resample_dynamic_stop_after:
-                return
-
-            if self.t < period + self.cfg.schedule.resample_delay:
-                stepscale *= min(
-                    1,
-                    ((self.t % period) - self.cfg.schedule.resample_dynamic_stop_after)
-                    / (
-                        (period - self.cfg.schedule.resample_dynamic_stop_after)
-                        * self.cfg.schedule.resample_dynamic_cooldown
-                    ),
+            with torch.no_grad():
+                self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
+                    1
+                    + self.l0_targeter(l0=cache.L0, t=self.t)
+                    * self.cfg.l0_target_adjustment_size
                 )
+            # stepscale = 1
+            # period = (
+            #     self.cfg.schedule.targeting_resample_cooldown_period_override
+            #     or self.cfg.schedule.resample_period
+            # )
 
-            gentle_zone_radius = 5
-            distance = abs(cache.L0 - self.cfg.l0_target) / gentle_zone_radius
-            stepscale *= min(
-                1,
-                (distance**0.5 * 4 + distance * 2 + 1) / 7,
-            )
+            # if self.t % period < self.cfg.schedule.targeting_post_resample_hiatus:
+            #     return
 
-            # if self.t % self.cfg.resample_freq < self.cfg.resample_freq * self.cfg.resample_dynamic_cooldown:
-            self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
-                1
-                + (-1 if self.cfg.l0_target > cache.L0 else 1)
-                * self.cfg.l0_target_adjustment_size
-                * stepscale
-            )
+            # if self.t < period + self.cfg.schedule.resample_delay:
+            #     stepscale *= min(
+            #         1,
+            #         (
+            #             (self.t % period)
+            #             - self.cfg.schedule.targeting_post_resample_hiatus
+            #         )
+            #         / (
+            #             (period - self.cfg.schedule.targeting_post_resample_hiatus)
+            #             * self.cfg.schedule.targeting_post_resample_cooldown
+            #         ),
+            #     )
+
+            # gentle_zone_radius = 5
+            # distance = abs(cache.L0 - self.cfg.l0_target) / gentle_zone_radius
+            # stepscale *= min(
+            #     1,
+            #     (distance**0.5 * 4 + distance * 2 + 1) / 7,
+            # )
+
+            # # if self.t % self.cfg.resample_freq < self.cfg.resample_freq * self.cfg.resample_dynamic_cooldown:
+            # self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
+            #     1
+            #     + (-1 if self.cfg.l0_target > cache.L0 else 1)
+            #     * self.cfg.l0_target_adjustment_size
+            #     * stepscale
+            # )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
     def get_databuffer(self, num_batches=None, num_workers=0):

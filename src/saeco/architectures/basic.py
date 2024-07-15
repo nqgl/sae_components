@@ -92,15 +92,16 @@ train_cfg = TrainConfig(
     batch_size=4096,
     use_lars=True,
     betas=Swept[tuple[float, float]]((0.9, 0.999)),
-    schedule=RunSchedulingConfig(
-        resample_period=Swept(120),
-        resampling_finished_phase=0.25,
-        lr_cooldown_length=0.24,
-        lr_resample_warmup_length=0.67,
-        resample_dynamic_cooldown_period_override=Swept(2_000),
-        resample_dynamic_cooldown=Swept(0.4),
-        run_length=Swept(5_000),
-        resample_delay=Swept(250),
+    raw_schedule_cfg=RunSchedulingConfig(
+        run_length=Swept(25_000),
+        lr_cooldown_length=0.2,
+        lr_resample_warmup_length=0.2,
+        # targeting_resample_cooldown_period_override=Swept(2_000),
+        targeting_post_resample_cooldown=0.3,
+        targeting_post_resample_hiatus=500,
+        resample_period=(2000),
+        resampling_finished_phase=0.3,
+        resample_delay=(1000),
     ),
 )
 acfg = Config(

@@ -41,7 +41,7 @@ class Sweeper:
         basecfg = self.sweepfile.cfg
 
         cfg = basecfg.from_selective_sweep(dict(wandb.config))
-        wandb.config.update(cfg.model_dump())
+        wandb.config.update(dict(full_cfg=cfg.model_dump()))
         print(dict(wandb.config))
         self.sweepfile.run(cfg)
         wandb.finish()
@@ -50,14 +50,17 @@ class Sweeper:
         wandb.agent(
             self.sweep_id,
             function=self.run,
-            project=self.sweepfile.PROJECT,
+            project=self.sweepfile.PROJECT,  # TODO change project to being from config maybe? or remove from config
         )
 
     def rand_run_no_agent(self):
         basecfg = self.sweepfile.cfg
 
         cfg = basecfg.random_sweep_configuration()
-        wandb.init(config=cfg.model_dump())
+        wandb.init()
+        print("mammeemeikrk")
+        wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
+        print("RSSESSmammeemeikrk")
         # wandb.config.update(cfg.model_dump())
         self.sweepfile.run(cfg)
         wandb.finish()
