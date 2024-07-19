@@ -28,7 +28,7 @@ def get_resampled_params(model: nn.Module) -> set[FeaturesParam]:
         if fp.param in d:
             other = d[fp.param]
             raise ValueError(
-                f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just deduplicate and check for inconsistency"
+                f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just (intelligently) deduplicate and check for inconsistency"
             )
         d[fp.param] = fp
     return l
@@ -56,12 +56,17 @@ def find_matching_submodules(module: nn.Module, matchfn):
 from abc import ABC
 from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig
+from pydantic import Field
 
 
 class ResamplerConfig(SweepableConfig):
-    optim_reset_cfg: OptimResetValuesConfig
+    optim_reset_cfg: OptimResetValuesConfig = Field(
+        default_factory=OptimResetValuesConfig
+    )
     bias_reset_value: float = 0
     dead_threshold: float = 3e-6
+    freq_balance: Optional[int | float] = 45
+    freq_balance_strat: str = "sep"
 
 
 class Resampler(ABC):
@@ -109,6 +114,14 @@ class Resampler(ABC):
                 new_directions=d,
                 bias_reset_value=self.cfg.bias_reset_value,
                 optim=optimizer,
+            )
+        if self.cfg.freq_balance is not None:
+            self.wholistic_freqbalance(
+                model=model,
+                datasrc=data_source,
+                indices=i,
+                target_l0=self.cfg.freq_balance,
+                target_l1=1,
             )
 
     def assign_model(self, model):
@@ -186,3 +199,124 @@ class Resampler(ABC):
             self._encs = []
         self._encs.append(bias)
         return bias
+
+    @torch.no_grad()
+    def bias_freqbalance(
+        self,
+        model,
+        datasrc,
+        indices,
+        target_l0,
+    ):
+
+        original_beta = self.freq_tracker.beta
+        self.freq_tracker.beta = 0.9
+        for bias in self.biases:
+            bias.param.data[indices] = -1
+        for i in range(70):
+            lr = 3000 / (1.01**i)
+            if i < 10:
+                lr /= 2 ** (10 - i)
+            for _ in range(10):
+                with torch.autocast("cuda"):
+                    d = next(datasrc)
+                    model(d)
+                target_freq = target_l0 / self.freq_tracker.freqs.shape[0]
+                fn = lambda x: x
+                freqs = self.freq_tracker.freqs[indices]
+                if self.cfg.freq_balance_strat == "mean":
+                    freqs = freqs.mean() * 0.99 + freqs * 0.01
+                elif self.cfg.freq_balance_strat == "mix":
+                    freqs = freqs.mean() / 2 + freqs / 2
+                diff = fn(torch.tensor(target_freq)) - fn(freqs)
+                for bias in self.biases:
+                    # b2z = (
+                    #     bias.param.data[indices]
+                    #     + torch.relu(bias.param.data[indices]) * 2
+                    # )
+                    # bdiff = diff - b2z * 0.001
+                    bias.param.data[indices] *= 1.3 ** (-diff)
+            print(
+                i,
+                diff.abs().mean().item(),
+                self.freq_tracker.freqs[indices].mean()
+                * self.freq_tracker.freqs.shape[0],
+            )
+            # self.freq_tracker.reset()
+        self.freq_tracker.beta = original_beta
+
+    @torch.no_grad()
+    def wholistic_freqbalance(
+        self,
+        model,
+        datasrc,
+        indices=None,
+        target_l0=45,
+        target_l1=None,
+    ):
+        from saeco.trainer.train_cache import TrainCache
+
+        target_l1 = target_l1 or target_l0
+        if indices is None:
+            indices = torch.ones(self.encs[0].features.shape[0], dtype=torch.bool)
+
+        # self.bias_freqbalance(
+        #     model=model, datasrc=datasrc, indices=indices, target_l0=target_l0
+        # )
+        ### DO BIAS FREQ BALANCING:
+        original_beta = self.freq_tracker.beta
+        datas = []
+        self.freq_tracker.beta = 0.8
+        for bias in self.biases:
+            bias.param.data[indices] = -1
+        for i in range(70):
+            lr = 10000 / (1.01**i)
+            if i < 10:
+                lr /= 2 ** (10 - i)
+            for _ in range(10):
+                with torch.autocast("cuda"):
+                    d = next(datasrc)
+                    datas.append(d)
+                    model(d)
+                target_freq = target_l0 / self.freq_tracker.freqs.shape[0]
+                fn = lambda x: x
+                freqs = self.freq_tracker.freqs[indices]
+                if self.cfg.freq_balance_strat == "mean":
+                    freqs = freqs.mean() * 0.99 + freqs * 0.01
+                elif self.cfg.freq_balance_strat == "mix":
+                    freqs = freqs.mean() / 2 + freqs / 2
+                diff = fn(torch.tensor(target_freq)) - fn(freqs)
+                for bias in self.biases:
+                    # b2z = (
+                    #     bias.param.data[indices]
+                    #     + torch.relu(bias.param.data[indices]) * 2
+                    # )
+                    # bdiff = diff - b2z * 0.001
+                    bias.param.data[indices] *= 1.3 ** (-diff)
+            print(
+                i,
+                diff.abs().mean().item(),
+                self.freq_tracker.freqs[indices].mean()
+                * self.freq_tracker.freqs.shape[0],
+            )
+            # self.freq_tracker.reset()
+        self.freq_tracker.beta = original_beta
+        num_reset = (
+            indices.sum().item() if indices.dtype is torch.bool else len(indices)
+        )
+        ### DO MAGNITUDE STEP
+        acts_acc = torch.zeros(num_reset).cuda()
+        for d in datas:
+            cache = TrainCache()
+            cache.acts = ...
+            with torch.autocast("cuda"):
+                d = next(datasrc)
+                model(d, cache=cache)
+            acts_acc += cache.acts.relu().mean(0)[indices]
+        acts_avg = acts_acc / len(datas)
+        target_act = target_l1 / self.biases[0].features.shape[0]
+        scale = torch.where(acts_avg > 1e-6, target_act / acts_avg, 1e3)
+        for enc in self.encs:
+            enc.features[indices] = enc.features[indices] * scale.unsqueeze(-1)
+        for bias in self.biases:
+            bias.features[indices] = bias.features[indices] * scale
