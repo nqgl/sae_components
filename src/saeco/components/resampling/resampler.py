@@ -269,11 +269,11 @@ class Resampler(ABC):
         self.freq_tracker.beta = 0.8
         for bias in self.biases:
             bias.param.data[indices] = -1
-        for i in range(70):
-            lr = 10000 / (1.01**i)
+        for i in range(200):
+            lr = 5 / (1.017**i)
             if i < 10:
                 lr /= 2 ** (10 - i)
-            for _ in range(10):
+            for _ in range(3):
                 with torch.autocast("cuda"):
                     d = next(datasrc)
                     datas.append(d)
@@ -292,7 +292,7 @@ class Resampler(ABC):
                     #     + torch.relu(bias.param.data[indices]) * 2
                     # )
                     # bdiff = diff - b2z * 0.001
-                    bias.param.data[indices] *= 1.3 ** (-diff)
+                    bias.param.data[indices] *= 2 ** (-diff * lr)
             print(
                 i,
                 diff.abs().mean().item(),

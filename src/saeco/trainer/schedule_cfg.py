@@ -1,5 +1,5 @@
 # %%
-from saeco.sweeps import SweepableConfig
+from saeco.sweeps import SweepableConfig, Swept
 from typing import Any, Optional, overload, Callable
 from functools import wraps
 from pydantic import Field
@@ -12,19 +12,19 @@ from saeco.trainer.tosteps_wrapper import RunFloat, ResFloat, tosteps_wrapper
 
 
 class RunSchedulingConfig(SweepableConfig):
-    run_length: Optional[int] = 5e3
+    run_length: Optional[int] = 5e5
 
-    resample_period: int = 2_000
+    resample_period: int = 12_000
     resample_delay: int | RunFloat = 0
-    resampling_finished_phase: int | RunFloat = 0
+    resampling_finished_phase: int | RunFloat = 0.3
 
-    targeting_post_resample_cooldown: int | ResFloat = 0.3
+    targeting_post_resample_cooldown: int | ResFloat = 0.5
     # targeting_resample_cooldown_period_override: Optional[int] = None
-    targeting_post_resample_hiatus: int | ResFloat = 0
-    targeting_delay: int | RunFloat = 2000  # could be none -> copy cooldown
+    targeting_post_resample_hiatus: int | ResFloat = 0.2
+    targeting_delay: int | RunFloat = 0  # could be none -> copy cooldown
 
     ### lr scheduler # this is not quite the continuous pretraining scheduler, seems fine though
-    lr_warmup_length: int | RunFloat = 0.1
+    lr_warmup_length: int | RunFloat = 0.2
     lr_cooldown_length: int | RunFloat = 0.2
     lr_resample_warmup_length: int | ResFloat = 0.2
     lr_warmup_factor: float = 0.1

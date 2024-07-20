@@ -43,7 +43,7 @@ class RunConfig(SweepableConfig, Generic[T]):
     train_cfg: TrainConfig
     arch_cfg: T
     normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
-    resampler_config: AnthResamplerConfig = Field(default_factory=SweepableConfig)
+    resampler_config: AnthResamplerConfig = Field(default_factory=AnthResamplerConfig)
     sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 

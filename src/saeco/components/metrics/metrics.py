@@ -63,7 +63,7 @@ class L1(Metric):
 class ActMetrics(Metrics):
     def __init__(self, name=None, globalize_cache=True):
         self.name = name
-        super().__init__(L1=L1(), L0=L0())
+        super().__init__(L1=L1(), L0=L0(), acts=cl.ops.Identity())
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
 

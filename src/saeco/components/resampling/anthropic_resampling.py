@@ -109,10 +109,10 @@ class AnthResampler(Resampler):
         enc_inputs = torch.cat(enc_inputs)[i]
 
         # mag = 0.01
-        direciton_types = [enc_inputs, error, inputs]
+        direction_types = [enc_inputs, error, inputs]
         return (
-            direciton_types[self.cfg.enc_directions],
-            direciton_types[self.cfg.dec_directions],
+            direction_types[self.cfg.enc_directions],
+            direction_types[self.cfg.dec_directions],
         )
 
     def get_encoder_containing_module(self, model: nn.Module):

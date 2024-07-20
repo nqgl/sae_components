@@ -57,10 +57,8 @@ class Sweeper:
         basecfg = self.sweepfile.cfg
 
         cfg = basecfg.random_sweep_configuration()
-        wandb.init()
-        print("mammeemeikrk")
+        # wandb.init()
         wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
-        print("RSSESSmammeemeikrk")
         # wandb.config.update(cfg.model_dump())
         self.sweepfile.run(cfg)
         wandb.finish()

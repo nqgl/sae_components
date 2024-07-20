@@ -1,6 +1,5 @@
 import torch
 
-# from saeco.architectures.basic import sae, TrainingRunner, cfg
 import torch.nn as nn
 
 from saeco.architectures.initialization.initializer import Initializer
@@ -63,6 +62,7 @@ def sae(
     return models, losses
 
 
+from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.runner import TrainingRunner, TrainConfig, RunConfig
 from saeco.data import DataConfig, ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep
@@ -71,101 +71,83 @@ from saeco.sweeps import Swept, do_sweep
 model_fn = sae
 
 PROJECT = "sae sweeps"
+quick_check = False
 train_cfg = TrainConfig(
     data_cfg=DataConfig(
-        model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=False))
+        model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=not quick_check))
     ),
-    l0_target=45,
+    raw_schedule_cfg=RunSchedulingConfig(
+        run_length=80_000,
+        resample_period=15_000,
+        targeting_post_resample_hiatus=0,
+        targeting_post_resample_cooldown=0.2,
+        resample_delay=0.69,
+    ),
+    l0_target=25,
     coeffs={
-        "sparsity_loss": 5e-3,
+        "sparsity_loss": 4e-3,
         "L2_loss": 1,
     },
     lr=7e-4,
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.001,
-    batch_size=2048,
+    l0_target_adjustment_size=0.0003,
+    batch_size=4096,
     use_lars=True,
-    betas=Swept[tuple[float, float]]((0.9, 0.99)),
-    schedule.resample_period=1000,
+    betas=Swept[tuple[float, float]]((0.9, 0.999)),
 )
 acfg = Config(
     pre_bias=Swept[bool](True),
 )
-cfg = RunConfig[Config](
+from saeco.components.resampling.anthropic_resampling import (
+    AnthResamplerConfig,
+    OptimResetValuesConfig,
+)
+
+runcfg = RunConfig[Config](
     train_cfg=train_cfg,
     arch_cfg=acfg,
+    resampler_config=AnthResamplerConfig(
+        optim_reset_cfg=OptimResetValuesConfig(
+            optim_momentum=(0.0),
+            dec_momentum=Swept(False),
+            bias_momentum=Swept(0.0),
+            b2_technique=Swept("sq"),  # sq better
+            b2_scale=Swept(1.0),
+        ),
+        bias_reset_value=-0.02,
+        enc_directions=0,
+        dec_directions=1,
+        freq_balance=25,
+    ),
 )
+
+
+class FreqBalanceSweep(SweepableConfig):
+    run_cfg: RunConfig[Config] = runcfg
+    # target_l0: int = Swept(2)
+    target_l0: int = Swept(2, 3, 5, 15, 25, 35, 50)
+    target_l1: int | float = Swept(0.5, 1, 2, 4, 8, 32)
+
+
+cfg: FreqBalanceSweep = FreqBalanceSweep()
+
+# cfg = cfg.random_sweep_configuration()
 
 
 def run(cfg):
-    tr = TrainingRunner(cfg, model_fn=model_fn)
+    tr = TrainingRunner(cfg.run_cfg, model_fn=sae)
+    t = tr.trainer
+    assert tr.normalizer.primed
+    tr.resampler.assign_model(tr.trainable)
+    tr.resampler.wholistic_freqbalance(
+        model=tr.trainable,
+        datasrc=tr.buf,
+        target_l0=cfg.target_l0,
+        target_l1=cfg.target_l1,
+    )
     tr.trainer.train()
 
 
-@torch.no_grad()
-def pre_freqbalance(model, datasrc, bias, freqs, target_l0):
-    original_beta = freqs.beta
-    freqs.beta = 0.9
-    for i in range(50):
-        lr = 75 / (1.03**i)
-        if i < 10:
-            lr /= 2 ** (10 - i)
-        for _ in range(10):
-            with torch.autocast("cuda"):
-                d = next(datasrc)
-                model(d)
-            target_freq = target_l0 / freqs.freqs.shape[0]
-            fn = lambda x: x
-            diff = fn(torch.tensor(target_freq)) - fn(freqs.freqs)
-            bias.data += diff * lr
-        print(i, diff.abs().mean().item(), freqs.freqs.sum())
-        # freqs.reset()
-    freqs.beta = original_beta
-
-
-def weird_l0_target(model, datasrc, encoder, freqs, target_l0):
-    bias = encoder.linear.bias
-    freqs.beta = 0.9
-
-    @torch.no_grad()
-    def wrapper():
-        # print("wrapper called")
-        target_freq = target_l0 / freqs.freqs.shape[0]
-        fn = lambda x: x
-        undershoot = torch.relu(target_l0 - freqs.freqs.sum())
-        diff = fn(
-            torch.tensor(target_freq / (1 + 10 * (1 - undershoot / (1 + undershoot))))
-            - fn(freqs.freqs)
-        )
-        sub = torch.relu(freqs.freqs.sum() - target_l0)
-        bias.data += torch.relu(diff * 250)
-        bias.data -= torch.where(diff < 0, sub / 100, 0)
-
-    assert not hasattr(encoder, "post_step_hook")
-    setattr(encoder, "post_step_hook", wrapper)
-    assert hasattr(encoder, "post_step_hook")
-
-
-trainable_here = []
-cfg = cfg.random_sweep_configuration()
-
-tr = TrainingRunner(cfg, model_fn=sae)
-pre_freqbalance(
-    model=tr.trainable,
-    datasrc=tr.buf,
-    bias=tr.trainable.model.model.module.encoder.linear.bias,
-    freqs=tr.trainable.model.model.module.freqs,
-    target_l0=4,
-)
-# weird_l0_target(
-#     model=tr.trainable,
-#     datasrc=tr.buf,
-#     encoder=tr.trainable.model.model.module.encoder,
-#     freqs=tr.trainable.model.model.module.freqs,
-#     target_l0=45,
-# )
-tr.trainer.train()
-# if __name__ == "__main__":
-
-#     do_sweep(True, "rand")
+if __name__ == "__main__":
+    do_sweep(True, "rand" if quick_check else None)

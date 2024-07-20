@@ -74,11 +74,11 @@ from saeco.sweeps import Swept, do_sweep
 
 
 model_fn = sae
-
+quick_check = False
 PROJECT = "sae sweeps"
 train_cfg = TrainConfig(
     data_cfg=DataConfig(
-        model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=False))
+        model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=not quick_check))
     ),
     l0_target=25,
     coeffs={
@@ -91,17 +91,18 @@ train_cfg = TrainConfig(
     l0_target_adjustment_size=0.001,
     batch_size=4096,
     use_lars=True,
-    betas=Swept[tuple[float, float]]((0.9, 0.999)),
+    betas=((0.9, 0.999) if quick_check else Swept[tuple[float, float]]((0.9, 0.999))),
     raw_schedule_cfg=RunSchedulingConfig(
-        run_length=Swept(25_000),
+        run_length=Swept(60_000),
         lr_cooldown_length=0.2,
-        lr_resample_warmup_length=0.2,
+        lr_resample_warmup_length=0.3,
+        lr_resample_warmup_factor=0.2,
         # targeting_resample_cooldown_period_override=Swept(2_000),
         targeting_post_resample_cooldown=0.3,
-        targeting_post_resample_hiatus=500,
-        resample_period=(2000),
+        targeting_post_resample_hiatus=0.1,
+        resample_period=4000,
         resampling_finished_phase=0.3,
-        resample_delay=(1000),
+        resample_delay=3000,
     ),
 )
 acfg = Config(
@@ -112,27 +113,32 @@ cfg = RunConfig[Config](
     arch_cfg=acfg,
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(
-            optim_momentum=0.0,
-            # Swept(
-            #     0.0,
-            #     1e-1,
-            #     3e-2,
-            #     1e-2,
-            #     3e-3,
-            #     1e-3,
-            #     3e-4,
-            #     1e-4,
-            #     # 3e-5,
-            #     # 1e-5,
-            # ),
+            optim_momentum=(
+                0.0
+                # if quick_check
+                # else Swept(
+                #     # 0.0,
+                #     # 1e-1,
+                #     # 3e-2,
+                #     # 1e-2,
+                #     3e-3,
+                #     1e-3,
+                #     3e-4,
+                #     1e-4,
+                #     3e-5,
+                #     1e-5,
+                # )
+            ),
             dec_momentum=Swept(False),
-            bias_momentum=0,
+            bias_momentum=Swept(0.0),
             b2_technique=Swept("sq"),  # sq better
             b2_scale=Swept(1.0),
         ),
-        bias_reset_value=0,
+        bias_reset_value=Swept(-0.001, -0.003, -0.0001, -0.0003),
         enc_directions=Swept[AnthResamplerConfig.ResampleType](0),
         dec_directions=Swept[AnthResamplerConfig.ResampleType](1),
+        freq_balance=(25 if quick_check else Swept(None, 3.5, 10, 25, 50)),
+        freq_balance_strat=Swept("sep", "mix"),
     ),
     sae_cfg=SAEConfig(dict_mult=16),
 )
@@ -145,4 +151,4 @@ def run(cfg):
 
 if __name__ == "__main__":
 
-    do_sweep(True)
+    do_sweep(True, "rand" if quick_check else None)

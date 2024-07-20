@@ -57,19 +57,7 @@ class Trainer:
     ):
         self.cfg: TrainConfig = cfg
         self.model = model
-        if wandb.run is None:
-            wandb.init(
-                **cfg.wandb_cfg,
-                config={"model": repr(model), "cfg": cfg},
-                reinit=True,
-            )
-        if namestuff is not None:
-            lars = "(lars)" if cfg.use_lars else ""
-            wandb.run.name = (
-                f"{lars}{namestuff}[{cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
-            )
         self.t = 1
-        self.extra_calls = []
         self.optim = optim or torch.optim.RAdam(
             self.model.parameters(),
             lr=cfg.lr,
@@ -83,7 +71,7 @@ class Trainer:
 
             self.optim = LARS(self.optim)
             assert optim is None or not isinstance(optim, LARS)
-
+        self.namestuff = namestuff
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model
         ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
@@ -123,48 +111,25 @@ class Trainer:
 
     def proc_cache_after_forward(self, cache: TrainCache):
         if self.cfg.l0_target is not None:
+
+            if not self.cfg.schedule.dynamic_adjust(self.t):
+                return
+            step = self.l0_targeter(l0=cache.L0, t=self.t)
+            if self.t < 2000:
+                step *= self.t / 2000
+
+            rt = self.cfg.schedule.resample_t(self.t)
+            t_after_wait = rt - self.cfg.schedule.targeting_post_resample_hiatus
+            res_warmup_len = self.cfg.schedule.targeting_post_resample_cooldown
+            stepscale = 1
+            if t_after_wait >= 0:
+                stepscale *= min(1, t_after_wait / res_warmup_len)
+
+            self.log(self.l0_targeter.loggables(self.t))
             with torch.no_grad():
                 self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
-                    1
-                    + self.l0_targeter(l0=cache.L0, t=self.t)
-                    * self.cfg.l0_target_adjustment_size
+                    2 ** (stepscale * step * self.cfg.l0_target_adjustment_size)
                 )
-            # stepscale = 1
-            # period = (
-            #     self.cfg.schedule.targeting_resample_cooldown_period_override
-            #     or self.cfg.schedule.resample_period
-            # )
-
-            # if self.t % period < self.cfg.schedule.targeting_post_resample_hiatus:
-            #     return
-
-            # if self.t < period + self.cfg.schedule.resample_delay:
-            #     stepscale *= min(
-            #         1,
-            #         (
-            #             (self.t % period)
-            #             - self.cfg.schedule.targeting_post_resample_hiatus
-            #         )
-            #         / (
-            #             (period - self.cfg.schedule.targeting_post_resample_hiatus)
-            #             * self.cfg.schedule.targeting_post_resample_cooldown
-            #         ),
-            #     )
-
-            # gentle_zone_radius = 5
-            # distance = abs(cache.L0 - self.cfg.l0_target) / gentle_zone_radius
-            # stepscale *= min(
-            #     1,
-            #     (distance**0.5 * 4 + distance * 2 + 1) / 7,
-            # )
-
-            # # if self.t % self.cfg.resample_freq < self.cfg.resample_freq * self.cfg.resample_dynamic_cooldown:
-            # self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (
-            #     1
-            #     + (-1 if self.cfg.l0_target > cache.L0 else 1)
-            #     * self.cfg.l0_target_adjustment_size
-            #     * stepscale
-            # )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
     def get_databuffer(self, num_batches=None, num_workers=0):
@@ -185,6 +150,15 @@ class Trainer:
         if not self.model.normalizer.primed:
             self.model.normalizer.prime_normalizer(buffer)
         self.post_step()
+        if wandb.run is None:
+            wandb.init(
+                **self.cfg.wandb_cfg,
+                config={"model": repr(self.model), "cfg": self.cfg},
+                reinit=True,
+            )
+        if self.namestuff is not None:
+            lars = "(lars)" if self.cfg.use_lars else ""
+            wandb.run.name = f"{lars}{self.namestuff}[{self.cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
 
         for x in buffer:
             x = x.cuda()

@@ -135,7 +135,7 @@ class OptimResetValuesConfig(SweepableConfig):
     optim_momentum: float = 0
     bias_momentum: float = 0
     dec_momentum: bool = False
-    b2_technique: str = "mean"
+    b2_technique: str = "sq"
     b2_scale: float = 1.0
 
 
