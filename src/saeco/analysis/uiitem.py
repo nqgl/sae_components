@@ -69,7 +69,7 @@ from saeco.analysis.ddmenuprop import ui_item
 
 # %%
 class Updating:
-    def __init__(self, uii: "UII", inst):
+    def __init__(self, uii: "UIE", inst):
         self.uii = uii
         self.inst = inst
 
@@ -83,7 +83,7 @@ class Updating:
         return inst in self.uii._updating
 
 
-class UII:
+class UIE:
     def __init__(self, init_fn):
 
         self.init_fn = init_fn
@@ -181,48 +181,52 @@ class UII:
         setattr(inst, "update", reup)
 
 
-class Test:
-    def __init__(self):
-        self.v = 0
-        with ui.card():
-            self.label
-            self.text
+if __name__ == "__main__":
 
-    def update(self): ...
+    class Test:
+        def __init__(self):
+            self.v = 0
+            with ui.card():
+                self.label
+                self.text
 
-    @UII
-    def f(self, cb):
-        return ui.select(
-            label="Keys", options=["key1", "key2", "key3"], multiple=True, on_change=cb
-        )
+        def update(self): ...
 
-    @f.updater
-    def f(self, e):
-        print("up", e.value)
+        @UIE
+        def f(self, cb):
+            return ui.select(
+                label="Keys",
+                options=["key1", "key2", "key3"],
+                multiple=True,
+                on_change=cb,
+            )
 
-    @UII
-    def text(self, cb):
-        return ui.input(label="item1", on_change=cb)
+        @f.updater
+        def f(self, e):
+            print("up", e.value)
 
-    @text.updater
-    def text(self, e):
-        self.v = e.value
+        @UIE
+        def text(self, cb):
+            return ui.input(label="item1", on_change=cb)
 
-    @UII
-    def label(self, cb):
-        return ui.label("label")
+        @text.updater
+        def text(self, e):
+            self.v = e.value
 
-    @label.updater
-    def label(self, e):
-        e.text = self.v
+        @UIE
+        def label(self, cb):
+            return ui.label("label")
 
-        # return "uppp"
+        @label.updater
+        def label(self, e):
+            e.text = self.v
 
+            # return "uppp"
 
-t = Test()
-# with ui.card():
-# t.f
-# t.f = 3
-t.f
-ui.run()
-# %%
+    t = Test()
+    # with ui.card():
+    # t.f
+    # t.f = 3
+    t.f
+    ui.run()
+    # %%
