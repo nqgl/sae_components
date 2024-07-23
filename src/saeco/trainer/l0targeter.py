@@ -161,8 +161,8 @@ class L0Targeter(L0TargeterProto):
 
         self.inv = False
 
-        self.i = MultiEma([0.001, 0.0003], weights=[1, 2], reweight=False)
-        self.p = lfema(0.002)
+        self.i = MultiEma([0.001, 0.0003], weights=[1, 1], reweight=False)
+        self.p = lfema(0.003)
         # MultiEma([0.01], reweight=False)
         self.velocity = 0
 
@@ -173,7 +173,7 @@ class L0Targeter(L0TargeterProto):
         #     weights=[1, -0.9, -0.1],
         #     reweight=False,
         # )
-        self.dd = MultiEma([0.01, 0.007])
+        self.dd = MultiEma([0.01, 0.007, 0.003])
         # MultiEma(
         #     [0.007, 0.01, 0.003, 0.0012],
         #     # [0.003 * 1.62 ** (-i) for i in range(8)],
@@ -206,7 +206,7 @@ class L0Targeter(L0TargeterProto):
 
         self.p_c = 1
         self.i_c = 0.5
-        self.d_c = 10
+        self.d_c = 5
         self.a_c = 0
         self.scale = 0.25
         self.velocity_mode = False
@@ -239,7 +239,7 @@ class L0Targeter(L0TargeterProto):
         self.p.update(pos)
         self.i.update(self.p.value)
         # self.d.decay(0.01)
-        self.d.update(self.p.value)
+        self.d.update(pos)
         # self.dd.decay(0.999)
         self.dd.update(self.d.value)
         # self.a.decay(0.001)

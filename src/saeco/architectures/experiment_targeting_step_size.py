@@ -70,7 +70,7 @@ from saeco.sweeps import Swept, do_sweep
 model_fn = sae
 
 PROJECT = "sae sweeps"
-quick_check = False
+quick_check = True
 train_cfg = TrainConfig(
     data_cfg=DataConfig(
         model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=not quick_check))
@@ -84,19 +84,19 @@ train_cfg = TrainConfig(
     ),
     l0_target=25,
     coeffs={
-        "sparsity_loss": 4e-3,
+        "sparsity_loss": 1e-3,
         "L2_loss": 1,
     },
     lr=Swept(3e-4, 1e-4, 4e-5, 1e-5),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.0001,
+    l0_target_adjustment_size=Swept(0.0001, 0.0003),
     batch_size=4096,
     use_lars=True,
     betas=Swept[tuple[float, float]]((0.9, 0.999)),
 )
 acfg = Config(
-    pre_bias=Swept[bool](True, False),
+    pre_bias=Swept(True, False),
 )
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -140,8 +140,8 @@ class FreqBalanceSweep(SweepableConfig):
     run_cfg: RunConfig[Config] = runcfg
     # target_l0: int = Swept(2)
     # target_l0: int = Swept(2, 3, 5, 15, 25, 35, 50)
-    target_l0: int | None = Swept(1, 4, 16, 64, 256)  # Swept(3, 6, 12, 25, 50)
-    target_l1: int | float | None = Swept(10, 50, 200)  # Swept(1, 2, 4, 8, 32, 32 * 3)
+    target_l0: int | None = Swept(5, 10)  # Swept(3, 6, 12, 25, 50)
+    target_l1: int | float | None = Swept(10, 30)  # Swept(1, 2, 4, 8, 32, 32 * 3)
 
 
 cfg: FreqBalanceSweep = FreqBalanceSweep()

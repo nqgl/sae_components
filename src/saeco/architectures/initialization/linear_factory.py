@@ -18,6 +18,17 @@ class DetachedLinear(nn.Module):
         )
 
 
+class InitSite:
+    def __init__(self, site):
+        self.site = site
+
+    def __getattribute__(self, name: str) -> "InitSite":
+        pass
+
+    def __setattr__(self, name: str, value) -> None:
+        pass
+
+
 class BiasDetachedLinear(nn.Module):
     def __init__(self, lin):
         super().__init__()
@@ -172,6 +183,10 @@ class LinearFactory:
         assert self._weight_tie is None
         self._weight_tie = Tied(other, Tied.INIT, "weight")
 
+    def zero_init_bias(self):
+        assert self.unset
+        assert self._bias_tie is None
+        self._bias_tie = Tied(torch.zeros(self.d_out), Tied.TO_VALUE, "bias")
         # assert (self.lin.weight.data.shape == other.lin.weight.data.shape) ^ (
         #     self.lin.weight.data.shape == other.lin.weight.data.transpose(-2, -1).shape
         # )

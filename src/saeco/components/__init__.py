@@ -1,6 +1,7 @@
 from .features.linear_type import LinDecoder, LinEncoder
 from .losses import Loss, L2Loss, SparsityPenaltyLoss
 from .penalties import Penalty, L1Penalty, LambdaPenalty
+from . import penalties
 from .resampling import (
     FreqTracked,
     EMAFreqTracker,

@@ -31,7 +31,7 @@ from saeco.architectures.remax import (
     remaxkB_sae,
     remaxkvB_sae,
 )
-from saeco.architectures.topk import topk_sae
+from saeco.architectures.outdated.topk import topk_sae
 import torch
 import sys
 from saeco.architectures.initialization.initializer import Initializer

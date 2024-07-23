@@ -87,7 +87,7 @@ train_cfg = TrainConfig(
         "sparsity_loss": 4e-3,
         "L2_loss": 1,
     },
-    lr=Swept(3e-4, 1e-4, 4e-5, 1e-5),
+    lr=Swept(1e-3, 3e-4, 1e-4),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
     l0_target_adjustment_size=0.0001,
@@ -96,7 +96,7 @@ train_cfg = TrainConfig(
     betas=Swept[tuple[float, float]]((0.9, 0.999)),
 )
 acfg = Config(
-    pre_bias=Swept[bool](True, False),
+    pre_bias=Swept[bool](True),
 )
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -140,8 +140,10 @@ class FreqBalanceSweep(SweepableConfig):
     run_cfg: RunConfig[Config] = runcfg
     # target_l0: int = Swept(2)
     # target_l0: int = Swept(2, 3, 5, 15, 25, 35, 50)
-    target_l0: int | None = Swept(1, 4, 16, 64, 256)  # Swept(3, 6, 12, 25, 50)
-    target_l1: int | float | None = Swept(10, 50, 200)  # Swept(1, 2, 4, 8, 32, 32 * 3)
+    target_l0: int | None = Swept(3, 6, 12, 25, 50)  # Swept(3, 6, 12, 25, 50)
+    target_l1: int | float | None = Swept(
+        1, 3, 9, 27, 81
+    )  # Swept(1, 2, 4, 8, 32, 32 * 3)
 
 
 cfg: FreqBalanceSweep = FreqBalanceSweep()

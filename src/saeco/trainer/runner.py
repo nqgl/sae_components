@@ -2,7 +2,7 @@ from saeco.trainer.trainable import Trainable
 
 from saeco.trainer.trainer import Trainer, TrainConfig
 from typing import Generic, TypeVar
-from saeco.architectures.gate_hierarch import (
+from saeco.architectures.outdated.gate_hierarch import (
     hierarchical_softaux,
     HierarchicalSoftAuxConfig,
     HGatesConfig,

@@ -256,7 +256,7 @@ class Resampler(ABC):
     ):
         from saeco.trainer.train_cache import TrainCache
 
-        target_l1 = target_l1 or target_l0
+        # target_l1 = target_l1 or target_l0
         if indices is None:
             indices = torch.ones(self.encs[0].features.shape[0], dtype=torch.bool)
 
@@ -277,6 +277,8 @@ class Resampler(ABC):
                 with torch.autocast("cuda"):
                     d = next(datasrc)
                     datas.append(d)
+                    if target_l0 is None:
+                        continue
                     model(d)
                 target_freq = target_l0 / self.freq_tracker.freqs.shape[0]
                 fn = lambda x: x
@@ -293,6 +295,9 @@ class Resampler(ABC):
                     # )
                     # bdiff = diff - b2z * 0.001
                     bias.param.data[indices] *= 2 ** (-diff * lr)
+            if target_l0 is None:
+                continue
+
             print(
                 i,
                 diff.abs().mean().item(),
@@ -301,6 +306,8 @@ class Resampler(ABC):
             )
             # self.freq_tracker.reset()
         self.freq_tracker.beta = original_beta
+        if target_l1 is None:
+            return
         num_reset = (
             indices.sum().item() if indices.dtype is torch.bool else len(indices)
         )

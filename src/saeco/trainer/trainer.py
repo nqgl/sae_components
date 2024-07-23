@@ -144,7 +144,7 @@ class Trainer:
         # setattr(c, k, ...)
         return c
 
-    def train(self, buffer=None):
+    def train(self, buffer=None, num_steps=None):
         if buffer is None:
             buffer = self.get_databuffer(num_workers=0)
         if not self.model.normalizer.primed:
@@ -159,6 +159,20 @@ class Trainer:
         if self.namestuff is not None:
             lars = "(lars)" if self.cfg.use_lars else ""
             wandb.run.name = f"{lars}{self.namestuff}[{self.cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
+
+        if num_steps is not None:
+            old_buffer = buffer
+            n = 0
+
+            def buf():
+                nonlocal n
+                while True:
+                    n += 1
+                    yield next(old_buffer)
+                    if n >= num_steps:
+                        break
+
+            buffer = buf()
 
         for x in buffer:
             x = x.cuda()

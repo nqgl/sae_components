@@ -212,7 +212,8 @@ class GNConfig(SweepableConfig):
     mu_s: SAggregation = SAggregation.PRIMED
     mu_e: Aggregation = Aggregation.DONTUSE
     std_s: SAggregation = SAggregation.PRIMED
-    std_e: Aggregation = Aggregation.DONTUSE
+    std_e: Aggregation = Aggregation.PRIMED
+    sandwich: bool = False
 
 
 Aggregation = GNConfig.Aggregation
@@ -255,7 +256,7 @@ class GeneralizedNormalizer(Normalizer):
                     torch.nan,
                 )
             )
-        self.sandwich = False
+        self.cfg.sandwich = False
         if cfg.mu_s == SAggregation.PRIMED:
             self.register_buffer(
                 "_mu_s",
@@ -274,7 +275,7 @@ class GeneralizedNormalizer(Normalizer):
             )
 
         assert not (
-            self.sandwich
+            self.cfg.sandwich
             and (cfg.mu_s == SAggregation.PRIMED or cfg.std_s == SAggregation.PRIMED)
         )
 
@@ -286,7 +287,7 @@ class GeneralizedNormalizer(Normalizer):
         x = torch.cat(samples, dim=0)
         # samples = [x - self.mu_s(x) for x in samples]
 
-        if self.sandwich:
+        if self.cfg.sandwich:
             x = x - self.mu_s(x)
 
         if self.cfg.mu_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
@@ -301,7 +302,7 @@ class GeneralizedNormalizer(Normalizer):
         x = x - self.mu_s(x)
         # samples = [x - self.mu_e(x) for x in samples]
         # samples = [x - self.mu_s(x) for x in samples]
-        if self.sandwich:
+        if self.cfg.sandwich:
             x = x / self.std_s(x)
 
         if self.cfg.std_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
@@ -335,7 +336,7 @@ class GeneralizedNormalizer(Normalizer):
         # std_s = self.std_s(x, cache=cache)
         # x = x / std_s
         ####
-        if not self.sandwich:
+        if not self.cfg.sandwich:
             x = x - cache(self, force_watch=True).mu_e(x)
             x = x - cache(self, force_watch=True).mu_s(x)
             x = x / cache(self, force_watch=True).std_e(x)
