@@ -2,14 +2,13 @@
 import pandas as pd
 from pandas.api.types import is_bool_dtype, is_numeric_dtype
 
-from nicegui import ui
 import numpy as np
 from matplotlib import pyplot as plt
 from nicegui import ui
 from saeco.analysis.ddmenuprop import ddmenuprop, ddupdate
 
 # from saeco.analysis.update_render import update_render, render_update_list
-from saeco.analysis.wa_an import (
+from saeco.analysis.wandb_analyze import (
     Key,
     ValueTarget,
     SweepKey,
@@ -121,10 +120,32 @@ class SAView:
                 self.aggregation
                 self.key1
                 self.key2
+
+            self.cmap = "viridis"
+
+            def setcolor(e):
+                self.cmap = e.value
+
+            color = ui.input(label="Color", value="viridis", on_change=setcolor)
+        ddupdate()
+
         # render_update_list.append(self.update)
 
     def update(self):
-        self.heatmap.set_content(self.sa.heatmap(self.aggregation).to_html())
+        sa = SweepAnalysis(self.sw, self.key1 * self.key2)
+        sa.cmap = self.cmap
+        self.heatmap.set_content(
+            sa.heatmap(self.aggregation)
+            .set_properties(
+                **{
+                    "text-align": "center",
+                    # "border-collapse": "collapse",
+                    # "border": "1px solid",
+                    "width": "200px",
+                }
+            )
+            .to_html()
+        )
         self.heatmap.update()
         ddupdate()
 
@@ -134,11 +155,17 @@ class SAView:
 
     @ddmenuprop
     def key1(self):
-        return self.sw.keys
+        l = self.sw.keys.copy()
+        if self.key2 in l:
+            l.remove(self.key2)
+        return l
 
     @ddmenuprop
     def key2(self):
-        return self.sw.keys
+        l = self.sw.keys.copy()
+        if self.key1 in l:
+            l.remove(self.key1)
+        return l
 
     @ddmenuprop
     def a_menu(self):
@@ -150,7 +177,7 @@ class SAView:
 
 
 # make_setfield_menu(o, "field", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-saview = SAView()
+saview = SAView("sae sweeps/mfwai3n2")
 saview2 = SAView()
 
 ui.run()
