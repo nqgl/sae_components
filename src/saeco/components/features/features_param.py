@@ -88,6 +88,28 @@ class FeaturesParam:
         self.type: Optional[FeatureParamType] = fptype and FeatureParamType(fptype)
         self.resampler_cfg = None
 
+    def __eq__(self, other):
+        return (
+            self.param is other.param
+            and self.feature_index == other.feature_index
+            and self.field_handlers == other.field_handlers
+            and self.resampled == other.resampled
+            and self.type == other.type
+            and self.resampler_cfg == other.resampler_cfg
+        )
+
+    def __hash__(self):
+        return hash(
+            (
+                self.param,
+                self.feature_index,
+                self.field_handlers,
+                self.resampled,
+                self.type,
+                self.resampler_cfg,
+            )
+        )
+
     def set_cfg(self, cfg):
         if self.resampler_cfg is cfg:
             return

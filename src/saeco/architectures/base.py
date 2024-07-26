@@ -17,6 +17,17 @@ class LinearLike(Protocol):
     bias: Tensor
 
 
+from saeco.sweeps.sweepable_config import SweepableConfig
+from pydantic import create_model
+
+
+class Base(cl.Module):
+    cfg: SweepableConfig
+
+    def __init__(self, losses):
+        create_model
+
+
 class SAE(cl.Seq):
     encoder: cl.Module
     penalty: cl.Module

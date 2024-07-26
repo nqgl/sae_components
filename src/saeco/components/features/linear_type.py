@@ -65,10 +65,12 @@ class LinEncoder(LinWeights):
     @property
     @lazycall
     def features(self) -> dict[str, FeaturesParam]:
-        return {
+        d = {
             "weight": FeaturesParam(self.wrapped.weight, feature_index=0, fptype="enc"),
-            "bias": FeaturesParam(self.wrapped.bias, feature_index=0, fptype="bias"),
         }
+        if self.bias is not None:
+            d["bias"] = FeaturesParam(self.wrapped.bias, feature_index=0, fptype="bias")
+        return d
 
     # def features_transform(self, tensor: Tensor) -> Tensor:
     #     return tensor

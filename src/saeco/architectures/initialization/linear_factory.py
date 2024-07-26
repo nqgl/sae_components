@@ -9,12 +9,17 @@ class DetachedLinear(nn.Module):
     def __init__(self, lin):
         super().__init__()
         self.lin = lin
+        self.use_bias = True
 
     def forward(self, x):
         return torch.nn.functional.linear(
             x,
             self.lin.weight.detach(),
-            self.lin.bias.detach() if self.lin.bias is not None else None,
+            (
+                self.lin.bias.detach()
+                if (self.lin.bias is not None) and self.use_bias
+                else None
+            ),
         )
 
 

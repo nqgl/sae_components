@@ -27,6 +27,7 @@ def get_resampled_params(model: nn.Module) -> set[FeaturesParam]:
     for fp in l:
         if fp.param in d:
             other = d[fp.param]
+            assert other == fp, f"{other} != {fp}"
             raise ValueError(
                 f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just (intelligently) deduplicate and check for inconsistency"
             )
@@ -65,8 +66,11 @@ class ResamplerConfig(SweepableConfig):
     )
     bias_reset_value: float = 0
     dead_threshold: float = 3e-6
-    freq_balance: Optional[int | float] = 45
+    freq_balance: Optional[int | float] = None
     freq_balance_strat: str = "sep"
+    expected_biases: Optional[int] = 1
+    expected_decs: Optional[int] = 1
+    expected_encs: Optional[int] = 1
 
 
 class Resampler(ABC):
@@ -78,14 +82,8 @@ class Resampler(ABC):
     def __init__(
         self,
         cfg: ResamplerConfig,
-        expected_biases: Optional[int] = 1,
-        expected_decs: Optional[int] = 1,
-        expected_encs: Optional[int] = 1,
     ):
         self.cfg = cfg
-        self.expected_biases = expected_biases
-        self.expected_decs = expected_decs
-        self.expected_encs = expected_encs
         self.model = None
         self._encs = None
         self._decs = None
@@ -104,9 +102,9 @@ class Resampler(ABC):
             data_source=data_source,
             model=model,
         )
-        assert self.expected_encs == len(self.encs)
-        assert self.expected_biases == len(self.biases)
-        assert self.expected_decs == len(self.decs)
+        assert self.cfg.expected_encs == len(self.encs)
+        assert self.cfg.expected_biases == len(self.biases)
+        assert self.cfg.expected_decs == len(self.decs)
         for r in self.encs + self.decs + self.biases:
             r.set_cfg(self.cfg)
             r.resample(
@@ -267,8 +265,9 @@ class Resampler(ABC):
         original_beta = self.freq_tracker.beta
         datas = []
         self.freq_tracker.beta = 0.8
-        for bias in self.biases:
-            bias.param.data[indices] = -1
+        if target_l0 is not None:
+            for bias in self.biases:
+                bias.param.data[indices] = -0.01
         for i in range(200):
             lr = 5 / (1.017**i)
             if i < 10:
