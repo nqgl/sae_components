@@ -99,6 +99,7 @@ class UIE:
             except AttributeError:
                 return ...
 
+        self._updater_fn = None
         self._value_fn = default_getval
         self._updating = set()
         # print(dir(self.fn))
@@ -157,7 +158,7 @@ class UIE:
         raise NotImplementedError("no set")
         setattr(self, fname, value)
 
-    def update(self, inst):
+    def _update(self, inst):
         if hasattr(inst, "update"):
             inst.update()
         else:
@@ -165,7 +166,7 @@ class UIE:
 
     def init_el(self, inst):
         def settr():
-            self.update(inst)
+            self._update(inst)
 
         setattr(inst, self.ddname, self.init_fn(inst, settr))
         if hasattr(inst, "update"):

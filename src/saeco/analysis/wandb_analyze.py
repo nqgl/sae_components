@@ -32,6 +32,7 @@ right_key_delim = "\u27e9"
 class Key:
     def __init__(self, key):
         self.key = tuplicate(key)
+        self.shortname_n = 0
 
     # def __str__(self):
     #     return self.key
@@ -48,7 +49,14 @@ class Key:
 
     @property
     def nicename(self):
-        return "/".join(self.key)
+        if isinstance(self.key, str):
+            return self.key
+        return "-".join([str(e) for e in self.key])
+
+    def shortname(self):
+        if isinstance(self.key, str):
+            return self.key
+        return "-".join([str(e) for e in self.key[-self.shortname_n - 1 :]])
 
     def __repr__(self):
         if isinstance(self.key, tuple):
@@ -65,7 +73,7 @@ class ValueTarget(Key):
 class SweepKey(Key):
     def __init__(self, key, values=[]):
         super().__init__(key)
-        self.values = set(values)
+        self.values = dedup(values)
 
     def __mul__(self, other):
         if isinstance(other, SweepKey):
@@ -75,6 +83,12 @@ class SweepKey(Key):
         else:
             raise TypeError()
 
+    # def __len__(self):
+    #     return len(self.values)
+
+    # def __iter__(self):
+    #     return iter(self.values)
+
 
 def powerset(s1, s2):
     for i in s1:
@@ -82,9 +96,13 @@ def powerset(s1, s2):
     return {{i, j} for i in s1 for j in s2}
 
 
+def dedup(l):
+    return list(dict.fromkeys(l).keys())
+
+
 class SweepKeys:
-    def __init__(self, keys: set[SweepKey]):
-        self.keys = set(keys)
+    def __init__(self, keys: list[SweepKey]):
+        self.keys = dedup(keys)
 
     @property
     def space(self):
@@ -93,6 +111,9 @@ class SweepKeys:
             n *= len(k.values)
         return n
 
+    def __repr__(self):
+        return repr(self.keys)
+
     def __getitem__(self, i):
         if isinstance(i, int):
 
@@ -100,7 +121,7 @@ class SweepKeys:
             n = 1
             return SetKeys(
                 {
-                    k: list(k.values)[(i := (i // n)) % (n := len(k.values))]
+                    k: sorted(list(k.values))[(i := (i // n)) % (n := len(k.values))]
                     for k in self.keys
                 }
             )
@@ -111,6 +132,14 @@ class SweepKeys:
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
+
+    def __mul__(self, other):
+        if isinstance(other, SweepKey):
+            return SweepKeys({*self.keys, other})
+        elif isinstance(other, SweepKeys):
+            return SweepKeys({*self.keys, *other.keys})
+        else:
+            raise TypeError()
 
 
 # class SetKey:
@@ -138,10 +167,18 @@ class SetKeys:
             )
         )
 
-    def __call__(self, df):
+    def filter(self, df):
         for key, value in self.d.items():
             df = df[df[key.key] == value]
         return df
+
+    def __eq__(self, other):
+        if isinstance(other, SetKeys):
+            return self.d == other.d
+        return False
+
+    def __hash__(self):
+        return hash(tuple(self.d.items()))
 
 
 sk1 = SweepKey("a", [11, 12, 13])
@@ -255,7 +292,7 @@ class Sweep:
         vcs = [()]
         for k in sweep_keys:
             newl = []
-            sweep_key_values = list(set(sweep_kvs[k]))
+            sweep_key_values = dedup(sweep_kvs[k])
             for existing_values in vcs:
                 for skv in sweep_key_values:
                     newl.append(existing_values + (skv,))
@@ -282,23 +319,39 @@ sks = sw.keys[1] * sw.keys[2]
 
 
 class SweepAnalysis:
-    def __init__(self, sweep: Sweep, skvs: SweepKeys):
+    def __init__(self, sweep: Sweep, xkeys: SweepKeys, ykeys: SweepKeys):
         self.sweep = sweep
-        self.skvs = skvs
+        self.xkeys = xkeys
+        self.ykeys = ykeys
         # self.swdf = {}
 
         l = []
-        for skv in self.skvs:
-            df = skv(self.sweep.df)
-            l.append(
-                {
-                    "sweepkey": skv,
-                    **{sk: sv for sk, sv in skv.d.items()},
-                    **{target: df[target] for target in self.sweep.value_targets},
-                }
-            )
+        # for skv in self.xkeys * self.ykeys:
+        #     df = skv(self.sweep.df)
+        #     l.append(
+        #         {
+        #             "sweepkey": skv,
+        #             **{sk: sv for sk, sv in skv.d.items()},
+        #             **{target: df[target] for target in self.sweep.value_targets},
+        #         }
+        #     )
+        for xkeyv in self.xkeys:
+            dfx = xkeyv.filter(self.sweep.df)
+            for ykeyv in self.ykeys:
+                df = ykeyv.filter(dfx)
+                l.append(
+                    {
+                        # "sweepkey": skv,
+                        "xkeystate": xkeyv,
+                        "ykeystate": ykeyv,
+                        **{xsk: xsv for xsk, xsv in xkeyv.d.items()},
+                        **{ysk: ysv for ysk, ysv in ykeyv.d.items()},
+                        **{target: df[target] for target in self.sweep.value_targets},
+                    }
+                )
+
         self.df = pd.DataFrame(l)
-        self.ax2 = list(self.skvs.keys)
+        # self.ax2 = list(self.skvs.keys)
         self.cmap = None
         self.analyze()
 
@@ -314,13 +367,23 @@ class SweepAnalysis:
         if target is None:
             return self.heatmap(self.sweep.value_targets[0])
         # df = df if df is not None else self.df
-        piv = self.df.pivot(index=self.ax2[0], columns=self.ax2[1], values=target)
+        # piv = self.df.pivot(index=self.xkeys, columns=self.ykeys, values=target)
+        piv = self.df.pivot(
+            index=[key for key in self.ykeys.keys],
+            columns=[key for key in self.xkeys.keys],
+            values=target,
+        )
+        # piv = self.df.pivot(
+        #     index=next(iter(self.xkeys.keys)),
+        #     columns=next(iter(self.ykeys.keys)),
+        #     values=target,
+        # )
         if not style:
             return piv
         return piv.style.background_gradient(cmap=self.cmap, axis=None)
 
 
-sa = SweepAnalysis(sw, sks)
+# sa = SweepAnalysis(sw, sks)
 
 
 # df = sa.df.copy()
@@ -349,18 +412,18 @@ def st(df):
 
 # sa.heatmap(df, appfn, "mean").style.background_gradient(axis=None)
 
-sa.heatmap("mean").set_properties(
-    **{
-        "text-align": "center",
-        "border-collapse": "collapse",
-        "border": "1px solid",
-        "width": "200px",
-    }
-)
+# sa.heatmap("mean").set_properties(
+#     **{
+#         "text-align": "center",
+#         "border-collapse": "collapse",
+#         "border": "1px solid",
+#         "width": "200px",
+#     }
+# )
 
-# %%
-sa.heatmap("min")
-# %%
+# # %%
+# sa.heatmap("min")
+# # %%
 
 
 # with ui.pyplot(figsize=(3, 2)):
@@ -394,3 +457,5 @@ sa.heatmap("min")
 # # %%
 # [r]
 # # %%
+
+# %%
