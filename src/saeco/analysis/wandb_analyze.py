@@ -14,6 +14,8 @@ import os
 import pandas as pd
 import numpy as np
 import polars as pl
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # wandb.login(key=os.environ["WANDB_API_KEY"])
 api = wandb.Api()
@@ -344,6 +346,8 @@ class SweepAnalysis:
                         # "sweepkey": skv,
                         "xkeystate": xkeyv,
                         "ykeystate": ykeyv,
+                        "xkeystatestr": str(xkeyv),
+                        "ykeystatestr": str(ykeyv),
                         **{xsk: xsv for xsk, xsv in xkeyv.d.items()},
                         **{ysk: ysv for ysk, ysv in ykeyv.d.items()},
                         **{target: df[target] for target in self.sweep.value_targets},
@@ -361,7 +365,123 @@ class SweepAnalysis:
         self.df["max"] = self.df["cache/L2_loss"].apply(lambda x: x.max())
         self.df["med"] = self.df["cache/L2_loss"].apply(lambda x: x.median())
 
-    def graph(self): ...
+    def add_graph_labels(self):
+
+        ccd = {}
+
+        def clash_check(key, value, s):
+            k = (key, s)
+            if k not in ccd:
+                ccd[k] = value
+            else:
+                if ccd[k] != value:
+                    raise ValueError(f"clash {k} {ccd[k]} {value}")
+
+        def uniqi(i):
+            return "." + " " * i
+
+        def uniq():
+            i = 2
+            while True:
+                yield uniqi(i)
+                i += 1
+
+        keys = list(self.xkeys.keys)
+        # keys.reverse()
+        prev = dict.fromkeys(keys, "")
+        labels = []
+        miss_d = {}
+        u = uniq()
+
+        def miss(k):
+            if k not in miss_d:
+                miss_d[k] = next(u)
+            return miss_d[k]
+
+        for keystate in self.df["xkeystate"]:
+            l = []
+            for key in keys:
+                v = keystate.d[key]
+                if isinstance(v, float):
+                    s = (
+                        f"{v:.0e}".replace("E-0", "e-")
+                        .replace("E+0", "e+")
+                        .replace("E", "e")
+                    )
+                else:
+                    s = str(v)
+                clash_check(key, v, s)
+                # s = f'{keystate.d[key]:.1e.1}'
+                if prev[key] == s:
+                    l.append(miss((key, keystate.d[key])))
+                else:
+                    l.append(s)
+                prev[key] = s
+            labels.append("\n".join(l))
+
+        self.df["label"] = labels
+
+    def plot(self, target="cache/L2_loss"):
+        self.add_graph_labels()
+        df_exploded = self.df.explode(target)
+
+        # Create the plot
+        fig, ax1 = plt.subplots(figsize=(12, 6))
+
+        # Scatter plot for series_col
+        prev_color = None
+        prev = None
+        colors = plt.cm.hsv(np.linspace(0, 1, len(self.df["label"])))
+        unused_colors = []
+        for label, color in zip(df_exploded["label"].unique(), colors):
+            data = df_exploded[df_exploded["label"] == label]
+            print()
+            cur = tuple(data["xkeystate"].iloc[0].d.items())[1:]
+            print(cur)
+            if cur == prev and prev_color is not None:
+                unused_colors.append(color)
+                color = prev_color
+            prev = cur
+            prev_color = color
+            ax1.scatter(
+                data["label"],
+                data[target],
+                # label=f"Scatter {label}",
+                color=color,
+                alpha=0.6,
+            )
+
+        colors = plt.cm.Accent(np.linspace(0, 1, 4))
+
+        ax1.set_xlabel("Label")
+        ax1.set_ylabel(target, color="b")
+        ax1.tick_params(axis="y", labelcolor="b")
+
+        # Line plot for value
+        # ax2 = ax1.twinx()
+        for agg, color in zip(["mean", "min", "max", "med"], colors):
+            ax1.plot(
+                self.df["label"],
+                self.df[agg],
+                color=color,
+                marker=".",
+                label=agg,
+                alpha=0.5,
+            )
+        # ax2.set_ylabel("Value", color="r")
+        # ax2.tick_params(axis="y", labelcolor="r")
+
+        # Title and legend
+        plt.title("Scatterplot of Series Values and Line Plot of Value by Label")
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        # lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines1, labels1, loc="upper left")
+        # ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+
+        plt.tight_layout()
+        plt.show()
+
+    # def graph(self):
 
     def heatmap(self, target=None, style=True):
         if target is None:
@@ -457,5 +577,10 @@ def st(df):
 # # %%
 # [r]
 # # %%
+sweep = Sweep("sae sweeps/5uwxiq76")
+k = sweep.keys[0]
+k1, k2, k3 = sweep.keys
 
+sa = SweepAnalysis(sweep, SweepKeys([k2, k1]), SweepKeys([]))
+sa.plot()
 # %%
