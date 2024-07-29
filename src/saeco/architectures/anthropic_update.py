@@ -30,7 +30,7 @@ from saeco.sweeps import Swept, do_sweep
 
 class Config(SweepableConfig):
     pre_bias: bool = False
-    clip_grad: float | None = Swept[float | None](None, 1.0, 0.1, 0.01)
+    clip_grad: float | None = 1
 
 
 def sae(
@@ -70,24 +70,27 @@ train_cfg = TrainConfig(
     ),
     raw_schedule_cfg=RunSchedulingConfig(
         run_length=50_000,
-        resample_period=25_000,
-        targeting_post_resample_hiatus=0,
+        resample_period=250_000,
+        targeting_post_resample_hiatus=0.05,
         targeting_post_resample_cooldown=0.2,
         lr_resample_warmup_factor=0.3,
         # resample_delay=0.69,
     ),
     l0_target=25,
     coeffs={
-        "sparsity_loss": 4e-3,
+        "sparsity_loss": 3e-3,
         "L2_loss": 1,
     },
-    lr=3e-4,
+    lr=Swept(1e-2, 3e-3, 1e-3, 3e-4, 1e-4),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
-    l0_target_adjustment_size=0.0003,
+    l0_target_adjustment_size=0.0001,
     batch_size=4096,
-    use_lars=True,
-    betas=Swept[tuple[float, float]]((0.9, 0.999)),
+    betas=Swept[tuple[float, float]](
+        (0.9, 0.999), (0.93, 0.999), (0.95, 0.999), (0.97, 0.999)
+    ),
+    use_lars=False if quick_check else Swept(True, False),
+    use_schedulefree=True if quick_check else Swept(True, False),
 )
 acfg = Config(
     pre_bias=Swept[bool](False),
@@ -111,7 +114,7 @@ runcfg = RunConfig[Config](
         bias_reset_value=-0.02,
         enc_directions=0,
         dec_directions=1,
-        freq_balance=25,
+        freq_balance=None,
     ),
 )
 
@@ -120,8 +123,8 @@ class FreqBalanceSweep(SweepableConfig):
     run_cfg: RunConfig[Config] = runcfg
     # target_l0: int = Swept(2)
     # target_l0: int = Swept(2, 3, 5, 15, 25, 35, 50)
-    target_l0: int | None = Swept(5, 25)  # Swept(None, 6, 12)
-    target_l1: int | float | None = Swept(1, 3)  # Swept(None, 1, 4, 16, 64)
+    target_l0: int | None = None  # Swept(None, 6, 12)
+    target_l1: int | float | None = None  # Swept(None, 1, 4, 16, 64)
 
 
 cfg: FreqBalanceSweep = FreqBalanceSweep()

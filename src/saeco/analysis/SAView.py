@@ -1,48 +1,92 @@
 from saeco.analysis.ddmenuprop import ddmenuprop, ddupdate
-from saeco.analysis.wandb_analyze import Sweep, SweepAnalysis, SweepKeys
+from saeco.analysis.wandb_analyze import Sweep, SweepAnalysis, SweepKeys, ValueTarget
 from saeco.analysis.uiitem import UIE
 
 from nicegui import ui
+import asyncio
 
 
 class SAView:
     def __init__(self, sweep="sae sweeps/5uwxiq76"):
         self.sw = Sweep(sweep)
-
-        # sks =
         self.sa = None
-        # with ui.header():
-        #     label = ui.label("h label")
-        with ui.card() as c:
-            label = ui.label(f"Sweep {sweep}")
-            with ui.card():
-                label = ui.label(f"Keys:")
-            with ui.card():
-                label = ui.label(f"Values:")
-            # self.heatmap = ui.html()
-            self.heatmap
-            # make_setfield_menu(self, "aggregation", ["mean", "min", "max", "med"])
+        with ui.row():
+            with ui.card() as c:
+                # label = ui.label(f"Sweep {sweep}")
+                # with ui.card():
+                #     label = ui.label(f"Keys:")
+                # with ui.card():
+                #     label = ui.label(f"Values:")
+                self.heatmap
+                with ui.row():
+                    self.aggregation
+                    with ui.card():
+                        self.key1
+                        self.key2
+
+                self.cmap = "viridis"
             with ui.row():
-                self.aggregation
+                with ui.card():
+                    # ui.label("Target Selection")
+                    # self.aggregation
+                    self.base_target
+                    self.new_value_target
+                    self.begin_aggregation_phase
+                self.target_aggregation
+                self.update_hist
 
-                self.key1
-                self.key2
-
-            self.cmap = "viridis"
-
-            def setcolor(e):
-                self.cmap = e.value
-
-            color = ui.input(label="Color", value="viridis", on_change=setcolor)
-        # ddupdate()
-        self.aggregation
-
-        # render_update_list.append(self.update)
+    @UIE
+    def update_hist(self, cb):
+        return ui.button("Update", on_click=self.sw.add_target_history_async)
 
     def update(self):
-        sa = SweepAnalysis(self.sw, self.key1, self.key2)
-        sa.cmap = self.cmap
-        ddupdate()
+        # sa = SweepAnalysis(self.sw, self.key1, self.key2, self.base_target)
+        # sa.cmap = self.cmap
+        # ddupdate()
+        pass
+
+    @UIE
+    def new_value_target(self, cb):
+        # with ui.card():
+        inp = ui.input(label="New Value Target")
+
+        def add_target():
+            vt = ValueTarget(inp.value)
+            if vt not in self.sw.value_targets:
+                self.sw.value_targets.append(vt)
+
+        ui.button("Add Target", on_click=add_target)
+        return inp
+
+    @property
+    def target(self):
+        if self.target_aggregation is None:
+            return ValueTarget(f"{self.base_target.key}")
+        else:
+            return ValueTarget(f"{self.base_target.key}_{self.target_aggregation}")
+
+    @UIE
+    def temporal_avg_target(self, cb): ...
+
+    @UIE
+    def base_target(self, cb):
+        return ui.select(
+            label="Target",
+            options=[repr(k) for k in self.sw.value_targets],
+            multiple=False,
+            on_change=cb,
+        )
+
+    @base_target.updater
+    def base_target(self, e: ui.select):
+        e.options = [repr(k) for k in self.sw.value_targets]
+
+    @base_target.value
+    def base_target(self, e):
+        d = {repr(k): k for k in self.sw.value_targets}
+        if e.value not in d:
+            return ...
+        return d[e.value]
 
     @UIE
     def heatmap(self, cb):
@@ -50,10 +94,13 @@ class SAView:
 
     @heatmap.updater
     def heatmap(self, e):
-        if ... in [self.key1, self.key2, self.aggregation, self.cmap]:
+        if ... in [self.key1, self.key2, self.aggregation, self.cmap, self.base_target]:
             return
-        sa = SweepAnalysis(self.sw, self.key1, self.key2)
-        sa.cmap = self.cmap
+        # self.sw.add_target_history()
+        self.sw.add_target_averages()
+        sa = SweepAnalysis(
+            sweep=self.sw, xkeys=self.key1, ykeys=self.key2, target=self.target
+        )
         e.set_content(
             sa.heatmap(self.aggregation)
             .set_properties(
@@ -68,10 +115,6 @@ class SAView:
         )
         e.update()
 
-    # @ddmenuprop
-    # def aggregation(self):
-    #     return ["mean", "min", "max", "med"]
-
     @UIE
     def key1(self, cb):
         return ui.select(
@@ -84,10 +127,6 @@ class SAView:
     @key1.value
     def key1(self, e):
         return SweepKeys([{repr(k): k for k in self.sw.keys}[ev] for ev in e.value])
-        # l = self.sw.keys.copy()
-        # if self.key2 in l:
-        #     l.remove(self.key2)
-        # return l
 
     @UIE
     def key2(self, cb):
@@ -101,6 +140,30 @@ class SAView:
     @key2.value
     def key2(self, e):
         return SweepKeys([{repr(k): k for k in self.sw.keys}[ev] for ev in e.value])
+
+    @UIE
+    def min_run_length(self, cb):
+        return ui.input(label="min_run_length", on_change=cb)
+
+    @min_run_length.value
+    def min_run_length(self, e):
+        return int(e.value)
+
+    @UIE
+    def begin_aggregation_phase(self, cb):
+        return ui.input(label="Aggregation Begin Step", on_change=cb)
+
+    @begin_aggregation_phase.value
+    def begin_aggregation_phase(self, e):
+        print("agg", e.value)
+        try:
+            return int(e.value)
+        except:
+            return 0
+
+    @begin_aggregation_phase.updater
+    def begin_aggregation_phase(self, e):
+        self.sw.add_target_averages(min_step=self.begin_aggregation_phase)
 
         # self.ax2 = list(self.skvs.keys)
 
@@ -179,6 +242,66 @@ class SAView:
     def aggregation(self, e):
         return self._selectables
 
+    @UIE
+    def target_aggregation(self, cb):
+        vals = ["max", "mean", "med", "min", "std", None]
+        style_normal = f"background-color: #f0f0f0; border: 5px solid #f0f0f0; border-radius: 5px; padding: 1px; margin: 3px; margin-top: -10px"
+        style_selected = f"background-color: #f0AA77; border: 5px solid #f0f0f0; border-radius: 5px; padding: 1px; margin: 3px; margin-top: -10px"
+        style_clicked = f"background-color: #C03399; border: 5px solid #f0f0f0; border-radius: 5px; padding: 1px; margin: 3px; margin-top: -10px"
 
-sv = SAView("sae sweeps/c6ko8r79")
+        i = 0
+        labels = []
+        clicked = -1
+        setattr(self, "_target_selectables", None)
+
+        def select(i):
+            print("selected", vals[i])
+            setattr(self, "_target_selectables", vals[i])
+            self.update()
+
+        def mkfns(label, i):
+            def hover():
+                if clicked != -1:
+                    return
+                for l in labels:
+                    l.style(style_normal)
+                label.style(style_selected)
+                select(i)
+                # l.text = "F" + str(i)
+
+            def click():
+                nonlocal clicked
+                if clicked == i:
+                    clicked = -1
+                    hover()
+                else:
+                    clicked = i
+                    for l in labels:
+                        l.style(style_normal)
+                    label.style(style_clicked)
+                    select(i)
+
+            return hover, click
+
+        c = ui.card()
+        with c:
+            for i, v in enumerate(vals):
+                l = ui.label(v)
+                labels.append(l)
+                hover, click = mkfns(l, i)
+                l.on("mouseover", handler=hover)
+                l.on("click", handler=click)
+        for l in labels:
+            l.style(style_normal)
+        return c
+
+    @target_aggregation.value
+    def target_aggregation(self, e):
+        return self._target_selectables
+
+
+# sv = SAView("sae sweeps/c6ko8r79")
+sv = SAView("sae sweeps/z0dm6lcf")
+
+
 ui.run()

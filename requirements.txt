@@ -7,3 +7,4 @@ tables
 torchlars
 pydantic
 wandb
+schedulefree

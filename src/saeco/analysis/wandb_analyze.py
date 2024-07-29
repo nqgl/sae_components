@@ -4,10 +4,12 @@ import wandb.apis
 import wandb.data_types
 import wandb.util
 from saeco.misc import lazycall
+import asyncio
 
 # from wandb.data_types
 # from wandb.wandb_run import Run
 from wandb.apis.public import Run, Sweep, Runs
+import wandb.apis.public as wapublic
 
 from typing import Any
 import os
@@ -64,6 +66,9 @@ class Key:
         if isinstance(self.key, tuple):
             return f"{left_key_delim}{self.nicename}{right_key_delim}"
         return f"{left_key_delim}{self.key}{right_key_delim}"
+
+    def __str__(self):
+        return self.nicename
 
 
 class ValueTarget(Key):
@@ -195,10 +200,14 @@ s[3]
 class Sweep:
     def __init__(self, sweep_path):
         self.sweep_path = sweep_path
-        self.sweep = api.sweep(sweep_path)
+        self.sweep: wapublic.Sweep = api.sweep(sweep_path)
         self.full_cfg_key = "full_cfg"
         self.value_targets = [ValueTarget("cache/L2_loss")]
         # self.sweept_fields: dict[list[str], dict[Any, set[Run]]] = {}
+        self.prev_avg_min = 0
+        # df = self.df
+        # self.add_target_history()
+        # self.add_target_averages()
 
     # def __getitem__(self, key):sk1 = SweepKey("a", [11,12,13])
 
@@ -270,6 +279,128 @@ class Sweep:
             ]
         )
 
+    def add_target_averages(self, min_step=None, force=False):
+        # if "history" not in self.df.columns:
+        #     self.add_target_history()
+        # try:
+        #     min_step = int(min_step)
+        # except:
+        #     return
+        min_step = min_step or self.prev_avg_min
+        if not force and min_step == self.prev_avg_min:
+            return
+        for target_key in self.value_targets:
+            target_name = target_key.key
+            for agg, aggfn in [
+                ("mean", np.mean),
+                ("med", np.median),
+                ("min", np.min),
+                ("max", np.max),
+                ("std", np.std),
+            ]:
+                aggkey = f"{target_name}_{agg}"
+                self.df[aggkey] = self.df.apply(
+                    self._get_target_aggregation_fn(
+                        target=target_name,
+                        aggregation_fn=aggfn,
+                        min_step=min_step,
+                    ),
+                    axis=1,
+                )
+        self.prev_avg_min = min_step
+
+    def _get_target_aggregation_fn(self, target, aggregation_fn, min_step):
+        def apply_aggregation(row):
+            history = row["history"][target]
+            history = history[history["_step"] >= min_step]
+            return aggregation_fn(history[target])
+
+        return apply_aggregation
+
+    def remove_invalid_runs(self): ...
+    def add_target_history(self):
+        print()
+        self.add_target_history_async()
+        self.df["history"] = self.df.apply(self._get_target_history, axis=1)
+        print()
+
+    async def add_target_history_async(self):
+        print("start async hist sync")
+
+        # loop = asyncio.get_event_loop()
+        runs = [self.df["run"].iloc[i] for i in range(len(self.df))]
+        hists = [{} for _ in range(len(self.df))]
+        isdone = [False for _ in range(len(self.df))]
+        tasks = [
+            self._async_get_target_history(*args, done=isdone)
+            for args in zip(runs, hists, range(len(self.df)))
+        ]
+        await asyncio.gather(*tasks)
+        print("done async hist sync")
+
+    async def _async_get_target_history(self, run, hist_dict, i, done):
+        print("start get")
+        history = hist_dict
+        for target in self.value_targets:
+            key = target.key
+            if key in history:
+                continue
+            run: Run
+            # th = run.history(keys=[key, "_step"], samples=2000)
+            # hist = th
+            # run
+            th = run.scan_history(keys=[key, "_step"])
+            hist = [i for i in th]
+
+            # hist["t"] = hist["_step"]
+            # hist["step"] = hist["_step"]
+            # hist["value"]  = hist[key]
+
+            history[key] = hist
+        done[i] = True
+        print("got run")
+
+    def _get_target_history(self, row):
+        run = row["run"]
+        # run = row
+        self.sweep
+        history = {}
+        if "history" in self.df.columns:
+            history = row["history"]
+        for target in self.value_targets:
+            key = target.key
+            if key in history:
+                continue
+            run: Run
+
+            # th = run.scan_history(keys=[key, "_step"], min_step=45_000)
+            th = run.history(keys=[key, "_step"], samples=2000)
+
+            hist = th
+
+            # hist["t"] = hist["_step"]
+            # hist["step"] = hist["_step"]
+            # hist["value"]  = hist[key]
+
+            history[key] = hist
+        print("got run")
+        return history
+
+        print()
+
+        # for targ in self.value_targets:
+        #     key = targ.key
+        #     if key + "_mean" in self.df.columns:
+        #         continue
+        #     for run in self.df["run"]:
+
+    def add_target(self, target):
+        if isinstance(target, str):
+            target = ValueTarget(target)
+        self.value_targets.append(target)
+        # self.add_target_history(min_step=self.prev_avg_min)
+        self.add_target_averages(force=True)
+
     def analyze_key(self, sweep_key):
         df = self.df
         return [
@@ -321,8 +452,17 @@ sks = sw.keys[1] * sw.keys[2]
 
 
 class SweepAnalysis:
-    def __init__(self, sweep: Sweep, xkeys: SweepKeys, ykeys: SweepKeys):
+    def __init__(
+        self,
+        sweep: Sweep,
+        xkeys: SweepKeys,
+        ykeys: SweepKeys,
+        target: ValueTarget = ValueTarget("cache/L2_loss"),
+    ):
+        if isinstance(target, str):
+            target = ValueTarget(target)
         self.sweep = sweep
+
         self.xkeys = xkeys
         self.ykeys = ykeys
         # self.swdf = {}
@@ -337,33 +477,37 @@ class SweepAnalysis:
         #             **{target: df[target] for target in self.sweep.value_targets},
         #         }
         #     )
+        # self.sweep.add_target_history()
+        self.sweep.add_target_averages()
+
         for xkeyv in self.xkeys:
             dfx = xkeyv.filter(self.sweep.df)
             for ykeyv in self.ykeys:
                 df = ykeyv.filter(dfx)
                 l.append(
                     {
-                        # "sweepkey": skv,
                         "xkeystate": xkeyv,
                         "ykeystate": ykeyv,
                         "xkeystatestr": str(xkeyv),
                         "ykeystatestr": str(ykeyv),
                         **{xsk: xsv for xsk, xsv in xkeyv.d.items()},
                         **{ysk: ysv for ysk, ysv in ykeyv.d.items()},
-                        **{target: df[target] for target in self.sweep.value_targets},
+                        # **{target: df[target] for target in self.sweep.value_targets},
+                        **{target: df[target]},
                     }
                 )
 
         self.df = pd.DataFrame(l)
         # self.ax2 = list(self.skvs.keys)
         self.cmap = None
+        self.target = target
         self.analyze()
 
     def analyze(self):
-        self.df["mean"] = self.df["cache/L2_loss"].apply(lambda x: x.mean())
-        self.df["min"] = self.df["cache/L2_loss"].apply(lambda x: x.min())
-        self.df["max"] = self.df["cache/L2_loss"].apply(lambda x: x.max())
-        self.df["med"] = self.df["cache/L2_loss"].apply(lambda x: x.median())
+        self.df["mean"] = self.df[self.target.key].apply(lambda x: x.mean())
+        self.df["min"] = self.df[self.target.key].apply(lambda x: x.min())
+        self.df["max"] = self.df[self.target.key].apply(lambda x: x.max())
+        self.df["med"] = self.df[self.target.key].apply(lambda x: x.median())
 
     def add_graph_labels(self):
 
@@ -421,9 +565,9 @@ class SweepAnalysis:
 
         self.df["label"] = labels
 
-    def plot(self, target="cache/L2_loss"):
+    def plot(self):
         self.add_graph_labels()
-        df_exploded = self.df.explode(target)
+        df_exploded = self.df.explode(self.target.key)
 
         # Create the plot
         fig, ax1 = plt.subplots(figsize=(12, 6))
@@ -445,7 +589,7 @@ class SweepAnalysis:
             prev_color = color
             ax1.scatter(
                 data["label"],
-                data[target],
+                data[self.target.key],
                 # label=f"Scatter {label}",
                 color=color,
                 alpha=0.6,
@@ -454,7 +598,7 @@ class SweepAnalysis:
         colors = plt.cm.Accent(np.linspace(0, 1, 4))
 
         ax1.set_xlabel("Label")
-        ax1.set_ylabel(target, color="b")
+        ax1.set_ylabel(self.target.key, color="b")
         ax1.tick_params(axis="y", labelcolor="b")
 
         # Line plot for value
@@ -472,7 +616,7 @@ class SweepAnalysis:
         # ax2.tick_params(axis="y", labelcolor="r")
 
         # Title and legend
-        plt.title("Scatterplot of Series Values and Line Plot of Value by Label")
+        plt.title("plot")
         lines1, labels1 = ax1.get_legend_handles_labels()
         # lines2, labels2 = ax2.get_legend_handles_labels()
         ax1.legend(lines1, labels1, loc="upper left")
@@ -577,10 +721,11 @@ def st(df):
 # # %%
 # [r]
 # # %%
-sweep = Sweep("sae sweeps/5uwxiq76")
-k = sweep.keys[0]
-k1, k2, k3 = sweep.keys
+if __name__ == "__main__":
+    sweep = Sweep("sae sweeps/5uwxiq76")
+    k = sweep.keys[0]
+    k1, k2, k3 = sweep.keys
 
-sa = SweepAnalysis(sweep, SweepKeys([k2, k1]), SweepKeys([]))
-sa.plot()
+    sa = SweepAnalysis(sweep, SweepKeys([k2, k1]), SweepKeys([]))
+    sa.plot()
 # %%

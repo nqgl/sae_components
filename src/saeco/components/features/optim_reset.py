@@ -143,7 +143,7 @@ class OptimResetValues:
     def __init__(
         self,
         cfg: OptimResetValuesConfig,
-        skips=set(["step"]),
+        skips=set(["step", "z"]),
         # handles: dict[str, OptimFieldResetValue] = None,
         # type_overrides: dict[
         #     FeatureParamType,
@@ -156,6 +156,7 @@ class OptimResetValues:
             momentum_buffer=ResetToConst(cfg.bias_momentum),
             exp_avg=ResetToDirections(cfg.optim_momentum),
             exp_avg_sq=b2_techniques[cfg.b2_technique](cfg.b2_scale),
+            mu_product=ResetToConst(0),
         )
 
         self.type_overrides = dict(

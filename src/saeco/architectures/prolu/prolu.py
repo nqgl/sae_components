@@ -155,14 +155,14 @@ class ThreshSTE(Thresh):
 
 
 def thresh_from_bwd(bwd_fn: callable):
-    class Thresh(Thresh):
+    class CustThresh(Thresh):
         @staticmethod
         @custom_bwd
         def backward(ctx, grad_output):
             x, gate = ctx.saved_tensors
             return bwd_fn(x) * grad_output
 
-    return Thresh
+    return CustThresh.apply
 
 
 def prolu_ste_from_thresh(thresh: callable):

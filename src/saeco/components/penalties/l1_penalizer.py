@@ -12,16 +12,20 @@ class L1Penalty(Penalty):
 
 
 class L1PenaltyScaledByDecoderNorm(Penalty):
-    def __init__(self, scale=1.0, decoder=None):
+    def __init__(self, scale=1.0, decoder=None, det_dec_norms=True):
         super().__init__()
         self.scale = scale
         self.decoder = None
+        self.det_dec_norms = det_dec_norms
         if decoder is not None:
             self.set_decoder(decoder)
 
     def penalty(self, x: Tensor):
         mean_act = x.mean(dim=0)
-        scaled_acts = self.decoder.features[:].norm(dim=1) * mean_act
+        dec_norms = self.decoder.features[:].norm(dim=1)
+        if self.det_dec_norms:
+            dec_norms = dec_norms.detach()
+        scaled_acts = dec_norms * mean_act
         return scaled_acts.sum() * self.scale
 
     def set_decoder(self, decoder):

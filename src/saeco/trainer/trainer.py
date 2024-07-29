@@ -4,8 +4,9 @@ import torch
 import wandb
 from typing import Protocol, runtime_checkable, Optional
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
-from dataclasses import dataclass, Field
+from dataclasses import Field
 from saeco.data.sc.model_cfg import ModelConfig
+from saeco.trainer.OptimConfig import OptimConfig, get_optim_cls
 from saeco.trainer.schedule_cfg import RunSchedulingConfig
 from saeco.trainer.train_cache import TrainCache
 from saeco.trainer.trainable import Trainable
@@ -19,12 +20,10 @@ from saeco.sweeps import SweepableConfig
 from pydantic import Field
 from .l0targeter import L0Targeter
 from saeco.misc import lazycall
+from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 
 
-@dataclass
-class OptimConfig:
-    lr: float = 1e-3
-    betas: tuple[float, float] = (0.9, 0.999)
+v = OptimConfig
 
 
 class TrainConfig(SweepableConfig):
@@ -38,7 +37,9 @@ class TrainConfig(SweepableConfig):
     lr: float = 3e-4
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
+    use_schedulefree: bool = False
     kwargs: dict = Field(default_factory=dict)
+    optim: str = "RAdam"
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
 
     @property
@@ -53,16 +54,29 @@ class Trainer:
         cfg: TrainConfig,
         model: Trainable,
         namestuff=None,
-        optim: torch.optim.Optimizer = None,
+        optim: torch.optim.Optimizer | None = None,
     ):
         self.cfg: TrainConfig = cfg
         self.model = model
         self.t = 1
-        self.optim = optim or torch.optim.RAdam(
-            self.model.parameters(),
-            lr=cfg.lr,
-            betas=cfg.betas,
-        )
+        assert optim is None
+        if optim is not None:
+            self.optim = optim
+        else:
+            if self.cfg.use_schedulefree:
+                self.optim = AdamWScheduleFree(
+                    self.model.parameters(),
+                    lr=cfg.lr,
+                    betas=cfg.betas,
+                    warmup_steps=cfg.schedule.lr_warmup_length,
+                )
+            else:
+                self.optim = get_optim_cls(self.cfg.optim)(
+                    self.model.parameters(),
+                    lr=cfg.lr,
+                    betas=cfg.betas,
+                )
+
         self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer=self.optim, lr_lambda=self.get_lr_lambda()
         )
@@ -71,6 +85,9 @@ class Trainer:
 
             self.optim = LARS(self.optim)
             assert optim is None or not isinstance(optim, LARS)
+        # if self.cfg.use_schedulefree:
+        # self.optim = ScheduleFreeWrapper(self.optim)
+
         self.namestuff = namestuff
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model
@@ -83,11 +100,21 @@ class Trainer:
         )
 
     def get_lr_lambda(self):
-        def lrl(epoch):
-            lr_factor = self.cfg.schedule.lr_scale(self.t)
-            if self.t % 5 == 0:
-                self.log({"lr_factor": lr_factor})
-            return lr_factor
+        if self.cfg.use_schedulefree:
+
+            def lrl(epoch):
+                lr_factor = self.cfg.schedule.lr_scale_schedulefree(self.t)
+                if self.t % 5 == 0:
+                    self.log({"lr_factor": lr_factor})
+                return lr_factor
+
+        else:
+
+            def lrl(epoch):
+                lr_factor = self.cfg.schedule.lr_scale(self.t)
+                if self.t % 5 == 0:
+                    self.log({"lr_factor": lr_factor})
+                return lr_factor
 
         return lrl
 
@@ -140,6 +167,8 @@ class Trainer:
     def get_cache(self):
         c = TrainCache()
         c._watch(self.model.get_losses_and_metrics_names())
+        c.trainer = ...
+        c.trainer = self
         # for k in self.model.get_losses_and_metrics_names():
         # setattr(c, k, ...)
         return c
@@ -159,6 +188,9 @@ class Trainer:
         if self.namestuff is not None:
             lars = "(lars)" if self.cfg.use_lars else ""
             wandb.run.name = f"{lars}{self.namestuff}[{self.cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
+
+        # if self.cfg.use_schedulefree:
+        #     self.optim.train()
 
         if num_steps is not None:
             old_buffer = buffer
@@ -181,6 +213,7 @@ class Trainer:
             self.optim.zero_grad()
 
             cache = self.get_cache()
+            cache.trainstep = self.t
             if self.cfg.use_autocast:
                 with torch.autocast(device_type="cuda"):
                     loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())

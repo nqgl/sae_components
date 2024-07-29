@@ -57,6 +57,11 @@ class LinDecoder(LinWeights):
             "weight": FeaturesParam(self.wrapped.weight, feature_index=1, fptype="dec")
         }
 
+    def __getitem__(self, key):
+        lin = nn.Linear(self.wrapped.in_features, self.wrapped.out_features)
+        lin.weight = self.features["weight"][key]
+        lin.bias = self.wrapped.bias
+
     # def features_transform(self, tensor: Tensor) -> Tensor:
     #     return tensor.transpose(-2, -1)
 

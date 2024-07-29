@@ -160,6 +160,16 @@ class FeaturesParam:
     def grad(self) -> Tensor:
         return self.features_transform(self.param.grad)
 
+    def get_optim(self, optim):
+        try:
+            from torchlars import LARS
+
+            if isinstance(optim, LARS):
+                optim = optim.optim
+        except ImportError:
+            pass
+        return optim
+
     def optimstate(self, optim) -> OptimFieldFeatures:
         try:
             from torchlars import LARS
@@ -197,6 +207,8 @@ class FeaturesParam:
         fields = set(optim_state.keys()) - set(self.field_handlers.skips)
 
         for field in fields:
+            if self.get_optim(optim).state[field] == {}:
+                continue
             field_state = optim_state[field]
             assert (
                 field_state[:].shape == self.features.shape

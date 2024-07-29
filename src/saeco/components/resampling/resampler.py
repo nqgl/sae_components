@@ -119,7 +119,7 @@ class Resampler(ABC):
                 datasrc=data_source,
                 indices=i,
                 target_l0=self.cfg.freq_balance,
-                target_l1=1,
+                target_l1=self.cfg.freq_balance,
             )
 
     def assign_model(self, model):

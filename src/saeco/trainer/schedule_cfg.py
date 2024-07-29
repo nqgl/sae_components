@@ -85,8 +85,19 @@ class RunSchedulingConfig(SweepableConfig):
             return re_lr * max(to_end / cooldown, self.lr_cooldown_factor)
         return re_lr
 
+    def lr_scale_schedulefree(self, t: int) -> float:
+        re_lr = 1
+        if self.lr_resample_warmup_length and (rt := self.resample_t(t)) != -1:
+            re_warmup = self.tosteps(
+                self.lr_resample_warmup_length, self.resample_period
+            )
+            re_lr = max(min(rt / re_warmup, 1), self.lr_resample_warmup_factor)
+        return re_lr
+
     def resample_t(self, t: int) -> int:
         if t < self.resample_delay:
+            return -1
+        if self.resample_delay == 0 and t < self.resample_period:
             return -1
         if t - self.resample_delay + self.resample_period > self.resample_end:
             return -1
