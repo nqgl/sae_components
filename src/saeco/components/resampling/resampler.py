@@ -119,7 +119,7 @@ class Resampler(ABC):
                 datasrc=data_source,
                 indices=i,
                 target_l0=self.cfg.freq_balance,
-                target_l1=self.cfg.freq_balance,  # self.cfg.freq_balance,
+                target_l1=None,  # self.cfg.freq_balance,
             )
 
     def assign_model(self, model):
@@ -265,9 +265,9 @@ class Resampler(ABC):
         original_beta = self.freq_tracker.beta
         datas = []
         self.freq_tracker.beta = 0.8
-        # if target_l0 is not None:
-        for bias in self.biases:
-            bias.param.data[indices] = -1
+        if target_l0 is not None:
+            for bias in self.biases:
+                bias.param.data[indices] = -1
         for i in range(200):
             lr = 5 / (1.017**i)
             if i < 10:

@@ -82,8 +82,8 @@ class ShrinkGateSae(cl.Module):
         super().__init__()
         self.cfg = cfg
         dec_mul_l1 = L1PenaltyScaledByDecoderNorm()
-        init._decoder.zero_init_bias()
-        init._encoder.zero_init_bias()
+        init._decoder.const_init_bias()
+        init._encoder.const_init_bias()
         # init._encoder._bias = False
         self.prolu = PProLU(cfg.prolu_cfg, init.d_dict)
         self.det_prolu = DetProLu(cfg.det_prolu_cfg, self.prolu.bias)

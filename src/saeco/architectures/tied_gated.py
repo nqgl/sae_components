@@ -82,8 +82,8 @@ class ShrinkGateSae(cl.Module):
     ):
         super().__init__()
         self.cfg = cfg
-        init._decoder.zero_init_bias()
-        init._encoder.zero_init_bias()
+        init._decoder.const_init_bias()
+        init._encoder.const_init_bias()
         init._decoder.add_wrapper(ft.NormFeatures)
         init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
         # init._encoder._bias = False

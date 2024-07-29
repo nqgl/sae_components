@@ -188,10 +188,10 @@ class LinearFactory:
         assert self._weight_tie is None
         self._weight_tie = Tied(other, Tied.INIT, "weight")
 
-    def zero_init_bias(self):
+    def const_init_bias(self, const=0):
         assert self.unset
         assert self._bias_tie is None
-        self._bias_tie = Tied(torch.zeros(self.d_out), Tied.TO_VALUE, "bias")
+        self._bias_tie = Tied(torch.zeros(self.d_out) + const, Tied.TO_VALUE, "bias")
         # assert (self.lin.weight.data.shape == other.lin.weight.data.shape) ^ (
         #     self.lin.weight.data.shape == other.lin.weight.data.transpose(-2, -1).shape
         # )

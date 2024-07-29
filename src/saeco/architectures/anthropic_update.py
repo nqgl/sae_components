@@ -39,8 +39,8 @@ def sae(
 ):
     # init._encoder.add_wrapper(ReuseForward)
     dec_mul_l1 = L1PenaltyScaledByDecoderNorm()
-    init._decoder.zero_init_bias()
-    init._encoder.zero_init_bias()
+    init._decoder.const_init_bias(0)
+    init._encoder.const_init_bias(0)
     model_full = Seq(
         **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
         encoder=Seq(linear=init.encoder.resampled(), relu=nn.ReLU()),
