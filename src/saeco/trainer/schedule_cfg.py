@@ -11,6 +11,19 @@ AmbiguousTypes = [Optional[int | float], int | float]
 from saeco.trainer.tosteps_wrapper import RunFloat, ResFloat, tosteps_wrapper
 
 
+def assert_wrapped(fn):
+    assert not isinstance(fn, property)
+
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        assert getattr(
+            self.__class__, "_IS_WRAPPED", False
+        ), "Cannot call methods on the raw schedule. Access the wrapped object via .step_scheduler instead."
+        return fn(self, *args, **kwargs)
+
+    return wrapper
+
+
 class RunSchedulingConfig(SweepableConfig):
     run_length: Optional[int] = 5e5
 
@@ -22,12 +35,13 @@ class RunSchedulingConfig(SweepableConfig):
     # targeting_resample_cooldown_period_override: Optional[int] = None
     targeting_post_resample_hiatus: int | ResFloat = 0.2
     targeting_delay: int | RunFloat = 0  # could be none -> copy cooldown
+    targeting_warmup_length: int | RunFloat = 0.1
 
     ### lr scheduler # this is not quite the continuous pretraining scheduler, seems fine though
-    lr_warmup_length: int | RunFloat = 0.05
+    lr_warmup_length: int | RunFloat = 0.1
     lr_cooldown_length: int | RunFloat = 0.2
     lr_resample_warmup_length: int | ResFloat = 0.2
-    lr_warmup_factor: float = 0.1
+    lr_warmup_factor: float = 0
     lr_cooldown_factor: float = 0.1
     lr_resample_warmup_factor: float = 0.1
 
@@ -36,16 +50,29 @@ class RunSchedulingConfig(SweepableConfig):
     def step_scheduler(self) -> "RunSchedulingConfig":
         return tosteps_wrapper(self.__class__)(_raw=self)
 
-    #     for name, field in self.model_fields.items():
+    @assert_wrapped
+    def targeting_step_scale(self, t):
+        stepscale = 1
+        res_t_since_hiatus = self.resample_t(t) - self.targeting_post_resample_hiatus
+        if res_t_since_hiatus >= 0:
+            stepscale *= min(
+                1, res_t_since_hiatus / self.targeting_post_resample_cooldown
+            )
+        if t < self.targeting_warmup_length:
+            stepscale *= t / self.targeting_warmup_length
+        return stepscale
+
+    # @property
+    # @assert_wrapped
+    # def resample_start(self) -> int:
+    #     return self.resample_delay
 
     @property
-    def resample_start(self) -> int:
-        return self.tosteps(self.resample_delay)
-
-    @property
+    @assert_wrapped
     def resample_end(self) -> int:
-        return self.run_length - self.tosteps(self.resampling_finished_phase)
+        return self.run_length - self.resampling_finished_phase
 
+    @assert_wrapped
     def dynamic_adjust(self, t):
         if t < self.targeting_delay:
             return False
@@ -56,6 +83,7 @@ class RunSchedulingConfig(SweepableConfig):
             return False
         return True
 
+    @assert_wrapped
     def tosteps(self, n: int | float, period: int = None) -> int:
         # some values will be expressed as either
         # a number of steps
@@ -69,6 +97,7 @@ class RunSchedulingConfig(SweepableConfig):
         period = period or self.run_length
         return n * period
 
+    @assert_wrapped
     def lr_scale(self, t: int) -> float:
         re_lr = 1
         if self.lr_resample_warmup_length and (rt := self.resample_t(t)) != -1:
@@ -85,6 +114,7 @@ class RunSchedulingConfig(SweepableConfig):
             return re_lr * max(to_end / cooldown, self.lr_cooldown_factor)
         return re_lr
 
+    @assert_wrapped
     def lr_scale_schedulefree(self, t: int) -> float:
         re_lr = 1
         if self.lr_resample_warmup_length and (rt := self.resample_t(t)) != -1:
@@ -94,6 +124,7 @@ class RunSchedulingConfig(SweepableConfig):
             re_lr = max(min(rt / re_warmup, 1), self.lr_resample_warmup_factor)
         return re_lr
 
+    @assert_wrapped
     def resample_t(self, t: int) -> int:
         if t < self.resample_delay:
             return -1
@@ -103,6 +134,7 @@ class RunSchedulingConfig(SweepableConfig):
             return -1
         return (t - self.resample_delay) % self.resample_period
 
+    @assert_wrapped
     def is_resample_step(self, t: int) -> bool:
         return self.resample_t(t) == 0
         if t < self.resample_delay:

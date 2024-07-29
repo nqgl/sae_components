@@ -142,16 +142,7 @@ class Trainer:
             if not self.cfg.schedule.dynamic_adjust(self.t):
                 return
             step = self.l0_targeter(l0=cache.L0, t=self.t)
-            if self.t < 2000:
-                step *= self.t / 2000
-
-            rt = self.cfg.schedule.resample_t(self.t)
-            t_after_wait = rt - self.cfg.schedule.targeting_post_resample_hiatus
-            res_warmup_len = self.cfg.schedule.targeting_post_resample_cooldown
-            stepscale = 1
-            if t_after_wait >= 0:
-                stepscale *= min(1, t_after_wait / res_warmup_len)
-
+            stepscale = self.cfg.schedule.targeting_step_scale(self.t)
             self.log(self.l0_targeter.loggables(self.t))
             with torch.no_grad():
                 self.cfg.coeffs["sparsity_loss"] = self.cfg.coeffs["sparsity_loss"] * (

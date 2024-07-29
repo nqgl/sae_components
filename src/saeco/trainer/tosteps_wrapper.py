@@ -15,7 +15,7 @@ def tosteps(n: int | float, period: int | None = None) -> int:
     if isinstance(n, int):
         return n
     assert isinstance(n, float) and n <= 1 and isinstance(period, int)
-    return n * period
+    return int(n * period)
 
 
 class RunFloat(float):
@@ -46,6 +46,8 @@ if TYPE_CHECKING:
 
 def tosteps_wrapper(cls: Type["RunSchedulingConfig"]):
     class Class2:
+        _IS_WRAPPED = True
+
         def __init__(
             self,
             *a,
@@ -58,10 +60,27 @@ def tosteps_wrapper(cls: Type["RunSchedulingConfig"]):
             try:
                 return super().__getattribute__(name)
             except AttributeError:
+                if name in cls.__dict__:
+                    v = cls.__dict__[name]
+                    if callable(v):
+                        return lambda *a, **k: v(self, *a, **k)
+                    elif isinstance(v, property):
+                        return v.fget(self)
+
                 return getattr(self.raw, name)
 
     update_wrapper(Class2.__init__, cls.__init__)
     mfi = {k: v for k, v in cls.model_fields.items()}
+
+    def get_replacements(name, t):
+        @property
+        def replace_field(self: Class2):
+            value = getattr(self.raw, name)
+            period = getattr(self.raw, t.PERIOD_FIELD_NAME)
+            return tosteps(value, period)
+
+        return replace_field
+
     for name, field in mfi.items():
         annotation = cls.__annotations__[name]
         if issubclass(int, annotation):
@@ -78,18 +97,10 @@ def tosteps_wrapper(cls: Type["RunSchedulingConfig"]):
             else:
                 continue
 
-            def get_replacements(name, t):
-                @property
-                def replace_field(self: Class2):
-                    value = getattr(self.raw, name)
-                    period = getattr(self.raw, t.PERIOD_FIELD_NAME)
-                    return tosteps(value, period)
-
                 # @replace_field.setter
                 # def replace_field(self: Class2, value):
                 #     setattr(self.raw, name, value)
                 # no setter seems safer
-                return replace_field
 
             setattr(Class2, name, get_replacements(name, t))
     # model_dump = cls.model_dump
