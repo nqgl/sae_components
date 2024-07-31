@@ -8,9 +8,7 @@ class EMAFreqTracker(FreqTracker):
         self.activation_freqs = None
         self.beta = beta
 
-    @torch.no_grad()
-    def process_data(self, acts, cache, **kwargs):
-        freqs = (acts > 0).float().mean(dim=0)
+    def update_freqs(self, freqs, cache):
         if self.activation_freqs is None:
             self.activation_freqs = torch.zeros_like(freqs).float() + 1e-5
         self.activation_freqs.lerp_(freqs, 1 - self.beta)
