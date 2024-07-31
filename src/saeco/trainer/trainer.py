@@ -37,7 +37,6 @@ class TrainConfig(SweepableConfig):
     lr: float = 3e-4
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
-    use_schedulefree: bool = False
     kwargs: dict = Field(default_factory=dict)
     optim: str = "RAdam"
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
@@ -46,6 +45,13 @@ class TrainConfig(SweepableConfig):
     @lazycall
     def schedule(self):
         return self.raw_schedule_cfg.step_scheduler
+
+    @property
+    def use_schedulefree(self):
+        return self.optim == "ScheduleFree"
+
+    def get_optim(self):
+        return get_optim_cls(self.optim)
 
 
 class Trainer:
@@ -93,6 +99,7 @@ class Trainer:
             self.cfg.data_cfg, self.subject_model
         ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
         self.intermittent_metric_freq = 1000
+        self.eval_step_freq = 100
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
         self.l0_targeter = L0Targeter(
             l0_target=self.cfg.l0_target,
@@ -160,6 +167,7 @@ class Trainer:
         c._watch(self.model.get_losses_and_metrics_names())
         c.trainer = ...
         c.trainer = self
+        c.trainstep = self.t
         # for k in self.model.get_losses_and_metrics_names():
         # setattr(c, k, ...)
         return c
@@ -204,36 +212,22 @@ class Trainer:
             self.optim.zero_grad()
 
             cache = self.get_cache()
-            cache.trainstep = self.t
-            if self.cfg.use_autocast:
-                with torch.autocast(device_type="cuda"):
-                    loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
-                    self.proc_cache_after_forward(cache)
 
-            else:
-                loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
-                self.proc_cache_after_forward(cache)
+            self.trainstep(x, cache)
 
-            if self.cfg.use_autocast:
-                self.gradscaler.scale(loss).backward()
-            else:
-                loss.backward()
-            self.post_backward()
-
-            if self.cfg.use_autocast:
-                self.gradscaler.step(self.optim)
-                self.gradscaler.update()
-            else:
-                self.optim.step()
-            self.lr_scheduler.step()
-            self.post_step()
             self.full_log(cache)
             self.t += 1
             del cache.forward_reuse_dict
             cache.destroy_children()
             del cache
             if self.t % self.intermittent_metric_freq == 0:
+                self.model.eval()
                 self.do_intermittent_metrics()
+                self.model.train()
+            if self.t % self.eval_step_freq == 0:
+                self.model.eval()
+                self.eval_step(x)
+                self.model.train()
             if self.cfg.schedule.is_resample_step(self.t):
                 self.model.resampler.resample(
                     data_source=buffer, optimizer=self.optim, model=self.model
@@ -242,7 +236,39 @@ class Trainer:
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
                 break
 
-    def do_intermittent_metrics(self):
+    def trainstep(self, x, cache: Cache):
+        if self.cfg.use_autocast:
+            with torch.autocast(device_type="cuda"):
+                loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+                self.proc_cache_after_forward(cache)
+        else:
+            loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+            self.proc_cache_after_forward(cache)
+
+        if self.cfg.use_autocast:
+            self.gradscaler.scale(loss).backward()
+        else:
+            loss.backward()
+        self.post_backward()
+
+        if self.cfg.use_autocast:
+            self.gradscaler.step(self.optim)
+            self.gradscaler.update()
+        else:
+            self.optim.step()
+        self.lr_scheduler.step()
+        self.post_step()
+
+    def eval_step(self, x):
+        cache = self.get_cache()
+        if self.cfg.use_autocast:
+            with torch.autocast(device_type="cuda"):
+                loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+        else:
+            loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+        self.eval_log(cache)
+
+    def do_intermittent_metrics(self, buffer=None):
         self.log_recons("recons/with_bos/", True)
         self.log_recons("recons/no_bos/", False)
 
@@ -273,6 +299,15 @@ class Trainer:
             return
         if wandb.run is not None:
             wandb.log(cache.logdict(), step=self.t)
+
+    def eval_log(self, cache: Cache):
+        d = {
+            k: v
+            for (k, v) in cache.logdict(name="eval").items()
+            if len(k.split("/")) <= 2
+        }
+        if wandb.run is not None:
+            wandb.log(d, step=self.t)
 
     def save(self):
         torch.save(
