@@ -40,9 +40,9 @@ class Config(SweepableConfig):
     # )
     # prolu_type_ste: float = Swept(0, 1)
     # det_prolu_type_ste: float = Swept(0, 1)
-    max_shrink: float = Swept(0.3, 0.8)  ### Swept(0.3, 0.1, 0.03)
-    min_shrink: float = 0.1
-    gate_proportion: float = 0.2
+    max_shrink: float = Swept(0.1, 0.2, 0.3)  ### Swept(0.3, 0.1, 0.03)
+    min_shrink: float = Swept(0, 0.1)
+    gate_proportion: float = Swept(0.1, 0.2, 0.3)
     # DET_ENC_BIAS: bool = Swept(True, False)
     # SCALE_PRE: bool = False
     DET_ENC: bool = True
@@ -55,6 +55,7 @@ class Config(SweepableConfig):
     constrain_D: bool = False
     orth_enc_grads: bool = False  # Swept(True, False)
     thresh_method: str = "sftopk"
+    sigmoid_gate: bool = False
 
     @property
     def prolu_cfg(self):
@@ -88,50 +89,12 @@ class ShrinkGate(cl.Module):
         self.cfg = cfg
         self.encoder = encoder
         self.k = init.l0_target
-        if self.cfg.prolu_gate:
-            thresh = thresh_from_bwd(lambda x: 1)
-            self.prolu = PProLU(
-                ProLUConfig(b_ste=1, m_ste=1, m_gg=1), init._encoder.new_bias()
-            )
-            self.thresh = lambda m: thresh(self.prolu(m))
-        else:
-            if self.cfg.thresh_method == "thresh":
-                self.thresh = thresh_from_bwd(lambda x: x > 0)
-            elif self.cfg.thresh_method == "softmax":
-                self.thresh = thresh_from_bwd(lambda x: torch.softmax(x, dim=-1))
-            elif self.cfg.thresh_method == "topk":
-                k = int(init.l0_target)
-                thr = thresh_from_bwd(lambda x: x > 0)
-                thrsf = thresh_from_bwd(lambda x: x)
-
-                def _topk(x):
-                    v, i = x.topk(k, dim=-1, sorted=False)
-
-                    return torch.zeros_like(x).scatter_(-1, i, thrsf(v).to(x.dtype))
-
-                self.thresh = _topk
-            elif self.cfg.thresh_method == "sftopk":
-                thr = thresh_from_bwd(lambda x: 1)
-                k = int(init.l0_target)
-
-                def sftk(x):
-                    x = torch.softmax(x, dim=-1)
-                    v, i = x.topk(k, dim=-1, sorted=False)
-                    x = thr(torch.zeros_like(x).scatter_(-1, i, v) - 1e-5)
-                    return x
-
-                def sftk(x):
-                    s = torch.softmax(x, dim=-1)
-                    s = s - s.detach()
-                    v, i = x.topk(k, dim=-1, sorted=False)
-                    # s +=
-                    return s + torch.zeros_like(x).scatter_(-1, i, 1)
-
-                self.thresh = sftk
 
     def forward(self, x, shrinkgate, shrink, *, cache):
         x = self.encoder(x)
         v, i = x.topk(25, dim=-1, sorted=False)
+        if self.cfg.sigmoid_gate:
+            v = torch.sigmoid(v)
         return torch.zeros_like(x).scatter_(-1, i, v)
         gate = self.gate_eval(x)
         return gate
@@ -265,7 +228,6 @@ model_fn = sae
 PROJECT = "sae sweeps"
 quick_check = False
 
-from saeco.trainer.trainer import Coeffs
 
 train_cfg = TrainConfig(
     data_cfg=DataConfig(
@@ -281,8 +243,8 @@ train_cfg = TrainConfig(
         # resample_delay=0.69,
     ),
     l0_target=25,
-    coeffs={"sparsity_loss": Swept[float](0, 1e-4, 1e-3), "L2_loss": 1},
-    lr=Swept(1e-3, 3e-4, 1e-4),
+    coeffs={"sparsity_loss": Swept[float](6e-4, 1e-3, 1.7e-3), "L2_loss": 1},
+    lr=Swept(3e-4),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
     l0_target_adjustment_size=0.0002,
@@ -348,4 +310,4 @@ def run(cfg):
 
 
 if __name__ == "__main__":
-    do_sweep(True, "run" if quick_check else None)
+    do_sweep(True, "rand" if quick_check else None)
