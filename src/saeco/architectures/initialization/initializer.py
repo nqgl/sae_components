@@ -19,7 +19,7 @@ class Initializer:
         self.d_data = d_data
         d_dict = d_dict or d_data * dict_mult
         self.d_dict = d_dict
-        self.l0_target = l0_target
+        self.l0_target = int(l0_target)
         # self.tied_bias = True
         self.tied_init = True
         self.tied_weights = False
