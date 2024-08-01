@@ -102,9 +102,15 @@ class Resampler(ABC):
             data_source=data_source,
             model=model,
         )
-        assert self.cfg.expected_encs == len(self.encs)
-        assert self.cfg.expected_biases == len(self.biases)
-        assert self.cfg.expected_decs == len(self.decs)
+        assert self.cfg.expected_encs is None or self.cfg.expected_encs == len(
+            self.encs
+        )
+        assert self.cfg.expected_biases is None or self.cfg.expected_biases == len(
+            self.biases
+        )
+        assert self.cfg.expected_decs is None or self.cfg.expected_decs == len(
+            self.decs
+        )
         for r in self.encs + self.decs + self.biases:
             r.set_cfg(self.cfg)
             r.resample(

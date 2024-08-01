@@ -161,7 +161,7 @@ class L0Targeter(L0TargeterProto):
 
         self.inv = False
 
-        self.i = MultiEma([0.001, 0.0003], weights=[1, 1], reweight=False)
+        self.i = MultiEma([0.001, 0.0003], weights=[3, 1], reweight=False)
         self.p = lfema(0.003)
         # MultiEma([0.01], reweight=False)
         self.velocity = 0
@@ -204,11 +204,11 @@ class L0Targeter(L0TargeterProto):
         self.mo = torch.zeros(1).cuda()
         self.mo_beta = 0.1
 
-        self.p_c = 1
-        self.i_c = 0.5
-        self.d_c = 5
+        self.p_c = 0.2
+        self.i_c = 0.1
+        self.d_c = 2
         self.a_c = 0
-        self.scale = 0.25
+        self.scale = 1
         self.velocity_mode = False
         self.direct_mode = True
         self.by_sign = False
@@ -288,7 +288,7 @@ class L0Targeter(L0TargeterProto):
                 step.clamp(-1, 1)
                 + self.P.clamp(-1, 1)
                 + self.I.clamp(-1, 1)
-                + self.D.clamp(-1, 1)
+                + self.D.clamp(-1, 1) * 1.1
                 + self.A.clamp(-1, 1)
             ).item()
 

@@ -8,7 +8,7 @@ class L1Penalty(Penalty):
         self.scale = scale
 
     def penalty(self, x: Tensor):
-        return x.relu().mean(dim=0).sum() * self.scale
+        return x.abs().mean(dim=0).sum() * self.scale
 
 
 class L1PenaltyScaledByDecoderNorm(Penalty):

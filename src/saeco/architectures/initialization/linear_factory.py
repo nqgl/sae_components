@@ -159,6 +159,15 @@ class LinearFactory:
             self._linear = self.make_new()
         return self._linear
 
+    def new_bias(self) -> torch.Tensor:
+        class temp:
+            weight = self.lin.weight
+            bias = torch.zeros(self.d_out)
+
+        if self._bias_tie is not None:
+            self._bias_tie(temp)
+        return temp.bias
+
     @property
     def raw(self):
         if self._linear_raw is None:

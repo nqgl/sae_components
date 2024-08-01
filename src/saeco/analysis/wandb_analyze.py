@@ -320,7 +320,7 @@ class Sweep:
     def remove_invalid_runs(self): ...
     def add_target_history(self):
         print()
-        self.add_target_history_async()
+        # self.add_target_history_async()
         self.df["history"] = self.df.apply(self._get_target_history, axis=1)
         print()
 

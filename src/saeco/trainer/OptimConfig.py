@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from torch.optim import Adam, RAdam, NAdam, RMSprop, SGD, Rprop, ASGD
 from saeco.sweeps import SweepableConfig
+from schedulefree import AdamWScheduleFree
 
 
 def get_optim_cls(opt: str):
@@ -12,6 +13,8 @@ def get_optim_cls(opt: str):
         "SGD": SGD,
         "Rprop": Rprop,
         "ASGD": ASGD,
+        "ScheduleFree": AdamWScheduleFree,
+        "ScheduleFreeAsNormal": AdamWScheduleFree,
     }[opt]
 
 

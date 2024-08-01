@@ -37,7 +37,7 @@ class SAView:
 
     @UIE
     def update_hist(self, cb):
-        return ui.button("Update", on_click=self.sw.add_target_history_async)
+        return ui.button("Update", on_click=self.sw.add_target_history)
 
     def update(self):
         # sa = SweepAnalysis(self.sw, self.key1, self.key2, self.base_target)

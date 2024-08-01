@@ -90,6 +90,8 @@ class PProLU(Module):
             self.bias = torch.nn.Parameter(torch.zeros(d_bias))
         elif isinstance(d_bias, torch.nn.Parameter):
             self.bias = d_bias
+        elif isinstance(d_bias, torch.Tensor):
+            self.bias = torch.nn.Parameter(d_bias)
         else:
             raise ValueError(f"Invalid bias type {type(d_bias)}")
 

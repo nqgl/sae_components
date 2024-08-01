@@ -32,7 +32,7 @@ from saeco.architectures.prolu.prolu import ProLUConfig, PProLU, thresh_from_bwd
 
 class Config(SweepableConfig):
     pre_bias: bool = False
-    clip_grad: float | None = Swept[float | None](1)
+    clip_grad: float | None = 1
     # prolu_cfg: ProLUConfig = ProLUConfig(
     #     b_ste=1,
     #     m_ste=1,
@@ -40,18 +40,21 @@ class Config(SweepableConfig):
     # )
     # prolu_type_ste: float = Swept(0, 1)
     # det_prolu_type_ste: float = Swept(0, 1)
-    max_shrink: float = Swept(0.3, 0.1)  ### Swept(0.3, 0.1, 0.03)
-    gate_proportion: float = Swept(0.38, 0.05)  ### Swept(0.3, 0.1, 0.03)
+    max_shrink: float = Swept(0.3, 0.8)  ### Swept(0.3, 0.1, 0.03)
+    min_shrink: float = 0.1
+    gate_proportion: float = 0.2
     # DET_ENC_BIAS: bool = Swept(True, False)
     # SCALE_PRE: bool = False
-    DET_ENC: bool = False  # Swept(True, False)  ### Swept(True, False)
-    DET_DEC: bool = Swept(True, False)  ### Swept(True, False)
+    DET_ENC: bool = True
+    DET_DEC: bool = True  ### Swept(True, False)
     # l1_on_full: float = 0
-    l1_on_gate_only: bool = False
-    enc_bias_init_value: float = 0  # Swept(0, -1)
-    use_relu: bool = False
+    l1_on_gate_only: bool = True
+    enc_bias_init_value: float = -1  # Swept(-0.5, -1)
+    use_relu: bool = False  # Swept(True, False)
     prolu_gate: bool = False  # Swept(True, False)
-    constrain_D: bool = Swept(True, False)
+    constrain_D: bool = False
+    orth_enc_grads: bool = False  # Swept(True, False)
+    thresh_method: str = "sftopk"
 
     @property
     def prolu_cfg(self):
@@ -80,10 +83,11 @@ class DetProLu(PProLU):
 
 
 class ShrinkGate(cl.Module):
-    def __init__(self, cfg, encoder, init):
+    def __init__(self, cfg: Config, encoder, init: Initializer):
         super().__init__()
         self.cfg = cfg
         self.encoder = encoder
+        self.k = init.l0_target
         if self.cfg.prolu_gate:
             thresh = thresh_from_bwd(lambda x: 1)
             self.prolu = PProLU(
@@ -91,9 +95,44 @@ class ShrinkGate(cl.Module):
             )
             self.thresh = lambda m: thresh(self.prolu(m))
         else:
-            self.thresh = thresh_from_bwd(lambda x: x > 0)
+            if self.cfg.thresh_method == "thresh":
+                self.thresh = thresh_from_bwd(lambda x: x > 0)
+            elif self.cfg.thresh_method == "softmax":
+                self.thresh = thresh_from_bwd(lambda x: torch.softmax(x, dim=-1))
+            elif self.cfg.thresh_method == "topk":
+                k = int(init.l0_target)
+                thr = thresh_from_bwd(lambda x: x > 0)
+                thrsf = thresh_from_bwd(lambda x: x)
+
+                def _topk(x):
+                    v, i = x.topk(k, dim=-1, sorted=False)
+
+                    return torch.zeros_like(x).scatter_(-1, i, thrsf(v).to(x.dtype))
+
+                self.thresh = _topk
+            elif self.cfg.thresh_method == "sftopk":
+                thr = thresh_from_bwd(lambda x: 1)
+                k = int(init.l0_target)
+
+                def sftk(x):
+                    x = torch.softmax(x, dim=-1)
+                    v, i = x.topk(k, dim=-1, sorted=False)
+                    x = thr(torch.zeros_like(x).scatter_(-1, i, v) - 1e-5)
+                    return x
+
+                def sftk(x):
+                    s = torch.softmax(x, dim=-1)
+                    s = s - s.detach()
+                    v, i = x.topk(k, dim=-1, sorted=False)
+                    # s +=
+                    return s + torch.zeros_like(x).scatter_(-1, i, 1)
+
+                self.thresh = sftk
 
     def forward(self, x, shrinkgate, shrink, *, cache):
+        x = self.encoder(x)
+        v, i = x.topk(25, dim=-1, sorted=False)
+        return torch.zeros_like(x).scatter_(-1, i, v)
         gate = self.gate_eval(x)
         return gate
 
@@ -118,6 +157,8 @@ class ShrinkGateSae(cl.Module):
             init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
         if self.cfg.prolu_gate:
             init._encoder._bias = False
+        if self.cfg.orth_enc_grads:
+            init._encoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
         # self.prolu = PProLU(cfg.prolu_cfg, init.d_dict)
         # self.det_prolu = DetProLu(cfg.det_prolu_cfg, self.prolu.bias)
         # self.magnitude_encoder = nn.Linear(
@@ -140,8 +181,6 @@ class ShrinkGateSae(cl.Module):
             init.d_dict,
             bias=False,
         )
-        # if not cfg.constrain_D:
-        #     self.D_T = co.LinEncoder(self.D_T)
         self.D_T.weight.data = self.full_dec.weight.transpose(-2, -1)
 
         self.gate_dec.use_bias = False
@@ -161,21 +200,23 @@ class ShrinkGateSae(cl.Module):
             w.features[:] = torch.where(norm > 1, w.features / norm, w.features)
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        skipmul = 1
-        if not self.training or (self.steps + 300) % 2500 < 30:
-            if "skip" not in kwargs:
-                v = self(x, cache=cache, skip=True)
-                return v.detach() + 0 * v
-            skipmul = 0
-
         pre_acts = cache(self).D_T(x)
         if self.cfg.use_relu:
             pre_acts = torch.relu(pre_acts)
-        rand = 1 - skipmul * torch.rand_like(pre_acts, dtype=torch.float32)
+        rand = 1 - torch.rand_like(pre_acts, dtype=torch.float32)
+        if not self.training:
+            rand[:] = 1
         self.steps += 1
 
         shrinkmask = rand < self.cfg.gate_proportion
-        shrink = 1 - self.cfg.max_shrink * rand / self.cfg.gate_proportion
+        shrink = (
+            1
+            - (self.cfg.max_shrink - self.cfg.min_shrink)
+            * rand
+            / self.cfg.gate_proportion
+            - self.cfg.min_shrink
+        )
+
         gate = cache(self).gate(x, shrinkmask, shrink)
 
         # torch.where(shrinkmask, gate * shrink, gate.detach())
@@ -187,14 +228,10 @@ class ShrinkGateSae(cl.Module):
             pre_acts_gate = pre_acts
         acts_shrank = pre_acts_gate * shrank_gate
         acts_full = pre_acts * full_gate
-
         if self.cfg.l1_on_gate_only:
             cache(self).l1(shrank_gate)
         else:
-            if self.cfg.DET_ENC:
-                cache(self).l1(acts_shrank)
-            else:
-                cache(self).l1(pre_acts.detach() * shrank_gate)
+            cache(self).l1(pre_acts.detach() * shrank_gate + acts_full * 0.01)
 
         acts = acts_shrank + acts_full
         cache(self).actstuff(acts)
@@ -227,6 +264,9 @@ model_fn = sae
 
 PROJECT = "sae sweeps"
 quick_check = False
+
+from saeco.trainer.trainer import Coeffs
+
 train_cfg = TrainConfig(
     data_cfg=DataConfig(
         model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=not quick_check))
@@ -241,17 +281,14 @@ train_cfg = TrainConfig(
         # resample_delay=0.69,
     ),
     l0_target=25,
-    coeffs={
-        "sparsity_loss": 3e-4,
-        "L2_loss": 1,
-    },
-    lr=Swept(1e-4),
+    coeffs={"sparsity_loss": Swept[float](0, 1e-4, 1e-3), "L2_loss": 1},
+    lr=Swept(1e-3, 3e-4, 1e-4),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
     l0_target_adjustment_size=0.0002,
     batch_size=4096,
     use_lars=True,
-    betas=(0.9, 0.999),
+    betas=(0.9, 0.995),
 )
 acfg = Config(
     pre_bias=Swept[bool](False),
@@ -272,7 +309,7 @@ runcfg = RunConfig[Config](
             b2_technique="sq",  # sq better
             b2_scale=1.0,
         ),
-        bias_reset_value=-0.02,
+        bias_reset_value=-1,
         enc_directions=0,
         dec_directions=1,
         freq_balance=None,
@@ -286,7 +323,7 @@ class FreqBalanceSweep(SweepableConfig):
     run_cfg: RunConfig[Config] = runcfg
     # target_l0: int = Swept(2)
     # target_l0: int = Swept(2, 3, 5, 15, 25, 35, 50)
-    target_l0: int | None = Swept(50)  # Swept(25)  # Swept(None, 6, 12)
+    target_l0: int | None = None  # Swept(25)  # Swept(None, 6, 12)
     target_l1: int | float | None = None  # Swept(None, 1, 4, 16, 64)
 
 
@@ -311,4 +348,4 @@ def run(cfg):
 
 
 if __name__ == "__main__":
-    do_sweep(True, "rand" if quick_check else None)
+    do_sweep(True, "run" if quick_check else None)

@@ -36,21 +36,18 @@ from saeco.architectures.prolu.prolu import (
 
 class Config(SweepableConfig):
     pre_bias: bool = False
-    clip_grad: float | None = None
+    clip_grad: float | None = 1
     # prolu_cfg: ProLUConfig = ProLUConfig(
     #     b_ste=1,
     #     m_ste=1,
     #     m_gg=1,
     # )
-    anthropic_l1_mode: int = 2  # Swept(0, 1, 2)
+    anthropic_l1_mode: int = Swept(0, 1, 2)
     prolu_type_ste: float = 1
     from_thresh: None | str = None
     # Swept(
     #     None, "thresh", "0-1", "clamp-11", "clamp01", "1", "exp"
     # )
-    bias_init_value: float = Swept(
-        0, -0.1, -0.3, -0.7, -1, -1.25, -1.5, -1.75, -2, -2.25, -2.5
-    )
 
     @property
     def prolu_cfg(self):
@@ -71,7 +68,6 @@ def sae(
         init._decoder.add_wrapper(ft.NormFeatures)
     dec_mul_l1 = L1PenaltyScaledByDecoderNorm(det_dec_norms=cfg.anthropic_l1_mode == 1)
     init._decoder.const_init_bias()
-    init._encoder.const_init_bias(cfg.bias_init_value)
     init._encoder._bias = False
     if cfg.from_thresh:
         if cfg.from_thresh == "thresh":
@@ -89,10 +85,10 @@ def sae(
 
         prolu = PProLU(
             prolu=prolu_ste_from_thresh(thresh_from_bwd(bwd)),
-            d_bias=init._encoder.new_bias(),
+            d_bias=init.d_dict,
         )
     else:
-        prolu = PProLU(cfg.prolu_cfg, init._encoder.new_bias())
+        prolu = PProLU(cfg.prolu_cfg, init.d_dict)
     model_full = Seq(
         **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
         encoder=Seq(
@@ -117,22 +113,19 @@ def sae(
 
 model_fn = sae
 
-from saeco.trainer.schedule_cfg import RunFloat
-
 PROJECT = "sae sweeps"
 quick_check = False
 train_cfg = TrainConfig(
-    optim="RAdam",  # Swept("RAdam", "NAdam", "Adam", "ScheduleFree", "ScheduleFreeAsNormal"),
+    optim=Swept("Adam", "RAdam", "NAdam"),
     data_cfg=DataConfig(
         model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=not quick_check))
     ),
     raw_schedule_cfg=RunSchedulingConfig(
         run_length=70_000,
-        resample_period=10_000,
+        resample_period=Swept(23_000, 10_000, 100_000),
         targeting_post_resample_hiatus=0,
         targeting_post_resample_cooldown=0.5,
         lr_resample_warmup_factor=0.3,
-        lr_warmup_length=Swept[RunFloat](0.05),
         # resample_delay=0.69,
     ),
     l0_target=25,
@@ -140,7 +133,7 @@ train_cfg = TrainConfig(
         "sparsity_loss": 4e-3,
         "L2_loss": 1,
     },
-    lr=Swept(1e-4),
+    lr=Swept(1e-4, 3e-5),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
     l0_target_adjustment_size=0.0001,
