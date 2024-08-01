@@ -1,7 +1,6 @@
 from transformer_lens import HookedTransformer, utils
 from pydantic import Field
 
-from dataclasses import dataclass
 from saeco.sweeps import SweepableConfig
 
 

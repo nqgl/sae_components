@@ -6,3 +6,5 @@ pytest
 tables
 torchlars
 pydantic
+wandb
+schedulefree

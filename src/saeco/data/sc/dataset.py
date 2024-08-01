@@ -1,12 +1,9 @@
-from dataclasses import dataclass
 from pydantic import Field
-from typing import Tuple
 from transformer_lens import HookedTransformer
-from saeco.data.sc.model_cfg import ActsDataConfig, ModelConfig
+from saeco.data.sc.model_cfg import ModelConfig
 from saeco.data.sc.tabletensor import Piler
 import datasets
 import torch
-from unpythonic import box
 
 from saeco.sweeps import SweepableConfig
 from typing import Optional

@@ -202,13 +202,22 @@ class GNConfig(SweepableConfig):
         BATCH_AVG = 3
         LEARNED = 4
 
-    mu_s: bool
-    mu_e: Aggregation
-    std_s: bool
-    std_e: Aggregation
+    class SAggregation(IntEnum):
+        DONTUSE = 0
+        PRIMED = 1
+        SAMPLE = 5
+        # BATCH_AVG = 3
+        # RUNNING_AVG = 4
+
+    mu_s: SAggregation = SAggregation.PRIMED
+    mu_e: Aggregation = Aggregation.DONTUSE
+    std_s: SAggregation = SAggregation.PRIMED
+    std_e: Aggregation = Aggregation.PRIMED
+    sandwich: bool = False
 
 
 Aggregation = GNConfig.Aggregation
+SAggregation = GNConfig.SAggregation
 
 
 class GeneralizedNormalizer(Normalizer):
@@ -216,41 +225,95 @@ class GeneralizedNormalizer(Normalizer):
         super().__init__(init)
         self.eps = eps
         self.cfg = cfg
+        self.primed = False
         if cfg.mu_e in (Aggregation.PRIMED, Aggregation.RUNNING_AVG):
-            self.register_buffer("_mu_e", torch.zeros(init.d_data))
+            self.register_buffer(
+                "_mu_e",
+                torch.full(
+                    (init.d_data,),
+                    torch.nan,
+                ),
+            )
         elif cfg.mu_e == Aggregation.LEARNED:
-            self._mu_e = nn.Parameter(torch.zeros(init.d_data))
+            self._mu_e = nn.Parameter(
+                torch.full(
+                    (init.d_data,),
+                    torch.nan,
+                )
+            )
         if cfg.std_e in (Aggregation.PRIMED, Aggregation.RUNNING_AVG):
-            self.register_buffer("_std_e", torch.zeros(init.d_data))
+            self.register_buffer(
+                "_std_e",
+                torch.full(
+                    (init.d_data,),
+                    torch.nan,
+                ),
+            )
         elif cfg.std_e == Aggregation.LEARNED:
-            self._std_e = nn.Parameter(torch.zeros(init.d_data))
-        self.sandwich = True
+            self._std_e = nn.Parameter(
+                torch.full(
+                    (init.d_data,),
+                    torch.nan,
+                )
+            )
+        self.cfg.sandwich = False
+        if cfg.mu_s == SAggregation.PRIMED:
+            self.register_buffer(
+                "_mu_s",
+                torch.full(
+                    (1,),
+                    torch.nan,
+                ),
+            )
+        if cfg.std_s == SAggregation.PRIMED:
+            self.register_buffer(
+                "_std_s",
+                torch.full(
+                    (1,),
+                    torch.nan,
+                ),
+            )
+
+        assert not (
+            self.cfg.sandwich
+            and (cfg.mu_s == SAggregation.PRIMED or cfg.std_s == SAggregation.PRIMED)
+        )
 
     @torch.no_grad()
-    def prime_normalizer(self, buffer, n=100):
-
+    def prime_normalizer(self, buffer, n=20):
+        assert not self.primed
+        self.primed = True
         samples = [next(buffer) for _ in range(n)]
         x = torch.cat(samples, dim=0)
         # samples = [x - self.mu_s(x) for x in samples]
-        if self.sandwich:
+
+        if self.cfg.sandwich:
             x = x - self.mu_s(x)
 
         if self.cfg.mu_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
             # mu_es = [self.elementwise_mean(x) for x in samples]
             self._mu_e.data = self.elementwise_mean(x)
 
-        # samples = [x - self.mu_e(x) for x in samples]
         x = x - self.mu_e(x)
-        x = x - self.mu_s(x)
-        # samples = [x - self.mu_s(x) for x in samples]
-        if self.sandwich:
 
+        if self.cfg.mu_s == SAggregation.PRIMED:
+            self._mu_s.data = self.sample_mean(x).mean()
+
+        x = x - self.mu_s(x)
+        # samples = [x - self.mu_e(x) for x in samples]
+        # samples = [x - self.mu_s(x) for x in samples]
+        if self.cfg.sandwich:
             x = x / self.std_s(x)
+
         if self.cfg.std_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
             # std_es = [self.elementwise_std(x) for x in samples]
             self._std_e.data = self.elementwise_std(x)
             # x = x / self.std_e(x)
             # x = x / self.std_s(x)
+
+        x = x / self.std_e(x)
+        if self.cfg.std_s == SAggregation.PRIMED:
+            self._std_s.data = self.sample_std(x).mean()
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         # cache.mu_e = ...
@@ -273,7 +336,7 @@ class GeneralizedNormalizer(Normalizer):
         # std_s = self.std_s(x, cache=cache)
         # x = x / std_s
         ####
-        if not self.sandwich:
+        if not self.cfg.sandwich:
             x = x - cache(self, force_watch=True).mu_e(x)
             x = x - cache(self, force_watch=True).mu_s(x)
             x = x / cache(self, force_watch=True).std_e(x)
@@ -306,29 +369,35 @@ class GeneralizedNormalizer(Normalizer):
         return (x0 - (cache.mu_s + cache.mu_e)) / (cache.std_s * cache.std_e)
 
     def sample_mean(self, x):
-        return x.mean(dim=-1, keepdim=True)
+        return x.detach().float().mean(dim=-1, keepdim=True)
 
     def elementwise_mean(self, x):
-        return x.mean(dim=0, keepdim=True)
+        return x.detach().float().mean(dim=0, keepdim=True)
 
     def sample_std(self, x):
-        return x.std(dim=-1, keepdim=True, unbiased=False) + self.eps
+        return x.detach().float().std(dim=-1, keepdim=True, unbiased=False) + self.eps
 
     def elementwise_std(self, x):
-        return x.std(dim=0, keepdim=True, unbiased=False) + self.eps
+        return x.detach().float().std(dim=0, keepdim=True, unbiased=False) + self.eps
 
     def invert(self, x, *, cache: cl.Cache, **kwargs):
         return x * (cache.std_s * cache.std_e) + (cache.mu_s + cache.mu_e)
 
     def mu_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
-        if not self.cfg.mu_s:
+        if self.cfg.mu_s == SAggregation.DONTUSE:
             return 0
-        return self.sample_mean(x)
+        elif self.cfg.mu_s == SAggregation.PRIMED:
+            return self._mu_s
+        elif self.cfg.mu_s == SAggregation.SAMPLE:
+            return self.sample_mean(x)
 
     def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
-        if not self.cfg.std_s:
+        if self.cfg.std_s == SAggregation.DONTUSE:
             return 1
-        return self.sample_std(x)
+        elif self.cfg.std_s == SAggregation.PRIMED:
+            return self._std_s
+        elif self.cfg.std_s == SAggregation.SAMPLE:
+            return self.sample_std(x)
 
     def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
         if self.cfg.mu_e == Aggregation.DONTUSE:
@@ -346,7 +415,7 @@ class GeneralizedNormalizer(Normalizer):
             self._std_e.data.lerp_(self.elementwise_std(x), 0.003)
         if self.cfg.std_e == Aggregation.BATCH_AVG:
             return self.elementwise_std(x)
-        return self._std_e
+        return torch.abs(self._std_e) + 1e-07
 
 
 def main():

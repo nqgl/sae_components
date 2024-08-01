@@ -1,3 +1,4 @@
+from abc import ABCMeta
 import torch
 import torch.nn as nn
 import saeco.core as cl
@@ -39,6 +40,12 @@ class WrapsModule(cl.Module):
             return super().__getattr__(name)
         except AttributeError:
             return getattr(super().__getattr__("wrapped"), name)
+
+    @classmethod
+    def __instancecheck__(cls: ABCMeta, instance: torch.Any) -> bool:
+        return super().__instancecheck__(instance) or (
+            isinstance(instance, WrapsModule) and isinstance(instance.wrapped, cls)
+        )
 
 
 def combination(default, new, original):

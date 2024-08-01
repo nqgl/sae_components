@@ -9,6 +9,7 @@ from typing import (
     Union,
     Any,
     TYPE_CHECKING,
+    ClassVar,
 )
 from pydantic import BaseModel, create_model, dataclasses
 
@@ -87,6 +88,8 @@ class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
 
 
 def Sweepable(type):
+    if type is ClassVar:
+        return type
     assert not isinstance(
         type, Swept
     ), "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
@@ -153,26 +156,62 @@ def _to_swept_dict(target: BaseModel):
     return d
 
 
-def has_sweep(target: BaseModel):
-    for name, field in target.model_fields.items():
-        attr = getattr(target, name)
+def has_sweep(target: BaseModel | dict):
+    if isinstance(target, BaseModel):
+        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+    else:
+        assert isinstance(target, dict)
+        items = target.items()
+    for name, attr in items:
         if isinstance(attr, Swept):
             return True
-        elif isinstance(attr, BaseModel):
+        elif isinstance(attr, BaseModel | dict):
             if has_sweep(attr):
                 return True
     return False
 
 
+from functools import singledispatch
+
+
 def _to_swept_selective_dict(target: BaseModel):
     d = {}
-    target.model_copy
-    for name, field in target.model_fields.items():
-        attr = getattr(target, name)
+    if isinstance(target, BaseModel):
+        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+    else:
+        assert isinstance(target, dict)
+        items = target.items()
+    for name, attr in items:
         if isinstance(attr, Swept):
             subdict = attr.model_dump()
-        elif isinstance(attr, BaseModel) and has_sweep(attr):
+        elif isinstance(attr, BaseModel | dict) and has_sweep(attr):
             subdict = dict(parameters=_to_swept_selective_dict(attr))
+        elif isinstance(attr, dict):
+            print("dict at", name, attr)
+            continue
+        else:
+            continue
+        d[name] = subdict
+    return d
+
+
+def _to_randomly_selected_dict(target):
+    d = {}
+    import random
+    import time
+
+    random.seed(time.time())
+
+    if isinstance(target, BaseModel):
+        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+    else:
+        assert isinstance(target, dict)
+        items = target.items()
+    for name, attr in items:
+        if isinstance(attr, Swept):
+            subdict = random.choice(attr.model_dump()["values"])
+        elif isinstance(attr, BaseModel | dict):
+            subdict = _to_randomly_selected_dict(attr)
         else:
             continue
         d[name] = subdict
@@ -212,9 +251,11 @@ else:
         def sweep(self):
             copy = self.model_copy(deep=True)
             return _to_swept_selective_dict(copy)
-            return copy
 
         def from_selective_sweep(self, sweep: dict):
             mydict = self.model_dump()
             _merge_dicts_left(mydict, sweep)
             return self.model_validate(mydict)
+
+        def random_sweep_configuration(self):
+            return self.from_selective_sweep(_to_randomly_selected_dict(self))

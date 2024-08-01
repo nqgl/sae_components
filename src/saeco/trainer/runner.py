@@ -1,57 +1,25 @@
-from saeco.architectures.gate_two_weights import gate_two_weights
-from saeco.data.sc.dataset import DataConfig, SplitConfig
-from transformer_lens import HookedTransformer
-
 from saeco.trainer.trainable import Trainable
 
 from saeco.trainer.trainer import Trainer, TrainConfig
 from typing import Generic, TypeVar
-from saeco.architectures.initialization.geo_med import getmed, getmean
-from saeco.architectures.gate_hierarch import (
-    hierarchical_l1scale,
+from saeco.architectures.outdated.gate_hierarch import (
     hierarchical_softaux,
     HierarchicalSoftAuxConfig,
     HGatesConfig,
 )
-from saeco.architectures.vanilla_tests import (
-    basic_vanilla_sae_lin,
-)
-from saeco.architectures.deep.deep import deep_sae, resid_deep_sae
-from saeco.architectures.deep.deep_resid_gated import (
-    deep_resid_gated,
-    deep_resid_gated2,
-    deep_resid_gated2_wider,
-    deep_resid_gated2_deeper,
-    deep_resid_gated2_deeper_still,
-    deep_resid_gated2_wider,
-    deep_resid_gated2_wider2,
-)
-from saeco.architectures.deep.catseq import deep_catseq, deep_catseq_resid
-import wandb
-from saeco.architectures.remax import (
-    remax_sae,
-    remax1_sae,
-    remaxk_sae,
-    remaxkv_sae,
-    remaxkB_sae,
-    remaxkvB_sae,
-)
-from saeco.architectures.topk import topk_sae
-import torch
-import sys
 from saeco.architectures.initialization.initializer import Initializer
 from saeco.trainer.normalizers import (
     ConstL2Normalizer,
-    Normalized,
-    Normalizer,
-    L2Normalizer,
-    NORMALIZERS,
     GeneralizedNormalizer,
     GNConfig,
 )
 from saeco.misc.lazy import lazyprop, defer_to_and_set
 from saeco.sweeps import SweepableConfig
-from pydantic import BaseModel, Field
+from pydantic import Field
+from saeco.components.resampling.anthropic_resampling import (
+    AnthResampler,
+    AnthResamplerConfig,
+)
 
 
 class SAEConfig(SweepableConfig):
@@ -74,7 +42,8 @@ T = TypeVar("T", bound=SweepableConfig)
 class RunConfig(SweepableConfig, Generic[T]):
     train_cfg: TrainConfig
     arch_cfg: T
-    normalizer_cfg: GNConfig
+    normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
+    resampler_config: AnthResamplerConfig = Field(default_factory=AnthResamplerConfig)
     sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 
@@ -125,8 +94,21 @@ class TrainingRunner:
         return losses
 
     @lazyprop
-    def trainable(self):
-        return Trainable(self.models, self.losses, normalizer=self.normalizer).cuda()
+    def trainable(self) -> Trainable:
+        return Trainable(
+            self.models,
+            self.losses,
+            normalizer=self.normalizer,
+            resampler=self.resampler,
+        ).cuda()
+
+    @lazyprop
+    def resampler(self) -> AnthResampler:
+        res = AnthResampler(self.cfg.resampler_config)
+        res.assign_model(
+            self.models[0]
+        )  # TODO not a big fan of this. maybe just remove the assigning model part of resample class
+        return res
 
     @lazyprop
     def normalizer(self):

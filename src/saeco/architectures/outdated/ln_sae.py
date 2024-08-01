@@ -1,6 +1,5 @@
 import torch.nn as nn
 
-from saeco.architectures.base import SAE
 from saeco.architectures.initialization.initializer import Initializer
 from saeco.components import (
     L1Penalty,
@@ -8,19 +7,21 @@ from saeco.components import (
     L2Loss,
     SparsityPenaltyLoss,
 )
-from saeco.trainer.normalizers import GNConfig
-from saeco.core.reused_forward import ReuseForward, ReuseCache
+
+from saeco.core.reused_forward import ReuseForward
 from saeco.core import Seq
 import saeco.components.features.features as ft
+
 import saeco.components as co
 from saeco.misc import useif
-import saeco.core as cl
 from saeco.sweeps import SweepableConfig
 
 
 class Config(SweepableConfig):
     pre_bias: bool = False
     untied: bool = True
+    d_extra: int = 5
+    use_ln: bool = True
 
 
 def ln_sae(
@@ -34,10 +35,24 @@ def ln_sae(
     else:
         init._decoder.tie_weights(init._encoder)
     init._decoder._weight_tie = None
+    init._encoder.d_in += cfg.d_extra
 
     def model(enc, penalties, metrics, detach=False):
+        # return Seq(
+        #     **useif(cfg.pre_bias % 3 == 1, pre_bias=init._decoder.sub_bias()),
+        #     **useif(cfg.pre_bias < 3, ln=nn.LayerNorm(init.d_data)),
+        #     **useif(cfg.pre_bias % 3 == 2, pre_bias=init._decoder.sub_bias()),
+        #     encoder=enc,
+        #     freqs=EMAFreqTracker(),
+        #     **penalties,
+        #     metrics=metrics,
+        #     decoder=init.decoder,
+        # )
         return Seq(
             **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            proj_extra=nn.Linear(init.d_data, init.d_data + cfg.d_extra),
+            **useif(cfg.use_ln, ln=nn.LayerNorm(init.d_data + cfg.d_extra)),
+            # **useif(cfg.pre_bias % 3 == 2, pre_bias=init._decoder.sub_bias()),
             encoder=enc,
             freqs=EMAFreqTracker(),
             **penalties,
@@ -84,20 +99,16 @@ train_cfg = TrainConfig(
     l0_target_adjustment_size=0.001,
     batch_size=4096,
     use_lars=True,
-    betas=(0.9, 0.99),
+    betas=Swept[tuple[float, float]]((0.9, 0.99)),
 )
 acfg = Config(
-    pre_bias=False,
+    pre_bias=Swept[bool](True, False),
+    use_ln=Swept[bool](True, False),
+    d_extra=Swept[int](0, 2, 5),
 )
 cfg = RunConfig[Config](
     train_cfg=train_cfg,
     arch_cfg=acfg,
-    normalizer_cfg=GNConfig(
-        mu_s=Swept[bool](True, False),
-        mu_e=Swept[GNConfig.Aggregation](0, 1, 3),
-        std_s=Swept[bool](True, False),
-        std_e=Swept[GNConfig.Aggregation](0, 1, 3),
-    ),
 )
 
 
@@ -107,4 +118,5 @@ def run(cfg):
 
 
 if __name__ == "__main__":
+
     do_sweep(True)

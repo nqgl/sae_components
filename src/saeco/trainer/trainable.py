@@ -8,8 +8,8 @@ from saeco.components.losses import (
 from saeco.core import Cache
 from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
 from saeco.trainer.train_cache import TrainCache
-
-
+from saeco.components.resampling import Resampler, RandomResampler, AnthResampler
+from typing import Optional
 import torch
 import torch.nn as nn
 
@@ -24,10 +24,11 @@ class Trainable(cl.Module):
     def __init__(
         self,
         models: list[cl.Module],
-        losses: dict[str, Loss] = None,
-        extra_losses: dict[str, Loss] = None,
-        metrics: dict[str, Loss] = None,
-        normalizer: Normalizer = None,
+        losses: Optional[dict[str, Loss]] = None,
+        extra_losses: Optional[dict[str, Loss]] = None,
+        metrics: Optional[dict[str, Loss]] = None,
+        normalizer: Optional[Normalizer] = None,
+        resampler: Optional[Resampler | bool] = None,
     ):
         super().__init__()
         self.normalizer = normalizer or ConstL2Normalizer()
@@ -61,6 +62,14 @@ class Trainable(cl.Module):
         )
         self.model = self.normalizer.io_normalize(models[0])
 
+        if resampler:
+            self.resampler = resampler
+        elif resampler is None:
+            self.resampler = AnthResampler()
+            self.resampler.assign_model(self.model)
+        else:
+            self.resampler = None
+
     def _normalizeIO(mth):
         def wrapper(self, x: torch.Tensor, *, cache: TrainCache, **kwargs):
             x = self.normalizer(x)
@@ -76,7 +85,6 @@ class Trainable(cl.Module):
             setattr(cache, k, m)
             loss += m * coeffs.pop(k, 1)
         cache.loss = loss.item()
-        # with torch.no_grad():
         for k, L in self.metrics.items():
             m = L(x, y=y, cache=cache[k]) * coeffs.pop(k, 1)
             setattr(cache, k, m)
@@ -95,5 +103,5 @@ class Trainable(cl.Module):
             del cache
         return out
 
-    def get_losses_and_metrics_names(self):
+    def get_losses_and_metrics_names(self) -> list[str]:
         return list(self.losses.keys()) + list(self.metrics.keys())

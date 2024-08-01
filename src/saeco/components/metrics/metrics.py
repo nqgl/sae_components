@@ -52,7 +52,7 @@ class Metric(Lambda):
 
 class L0(Metric):
     def __init__(self):
-        super().__init__(lambda x: (x > 0).sum(-1).float().mean(0).sum())
+        super().__init__(lambda x: (x != 0).sum(-1).float().mean(0).sum())
 
 
 class L1(Metric):
@@ -63,7 +63,7 @@ class L1(Metric):
 class ActMetrics(Metrics):
     def __init__(self, name=None, globalize_cache=True):
         self.name = name
-        super().__init__(L1=L1(), L0=L0())
+        super().__init__(L1=L1(), L0=L0(), acts=cl.ops.Identity())
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
 

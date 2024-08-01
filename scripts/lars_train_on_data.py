@@ -11,7 +11,7 @@ BATCH_SIZE = 4096
 
 
 from saeco.architectures.gated import gated_sae, gated_sae_no_detach
-from saeco.architectures.vanilla_tests import (
+from saeco.architectures.outdated.vanilla_tests import (
     basic_vanilla_sae_lin,
 )
 from saeco.architectures.vanilla.unshrink import rescaling_vanilla
@@ -25,7 +25,7 @@ from saeco.architectures.deep.deep_resid_gated import (
     deep_resid_gated2_wider,
     deep_resid_gated2_wider2,
 )
-from saeco.architectures.topk import topk_sae
+from saeco.architectures.outdated.topk import topk_sae
 from saeco.architectures.remax import remax_sae, remax1_sae
 from saeco.architectures.deep.catseq import deep_catseq, deep_catseq_resid
 import wandb
@@ -77,7 +77,7 @@ from saeco.trainer.normalizers import (
     L2Normalizer,
 )
 
-import saeco.architectures.vanilla_tests as vanilla
+import saeco.architectures.outdated.vanilla_tests as vanilla
 
 from torchlars import LARS
 

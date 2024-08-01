@@ -9,13 +9,29 @@ class DetachedLinear(nn.Module):
     def __init__(self, lin):
         super().__init__()
         self.lin = lin
+        self.use_bias = True
 
     def forward(self, x):
         return torch.nn.functional.linear(
             x,
             self.lin.weight.detach(),
-            self.lin.bias.detach() if self.lin.bias is not None else None,
+            (
+                self.lin.bias.detach()
+                if (self.lin.bias is not None) and self.use_bias
+                else None
+            ),
         )
+
+
+class InitSite:
+    def __init__(self, site):
+        self.site = site
+
+    def __getattribute__(self, name: str) -> "InitSite":
+        pass
+
+    def __setattr__(self, name: str, value) -> None:
+        pass
 
 
 class BiasDetachedLinear(nn.Module):
@@ -143,6 +159,15 @@ class LinearFactory:
             self._linear = self.make_new()
         return self._linear
 
+    def new_bias(self) -> torch.Tensor:
+        class temp:
+            weight = self.lin.weight
+            bias = torch.zeros(self.d_out)
+
+        if self._bias_tie is not None:
+            self._bias_tie(temp)
+        return temp.bias
+
     @property
     def raw(self):
         if self._linear_raw is None:
@@ -172,6 +197,10 @@ class LinearFactory:
         assert self._weight_tie is None
         self._weight_tie = Tied(other, Tied.INIT, "weight")
 
+    def const_init_bias(self, const=0):
+        assert self.unset
+        assert self._bias_tie is None
+        self._bias_tie = Tied(torch.zeros(self.d_out) + const, Tied.TO_VALUE, "bias")
         # assert (self.lin.weight.data.shape == other.lin.weight.data.shape) ^ (
         #     self.lin.weight.data.shape == other.lin.weight.data.transpose(-2, -1).shape
         # )

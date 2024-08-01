@@ -1,9 +1,4 @@
-import torch
 import torch.nn as nn
-from abc import ABC, abstractmethod
-from torch import Tensor
-from jaxtyping import Float
-from saeco.components.ops.fnlambda import Lambda
 
 from saeco.architectures.initialization.tools import (
     reused,
@@ -12,32 +7,21 @@ from saeco.architectures.initialization.tools import (
     mlp_layer,
     layer,
 )
-from saeco.components.ops.detach import Thresh
 import saeco.core as cl
-import saeco.core.module
-from saeco.core.collections.parallel import Parallel
 from saeco.components import (
-    Penalty,
     L1Penalty,
-    FreqTracked,
     EMAFreqTracker,
-    FreqTracker,
-    ResampledLayer,
-    Loss,
     L2Loss,
     SparsityPenaltyLoss,
-    SAECache,
 )
 
 # from saeco.core.linear import Bias, NegBias, Affine, MatMul
-from saeco.core.basic_ops import Add, MatMul, Sub, Mul
-from typing import Optional
-from saeco.core.reused_forward import ReuseCache
+from saeco.core.basic_ops import Add, MatMul, Sub
 from saeco.core import Seq
 import saeco.components.features.features as ft
 
 import saeco.components as co
-from saeco.core.collections.seq import ResidualSeq, CatSeq, CatSeqResid
+from saeco.core.collections.seq import CatSeq, CatSeqResid
 
 
 def deep_catseq(

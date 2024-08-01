@@ -1,33 +1,31 @@
 import torch
-import torch.nn as nn
-from abc import ABC, abstractmethod
 from torch import Tensor
-from jaxtyping import Float
 
 import saeco.core as cl
-import saeco.components as cc
 
 from saeco.components import (
-    Penalty,
     L1Penalty,
-    FreqTracked,
     EMAFreqTracker,
-    FreqTracker,
-    ResampledLayer,
-    Loss,
-    L2Loss,
-    SparsityPenaltyLoss,
     SAECache,
 )
-import saeco.core.module
-from saeco.core.linear import Bias, NegBias, Affine, MatMul
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol
 import saeco.components as co
 
 
 class LinearLike(Protocol):
     weight: Tensor
     bias: Tensor
+
+
+from saeco.sweeps.sweepable_config import SweepableConfig
+from pydantic import create_model
+
+
+class Base(cl.Module):
+    cfg: SweepableConfig
+
+    def __init__(self, losses):
+        create_model
 
 
 class SAE(cl.Seq):

@@ -1,4 +1,8 @@
+assert False, "This file is not meant to be imported and is due for deletion"
+
 # %%
+
+
 from typing_extensions import Unpack
 from pydantic._internal._generics import PydanticGenericMetadata
 import wandb
