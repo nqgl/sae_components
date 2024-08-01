@@ -16,7 +16,7 @@ from saeco.trainer.post_backward_normalization import (
 )
 from .recons import get_recons_loss
 from saeco.data.sc.dataset import DataConfig, SplitConfig, TokensData
-from saeco.sweeps import SweepableConfig
+from saeco.sweeps import SweepableConfig, Swept
 from pydantic import Field
 from .l0targeter import L0Targeter
 from saeco.misc import lazycall
@@ -29,7 +29,10 @@ v = OptimConfig
 class TrainConfig(SweepableConfig):
     data_cfg: DataConfig = Field(default_factory=DataConfig)
     wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
-    coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
+    coeffs: dict[str, float | Swept[float]] = Field(
+        default_factory=lambda: dict(sparsity_loss=1e-3)
+    )
+    # coeffs: Coeffs = Field(default_factory=Coeffs)
     l0_target: Optional[float] = None
     l0_target_adjustment_size: float = 0.0003
     use_autocast: bool = True

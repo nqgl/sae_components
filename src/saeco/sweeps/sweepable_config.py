@@ -156,40 +156,61 @@ def _to_swept_dict(target: BaseModel):
     return d
 
 
-def has_sweep(target: BaseModel):
-    for name, field in target.model_fields.items():
-        attr = getattr(target, name)
+def has_sweep(target: BaseModel | dict):
+    if isinstance(target, BaseModel):
+        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+    else:
+        assert isinstance(target, dict)
+        items = target.items()
+    for name, attr in items:
         if isinstance(attr, Swept):
             return True
-        elif isinstance(attr, BaseModel):
+        elif isinstance(attr, BaseModel | dict):
             if has_sweep(attr):
                 return True
     return False
 
 
+from functools import singledispatch
+
+
 def _to_swept_selective_dict(target: BaseModel):
     d = {}
-    for name, field in target.model_fields.items():
-        attr = getattr(target, name)
+    if isinstance(target, BaseModel):
+        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+    else:
+        assert isinstance(target, dict)
+        items = target.items()
+    for name, attr in items:
         if isinstance(attr, Swept):
             subdict = attr.model_dump()
-        elif isinstance(attr, BaseModel) and has_sweep(attr):
+        elif isinstance(attr, BaseModel | dict) and has_sweep(attr):
             subdict = dict(parameters=_to_swept_selective_dict(attr))
+        elif isinstance(attr, dict):
+            print("dict at", name, attr)
+            continue
         else:
             continue
         d[name] = subdict
     return d
 
 
-def _to_randomly_selected_dict(target: BaseModel):
+def _to_randomly_selected_dict(target):
     d = {}
     import random
+    import time
 
-    for name, field in target.model_fields.items():
-        attr = getattr(target, name)
+    random.seed(time.time())
+
+    if isinstance(target, BaseModel):
+        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+    else:
+        assert isinstance(target, dict)
+        items = target.items()
+    for name, attr in items:
         if isinstance(attr, Swept):
             subdict = random.choice(attr.model_dump()["values"])
-        elif isinstance(attr, BaseModel):
+        elif isinstance(attr, BaseModel | dict):
             subdict = _to_randomly_selected_dict(attr)
         else:
             continue

@@ -85,7 +85,6 @@ class Trainable(cl.Module):
             setattr(cache, k, m)
             loss += m * coeffs.pop(k, 1)
         cache.loss = loss.item()
-        # with torch.no_grad():
         for k, L in self.metrics.items():
             m = L(x, y=y, cache=cache[k]) * coeffs.pop(k, 1)
             setattr(cache, k, m)

@@ -52,7 +52,7 @@ class Metric(Lambda):
 
 class L0(Metric):
     def __init__(self):
-        super().__init__(lambda x: (x > 0).sum(-1).float().mean(0).sum())
+        super().__init__(lambda x: (x != 0).sum(-1).float().mean(0).sum())
 
 
 class L1(Metric):
