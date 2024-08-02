@@ -2,10 +2,17 @@ from typing import Optional
 import torch
 import torch.nn as nn
 
-from saeco.components.features.features_param import FeaturesParam
+from saeco.components.features.features_param import (
+    FeaturesParam,
+    HasFeatures,
+    get_resampled_params,
+)
 from saeco.components.features.optim_reset import (
     OptimResetValues,
     OptimResetValuesConfig,
+)
+from saeco.components.resampling.freq_tracker.freq_tracker import (
+    get_active_freq_trackers,
 )
 from .freq_tracker import FreqTracker
 from saeco.components.features import (
@@ -14,33 +21,7 @@ from saeco.components.features import (
     EncoderBias,
     Resamplable,
     ResampledWeight,
-    HasFeatures,
 )
-
-
-def get_resampled_params(model: nn.Module) -> set[FeaturesParam]:
-    l: set[FeaturesParam] = set()
-    for m in model.modules():
-        if isinstance(m, HasFeatures):
-            l |= set(m.features.values())
-    d = {}
-    for fp in l:
-        if fp.param in d:
-            other = d[fp.param]
-            assert other == fp, f"{other} != {fp}"
-            raise ValueError(
-                f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just (intelligently) deduplicate and check for inconsistency"
-            )
-        d[fp.param] = fp
-    return l
-
-
-def get_freq_trackers(model: nn.Module):
-    l = set()
-    for m in model.modules():
-        if isinstance(m, FreqTracker):
-            l.add(m)
-    return l
 
 
 def find_matching_submodules(module: nn.Module, matchfn):
@@ -158,7 +139,7 @@ class Resampler(ABC):
     @property
     @lazycall
     def freq_tracker(self) -> FreqTracker:
-        fts = get_freq_trackers(self.model)
+        fts = get_active_freq_trackers(self.model)
         assert len(fts) == 1, f"Expected 1 freq tracker, got {len(fts)}"
         ft: FreqTracker = fts.pop()
         return ft

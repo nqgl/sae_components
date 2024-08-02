@@ -3,7 +3,7 @@ from .freq_tracker import FreqTracker
 
 
 class EMAFreqTracker(FreqTracker):
-    def __init__(self, beta=0.995):
+    def __init__(self, beta=0.99):
         super().__init__()
         self.activation_freqs = None
         self.beta = beta

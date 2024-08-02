@@ -12,7 +12,7 @@ class L1Penalty(Penalty):
 
 
 class L1PenaltyScaledByDecoderNorm(Penalty):
-    def __init__(self, scale=1.0, decoder=None, det_dec_norms=True):
+    def __init__(self, scale=1.0, decoder=None, det_dec_norms=False):
         super().__init__()
         self.scale = scale
         self.decoder = None
