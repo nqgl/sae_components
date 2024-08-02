@@ -44,6 +44,19 @@ class Initializer:
                 lambda x: x * weight_scale, Tied.INIT_FN, "weight"
             )
 
+    def get_hl_initializer(self, bf, l0_target=None) -> "Initializer":
+        assert self.d_dict % bf == 0
+        new = Initializer(
+            d_data=self.d_data,
+            d_dict=self.d_dict // bf,
+            l0_target=l0_target or self.l0_target,
+        )
+        # self.tied_bias = True
+        new.tied_init = self.tied_init
+        new.tied_weights = self.tied_weights
+        new.encoder_init_weights = self.encoder_init_weights
+        return new
+
     @property
     def encoder(self) -> co.LinEncoder:
         return self._encoder.get()
