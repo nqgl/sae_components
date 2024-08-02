@@ -27,7 +27,7 @@ class Config(SweepableConfig):
     clip_grad: float | None = 1
 
 
-def sae(
+def model_fn(
     init: Initializer,
     cfg: Config,
 ):

@@ -1,4 +1,4 @@
-from saeco.architectures.anth_update import model_fn, cfg
+from saeco.architectures.anth_update import model_fn
 from saeco.sweeps import do_sweep
 from saeco.trainer.runner import TrainingRunner
 

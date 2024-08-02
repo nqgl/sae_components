@@ -1,2 +1,2 @@
-from .model import sae as model_fn
+from .model import model_fn as model_fn
 from .config import cfg, PROJECT

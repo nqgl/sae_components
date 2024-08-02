@@ -7,7 +7,7 @@ from saeco.components.features.optim_reset import (
 import torch
 import torch.nn as nn
 from torch import Tensor
-from typing import Mapping, Optional, overload
+from typing import Mapping, Optional, Protocol, overload, runtime_checkable
 
 IndexType = int | list[int]
 
@@ -106,7 +106,6 @@ class FeaturesParam:
                 self.field_handlers,
                 self.resampled,
                 self.type,
-                self.resampler_cfg,
             )
         )
 
@@ -222,3 +221,61 @@ class FeaturesParam:
                 new_directions=new_directions,
             )
             print()
+
+
+def get_resamplable_params(model: nn.Module) -> set[FeaturesParam]:
+    l: set[FeaturesParam] = set()
+    for m in model.modules():
+        if isinstance(m, HasFeatures):
+            l |= set(m.features.values())
+    d = {}
+    for fp in l:
+        if fp.param in d:
+            other = d[fp.param]
+            assert other == fp, f"{other} != {fp}"
+            raise ValueError(
+                f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just (intelligently) deduplicate and check for inconsistency"
+            )
+        d[fp.param] = fp
+    return l
+
+
+def get_resampled_params(model: nn.Module):
+    for fp in get_resamplable_params(model):
+        if fp.resampled:
+            yield fp
+
+
+# class Features:
+#     def __init__(self, features: nn.Parameter, transformation: callable):
+#         self.features = features
+#         self.transformation = transformation
+
+#     def __getitem__(self, index):
+#         return self.transformation(self.features)[index]
+
+#     def __setitem__(self, index, value):
+#         self.transformation(self.features)[index] = value
+
+#     @property
+#     def data(self):
+#         return self.transformation(self.features)
+
+#     @property
+#     def grad(self):
+#         return self.transformation(self.features.grad)
+
+
+# @runtime_checkable
+# class HasFeatures(Protocol):
+#     @property
+#     def features(self) -> Tensor: ...
+
+#     @property
+#     def features_grad(self) -> Optional[Tensor]: ...
+
+
+@runtime_checkable
+class HasFeatures(Protocol):
+    @property
+    def features(self) -> dict[str, FeaturesParam]: ...

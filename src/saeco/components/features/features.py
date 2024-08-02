@@ -1,45 +1,10 @@
 import torch
 import torch.nn as nn
 from torch import Tensor
-from saeco.components.features.features_param import FeaturesParam
+from saeco.components.features.features_param import FeaturesParam, HasFeatures
 from saeco.components.wrap import WrapsModule
 from typing import Protocol, runtime_checkable, Optional
 import saeco.core as cl
-
-
-# class Features:
-#     def __init__(self, features: nn.Parameter, transformation: callable):
-#         self.features = features
-#         self.transformation = transformation
-
-#     def __getitem__(self, index):
-#         return self.transformation(self.features)[index]
-
-#     def __setitem__(self, index, value):
-#         self.transformation(self.features)[index] = value
-
-#     @property
-#     def data(self):
-#         return self.transformation(self.features)
-
-#     @property
-#     def grad(self):
-#         return self.transformation(self.features.grad)
-
-
-# @runtime_checkable
-# class HasFeatures(Protocol):
-#     @property
-#     def features(self) -> Tensor: ...
-
-#     @property
-#     def features_grad(self) -> Optional[Tensor]: ...
-
-
-@runtime_checkable
-class HasFeatures(Protocol):
-    @property
-    def features(self) -> dict[str, FeaturesParam]: ...
 
 
 @runtime_checkable  # TODO
