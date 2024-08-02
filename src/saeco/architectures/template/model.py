@@ -22,9 +22,7 @@ from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.sweeps import SweepableConfig
 
 
-class Config(SweepableConfig):
-    pre_bias: bool = False
-    clip_grad: float | None = 1
+class Config(SweepableConfig): ...
 
 
 def sae(
@@ -35,3 +33,18 @@ def sae(
     models = [model, ...]
     losses = {...}
     return models, losses
+
+
+from saeco.sweeps import do_sweep
+from saeco.trainer.runner import TrainingRunner
+
+
+def run(cfg):
+    tr = TrainingRunner(cfg.run_cfg, model_fn=sae)
+    tr.trainer.train()
+
+
+if __name__ == "__main__":
+    do_sweep(True)
+else:
+    from .config import cfg, PROJECT

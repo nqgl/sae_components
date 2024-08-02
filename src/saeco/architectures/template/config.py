@@ -1,4 +1,4 @@
-from saeco.architectures.anth_update.model import Config
+from .model import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
