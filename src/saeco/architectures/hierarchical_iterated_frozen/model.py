@@ -31,14 +31,63 @@ from saeco.sweeps import SweepableConfig
 # do an "update optim" step when incrementing the level
 
 from saeco.sweeps import Swept
+from saeco.architectures.anth_update.model import anth_update_model, AnthUpdateConfig
+
+from saeco.architectures.topk.model import topk_sae, TopKConfig
+from pydantic import BaseModel
+from typing import Callable
+
+
+class LLModelSpec(BaseModel):
+    # name: str
+    config: type
+    model_fn: Callable
+    # site_name: str
+    write_site: str
+    read_site: str
+
+
+specs = dict(
+    topk=LLModelSpec(
+        # name="topk",
+        config=TopKConfig,
+        model_fn=topk_sae,
+        write_site="nonlinearity",
+        read_site="encoder",
+    ),
+    anth_update=LLModelSpec(
+        # name="anth_update",
+        config=AnthUpdateConfig,
+        model_fn=anth_update_model,
+        write_site="encoder",
+        read_site="encoder",
+    ),
+)
 
 
 class HSAEConfig(SweepableConfig):
     pre_bias: bool = False
     branching_factor: int = Swept(2, 4, 16)
     num_levels: int = Swept(2, 3)
-    acts_name: str = "encoder"
+    # acts_name: str = "encoder"
+    ll_model: str = "topk"
     l0_target_ratio: float = Swept(0.5, 0.75, 1)
+
+    @property
+    def ll_model_fn(self):
+        return specs[self.ll_model].model_fn
+
+    @property
+    def ll_acts_read_site(self):
+        return specs[self.ll_model].read_site
+
+    @property
+    def ll_acts_write_site(self):
+        return specs[self.ll_model].write_site
+
+    @property
+    def ll_cfg(self):
+        return specs[self.ll_model].config
 
 
 class GotActsInterrupt(Exception):
@@ -52,11 +101,11 @@ def cache_acts_interrupt_hook(cache: cl.Cache, acts):
     raise GotActsInterrupt(acts)
 
 
-def get_acts_only(model, x, cache: cl.Cache, actsname="acts"):
+def get_acts_only(model, x, cache: cl.Cache, actsname="acts", **kwargs):
     cache = cache.clone()
     cache.register_write_callback(actsname, cache_acts_interrupt_hook)
     try:
-        model(x, cache=cache)
+        model(x, cache=cache, **kwargs)
     except GotActsInterrupt as e:
         return e.acts
     raise ValueError("Model did not set acts")
@@ -109,10 +158,6 @@ class ActsGateSubstitutor(CacheProcessor):
         return cache
 
 
-from saeco.architectures.anth_update.model import model_fn as ll_model_fn
-from saeco.architectures.anth_update.model import Config as LLConfig
-
-
 class HSAELayer(cl.Module):
     def __init__(self, cfg: HSAEConfig, models, losses):
         super().__init__()
@@ -129,7 +174,7 @@ class HSAELayer(cl.Module):
         # # self.l1 = L1PenaltyScaledByDecoderNorm()
         # self.decode = init.decoder
         self.substitutor = ActsGateSubstitutor(
-            self.model, ll_acts_key=cfg.acts_name, bf=cfg.branching_factor
+            self.model, ll_acts_key=cfg.ll_acts_write_site, bf=cfg.branching_factor
         )
 
     def forward(self, x, *, cache: cl.Cache, prev_acts: torch.Tensor):
@@ -141,8 +186,8 @@ class HSAELayer(cl.Module):
 
     def get_acts(self, x, *, cache: cl.Cache, prev_acts: torch.Tensor):
         # return cache(self).encode(x)
-        acts = get_acts_only(self.model, x, cache=cache)
-        return gate_ll_acts(acts, prev_acts, self.cfg.branching_factor)
+        acts = get_acts_only(self.substitutor, x, cache=cache, prev_acts=prev_acts)
+        return acts
 
 
 from saeco.components.features.features_param import get_resamplable_params
@@ -170,7 +215,7 @@ class HSAE(cl.Module):
         self.layers = nn.ModuleList(
             [
                 HSAELayer(cfg=cfg, models=models, losses=losses)
-                for models, losses in [ll_model_fn(i, LLConfig()) for i in inits]
+                for models, losses in [cfg.ll_model_fn(i, cfg.ll_cfg()) for i in inits]
             ]
         )
         self.current_level = 0
