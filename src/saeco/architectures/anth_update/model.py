@@ -22,14 +22,14 @@ from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.sweeps import SweepableConfig
 
 
-class Config(SweepableConfig):
+class AnthUpdateConfig(SweepableConfig):
     pre_bias: bool = False
     clip_grad: float | None = 1
 
 
-def model_fn(
+def anth_update_model(
     init: Initializer,
-    cfg: Config,
+    cfg: AnthUpdateConfig,
 ):
     dec_mul_l1 = L1PenaltyScaledByDecoderNorm()
     init._decoder.const_init_bias(0)

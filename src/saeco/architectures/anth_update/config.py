@@ -1,4 +1,4 @@
-from saeco.architectures.anth_update.model import Config
+from saeco.architectures.anth_update.model import AnthUpdateConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -39,10 +39,10 @@ train_cfg = TrainConfig(
     use_lars=True,
     use_schedulefree=False,
 )
-acfg = Config(
+acfg = AnthUpdateConfig(
     pre_bias=Swept[bool](False),
 )
-runcfg = RunConfig[Config](
+runcfg = RunConfig[AnthUpdateConfig](
     train_cfg=train_cfg,
     arch_cfg=acfg,
     resampler_config=AnthResamplerConfig(
@@ -62,7 +62,7 @@ runcfg = RunConfig[Config](
 
 
 class FreqBalanceSweep(SweepableConfig):
-    run_cfg: RunConfig[Config] = runcfg
+    run_cfg: RunConfig[AnthUpdateConfig] = runcfg
     # target_l0: int = Swept(2)
     # target_l0: int = Swept(2, 3, 5, 15, 25, 35, 50)
     target_l0: int | None = None  # Swept(None, 6, 12)

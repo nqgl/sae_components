@@ -302,7 +302,9 @@ class Trainer:
         if self.t % 10 != 0 and self.t % 23000 > 1000:
             return
         # if wandb.run is not None:
-        self.log(cache.logdict())
+        self.log(
+            cache.logdict(exclude_contains=["normalization/mu", "normalization/std"])
+        )
 
     def eval_log(self, cache: Cache):
         d = {

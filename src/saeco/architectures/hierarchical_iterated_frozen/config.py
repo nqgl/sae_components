@@ -1,4 +1,4 @@
-from saeco.architectures.hierarchical_iterated_frozen.model import HSAEConfig
+from .model import HSAEConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -16,8 +16,8 @@ train_cfg = TrainConfig(
         model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
     ),
     raw_schedule_cfg=RunSchedulingConfig(
-        run_length=50_000,
-        resample_period=8_000,
+        run_length=20_000,
+        resample_period=3_000,
         targeting_post_resample_hiatus=0.05,
         targeting_post_resample_cooldown=0.2,
         lr_resample_warmup_factor=0.1,
