@@ -157,6 +157,8 @@ class FeaturesParam:
 
     @property
     def grad(self) -> Tensor:
+        if self.param.grad is None:
+            return None
         return self.features_transform(self.param.grad)
 
     def get_optim(self, optim):

@@ -40,7 +40,7 @@ from saeco.trainer.runner import TrainingRunner
 
 
 def run(cfg):
-    tr = TrainingRunner(cfg.run_cfg, model_fn=sae)
+    tr = TrainingRunner(cfg, model_fn=sae)
     tr.trainer.train()
 
 

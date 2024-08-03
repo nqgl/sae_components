@@ -25,15 +25,15 @@ def assert_wrapped(fn):
 
 
 class RunSchedulingConfig(SweepableConfig):
-    run_length: Optional[int] = 5e5
+    run_length: Optional[int] = 50_000
 
-    resample_period: int = 12_000
+    resample_period: int = 12_500
     resample_delay: int | RunFloat = 0
     resampling_finished_phase: int | RunFloat = 0.3
 
-    targeting_post_resample_cooldown: int | ResFloat = 0.25
+    targeting_post_resample_cooldown: int | ResFloat = 0.2
     # targeting_resample_cooldown_period_override: Optional[int] = None
-    targeting_post_resample_hiatus: int | ResFloat = 0.2
+    targeting_post_resample_hiatus: int | ResFloat = 0.05
     targeting_delay: int | RunFloat = 0  # could be none -> copy cooldown
     targeting_warmup_length: int | RunFloat = 0.15
 
@@ -42,8 +42,8 @@ class RunSchedulingConfig(SweepableConfig):
     lr_cooldown_length: int | RunFloat = 0.2
     lr_resample_warmup_length: int | ResFloat = 0.2
     lr_warmup_factor: float = 0.0
-    lr_cooldown_factor: float = 0.1
-    lr_resample_warmup_factor: float = 0.1
+    lr_cooldown_factor: float = 0.0
+    lr_resample_warmup_factor: float = 0.0
 
     # def model_post_init(self):
     @property

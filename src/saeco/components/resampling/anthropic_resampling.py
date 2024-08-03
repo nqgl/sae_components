@@ -70,7 +70,7 @@ from saeco.components.features.optim_reset import (
 
 class AnthResamplerConfig(ResamplerConfig):
     enc_directions: ResampleType = 0
-    dec_directions: ResampleType = 0
+    dec_directions: ResampleType = 1
     ResampleType: ClassVar = ResampleType
 
 

@@ -356,7 +356,7 @@ class Cache:
         for ex in excluded:
             if ex in vals:
                 vals.pop(ex)
-        for p in filter(lambda x: not re.search(q, x), vals.keys()):
+        for p in filter(lambda x: re.search(q, x) is not None, list(vals.keys())):
             vals.pop(p)
 
         values = {}

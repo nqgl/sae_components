@@ -118,6 +118,8 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         assert len(fps) == 1
         fp = fps[0]
         assert fp.type == "dec"
+        if fp.grad is None:
+            return
         dec_normed = fp.features / fp.features.norm(dim=-1, keepdim=True)
         grad_orth = fp.grad - (dec_normed * fp.grad).sum(-1, keepdim=True) * dec_normed
         test = grad_orth * dec_normed + fp.grad
