@@ -1,4 +1,5 @@
 import importlib
+import importlib.util
 from pathlib import Path
 import wandb
 from saeco.misc import lazyprop
@@ -8,12 +9,14 @@ class Sweeper:
     def __init__(self, path, module_name="sweepfile"):
         module_name = module_name.replace(".py", "")
         self.path = Path(path)
+        pkg = str(self.path).split("src/")[-1].replace("/", ".")
         self.module_name = module_name
+        self.full_name = f"{pkg}.{module_name}"
 
     @lazyprop
     def sweepfile(self):
         spec = importlib.util.spec_from_file_location(
-            f"{self.module_name}", str(self.path / f"{self.module_name}.py")
+            self.full_name, str(self.path / f"{self.module_name}.py")
         )
         sweepfile = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sweepfile)

@@ -7,6 +7,7 @@ from saeco.misc.exception_location_hint import locate_cache_exception
 # from beartype import beartype as typechecker
 from typeguard import typechecked as typechecker
 import inspect
+import re
 
 # @dataclass
 
@@ -255,7 +256,8 @@ class Cache:
         self._ignored_names = self._ignored_names.union(other._ignored_names)
         self._lazy_read_funcs = dlmerge(self._lazy_read_funcs, other._lazy_read_funcs)
         if other._parent is not None and self._parent is not other:
-            raise NotImplementedError("cache copy receiving _parent not yet supported")
+            pass
+            # raise NotImplementedError("cache copy receiving _parent not yet supported")
         if not other._subcaches == {} and self._parent is not other:
             raise NotImplementedError(
                 "cache copy recieving _subcaches not yet supported"
@@ -310,6 +312,10 @@ class Cache:
         return self._parent[index]
 
     def register_write_callback(self, _name: str, hook, ignore=False, nice=0):
+        """
+        hook fn: (cache, value) -> Optional[value]
+            if hook returns a value, that value will replace the input value as what gets written into the cache
+        """
         if _name.startswith("_"):
             raise AttributeError("Cannot set hook on private attribute")
         if _name not in self._write_callbacks:
@@ -338,11 +344,21 @@ class Cache:
     # def __iter__ ?
     #
 
-    def logdict(self, name="cache", excluded: List[str] = [], itemize=True):
+    def logdict(
+        self,
+        name="cache",
+        excluded: List[str] = [],
+        exclude_contains: List[str] = [],
+        itemize=True,
+    ):
         _, vals = self._getfields()
+        q = "|".join(exclude_contains)
         for ex in excluded:
             if ex in vals:
                 vals.pop(ex)
+        for p in filter(lambda x: re.search(q, x) is not None, list(vals.keys())):
+            vals.pop(p)
+
         values = {}
         for k, v in vals.items():
             if (
@@ -454,8 +470,16 @@ class SubCacher:
                 record_location += self._record
             if self._force_watch:
                 self._cache._parent._watch(record_location)
-            setattr(self._cache._parent, record_location, v)
+            return self._cache._parent._write(record_location, v)
         return v
+
+    def __getitem__(self, i):
+        return SubCacher(
+            cache=self._cache[i],
+            obj=self._obj[i],
+            record=self._record,
+            force_watch=self._force_watch,
+        )
 
 
 class CacheSpec(Cache):

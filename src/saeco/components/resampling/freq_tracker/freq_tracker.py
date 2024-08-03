@@ -1,9 +1,15 @@
 import torch
 from abc import ABC, abstractmethod
+
+import torch.nn as nn
 from saeco.core import PassThroughModule
 
 
 class FreqTracker(PassThroughModule, ABC):
+    def __init__(self):
+        super().__init__()
+        self.is_active = True
+
     @property
     @abstractmethod
     def freqs(self) -> torch.Tensor: ...
@@ -26,3 +32,15 @@ class FreqTracker(PassThroughModule, ABC):
 
     @abstractmethod
     def reset(self): ...
+
+
+def get_freq_trackers(model: nn.Module):
+    l = set()
+    for m in model.modules():
+        if isinstance(m, FreqTracker):
+            l.add(m)
+    return l
+
+
+def get_active_freq_trackers(model: nn.Module):
+    return {ft for ft in get_freq_trackers(model) if ft.is_active}

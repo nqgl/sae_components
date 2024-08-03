@@ -68,6 +68,7 @@ class Trainer:
         self.cfg: TrainConfig = cfg
         self.model = model
         self.t = 1
+        self.log_t_offset = 0
         assert optim is None
         if optim is not None:
             self.optim = optim
@@ -140,7 +141,7 @@ class Trainer:
 
     def log(self, d):
         if wandb.run is not None:
-            wandb.log(d, step=self.t)
+            wandb.log(d, step=self.t + self.log_t_offset)
 
     def coeffs(self):
         # TODO
@@ -300,8 +301,10 @@ class Trainer:
     def full_log(self, cache: Cache):
         if self.t % 10 != 0 and self.t % 23000 > 1000:
             return
-        if wandb.run is not None:
-            wandb.log(cache.logdict(), step=self.t)
+        # if wandb.run is not None:
+        self.log(
+            cache.logdict(exclude_contains=["normalization/mu", "normalization/std"])
+        )
 
     def eval_log(self, cache: Cache):
         d = {
@@ -309,8 +312,8 @@ class Trainer:
             for (k, v) in cache.logdict(name="eval").items()
             if len(k.split("/")) <= 2
         }
-        if wandb.run is not None:
-            wandb.log(d, step=self.t)
+        # if wandb.run is not None:
+        self.log(d)
 
     def save(self):
         torch.save(

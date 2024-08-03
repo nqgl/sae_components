@@ -14,11 +14,11 @@ class GlobalizedCache:
         return self._cache_to_globalize.__getattribute__(name)
 
     def _write(self, name, value):
-        self._cache_to_globalize._write(name, value)
         if self._subname is not None:
             self._cache_to_globalize._ancestor[self._subname]._write(name, value)
         else:
             self._cache_to_globalize._ancestor._write(name, value)
+        return self._cache_to_globalize._write(name, value)
 
     def __getitem__(self, name):
         return self._cache_to_globalize[name]
@@ -34,7 +34,11 @@ class Metrics(cl.Parallel):
             _support_modules=_support_modules,
             **collection_dict,
         )
-        super().reduce(lambda *l: l[0])
+
+        def metrics_reduce(*l):
+            return l[0]
+
+        super().reduce(metrics_reduce)
 
     def reduce(self, f, binary=False, takes_cache=False):
         raise RuntimeError("Metrics do not support alternative reductions")

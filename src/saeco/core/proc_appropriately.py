@@ -15,7 +15,7 @@ def proc_appropriately(module, name, x, cache: Cache, **kwargs):
             return module
         else:
             val = module(x)
-        cache._write(name, val)
+        return cache._write(name, val)
     except Exception as e:
         raise locate_cache_exception(e, cache, name)
     return val

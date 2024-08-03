@@ -91,8 +91,9 @@ def lazyprop(mth, name=None):
 
     if isinstance(mth, str):
         return lambda x: lazyprop(x, name=mth)
-
     prop = property(lazycall(mth, name=name))
+
+    name = name or f"_{mth.__name__}"
 
     def setter(self, value):
         setattr(self, name, value)

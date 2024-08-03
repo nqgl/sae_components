@@ -159,7 +159,7 @@ class L0Targeter(L0TargeterProto):
         self.target = torch.tensor([l0_target]).cuda()
         self.schedule = schedule
 
-        self.inv = False
+        self.inv = True
 
         self.i = MultiEma([0.001, 0.0003], weights=[3, 1], reweight=False)
         self.p = lfema(0.003)
@@ -234,7 +234,11 @@ class L0Targeter(L0TargeterProto):
         return self.p.value * self.p_c
 
     def update(self, l0, t):
-        pos = (torch.log(l0) - torch.log(self.target)) if self.inv else l0 - self.target
+        pos = (
+            self.target * (torch.log(l0) - torch.log(self.target))
+            if self.inv
+            else l0 - self.target
+        )  # scaling log-mode by target gives same derivative at l0=target
 
         self.p.update(pos)
         self.i.update(self.p.value)
