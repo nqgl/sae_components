@@ -244,7 +244,8 @@ class Resampler(ABC):
         # target_l1 = target_l1 or target_l0
         if indices is None:
             indices = torch.ones(self.encs[0].features.shape[0], dtype=torch.bool)
-
+        if indices.numel() == 0:
+            return
         # self.bias_freqbalance(
         #     model=model, datasrc=datasrc, indices=indices, target_l0=target_l0
         # )
