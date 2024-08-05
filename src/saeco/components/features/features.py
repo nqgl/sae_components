@@ -92,7 +92,6 @@ class NormFeatures(WrapsModule):
         assert fp.type == "dec"
         features = fp.features
         norm = torch.norm(fp.features, dim=-1, keepdim=True)
-        assert 768 not in norm.shape
         if (norm == 0).any():
             print("Norm is zero, not normalizing.")
             return
