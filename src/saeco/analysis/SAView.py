@@ -23,8 +23,6 @@ class SAView:
                     with ui.card():
                         self.key1
                         self.key2
-
-                self.cmap = "viridis"
             with ui.row():
                 with ui.card():
                     # ui.label("Target Selection")
@@ -33,7 +31,18 @@ class SAView:
                     self.new_value_target
                     self.begin_aggregation_phase
                 self.target_aggregation
-                self.update_hist
+
+                with ui.card():
+                    self.update_hist
+                    self.cmap
+
+    @UIE
+    def cmap(self, cb):
+        return ui.input(label="cmap", on_change=cb)
+
+    @cmap.value
+    def cmap(self, e):
+        return e.value
 
     @UIE
     def update_hist(self, cb):
@@ -101,6 +110,7 @@ class SAView:
         sa = SweepAnalysis(
             sweep=self.sw, xkeys=self.key1, ykeys=self.key2, target=self.target
         )
+        sa.cmap = self.cmap
         e.set_content(
             sa.heatmap(self.aggregation)
             .set_properties(
@@ -301,7 +311,7 @@ class SAView:
 
 
 # sv = SAView("sae sweeps/c6ko8r79")
-sv = SAView("sae sweeps/z0dm6lcf")
+sv = SAView("sae sweeps/dn2eo7ep")
 
 
 ui.run()
