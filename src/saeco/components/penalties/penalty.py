@@ -8,10 +8,10 @@ from abc import abstractmethod
 class Penalty(cl.PassThroughModule):
 
     def process_data(self, x, *, cache: SAECache, **kwargs):
-        cache.sparsity_penalty = self.penalty(x)
+        cache.sparsity_penalty = self.penalty(x, cache=cache)
 
     @abstractmethod
-    def penalty(self, x): ...
+    def penalty(self, x, *, cache): ...
 
 
 class LambdaPenalty(Penalty):
@@ -19,5 +19,5 @@ class LambdaPenalty(Penalty):
         super().__init__()
         self._penalty = penalty
 
-    def penalty(self, x):
+    def penalty(self, x, *, cache):
         return self._penalty(x)
