@@ -34,6 +34,7 @@ class TrainConfig(SweepableConfig):
     )
     # coeffs: Coeffs = Field(default_factory=Coeffs)
     l0_target: Optional[float] = None
+    l0_targeting_enabled: bool = True
     l0_target_adjustment_size: float = 0.0003
     use_autocast: bool = True
     batch_size: int = 4096
@@ -148,7 +149,7 @@ class Trainer:
         return self.cfg.coeffs
 
     def proc_cache_after_forward(self, cache: TrainCache):
-        if self.cfg.l0_target is not None:
+        if self.cfg.l0_targeting_enabled and self.cfg.l0_target is not None:
 
             if not self.cfg.schedule.dynamic_adjust(self.t):
                 return
