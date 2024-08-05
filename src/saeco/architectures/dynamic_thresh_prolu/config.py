@@ -33,7 +33,7 @@ cfg = RunConfig[Config](
         l0_targeting_enabled=False,
         l0_target_adjustment_size=0.0002,
         coeffs={
-            "sparsity_loss": Swept(0.0, 1e-4, 3e-4, 3e-3),
+            "sparsity_loss": Swept(0.0, 3e-4),
             "L2_loss": 1,
         },
         #
@@ -42,7 +42,7 @@ cfg = RunConfig[Config](
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
         expected_biases=2,
-        bias_reset_value=1,
+        bias_reset_value=0,
     ),
     #
     arch_cfg=Config(),

@@ -34,8 +34,15 @@ class ThreshConfig(SweepableConfig):
     stepclamp: float = 0.05
     sign_switch_decay_mul: float = 1.0
     end_scale: float = Swept(0.0, 0.03)
-    freq_ratios: float = 1  # Swept(10, 30)
-    decay_toward_mean: float = Swept(0.003, 0.001, 0.0003, 0.0001)
+    freq_ratios: None | float = Swept(1, 1.73, 3, None)
+    decay_toward_mean: float = Swept(
+        5.62e-4,
+        1.0e-3,
+        1.73e-3,
+        3.0e-3,
+        5.62e-3,
+        1e-2,
+    )  # Swept(0.003, 0.001, 0.0003, 0.0001)
 
     # min_freq_ratio: float | None = Swept(3, 10)
     # max_freq_ratio: float | None = Swept(3, 10)
@@ -175,6 +182,11 @@ def run(cfg):
     if (
         cfg.train_cfg.coeffs["sparsity_loss"] == 0
         and cfg.arch_cfg.thresh_cfg.end_scale != 0
+    ):
+        raise ValueError("skipping redundant sweep")
+    elif (
+        cfg.arch_cfg.thresh_cfg.freq_ratios is None
+        and cfg.arch_cfg.thresh_cfg.decay_toward_mean != 1e-2
     ):
         raise ValueError("skipping redundant sweep")
     tr = TrainingRunner(cfg, model_fn=sae)
