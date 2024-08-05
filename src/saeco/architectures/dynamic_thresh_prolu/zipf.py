@@ -28,20 +28,23 @@ from pydantic import Field
 class ThreshConfig(SweepableConfig):
     # eps: float = Swept(1e1)
     logeps: float = 3e-7
-    lr: float = 0.03  # Swept(0.1, 0.01)
+    lr: float = 0.01  # Swept(0.1, 0.01)
     signstep: float = 0
     warmup_len: float = 5_000
     momentum: float = 0.9
-    stepclamp: None | float = 1e-1
+    stepclamp: None | float = 0.01
     sign_switch_decay_mul: float = 1.0
-    end_scale: float = Swept(0, 0.01)
+    end_scale: float = Swept(0.0, 0.01)
     # freq_ratios: None | float = 1
-    decay_toward_mean: float = Swept(1, 6e-1, 3e-1, 1e-1, 3e-2, 1e-3)  # Swept(
+    decay_toward_mean: float = 0  # Swept(1e-2, 3e-2, 1e-3, 3e-3)  # Swept(
     # 1e-2, 1e-3, 1e-4
     # )  # Swept(0.003, 0.001, 0.0003, 0.0001)
     log_diff: bool = True
     l0_diff_mult: float = 30
-    initial_value: float = 0
+    initial_value: float = 1
+    zipf: bool = True
+    zipf_r: float = Swept(0.25, 0.5, 1.0)
+    zipf_i: int = Swept(3, 10, 100)  # Swept(1, 10, 20)
     # l0_targ_lin: bool = Swept(True, False)
 
     # min_freq_ratio: float | None = Swept(3, 10)
@@ -85,9 +88,11 @@ class Thresholder(cl.Module):
         self.nonlinearity = nn.ReLU()
         self.target = init.l0_target
         self.freqs: co.FreqTracker = None
-        self.freq_target = init.l0_target / init.d_dict
+        self.freq_target_constant = init.l0_target / init.d_dict
+        self.freq_target = self.freq_target_constant
         self.t = 0
         self.prev_cache = None
+        self.d_dict = init.d_dict
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         x = cache(self).nonlinearity(x)
@@ -97,6 +102,14 @@ class Thresholder(cl.Module):
             x,
             0,
         )
+
+    @torch.no_grad()
+    def zipf(self, i: int = 1, r: float = 1.0):
+        z = torch.arange(i, self.d_dict + i).float().pow(r).reciprocal()
+        z[self.freqs.freqs.argsort(descending=True)] = z.clone()
+        for i in range(5):
+            z = (self.freq_target_constant * z / z.mean()).clamp(0, 1)
+        return z.cuda()
 
     @property
     def features(self):
@@ -129,20 +142,26 @@ class Thresholder(cl.Module):
         avg_freq = L0 / self.thresh_values.shape[0]
         diff = torch.zeros_like(self.freqs.freqs)
         diff += self.diff(self.freqs.freqs, self.freq_target)
-        diff += self.diff(avg_freq, self.freq_target) * self.cfg.l0_diff_mult
+        if self.cfg.stepclamp:
+            diff.clamp_(-self.cfg.stepclamp, self.cfg.stepclamp)
+        diff += self.diff(avg_freq, self.freq_target_constant) * self.cfg.l0_diff_mult
         self.thresh_value_momentum.lerp_(diff, 1 - self.cfg.momentum)
         step = self.thresh_value_momentum
-        if self.cfg.stepclamp:
-            step.clamp_(-self.cfg.stepclamp, self.cfg.stepclamp)
         if self.t < self.cfg.warmup_len:
             step *= self.t / self.cfg.warmup_len
-        self.thresh_values += step * self.cfg.lr
-        self.thresh_values.relu_()
+        step = step * self.cfg.lr
+        self.thresh_values += step
         if self.cfg.decay_toward_mean:
             self.thresh_values.lerp_(
                 self.thresh_values.mean(), self.cfg.decay_toward_mean * self.cfg.lr
             )
+        self.thresh_values.relu_()
         self.t += 1
+        if self.t % 100 == 0 and self.t > 5000:
+            r = min(1, (self.t - 5000) / 2_000) * self.cfg.zipf_r
+            i = self.cfg.zipf_i
+            self.freq_target = self.zipf(i=i, r=r)
+            self.freq_target.clamp_(0, 1)
 
 
 def sae(
@@ -198,4 +217,4 @@ def run(cfg):
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    from .config import cfg, PROJECT
+    from .config_zipf import cfg, PROJECT

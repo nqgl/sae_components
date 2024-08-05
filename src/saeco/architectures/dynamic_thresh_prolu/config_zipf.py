@@ -1,4 +1,4 @@
-from .model import Config
+from .zipf import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -13,7 +13,7 @@ PROJECT = "sae sweeps"
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=DataConfig(
-            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=False))
+            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
@@ -33,7 +33,7 @@ cfg = RunConfig[Config](
         l0_targeting_enabled=False,
         l0_target_adjustment_size=0.0002,
         coeffs={
-            "sparsity_loss": Swept(1e-3),
+            "sparsity_loss": Swept(0.0, 1e-3),
             "L2_loss": 1,
         },
         #
