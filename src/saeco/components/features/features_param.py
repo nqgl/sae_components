@@ -79,6 +79,7 @@ class FeaturesParam:
         feature_index,
         fptype: Optional[FeatureParamType] = None,
         resampled=True,
+        reset_optim_on_resample=True,
     ):
         super().__init__()
         self.param = param
@@ -87,6 +88,7 @@ class FeaturesParam:
         self.resampled = resampled
         self.type: Optional[FeatureParamType] = fptype and FeatureParamType(fptype)
         self.resampler_cfg = None
+        self.reset_optim_on_resample = reset_optim_on_resample
 
     def __eq__(self, other):
         return (
@@ -203,7 +205,8 @@ class FeaturesParam:
             self.features[indices] = bias_reset_value
         else:
             self.features[indices] = new_directions
-
+        if not self.reset_optim_on_resample:
+            return
         optim_state = self.optimstate(optim)
         fields = set(optim_state.keys()) - set(self.field_handlers.skips)
 
@@ -222,7 +225,6 @@ class FeaturesParam:
                 feat_mask=indices,
                 new_directions=new_directions,
             )
-            print()
 
 
 def get_resamplable_params(model: nn.Module) -> set[FeaturesParam]:
