@@ -1,7 +1,6 @@
 import torch
 
 import torch.nn as nn
-
 import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
@@ -25,39 +24,47 @@ from pydantic import Field
 
 
 class ThreshConfig(SweepableConfig):
-    eps: float = 1e-2
-    logeps: float = 1e-6
-    lr: float = 0.1
+    # eps: float = Swept(1e1)
+    logeps: float = 3e-7
+    lr: float = Swept(1.0, 0.1)
     signstep: float = 0
     warmup_len: float = 5_000
     momentum: float = 0.9
-    stepclamp: float = 0.05
+    stepclamp: None | float = 1e-1
     sign_switch_decay_mul: float = 1.0
     end_scale: float = Swept(0.0, 0.03)
-    freq_ratios: None | float = Swept(1, 1.73, 3, None)
-    decay_toward_mean: float = Swept(
-        5.62e-4,
-        1.0e-3,
-        1.73e-3,
-        3.0e-3,
-        5.62e-3,
-        1e-2,
-    )  # Swept(0.003, 0.001, 0.0003, 0.0001)
+    freq_ratios: None | float = 1
+    decay_toward_mean: float = Swept(1e-1, 3e-2)  # Swept(
+    # 1e-2, 1e-3, 1e-4
+    # )  # Swept(0.003, 0.001, 0.0003, 0.0001)
+    log_diff: bool = Swept(True, False)
+    l0_diff_mult: float = 30
 
     # min_freq_ratio: float | None = Swept(3, 10)
     # max_freq_ratio: float | None = Swept(3, 10)
-    @property
-    def min_freq_ratio(self):
-        return self.freq_ratios
+    # @property
+    # def min_freq_ratio(self):
+    #     return self.freq_ratios
 
-    @property
-    def max_freq_ratio(self):
-        return self.freq_ratios
+    # @property
+    # def max_freq_ratio(self):
+    #     return self.freq_ratios
 
 
 class Config(SweepableConfig):
     thresh_cfg: ThreshConfig = Field(default_factory=ThreshConfig)
     pre_bias: bool = False
+    initial_value: float = Swept(0.0, 1.0)
+
+
+import math
+
+
+def log(x):
+    if isinstance(x, torch.Tensor):
+        return x.log()
+    else:
+        return math.log(x)
 
 
 class Thresholder(cl.Module):
@@ -101,6 +108,11 @@ class Thresholder(cl.Module):
         self.freqs = ft
         return ft
 
+    def diff(self, x, target) -> torch.Tensor:
+        if self.cfg.log_diff:
+            return (log(x + self.cfg.logeps) - log(target + self.cfg.logeps)) * target
+        return x - target
+
     @torch.no_grad()
     def post_step_hook(self):
         if self.freqs.freqs is None:
@@ -111,24 +123,26 @@ class Thresholder(cl.Module):
         L0 = self.prev_cache._ancestor.L0
         avg_freq = L0 / self.thresh_values.shape[0]
         diff = torch.zeros_like(self.freqs.freqs)
-        if self.cfg.min_freq_ratio is not None:
-            diff += (
-                self.freqs.freqs - self.freq_target / self.cfg.min_freq_ratio
-            ).clamp(-self.cfg.eps, 0)
-        if self.cfg.max_freq_ratio is not None:
-            diff += (
-                self.freqs.freqs - self.freq_target * self.cfg.max_freq_ratio
-            ).clamp(0, self.cfg.eps)
-        diff += (avg_freq - self.freq_target).clamp(-self.cfg.eps, self.cfg.eps)
+        # if self.cfg.min_freq_ratio is not None:  # TODO replace these with diff
+        #     diff += self.diff(
+        #         self.freqs.freqs, self.freq_target / self.cfg.min_freq_ratio
+        #     ).clamp(-self.cfg.eps, 0)
+        # if self.cfg.max_freq_ratio is not None:
+        #     diff += self.diff(
+        #         self.freqs.freqs, self.freq_target * self.cfg.max_freq_ratio
+        #     ).clamp(0, self.cfg.eps)
+        diff += self.diff(self.freqs.freqs, self.freq_target)
+        diff += self.diff(avg_freq, self.freq_target) * self.cfg.l0_diff_mult
+        # diff.clamp_(-self.cfg.eps, self.cfg.eps)
         # diff = (self.freqs.freqs - self.ft).clamp(-self.cfg.eps, self.cfg.eps)
-        diff += self.cfg.signstep * diff.sign()
-        mult = torch.where(
-            diff.sign() != -1 * self.thresh_value_momentum.sign(),
-            1,
-            self.cfg.sign_switch_decay_mul,
-        )
+        # diff += self.cfg.signstep * diff.sign()
+        # mult = torch.where(
+        #     diff.sign() != -1 * self.thresh_value_momentum.sign(),
+        #     1,
+        #     self.cfg.sign_switch_decay_mul,
+        # )
         self.thresh_value_momentum.lerp_(diff, 1 - self.cfg.momentum)
-        self.thresh_value_momentum *= mult
+        # self.thresh_value_momentum *= mult
         # self.thresh_value_momentum.lerp_(diff * self.lr, 0.1)
         step = self.thresh_value_momentum
         if self.cfg.stepclamp:
@@ -137,9 +151,10 @@ class Thresholder(cl.Module):
             step *= self.t / self.cfg.warmup_len
             self.t += 1
         self.thresh_values += step * self.cfg.lr
+        self.thresh_values.relu_()
         if self.cfg.decay_toward_mean:
             self.thresh_values.lerp_(
-                self.thresh_values.mean(), self.cfg.decay_toward_mean
+                self.thresh_values.mean(), self.cfg.decay_toward_mean * self.cfg.lr
             )
 
 

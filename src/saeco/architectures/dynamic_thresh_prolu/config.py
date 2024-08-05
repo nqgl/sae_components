@@ -33,7 +33,7 @@ cfg = RunConfig[Config](
         l0_targeting_enabled=False,
         l0_target_adjustment_size=0.0002,
         coeffs={
-            "sparsity_loss": Swept(0.0, 3e-4),
+            "sparsity_loss": Swept(3e-4, 3e-3),
             "L2_loss": 1,
         },
         #
