@@ -73,10 +73,18 @@ class Tied:
         src_param = getattr(self.target.raw, self.site)
         if self.tie_type == self.INIT:
             dst_param = getattr(other, self.site)
-            assert (dst_param.data.shape == src_param.data.shape) ^ (
+            assert (dst_param.data.shape == src_param.data.shape) or (
                 dst_param.data.shape == src_param.data.transpose(-2, -1).shape
             )
-            if dst_param.data.shape == src_param.data.shape:
+            if (dst_param.data.shape == src_param.data.shape) and (
+                dst_param.data.shape == src_param.data.transpose(-2, -1).shape
+            ):
+                print(
+                    "WARNING: Tied initialization weights are the same shape. Ambiguous whether to transpose. Defaulting to transposing"
+                )
+                dst_param.data[:] = src_param.data.transpose(-2, -1)
+
+            elif dst_param.data.shape == src_param.data.shape:
                 dst_param.data[:] = src_param.data
             else:
                 dst_param.data[:] = src_param.data.transpose(-2, -1)
