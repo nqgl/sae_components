@@ -46,7 +46,7 @@ class NormalizedIO(Normalized):
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         x_normed = self.normalizer(x, cache=cache["normalization"])
         return self._normalizer.invert(
-            self.model(x_normed, cache=cache["normalization"]),
+            self.model(x_normed, cache=cache["normalized"]),
             cache=cache["normalization"],
         )
 
@@ -54,7 +54,7 @@ class NormalizedIO(Normalized):
 class NormalizedInputs(Normalized):
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         x_normed = self.normalizer(x, cache=cache["normalization"])
-        return self.model(x_normed, cache=cache["normalization"])
+        return self.model(x_normed, cache=cache["normalized"])
 
 
 class AffineNormalizer(Normalizer):
