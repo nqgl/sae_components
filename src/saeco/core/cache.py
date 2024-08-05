@@ -361,6 +361,21 @@ class Cache:
 
         values = {}
         for k, v in vals.items():
+            if hasattr(v, "_to_loggable_form"):
+                v = v._to_loggable_list()
+                if len(v) == 1:
+                    v = v[0]
+                else:
+                    v = [
+                        i
+                        for i in v
+                        if isinstance(i, Tensor)
+                        and itemize
+                        and i.numel() == 1
+                        or isinstance(i, NumberType)
+                    ]
+                    values[k] = v
+                    continue
             if (
                 isinstance(v, Tensor)
                 and itemize
@@ -428,6 +443,10 @@ class Cache:
             del self._subcaches[k]
             del cache
         del self.__dict__
+
+    @property
+    def _is_dead(self):
+        return len(self.__dict__) == 0
 
     def __call__(self, obj: T, force_watch=False) -> "SubCacher | T":
         # the typing is not technically correct here

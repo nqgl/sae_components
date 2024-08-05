@@ -3,6 +3,44 @@ import saeco.core as cl
 from saeco.components import Lambda
 
 
+# class MetricsList:
+#     def __init__(self):
+#         self.metrics = []
+#         self.names = []
+
+#     def add(self, value, cache):
+#         self.metrics.append(value)
+#         self.names.append(cache._name)
+
+#     def _to_loggable_list(self):
+#         return self.metrics
+
+
+# class GlobalizedCache:
+#     def __init__(self, cache, subname=None):
+#         self._cache_to_globalize = cache
+#         self._subname = subname
+
+#     def __getattribute__(self, name: str):
+#         if name in ["_cache_to_globalize", "_write", "_subname"]:
+#             return super().__getattribute__(name)
+#         return self._cache_to_globalize.__getattribute__(name)
+
+#     def _write(self, name, value):
+#         if self._subname is not None:
+#             gc: cl.Cache = self._cache_to_globalize._ancestor[self._subname]
+#         else:
+#             gc: cl.Cache = self._cache_to_globalize._ancestor
+#         if gc._watching(name):
+#             if not gc._has(name):
+#                 gc._write(name, MetricsList())
+#             getattr(gc, name).add(value=value, cache=self._cache_to_globalize)
+#         return self._cache_to_globalize._write(name, value)
+
+#     def __getitem__(self, name):
+#         return self._cache_to_globalize[name]
+
+
 class GlobalizedCache:
     def __init__(self, cache, subname=None):
         self._cache_to_globalize = cache
