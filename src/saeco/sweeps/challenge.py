@@ -119,15 +119,25 @@ tr = TrainingRunner(cfg, model_fn=model_fn)
 data = tr.buf
 model = tr.trainable
 import torch
+import tqdm
 
 optim = torch.optim.Adam(model.parameters(), lr=1e-3)
-for i in range(1000):
+for i in tqdm.trange(800):
     x = next(data)
     y = model(x)
     l = (y - x).pow(2).mean()
     l.backward()
     optim.step()
     optim.zero_grad()
+with torch.no_grad():
+    q = 0
+    print("disk + sum task")
+
+    for i in tqdm.trange(1500):
+        x = next(data)
+        q += x
+
+print("done")
 
 
 def run(cfg):
