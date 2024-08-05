@@ -67,11 +67,12 @@ specs = dict(
 
 class HSAEConfig(SweepableConfig):
     pre_bias: bool = False
-    branching_factor: int = Swept(2, 4, 16)
-    num_levels: int = Swept(2, 3)
+    branching_factor: int = 2
+    num_levels: int = 11
     # acts_name: str = "encoder"
     ll_model: str = "topk"
-    l0_target_ratio: float = Swept(0.5, 0.75, 1)
+    l0_target_ratio: float = 1
+    residual: bool = True
 
     @property
     def ll_model_fn(self):
@@ -118,6 +119,12 @@ def hl2ll(hl, bf):
     return einops.repeat(hl, "b i -> b (i bf)", bf=bf)
 
 
+def indexmixed(x, il, bf):
+    # note to self for future:
+    # hl2ll([1,2,3], 2) = [1, 1, 2, 2, 3, 3]
+    bfs = [bf**e for e in range(len(il))]
+
+
 def gate_ll_acts(acts, hl_acts, bf):
     if hl_acts is None:
         return acts
@@ -131,7 +138,7 @@ class CacheProcessor(cl.Module):
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         cache = self.preprocess_cache(cache, **kwargs)
-        out = self.model(x, cache=cache)
+        out = cache(self).model(x)
         self.postprocess_cache(cache, **kwargs)
         return out
 
@@ -148,11 +155,14 @@ class ActsGateSubstitutor(CacheProcessor):
         self.bf = bf
 
     def preprocess_cache(self, cache: cl.Cache, **kwargs):
-        def process_acts(cache, acts):
+        def process_acts(subcache, acts):
             if kwargs[self.hl_acts_key] is None:
+                cache.gated_acts = acts
                 return None
             cache.natural_acts = acts
-            return gate_ll_acts(acts, kwargs[self.hl_acts_key], bf=self.bf)
+            gated_acts = gate_ll_acts(acts, kwargs[self.hl_acts_key], bf=self.bf)
+            cache.gated_acts = gated_acts
+            return gated_acts
 
         cache.register_write_callback(self.ll_acts_key, process_acts)
         return cache
@@ -196,15 +206,20 @@ from saeco.components.features.features_param import get_resamplable_params
 class HSAE(cl.Module):
     def __init__(self, init: Initializer, cfg: HSAEConfig):
         super().__init__()
+        self.cfg = cfg
+        self.l0s = [
+            init.l0_target * cfg.l0_target_ratio**i for i in range(cfg.num_levels)
+        ]
+        if self.cfg.residual:
+            self.l0s = [init.l0_target * l0 / sum(self.l0s) for l0 in self.l0s]
+        assert not any([l0 < 1 for l0 in self.l0s])
         inits = [
             init.get_hl_initializer(
                 cfg.branching_factor**i,
-                l0_target=init.l0_target * (cfg.l0_target_ratio**i),
+                l0_target=self.l0s[i],
             )
             for i in reversed(range(cfg.num_levels))
         ]
-        self.l0s = [i.l0_target for i in inits]
-        assert not any([l0 < 1 for l0 in self.l0s])
         # self.all_models = []
         # self.all_losses = []
         # for i in inits:
@@ -222,10 +237,22 @@ class HSAE(cl.Module):
         self.increment_level(0)
 
     def forward(self, x, *, cache: cl.Cache):
-        acts = None
-        for i in range(self.current_level):
-            acts = cache(self).layers[i].get_acts(x, prev_acts=acts)
-        return cache(self).layers[self.current_level](x, prev_acts=acts)
+        if not self.cfg.residual:
+            acts = None
+            for i in range(self.current_level):
+                acts = cache(self).layers[i].get_acts(x, prev_acts=acts)
+            return cache(self).layers[self.current_level](x, prev_acts=acts)
+        else:
+            # cache = cache.clone()
+            cache.gated_acts = ...
+            acts = None
+            x_pred = 0
+            for i in range(self.current_level + 1):
+                cc = cache.clone() if i < self.current_level else cache
+
+                x_pred += cc(self).layers[i](x - x_pred, prev_acts=acts)
+                acts = cc(self).layers[i]._cache["substitutor"].gated_acts
+            return x_pred
 
     @property
     def losses(self):
@@ -287,6 +314,7 @@ def run(cfg):
     hsae = HSAE(init, cfg.arch_cfg)
     prev_t = 0
     initial_sparsity = cfg.train_cfg.coeffs["sparsity_loss"]
+    m = 27 / 0.9
     while True:
         cfg.train_cfg.l0_target = hsae.current_l0_target
         cfg.train_cfg.coeffs["sparsity_loss"] = initial_sparsity
