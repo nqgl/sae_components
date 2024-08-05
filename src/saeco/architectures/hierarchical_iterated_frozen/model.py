@@ -200,7 +200,7 @@ class HSAELayer(cl.Module):
         return acts
 
 
-from saeco.components.features.features_param import get_resamplable_params
+from saeco.components.features.features_param import get_featuresparams
 
 
 class HSAE(cl.Module):
@@ -275,13 +275,13 @@ class HSAE(cl.Module):
 
             for name, group in layer.named_parameters():
                 group.requires_grad = False
-            for param in get_resamplable_params(layer):
+            for param in get_featuresparams(layer):
                 param.resampled = False
             for ft in get_freq_trackers(layer):
                 ft.is_active = False
         for name, group in self.layers[n].named_parameters():
             group.requires_grad = True
-        for param in get_resamplable_params(self.layers[n]):
+        for param in get_featuresparams(self.layers[n]):
             param.resampled = True
         for ft in get_freq_trackers(self.layers[n]):
             ft.is_active = True

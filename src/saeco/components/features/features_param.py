@@ -227,7 +227,7 @@ class FeaturesParam:
             )
 
 
-def get_resamplable_params(model: nn.Module) -> set[FeaturesParam]:
+def get_featuresparams(model: nn.Module) -> set[FeaturesParam]:
     l: set[FeaturesParam] = set()
     for m in model.modules():
         if isinstance(m, HasFeatures):
@@ -245,7 +245,7 @@ def get_resamplable_params(model: nn.Module) -> set[FeaturesParam]:
 
 
 def get_resampled_params(model: nn.Module):
-    for fp in get_resamplable_params(model):
+    for fp in get_featuresparams(model):
         if fp.resampled:
             yield fp
 
