@@ -29,9 +29,27 @@ def sae(
     init: Initializer,
     cfg: Config,
 ):
-    model = ...
-    models = [model, ...]
-    losses = {...}
+    model = Seq(
+        encoder=Seq(
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            lin=init.encoder,
+            nonlinearity=nn.ReLU(),
+        ),
+        freqs=EMAFreqTracker(),
+        metrics=co.metrics.ActMetrics(),
+        null_penalty=co.L1Penalty(),  # "no sparsity penalty"
+        decoder=ft.OrthogonalizeFeatureGrads(
+            ft.NormFeatures(
+                init.decoder,
+            ),
+        ),
+    )
+
+    models = [model]
+    losses = dict(
+        L2_loss=L2Loss(model),
+        sparsity_loss=SparsityPenaltyLoss(model),
+    )
     return models, losses
 
 
