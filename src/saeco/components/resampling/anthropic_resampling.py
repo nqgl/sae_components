@@ -19,12 +19,9 @@ def get_modules_io(model: nn.Module, modules: list[nn.Module], data):
     inputs = {m: [] for m in modules}
     outputs = {m: [] for m in modules}
 
-    # def gethook(k):
     def hook(module, args, output):
         inputs[module].append(args)
         outputs[module].append(output)
-
-        # return hook
 
     handles = []
     for module in modules:
@@ -92,7 +89,10 @@ class AnthResampler(Resampler):
             data = next(data_source).float()
             res = get_modules_io(model, modules=[enc_module], data=data)
             enc_inputs_list = res.inputs[enc_module]
-            assert len(enc_inputs_list) == 1
+            if len(enc_inputs_list) != 1:
+                for i in range(len(enc_inputs_list) - 1):
+                    if torch.any(enc_inputs_list[i][0] != enc_inputs_list[i + 1][0]):
+                        raise ValueError("Expected one input")
             enc_input = enc_inputs_list[0][0]
             error = data - res.model_out
             assert error.ndim == 2
