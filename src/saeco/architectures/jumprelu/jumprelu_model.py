@@ -20,10 +20,8 @@ from saeco.core import Seq
 from saeco.misc import useif
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.sweeps import SweepableConfig
-from saeco.architectures.jumprelu.jumprelu_fn import HStep, JumpReLU, rect, L0Penalty
-
-
-kernels = dict(rect=rect)
+from saeco.architectures.jumprelu.jumprelu_fn import HStep, JumpReLU, L0Penalty
+from saeco.architectures.jumprelu.kernels_fns import kernels
 
 
 class Config(SweepableConfig):

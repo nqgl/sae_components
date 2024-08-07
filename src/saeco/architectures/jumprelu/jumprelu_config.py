@@ -17,19 +17,19 @@ cfg = RunConfig[Config](
         ),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
-            resample_period=Swept(9_000, 50_000),
+            resample_period=12_500,
         ),
         #
         batch_size=4096,
-        optim=Swept("Adam", "ScheduleFree"),
-        lr=Swept(1e-3, 3e-4, 1e-4),
+        optim="Adam",
+        lr=Swept(1e-3, 7e-4),
         betas=(0.9, 0.999),
         #
         use_autocast=True,
-        use_lars=Swept(True, False),
+        use_lars=True,
         #
         l0_target=25,
-        l0_target_adjustment_size=0.0001,
+        l0_target_adjustment_size=0.0002,
         coeffs={
             "sparsity_loss": 3e-3,
             "L2_loss": 1,
@@ -43,7 +43,8 @@ cfg = RunConfig[Config](
     #
     arch_cfg=Config(
         pre_bias=False,
-        eps=Swept(3.0, 1.0, 3e-1, 1e-1),
-        thresh_initial_value=0,
+        eps=Swept(1.0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3),
+        thresh_initial_value=1,
+        kernel=Swept("rect", "tri", "exp"),
     ),
 )

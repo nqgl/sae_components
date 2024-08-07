@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from saeco.components.penalties import Penalty
+from saeco.architectures.jumprelu.kernels_fns import rect
 
 # import saeco.core as cl
 
@@ -38,10 +39,6 @@ class HStep(nn.Module):
 
     def forward(self, x):
         return H_z_minus_thresh_fn.apply(x, self.thresh, self.kernel, self.eps)
-
-
-def rect(x: torch.Tensor) -> torch.Tensor:
-    return x.abs() < 0.5
 
 
 class JumpReLU_fn(torch.autograd.Function):
