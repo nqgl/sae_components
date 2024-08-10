@@ -36,15 +36,17 @@ class ThreshConfig(SweepableConfig):
     sign_switch_decay_mul: float = 1.0
     end_scale: float = Swept(0.0, 0.01)
     # freq_ratios: None | float = 1
-    decay_toward_mean: float = 0  # Swept(1e-2, 3e-2, 1e-3, 3e-3)  # Swept(
+    decay_toward_mean: float = Swept(
+        0.0, 0.01, 0.1
+    )  # Swept(1e-2, 3e-2, 1e-3, 3e-3)  # Swept(
     # 1e-2, 1e-3, 1e-4
     # )  # Swept(0.003, 0.001, 0.0003, 0.0001)
     log_diff: bool = True
     l0_diff_mult: float = 30
-    initial_value: float = 1
+    initial_value: float = 0.5
     zipf: bool = True
-    zipf_r: float = Swept(0.25, 0.5, 1.0)
-    zipf_i: int = Swept(3, 10, 100)  # Swept(1, 10, 20)
+    zipf_r: float = Swept(0.25, 0.5)
+    zipf_i: int = Swept(3, 30)  # Swept(1, 10, 20)
     # l0_targ_lin: bool = Swept(True, False)
 
     # min_freq_ratio: float | None = Swept(3, 10)
@@ -141,7 +143,18 @@ class Thresholder(cl.Module):
         L0 = self.prev_cache._ancestor.L0
         avg_freq = L0 / self.thresh_values.shape[0]
         diff = torch.zeros_like(self.freqs.freqs)
-        diff += self.diff(self.freqs.freqs, self.freq_target)
+        zipf_diff = self.diff(self.freqs.freqs, self.freq_target)
+        uni_diff = self.diff(self.freqs.freqs, self.freq_target_constant)
+        zdsign = zipf_diff.sign()
+        diff = torch.where(
+            zdsign == uni_diff.sign(),
+            zdsign
+            * torch.min(
+                zipf_diff.abs(),
+                uni_diff.abs(),
+            ),
+            0,
+        )
         if self.cfg.stepclamp:
             diff.clamp_(-self.cfg.stepclamp, self.cfg.stepclamp)
         diff += self.diff(avg_freq, self.freq_target_constant) * self.cfg.l0_diff_mult
@@ -157,8 +170,8 @@ class Thresholder(cl.Module):
             )
         self.thresh_values.relu_()
         self.t += 1
-        if self.t % 100 == 0 and self.t > 5000:
-            r = min(1, (self.t - 5000) / 2_000) * self.cfg.zipf_r
+        if self.t % 100 == 0 and self.t > 1000:
+            r = min(1, (self.t) / 2_000) * self.cfg.zipf_r
             i = self.cfg.zipf_i
             self.freq_target = self.zipf(i=i, r=r)
             self.freq_target.clamp_(0, 1)
@@ -178,7 +191,7 @@ def sae(
         freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
         metrics=co.metrics.ActMetrics(),
         penalty=LinearDecayL1Penalty(
-            begin=5_000, end=25_000, end_scale=cfg.thresh_cfg.end_scale
+            begin=0, end=5_000, end_scale=cfg.thresh_cfg.end_scale
         ),
         decoder=ft.OrthogonalizeFeatureGrads(
             ft.NormFeatures(

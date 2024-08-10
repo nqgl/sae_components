@@ -23,7 +23,7 @@ cfg = RunConfig[Config](
         #
         batch_size=4096,
         optim="Adam",
-        lr=Swept(3e-4),
+        lr=Swept(1e-3, 3e-4),
         betas=(0.9, 0.999),
         #
         use_autocast=True,
@@ -33,7 +33,7 @@ cfg = RunConfig[Config](
         l0_targeting_enabled=False,
         l0_target_adjustment_size=0.0002,
         coeffs={
-            "sparsity_loss": Swept(0.0, 1e-3),
+            "sparsity_loss": Swept(1e-3),
             "L2_loss": 1,
         },
         #

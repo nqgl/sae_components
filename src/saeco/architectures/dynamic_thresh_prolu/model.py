@@ -36,7 +36,9 @@ class ThreshConfig(SweepableConfig):
     sign_switch_decay_mul: float = 1.0
     end_scale: float = Swept(0, 0.01)
     # freq_ratios: None | float = 1
-    decay_toward_mean: float = Swept(1, 6e-1, 3e-1, 1e-1, 3e-2, 1e-3)  # Swept(
+    decay_toward_mean: float = Swept(
+        1.5, 2.0, 1, 0.7, 3
+    )  ###Swept(1, 6e-1, 3e-1, 1e-1, 3e-2, 1e-3)  # Swept(
     # 1e-2, 1e-3, 1e-4
     # )  # Swept(0.003, 0.001, 0.0003, 0.0001)
     log_diff: bool = True
