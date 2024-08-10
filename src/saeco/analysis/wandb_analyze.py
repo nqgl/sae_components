@@ -18,7 +18,10 @@ import numpy as np
 import polars as pl
 import seaborn as sns
 import matplotlib.pyplot as plt
+from saeco.analysis.run_history import RunHistories
 
+r: Run
+histories = RunHistories()
 # wandb.login(key=os.environ["WANDB_API_KEY"])
 api = wandb.Api()
 
@@ -201,6 +204,7 @@ class Sweep:
     def __init__(self, sweep_path):
         self.sweep_path = sweep_path
         self.sweep: wapublic.Sweep = api.sweep(sweep_path)
+
         self.full_cfg_key = "full_cfg"
         self.value_targets = [ValueTarget("cache/L2_loss")]
         # self.sweept_fields: dict[list[str], dict[Any, set[Run]]] = {}
@@ -233,7 +237,7 @@ class Sweep:
                         swept_values[sk][v] = set()
                     swept_values[sk][v].add(run)
 
-        for run in self.sweep.runs:
+        for run in self.runs:
             search_prefix(run.config, run)
         old_keys = list(swept_values.keys())
         for key in old_keys:
@@ -242,7 +246,7 @@ class Sweep:
         return swept_values
 
     @property
-    def runs(self):
+    def runs(self) -> list[wapublic.Run]:
         return self.sweep.runs
 
     @property
@@ -312,8 +316,11 @@ class Sweep:
     def _get_target_aggregation_fn(self, target, aggregation_fn, min_step):
         def apply_aggregation(row):
             history = row["history"][target]
-            history = history[history["_step"] >= min_step]
-            return aggregation_fn(history[target])
+            try:
+                history = history[history["_step"] >= min_step]
+                return aggregation_fn(history[target])
+            except:
+                return np.nan
 
         return apply_aggregation
 
@@ -321,6 +328,7 @@ class Sweep:
     def add_target_history(self):
         print()
         # self.add_target_history_async()
+        histories.get_runs(self.runs, [vt.key for vt in self.value_targets])
         self.df["history"] = self.df.apply(self._get_target_history, axis=1)
         print()
 
@@ -374,7 +382,7 @@ class Sweep:
             run: Run
 
             # th = run.scan_history(keys=[key, "_step"], min_step=45_000)
-            th = run.history(keys=[key, "_step"], samples=2000)
+            th = histories.load(run, key)
 
             hist = th
 
