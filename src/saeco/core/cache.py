@@ -352,12 +352,15 @@ class Cache:
         itemize=True,
     ):
         _, vals = self._getfields()
-        q = "|".join(exclude_contains)
         for ex in excluded:
             if ex in vals:
                 vals.pop(ex)
-        for p in filter(lambda x: re.search(q, x) is not None, list(vals.keys())):
-            vals.pop(p)
+        if exclude_contains:
+            exclude_query = "|".join(exclude_contains)
+            for p in filter(
+                lambda x: re.search(exclude_query, x) is not None, list(vals.keys())
+            ):
+                vals.pop(p)
 
         values = {}
         for k, v in vals.items():
