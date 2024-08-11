@@ -21,6 +21,7 @@ from pydantic import Field
 from .l0targeter import L0Targeter
 from saeco.misc import lazycall
 from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
+from contextlib import contextmanager
 
 
 v = OptimConfig
@@ -44,6 +45,7 @@ class TrainConfig(SweepableConfig):
     kwargs: dict = Field(default_factory=dict)
     optim: str = "RAdam"
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
+    use_averaged_model: bool = True
 
     @property
     @lazycall
@@ -67,7 +69,7 @@ class Trainer:
         optim: torch.optim.Optimizer | None = None,
     ):
         self.cfg: TrainConfig = cfg
-        self.model = model
+        self.trainable = model
         self.t = 1
         self.log_t_offset = 0
         assert optim is None
@@ -75,17 +77,23 @@ class Trainer:
             self.optim = optim
         else:
             if self.cfg.use_schedulefree:
-                self.optim = AdamWScheduleFree(
-                    self.model.parameters(),
+                opt_kwargs = dict(
                     lr=cfg.lr,
                     betas=cfg.betas,
                     warmup_steps=cfg.schedule.lr_warmup_length,
                 )
+                self.optim = AdamWScheduleFree(
+                    self.trainable.param_groups(opt_kwargs),
+                    **opt_kwargs,
+                )
             else:
-                self.optim = get_optim_cls(self.cfg.optim)(
-                    self.model.parameters(),
+                opt_kwargs = dict(
                     lr=cfg.lr,
                     betas=cfg.betas,
+                )
+                self.optim = get_optim_cls(self.cfg.optim)(
+                    self.trainable.param_groups(opt_kwargs),
+                    **opt_kwargs,
                 )
 
         self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -110,6 +118,13 @@ class Trainer:
             l0_target=self.cfg.l0_target,
             schedule=self.cfg.schedule,
         )
+        if self.cfg.use_averaged_model:
+            self.averaged_model: torch.optim.swa_utils.AveragedModel = (
+                torch.optim.swa_utils.AveragedModel(
+                    model,
+                    multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.999),
+                )
+            )
 
     def get_lr_lambda(self):
         if self.cfg.use_schedulefree:
@@ -135,10 +150,10 @@ class Trainer:
         return self.cfg.data_cfg.model_cfg.model
 
     def post_backward(self):
-        do_post_backward(self.model)
+        do_post_backward(self.trainable)
 
     def post_step(self):
-        do_post_step(self.model)
+        do_post_step(self.trainable)
 
     def log(self, d):
         if wandb.run is not None:
@@ -147,6 +162,18 @@ class Trainer:
     def coeffs(self):
         # TODO
         return self.cfg.coeffs
+
+    @contextmanager
+    def evaluate(self):
+        self.trainable.eval()
+        if self.cfg.use_averaged_model:
+            self.averaged_model.eval()
+        try:
+            yield
+        finally:
+            self.trainable.train()
+            if self.cfg.use_averaged_model:
+                self.averaged_model.train()
 
     def proc_cache_after_forward(self, cache: TrainCache):
         if self.cfg.l0_targeting_enabled and self.cfg.l0_target is not None:
@@ -169,7 +196,7 @@ class Trainer:
 
     def get_cache(self):
         c = TrainCache()
-        c._watch(self.model.get_losses_and_metrics_names())
+        c._watch(self.trainable.get_losses_and_metrics_names())
         c.trainer = ...
         c.trainer = self
         c.trainstep = self.t
@@ -180,13 +207,13 @@ class Trainer:
     def train(self, buffer=None, num_steps=None):
         if buffer is None:
             buffer = self.get_databuffer(num_workers=0)
-        if not self.model.normalizer.primed:
-            self.model.normalizer.prime_normalizer(buffer)
+        if not self.trainable.normalizer.primed:
+            self.trainable.normalizer.prime_normalizer(buffer)
         self.post_step()
         if wandb.run is None:
             wandb.init(
                 **self.cfg.wandb_cfg,
-                config={"model": repr(self.model), "cfg": self.cfg},
+                config={"model": repr(self.trainable), "cfg": self.cfg},
                 reinit=True,
             )
         if self.namestuff is not None:
@@ -225,17 +252,19 @@ class Trainer:
             del cache.forward_reuse_dict
             cache.destroy_children()
             del cache
+            if self.cfg.use_averaged_model:
+                self.averaged_model.update_parameters(self.trainable)
             if self.t % self.intermittent_metric_freq == 0:
-                self.model.eval()
+                self.trainable.eval()
                 self.do_intermittent_metrics()
-                self.model.train()
+                self.trainable.train()
             if self.t % self.eval_step_freq == 0:
-                self.model.eval()
+                self.trainable.eval()
                 self.eval_step(x)
-                self.model.train()
+                self.trainable.train()
             if self.cfg.schedule.is_resample_step(self.t):
-                self.model.resampler.resample(
-                    data_source=buffer, optimizer=self.optim, model=self.model
+                self.trainable.resampler.resample(
+                    data_source=buffer, optimizer=self.optim, model=self.trainable
                 )
                 self.post_step()
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
@@ -244,10 +273,10 @@ class Trainer:
     def trainstep(self, x, cache: Cache):
         if self.cfg.use_autocast:
             with torch.autocast(device_type="cuda"):
-                loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+                loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
                 self.proc_cache_after_forward(cache)
         else:
-            loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+            loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
             self.proc_cache_after_forward(cache)
 
         if self.cfg.use_autocast:
@@ -265,12 +294,16 @@ class Trainer:
         self.post_step()
 
     def eval_step(self, x):
+        if self.cfg.use_averaged_model:
+            trainable = self.averaged_model.module
+        else:
+            trainable = self.trainable
         cache = self.get_cache()
         if self.cfg.use_autocast:
             with torch.autocast(device_type="cuda"):
-                loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+                loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
         else:
-            loss = self.model.loss(x, cache=cache, coeffs=self.coeffs())
+            loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
         self.eval_log(cache)
 
     def do_intermittent_metrics(self, buffer=None):
@@ -282,14 +315,14 @@ class Trainer:
             cache = self.get_cache()
             cache.scale = ...
             cache.scale = True
-            return self.model(x, cache=cache)
+            return self.trainable(x, cache=cache)
 
         self.log(
             {
                 (label + k): v
                 for k, v in get_recons_loss(
                     self.subject_model,
-                    run_rescaled_model if dumb_rescaled else self.model,
+                    run_rescaled_model if dumb_rescaled else self.trainable,
                     buffer=None,
                     all_tokens=self.llm_val_tokens,
                     cfg=self.cfg.data_cfg.model_cfg.acts_cfg,

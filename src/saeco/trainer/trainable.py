@@ -104,4 +104,36 @@ class Trainable(cl.Module):
         return out
 
     def get_losses_and_metrics_names(self) -> list[str]:
-        return list(self.losses.keys()) + list(self.metrics.keys())
+        return (
+            list(self.losses.keys())
+            + list(self.metrics.keys())
+            + ["below_3e-5", "below_1e-5", "below_3e-6", "below_1e-6"]
+        )
+
+    def param_groups(self, optim_kwargs: dict) -> list[dict]:
+        from saeco.components.features.param_metadata import (
+            ParamMetadata,
+            MetaDataParam,
+        )
+
+        normal = []
+        has_metadata = {}
+        for name, param in self.named_parameters():
+            if isinstance(param, MetaDataParam):
+                md = param._param_metadata
+                if not md.has_param_group_values():
+                    normal.append(param)
+                    continue
+                key = tuple(md.param_group_values(optim_kwargs).items())
+                if key not in has_metadata:
+                    has_metadata[key] = []
+                has_metadata[key].append(param)
+            else:
+                normal.append(param)
+        groups = [{"name": "normal", "params": normal}]
+        for kvs, params in has_metadata.items():
+            groups.append({"params": params, **{k: v for k, v in kvs}})
+        assert sum(len(g["params"]) for g in groups) == len(
+            list(self.parameters())
+        ), f"param_groups did not cover all parameters"
+        return groups
