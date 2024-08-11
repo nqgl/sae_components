@@ -26,6 +26,12 @@ class FreqTracker(PassThroughModule, ABC):
         if self.training:
             freqs = (acts != 0).float().mean(dim=0)
             self.update_freqs(freqs, cache=cache)
+        if cache._ancestor.has.trainstep:
+            if cache._ancestor.trainstep % 100 == 0:
+                cache._write("below_3e-5", (self.freqs < 3e-5).sum().item())
+                cache._write("below_1e-5", (self.freqs < 1e-5).sum().item())
+                cache._write("below_3e-6", (self.freqs < 3e-6).sum().item())
+                cache._write("below_1e-6", (self.freqs < 1e-6).sum().item())
 
     @abstractmethod
     def update_freqs(self, freqs: torch.Tensor, cache): ...
