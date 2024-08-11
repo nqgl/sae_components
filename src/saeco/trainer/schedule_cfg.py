@@ -130,7 +130,7 @@ class RunSchedulingConfig(SweepableConfig):
             return -1
         if self.resample_delay == 0 and t < self.resample_period:
             return -1
-        if t - self.resample_delay + self.resample_period > self.resample_end:
+        if t > self.resample_end:
             return -1
         return (t - self.resample_delay) % self.resample_period
 
