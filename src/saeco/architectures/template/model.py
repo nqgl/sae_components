@@ -38,7 +38,7 @@ def sae(
         ),
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),
-        penalty=co.L1Penalty(),  # "no sparsity penalty"
+        penalty=co.L1Penalty(),
         decoder=ft.OrthogonalizeFeatureGrads(
             ft.NormFeatures(
                 init.decoder,
