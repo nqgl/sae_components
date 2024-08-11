@@ -292,7 +292,7 @@ class L0Targeter(L0TargeterProto):
                 step.clamp(-1, 1)
                 + self.P.clamp(-1, 1)
                 + self.I.clamp(-1, 1)
-                + self.D.clamp(-1, 1) * 1.1
+                + self.D.clamp(-2, 2)
                 + self.A.clamp(-1, 1)
             ).item()
 
