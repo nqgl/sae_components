@@ -67,16 +67,12 @@ specs = dict(
 
 class HSAEConfig(SweepableConfig):
     pre_bias: bool = False
-    branching_factor: int = 8
-    num_levels: int = 3
+    branching_factor: int = 2
+    num_levels: int = 11
     # acts_name: str = "encoder"
     ll_model: str = "topk"
     l0_target_ratio: float = 1
     residual: bool = True
-
-    @property
-    def ll_spec(self) -> LLModelSpec:
-        return specs[self.ll_model]
 
     @property
     def ll_model_fn(self):

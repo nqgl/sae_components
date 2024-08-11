@@ -86,3 +86,6 @@ class Initializer:
 
     def data_bias(self):
         return self.bias(self.d_data)
+
+
+from saeco.components.features.param_metadata import ParamMetadata

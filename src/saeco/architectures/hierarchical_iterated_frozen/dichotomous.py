@@ -67,16 +67,12 @@ specs = dict(
 
 class HSAEConfig(SweepableConfig):
     pre_bias: bool = False
-    branching_factor: int = 8
-    num_levels: int = 3
+    branching_factor: int = 2
+    num_levels: int = 11
     # acts_name: str = "encoder"
     ll_model: str = "topk"
     l0_target_ratio: float = 1
     residual: bool = True
-
-    @property
-    def ll_spec(self) -> LLModelSpec:
-        return specs[self.ll_model]
 
     @property
     def ll_model_fn(self):
@@ -121,12 +117,6 @@ class HSAELayerConfig(SweepableConfig): ...
 
 def hl2ll(hl, bf):
     return einops.repeat(hl, "b i -> b (i bf)", bf=bf)
-
-
-def indexmixed(x, il, bf):
-    # note to self for future:
-    # hl2ll([1,2,3], 2) = [1, 1, 2, 2, 3, 3]
-    bfs = [bf**e for e in range(len(il))]
 
 
 def gate_ll_acts(acts, hl_acts, bf):
@@ -280,7 +270,7 @@ class HSAE(cl.Module):
             for name, group in layer.named_parameters():
                 group.requires_grad = False
             for param in get_featuresparams(layer):
-                param.resampled = False  # TODO fix this behavior, this does NOT work how you would want it to
+                param.resampled = False
             for ft in get_freq_trackers(layer):
                 ft.is_active = False
         for name, group in self.layers[n].named_parameters():
@@ -330,6 +320,13 @@ def run(cfg):
         tr._losses = hsae.losses
 
         trainer = tr.trainer
+        tr.resampler.assign_model(tr.trainable)
+        tr.resampler.wholistic_freqbalance(
+            model=tr.trainable,
+            datasrc=tr.buf,
+            target_l0=2,
+            target_l1=(m := m * 0.9),
+        )
         trainer.log_t_offset = prev_t
         print("start next")
         trainer.train()

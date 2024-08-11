@@ -67,16 +67,12 @@ specs = dict(
 
 class HSAEConfig(SweepableConfig):
     pre_bias: bool = False
-    branching_factor: int = 8
-    num_levels: int = 3
+    branching_factor: int = 2
+    num_levels: int = 11
     # acts_name: str = "encoder"
     ll_model: str = "topk"
     l0_target_ratio: float = 1
     residual: bool = True
-
-    @property
-    def ll_spec(self) -> LLModelSpec:
-        return specs[self.ll_model]
 
     @property
     def ll_model_fn(self):
@@ -172,7 +168,7 @@ class ActsGateSubstitutor(CacheProcessor):
         return cache
 
 
-class HSAELayer(cl.Module):
+class FreezableLayer(cl.Module):
     def __init__(self, cfg: HSAEConfig, models, losses):
         super().__init__()
         self.cfg = cfg
@@ -187,16 +183,13 @@ class HSAELayer(cl.Module):
         self.losses = losses
         # # self.l1 = L1PenaltyScaledByDecoderNorm()
         # self.decode = init.decoder
-        self.substitutor = ActsGateSubstitutor(
-            self.model, ll_acts_key=cfg.ll_acts_write_site, bf=cfg.branching_factor
-        )
 
     def forward(self, x, *, cache: cl.Cache, prev_acts: torch.Tensor):
         # basic_acts = cache(self).encode(x)
         # cache.acts = (
         #     acts := gate_ll_acts(basic_acts, prev_acts, self.cfg.branching_factor)
         # )
-        return cache(self).substitutor(x, prev_acts=prev_acts)
+        return cache(self).model(x, prev_acts=prev_acts)
 
     def get_acts(self, x, *, cache: cl.Cache, prev_acts: torch.Tensor):
         # return cache(self).encode(x)
@@ -207,7 +200,7 @@ class HSAELayer(cl.Module):
 from saeco.components.features.features_param import get_featuresparams
 
 
-class HSAE(cl.Module):
+class SubsequentFrozen(cl.Module):
     def __init__(self, init: Initializer, cfg: HSAEConfig):
         super().__init__()
         self.cfg = cfg
@@ -233,7 +226,7 @@ class HSAE(cl.Module):
 
         self.layers = nn.ModuleList(
             [
-                HSAELayer(cfg=cfg, models=models, losses=losses)
+                FreezableLayer(cfg=cfg, models=models, losses=losses)
                 for models, losses in [cfg.ll_model_fn(i, cfg.ll_cfg()) for i in inits]
             ]
         )
@@ -241,22 +234,17 @@ class HSAE(cl.Module):
         self.increment_level(0)
 
     def forward(self, x, *, cache: cl.Cache):
-        if not self.cfg.residual:
-            acts = None
-            for i in range(self.current_level):
-                acts = cache(self).layers[i].get_acts(x, prev_acts=acts)
-            return cache(self).layers[self.current_level](x, prev_acts=acts)
-        else:
-            # cache = cache.clone()
-            cache.gated_acts = ...
-            acts = None
-            x_pred = 0
-            for i in range(self.current_level + 1):
-                cc = cache.clone() if i < self.current_level else cache
-
-                x_pred += cc(self).layers[i](x - x_pred, prev_acts=acts)
-                acts = cc(self).layers[i]._cache["substitutor"].gated_acts
-            return x_pred
+        # cache = cache.clone()
+        cache.gated_acts = ...
+        acts = None
+        x_pred = 0
+        for i in range(self.current_level + 1):
+            cc = cache.clone() if i < self.current_level else cache
+            if self.cfg.residual:
+                x_pred += cc(self).layers[i](x - x_pred)
+            else:
+                x_pred += cc(self).layers[i](x)
+        return x_pred
 
     @property
     def losses(self):
@@ -315,7 +303,7 @@ def run(cfg):
 
     tr = TrainingRunner(cfg, model_fn=hsaef)
     init = tr.initializer
-    hsae = HSAE(init, cfg.arch_cfg)
+    hsae = SubsequentFrozen(init, cfg.arch_cfg)
     prev_t = 0
     initial_sparsity = cfg.train_cfg.coeffs["sparsity_loss"]
     m = 27 / 0.9
