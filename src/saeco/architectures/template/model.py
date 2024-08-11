@@ -22,7 +22,8 @@ from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.sweeps import SweepableConfig
 
 
-class Config(SweepableConfig): ...
+class Config(SweepableConfig):
+    pre_bias: bool = False
 
 
 def sae(
@@ -37,7 +38,7 @@ def sae(
         ),
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),
-        null_penalty=co.L1Penalty(),  # "no sparsity penalty"
+        penalty=co.L1Penalty(),  # "no sparsity penalty"
         decoder=ft.OrthogonalizeFeatureGrads(
             ft.NormFeatures(
                 init.decoder,
