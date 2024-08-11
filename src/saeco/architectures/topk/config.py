@@ -17,36 +17,33 @@ train_cfg = TrainConfig(
     ),
     raw_schedule_cfg=RunSchedulingConfig(
         run_length=50_000,
-        resample_period=250_000,
+        resample_period=Swept(100_000, 3_000),
         targeting_post_resample_hiatus=0.05,
         targeting_post_resample_cooldown=0.2,
         lr_resample_warmup_factor=0.3,
         # resample_delay=0.69,
     ),
     l0_target=25,
-    coeffs={
-        "sparsity_loss": 3e-3,
-        "L2_loss": 1,
-    },
-    optim=Swept("ScheduleFree", "ScheduleFreeAsNormal"),
-    lr=Swept(3e-3),
+    coeffs={"sparsity_loss": 3e-3, "L2_loss": 1, "L2_aux_loss": Swept(1 / 32, 1.0)},
+    optim="Adam",
+    lr=Swept(1e-3, 3e-4),
     use_autocast=True,
     wandb_cfg=dict(project=PROJECT),
     l0_target_adjustment_size=0.0002,
     batch_size=4096,
     betas=(0.9, 0.999),
-    use_lars=Swept(True, False),
+    use_lars=True,
 )
 
 arch_cfg = TopKConfig(
-    pre_bias=Swept[bool](False),
+    pre_bias=False, aux_top_k=Swept(0, 32, 512), dead_threshold=Swept(3e-5, 1e-5, 3e-6)
 )
 
 run_cfg = RunConfig[TopKConfig](
     train_cfg=train_cfg,
     arch_cfg=arch_cfg,
     resampler_config=AnthResamplerConfig(
-        optim_reset_cfg=OptimResetValuesConfig(),
+        optim_reset_cfg=OptimResetValuesConfig(), dead_threshold=1.1e-5
     ),
 )
 
