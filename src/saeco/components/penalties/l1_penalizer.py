@@ -1,6 +1,7 @@
 from .penalty import Penalty
 from torch import Tensor
 import torch
+import torch.nn as nn
 
 
 class L1Penalty(Penalty):
@@ -13,26 +14,26 @@ class L1Penalty(Penalty):
 
 
 class LinearDecayL1Penalty(Penalty):
-    def __init__(self, end, begin=0, scale=1.0, end_scale=0):
+    def __init__(self, end, begin=0, begin_scale=1.0, end_scale=0):
         super().__init__()
-        self.scale = scale
+        self.begin_scale = begin_scale
         self.begin = begin
         self.end = end
         self.end_scale = end_scale
 
     def penalty(self, x, *, cache):
         if not cache._ancestor.has.trainstep:
-            return torch.zeros(1)
+            return torch.zeros(1).sum()
         step = cache._ancestor.trainstep
         if step > self.end:
             if self.end_scale == 0:
-                return torch.zeros(1)
+                return torch.zeros(1).sum()
             scale = self.end_scale
         elif step <= self.begin:
-            scale = self.scale
+            scale = self.begin_scale
         else:
             prog = (self.end - step) / (self.end - self.begin)
-            scale = self.scale * prog + self.end_scale * (1 - prog)
+            scale = self.begin_scale * prog + self.end_scale * (1 - prog)
         return x.abs().mean(dim=0).sum() * scale
 
 
@@ -78,3 +79,15 @@ class L0TargetingL1Penalty(Penalty):
         else:
             self.scale *= 1 - self.increment
         return x
+
+
+class SummedPenalties(Penalty):
+    def __init__(self, *penalties):
+        super().__init__()
+        self.penalties = nn.ModuleList(penalties)
+
+    def penalty(self, x, *, cache):
+        p = 0
+        for i in range(len(self.penalties)):
+            p += cache(self).penalties[i].penalty(x)
+        return p.sum()
