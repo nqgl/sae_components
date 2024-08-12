@@ -33,31 +33,35 @@ class HSMix(cl.Module):
         super().__init__()
         self.p_soft = p_soft
         self.hard = ReuseForward(co.ops.Lambda(lambda x: (x > 0).half()))
+
         if mag_noise is None:
             self.soft = nn.Sigmoid()
         else:
             self.soft = Seq(
-                co.ops.Lambda(lambda x: x + torch.randn_like(x) * mag_noise),
+                co.ops.Lambda(lambda x: x + (torch.rand_like(x) - 0.5) * mag_noise),
                 nn.Sigmoid(),
             )
+        self.rand = ReuseForward(
+            co.ops.Lambda(lambda x: torch.rand_like(x) < self.p_soft)
+        )
 
     def forward(self, acts, *, cache: cl.Cache, **kwargs):
         if not self.training:
             return cache(self).hard(acts)
-        rand = torch.rand_like(acts) < self.p_soft
-        return torch.where(rand, cache(self).soft(acts), cache(self).hard(acts))
+        return torch.where(
+            cache(self).rand(acts), cache(self).soft(acts), cache(self).hard(acts)
+        )
 
 
 class MultiGate(cl.Module):
     def __init__(self, n_sections=3, targets: float | list[float] = 5):
         super().__init__()
-        # self.gates = nn.ModuleList()
         eps = 1e-6
         if isinstance(targets, float):
             targets = [targets] * (n_sections - 1)
         assert len(targets) == n_sections - 1
         self.n_sections = n_sections
-        self.gates = ReuseForward(
+        self.all_acts = ReuseForward(
             cl.Router(
                 *(
                     [nn.ReLU()]
@@ -65,19 +69,51 @@ class MultiGate(cl.Module):
                 )
             ).reduce(lambda *l: l)
         )
-
-        self.out = ReuseForward(
+        self.acts_0 = ReuseForward(
             cl.Seq(
-                self.gates,
-                cl.Router(*[cl.ops.Identity() for _ in range(n_sections)]).reduce(
-                    lambda a, b: a * b, binary=True
-                ),
+                self.all_acts,
+                co.ops.Lambda(lambda l: l[0]),
             )
         )
+
+        self.gates_only = ReuseForward(
+            cl.Seq(
+                self.all_acts,
+                co.ops.Lambda(lambda l: l[1:]),
+                cl.Router(*[cl.ops.Identity() for _ in range(n_sections - 1)]).reduce(
+                    lambda a, b: a * b, binary=True
+                ),
+            ),
+        )
+
+        self.out = ReuseForward(
+            cl.Parallel(
+                self.acts_0,
+                self.gates_only,
+            ).reduce(lambda acts, gates: acts * gates)
+        )
+
+        self.out_det = ReuseForward(
+            cl.Parallel(
+                co.ops.Detached(self.acts_0),
+                self.gates_only,
+            ).reduce(lambda acts, gates: acts * gates)
+        )
+
         self.penalizers = [None] + [
-            L0TargetingL1Penalty(target=t, scale=256 ** (-i))
+            L0TargetingL1Penalty(target=t, scale=1 ** (-i))
             for i, t in enumerate(targets)
         ]
+
+        def slice_after(i):
+            def _slice(l):
+                return l[i:]
+
+            return _slice
+
+        # def bound_index(l, i):
+        #     def index
+
         self.update_penalty_l0s = Seq(
             calculate_hard=cl.Parallel(
                 *(
@@ -85,10 +121,10 @@ class MultiGate(cl.Module):
                     + [
                         cl.Seq(
                             mask=cl.Seq(
-                                co.ops.Lambda(lambda l: l[i - 1 :]),
+                                co.ops.Lambda(slice_after(i)),
                                 cl.Router(
                                     *[
-                                        self.gates.module[j].module.hard
+                                        self.all_acts.module[j].module.hard
                                         for j in range(i, n_sections)
                                     ]
                                 ).reduce(
@@ -99,9 +135,7 @@ class MultiGate(cl.Module):
                             ),
                             update_penalty=co.metrics.ActMetrics(
                                 f"acts_{i}",
-                                update=co.ops.Lambda(
-                                    lambda x: self.penalizers[i].update_l0(x)
-                                ),
+                                update=co.ops.Lambda(self.penalizers[i].update_l0),
                             ),
                         )
                         for i in range(1, n_sections)
@@ -110,7 +144,8 @@ class MultiGate(cl.Module):
             ).reduce(lambda a, b, *z: a * b),
             freqs=EMAFreqTracker(),
             metrics=co.metrics.ActMetrics(),
-            penalty=LinearDecayL1Penalty(begin_scale=0, end=5_000),
+            penalty=L1Penalty(scale=0.1),
+            # penalty=LinearDecayL1Penalty(begin_scale=0, end=5_000),
         )
 
         self.apply_penalty = Seq(
@@ -121,7 +156,7 @@ class MultiGate(cl.Module):
                         lambda x: x.detach(),
                     ),
                 ),
-                gates=self.gates,
+                gates=self.all_acts,
             ).reduce(
                 lambda out_det, gates: [
                     out_det * (1 + gates[i] - gates[i].detach().half())
@@ -133,12 +168,28 @@ class MultiGate(cl.Module):
             ),
         )
 
+        self.noised_mask = Seq(
+            co.ops.Lambda(lambda l: l[1:]),
+            cl.Router(
+                *[self.all_acts.module[i].module.rand for i in range(1, n_sections)]
+            ).reduce(
+                lambda a, b: a | b if a is not None else b,
+                binary=True,
+                binary_initial_value=None,
+            ),
+        )
+
     def forward(self, pre_acts_list: list[torch.Tensor], *, cache: cl.Cache, **kwargs):
         assert len(pre_acts_list) == self.n_sections
-        out = cache(self).out(pre_acts_list)
+
         l0s = cache(self).update_penalty_l0s(pre_acts_list)
         cache(self).apply_penalty(pre_acts_list)
-        return out
+
+        return torch.where(
+            cache(self).noised_mask(pre_acts_list),
+            cache(self).out_det(pre_acts_list),
+            cache(self).out(pre_acts_list),
+        )
 
 
 class Config(SweepableConfig):
@@ -171,7 +222,7 @@ def multigate_sae(
             **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
             lin=init.encoder,
             split=co.ops.Lambda(lambda x: torch.split(x, init.d_dict, dim=-1)),
-            muligate=MultiGate(cfg.num_layers, [25, 80]),
+            muligate=MultiGate(cfg.num_layers, [45, 100]),
         ),
         decoder=ft.OrthogonalizeFeatureGrads(
             ft.NormFeatures(
