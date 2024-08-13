@@ -333,7 +333,7 @@ class Trainer:
         )
 
     def full_log(self, cache: Cache):
-        if self.t % 10 != 0 and self.t % 23000 > 1000:
+        if self.t % 10 != 0:  # and self.t % 23000 > 100:
             return
         # if wandb.run is not None:
         self.log(
