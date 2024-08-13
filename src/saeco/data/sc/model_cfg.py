@@ -8,7 +8,7 @@ class ActsDataConfig(SweepableConfig):
     d_data: int = 768
     site: str = "resid_pre"
     layer_num: int = 6
-    excl_first: bool = False
+    excl_first: bool = True
 
     @property
     def hook_site(self):
