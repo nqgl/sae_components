@@ -103,9 +103,12 @@ class L1(Metric):
 
 
 class ActMetrics(Metrics):
-    def __init__(self, name=None, globalize_cache=True):
+    def __init__(self, name=None, globalize_cache=True, **kwargs):
         self.name = name
-        super().__init__(L1=L1(), L0=L0(), acts=cl.ops.Identity())
+        d = dict(L1=L1(), L0=L0())
+        if "acts" in kwargs:
+            raise ValueError("acts is a reserved keyword")
+        super().__init__(**d, **kwargs, acts=cl.ops.Identity())
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
 
