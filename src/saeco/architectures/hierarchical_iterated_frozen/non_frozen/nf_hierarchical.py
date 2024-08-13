@@ -2,10 +2,11 @@ from typing import Iterator
 import torch
 
 import torch.nn as nn
-import einops
 
 import saeco.components as co
 import saeco.components.features.features as ft
+from saeco.components.hierarchical import get_acts_only
+from saeco.components.hierarchical import ActsGateSubstitutor
 import saeco.core as cl
 
 from saeco.architectures.initialization.initializer import Initializer
@@ -22,6 +23,10 @@ from saeco.components.resampling.freq_tracker.freq_tracker import get_freq_track
 from saeco.misc import useif
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.sweeps import SweepableConfig
+from saeco.components.threshgate import (
+    ThreshGate,
+    SoftenedThreshGate,
+)
 
 # TODO
 # add feature to specify dominant encoder
@@ -45,6 +50,7 @@ class LLModelSpec(BaseModel):
     # site_name: str
     write_site: str
     read_site: str
+    pre_site: str = None
 
 
 specs = dict(
@@ -61,16 +67,17 @@ specs = dict(
         model_fn=anth_update_model,
         write_site="encoder",
         read_site="encoder",
+        pre_site="linear",
     ),
 )
 
 
 class HSAEConfig(SweepableConfig):
     pre_bias: bool = False
-    branching_factor: int = 2
-    num_levels: int = 11
+    branching_factor: int = 32
+    num_levels: int = 2
     # acts_name: str = "encoder"
-    ll_model: str = "topk"
+    ll_model: str = "anth_update"
     l0_target_ratio: float = 1
     residual: bool = True
 
@@ -91,81 +98,13 @@ class HSAEConfig(SweepableConfig):
         return specs[self.ll_model].config
 
 
-class GotActsInterrupt(Exception):
-    def __init__(self, acts):
-        super().__init__()
-        self.acts = acts
-
-
-def cache_acts_interrupt_hook(cache: cl.Cache, acts):
-    cache.layer_acts = acts
-    raise GotActsInterrupt(acts)
-
-
-def get_acts_only(model, x, cache: cl.Cache, actsname="acts", **kwargs):
-    cache = cache.clone()
-    cache.register_write_callback(actsname, cache_acts_interrupt_hook)
-    try:
-        model(x, cache=cache, **kwargs)
-    except GotActsInterrupt as e:
-        return e.acts
-    raise ValueError("Model did not set acts")
-
-
 class HSAELayerConfig(SweepableConfig): ...
-
-
-def hl2ll(hl, bf):
-    return einops.repeat(hl, "b i -> b (i bf)", bf=bf)
 
 
 def indexmixed(x, il, bf):
     # note to self for future:
     # hl2ll([1,2,3], 2) = [1, 1, 2, 2, 3, 3]
     bfs = [bf**e for e in range(len(il))]
-
-
-def gate_ll_acts(acts, hl_acts, bf):
-    if hl_acts is None:
-        return acts
-    return hl2ll(hl_acts > 0, bf) * acts
-
-
-class CacheProcessor(cl.Module):
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, x, *, cache: cl.Cache, **kwargs):
-        cache = self.preprocess_cache(cache, **kwargs)
-        out = cache(self).model(x)
-        self.postprocess_cache(cache, **kwargs)
-        return out
-
-    def preprocess_cache(self, cache: cl.Cache, **kwargs): ...
-
-    def postprocess_cache(self, cache: cl.Cache, **kwargs): ...
-
-
-class ActsGateSubstitutor(CacheProcessor):
-    def __init__(self, model, ll_acts_key, bf, hl_acts_key="prev_acts"):
-        super().__init__(model)
-        self.ll_acts_key = ll_acts_key
-        self.hl_acts_key = hl_acts_key
-        self.bf = bf
-
-    def preprocess_cache(self, cache: cl.Cache, **kwargs):
-        def process_acts(subcache, acts):
-            if kwargs[self.hl_acts_key] is None:
-                cache.gated_acts = acts
-                return None
-            cache.natural_acts = acts
-            gated_acts = gate_ll_acts(acts, kwargs[self.hl_acts_key], bf=self.bf)
-            cache.gated_acts = gated_acts
-            return gated_acts
-
-        cache.register_write_callback(self.ll_acts_key, process_acts)
-        return cache
 
 
 class HSAELayer(cl.Module):
@@ -271,20 +210,20 @@ class HSAE(cl.Module):
             raise ValueError("Cannot increment level beyond maximum")
         self.current_level = n
 
-        for layer in self.layers:
+        # for layer in self.layers:
 
-            for name, group in layer.named_parameters():
-                group.requires_grad = False
-            for param in get_featuresparams(layer):
-                param.resampled = False  # TODO fix this behavior, this does NOT work how you would want it to
-            for ft in get_freq_trackers(layer):
-                ft.is_active = False
-        for name, group in self.layers[n].named_parameters():
-            group.requires_grad = True
-        for param in get_featuresparams(self.layers[n]):
-            param.resampled = True
-        for ft in get_freq_trackers(self.layers[n]):
-            ft.is_active = True
+        #     for name, group in layer.named_parameters():
+        #         group.requires_grad = False
+        #     for param in get_featuresparams(layer):
+        #         param.resampled = False  # TODO fix this behavior, this does NOT work how you would want it to
+        #     for ft in get_freq_trackers(layer):
+        #         ft.is_active = False
+        # for name, group in self.layers[n].named_parameters():
+        #     group.requires_grad = True
+        # for param in get_featuresparams(self.layers[n]):
+        #     param.resampled = True
+        # for ft in get_freq_trackers(self.layers[n]):
+        #     ft.is_active = True
 
     @property
     def current_l0_target(self):
