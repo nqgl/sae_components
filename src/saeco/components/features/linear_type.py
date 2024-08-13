@@ -37,6 +37,11 @@ class LinWeights(WrapsModule):
     #     f = self.features_transform(grad)
     #     assert f.shape[0] != 768
     #     return f
+    def get_weight(self):
+        return self.wrapped.weight
+
+    def get_bias(self):
+        return self.wrapped.bias
 
     def resampled(self):
         return ResampledWeight(self)  # TODO bias res too
@@ -54,7 +59,7 @@ class LinDecoder(LinWeights):
     @lazycall
     def features(self) -> dict[str, FeaturesParam]:
         return {
-            "weight": FeaturesParam(self.wrapped.weight, feature_index=1, fptype="dec")
+            "weight": FeaturesParam(self.get_weight(), feature_index=1, fptype="dec")
         }
 
     def __getitem__(self, key):
@@ -71,10 +76,10 @@ class LinEncoder(LinWeights):
     @lazycall
     def features(self) -> dict[str, FeaturesParam]:
         d = {
-            "weight": FeaturesParam(self.wrapped.weight, feature_index=0, fptype="enc"),
+            "weight": FeaturesParam(self.get_weight(), feature_index=0, fptype="enc"),
         }
         if self.bias is not None:
-            d["bias"] = FeaturesParam(self.wrapped.bias, feature_index=0, fptype="bias")
+            d["bias"] = FeaturesParam(self.get_bias(), feature_index=0, fptype="bias")
         return d
 
     # def features_transform(self, tensor: Tensor) -> Tensor:
