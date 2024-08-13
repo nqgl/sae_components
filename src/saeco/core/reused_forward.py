@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 from saeco.core.cache import Cache
 from saeco.core.module import Module
+from typing import TypeVar
 
 
 class ReuseCache(Cache):
@@ -49,10 +50,13 @@ def reuse_method(mth):
     return wrapper
 
 
+T = TypeVar("T", bound=nn.Module)
+
+
 class ReuseForward(Module):
-    def __init__(self, module):
+    def __init__(self, module: T):
         super().__init__()
-        self.module = module
+        self.module: T = module
 
     def forward(self, x: torch.Tensor, *, cache: ReuseCache, **kwargs):
         return reuse_forward(x=x, module=self.module, cache=cache, **kwargs)
