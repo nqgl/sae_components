@@ -74,7 +74,7 @@ class Propagator(Collection):
             if self._cache_to_reduction:
                 return self._reduction(*l, cache=cache)
             return self._reduction(*l)
-        if self._binary_reduction_initial_value is None and len(l) <= 1:
+        if (self._binary_reduction_initial_value is not None) + len(l) <= 1:
             raise ValueError(
                 "Binary reduction requires at least 2 elements in the collection"
             )
@@ -90,8 +90,9 @@ class Propagator(Collection):
                 r = self._reduction(r, v)
         return r
 
-    def reduce(self, f, binary=False, takes_cache=False):
+    def reduce(self, f, binary=False, takes_cache=False, binary_initial_value=None):
         self._reduction = f
         self._binary_reduction = binary
+        self._binary_reduction_initial_value = binary_initial_value
         self._cache_to_reduction = takes_cache
         return self
