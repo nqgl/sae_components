@@ -245,7 +245,7 @@ def zero_normal_enc_bias_only_fn_factory(encoder: co.LinEncoder, d_dict):
     @co.ops.Lambda
     @torch.no_grad()
     def zero_normal_enc_bias_only(x):
-        encoder.features["weight"][:d_dict].zero_()
+        encoder.features["bias"].features[:d_dict].zero_()
         return x
 
     return zero_normal_enc_bias_only
@@ -288,7 +288,7 @@ def multigate_sae(
         **useif(
             cfg.use_enc_bias == 1,
             update_enc_bias=zero_normal_enc_bias_only_fn_factory(
-                init._encoder, init.d_dict
+                init.encoder, init.d_dict
             ),
         ),
         encoder=Seq(
