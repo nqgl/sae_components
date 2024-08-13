@@ -13,14 +13,14 @@ PROJECT = "sae sweeps"
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=DataConfig(
-            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
+            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=False))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
             resample_period=12_500,
         ),
         #
-        batch_size=4096,
+        batch_size=4096 * 4,
         optim="ScheduleFree",
         lr=Swept(1e-3, 3e-3, 1e-2),  # Swept(1e-3, 3e-4, 1e-4),
         betas=(0.9, 0.999),

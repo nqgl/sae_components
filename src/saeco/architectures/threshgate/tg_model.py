@@ -93,10 +93,10 @@ class Gate(cl.Module):
         self.threshgates = [
             ThreshGate(
                 0.5,
-                hard_cb=(penalty := L0TargetingL1Penalty(target=t).update_l0),
+                hard_cb=(penalty := L0TargetingL1Penalty(target=t, scale=1).update_l0),
                 full_cb=penalty,
             )
-            for t in l0_targets
+            for i, t in enumerate(l0_targets)
         ]
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):

@@ -23,14 +23,14 @@ cfg = RunConfig[Config](
         #
         batch_size=4096,
         optim="Adam",
-        lr=Swept(1e-3, 7e-3, 3e-4),
+        lr=Swept(1e-3, 7e-4, 3e-4),
         betas=(0.9, 0.999),
         #
         use_autocast=True,
         use_lars=True,
         #
         l0_target=25,
-        l0_target_adjustment_size=0.0004,
+        l0_target_adjustment_size=0.0001,
         l0_targeting_enabled=True,
         coeffs={
             "sparsity_loss": 1e-3,
@@ -47,10 +47,10 @@ cfg = RunConfig[Config](
     ),
     #
     arch_cfg=Config(
-        use_enc_bias=2,
+        use_enc_bias=1,
         use_relu=Swept(True, False),
         noise_mag=Swept(0.1, 0.03, 0.0),
         p_soft=0.1,
-        end_l1_penalty=Swept(0.03, 0.0),
+        end_l1_penalty=Swept(0.01, 0.0),
     ),
 )

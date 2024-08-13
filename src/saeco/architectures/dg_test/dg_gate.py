@@ -33,6 +33,7 @@ class Config(SweepableConfig):
 
     detach_enc: bool = False
     segment_n: int = 1
+    squeeze_dg: None | int = None
 
 
 class SemgentedDG(nn.Module):
@@ -60,6 +61,12 @@ def gated_dg_sae(
     if cfg.segment_n == 1:
         dg = nn.Linear(init.d_dict, init.d_dict, bias=True)
         dg.weight.data = torch.eye(init.d_dict)
+    elif cfg.squeeze_dg is not None:
+        dg = Seq(
+            nn.Linear(init.d_dict, cfg.squeeze_dg, bias=True),
+            nn.PReLU(),
+            nn.Linear(cfg.squeeze_dg, init.d_dict, bias=True),
+        )
     else:
         dg = SemgentedDG(init.d_dict, 4, bias=True)
     init._encoder.bias = False
@@ -140,7 +147,9 @@ from saeco.trainer.runner import TrainingRunner
 
 def run(cfg):
     tr = TrainingRunner(cfg, model_fn=gated_dg_sae)
-    tr.trainer.train()
+    for i in range(5):
+        tr.trainer.train(num_steps=10_000)
+        tr.trainer.cfg.batch_size *= 2
 
 
 if __name__ == "__main__":
