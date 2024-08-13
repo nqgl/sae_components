@@ -6,10 +6,10 @@ from saeco.misc.lazy import lazyprop, lazycall
 
 
 class DetachedLinear(nn.Module):
-    def __init__(self, lin):
+    def __init__(self, lin, use_bias=True):
         super().__init__()
         self.lin = lin
-        self.use_bias = True
+        self.use_bias = use_bias
 
     def forward(self, x):
         return torch.nn.functional.linear(
@@ -189,6 +189,10 @@ class LinearFactory:
     @property
     def detached(self):
         return DetachedLinear(self.lin)  # should this use raw?
+
+    @property
+    def detached_no_bias(self):
+        return DetachedLinear(self.lin, use_bias=False)
 
     @property
     def biasdetached(self):

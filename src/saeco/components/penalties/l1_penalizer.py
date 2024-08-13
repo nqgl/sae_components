@@ -23,11 +23,11 @@ class LinearDecayL1Penalty(Penalty):
 
     def penalty(self, x, *, cache):
         if not cache._ancestor.has.trainstep:
-            return torch.zeros(1).sum()
+            return torch.zeros(1).sum().to(x.device, x.dtype)
         step = cache._ancestor.trainstep
         if step > self.end:
             if self.end_scale == 0:
-                return torch.zeros(1).sum()
+                return torch.zeros(1).sum().to(x.device, x.dtype)
             scale = self.end_scale
         elif step <= self.begin:
             scale = self.begin_scale
@@ -61,19 +61,19 @@ class L1PenaltyScaledByDecoderNorm(Penalty):
 
 
 class L0TargetingL1Penalty(Penalty):
-    def __init__(self, target, scale=1.0):
+    def __init__(self, target, scale=1.0, increment=0.0001):
         super().__init__()
         self.scale = scale
         self.target = target
-        self.increment = 0.00003
+        self.increment = increment
 
     def penalty(self, x, *, cache):
-        return x.relu().mean(dim=0).sum() * self.scale
+        return x.abs().mean(dim=0).sum() * self.scale
 
     def update_l0(self, x: Tensor):
         if self.target is None:
             return x
-        l0 = (x > 0).sum(dim=-1).float().mean(0).sum()
+        l0 = (x != 0).sum(dim=-1).float().mean(0).sum()
         if l0 > self.target:
             self.scale *= 1 + self.increment
         else:

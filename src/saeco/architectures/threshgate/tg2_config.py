@@ -17,12 +17,13 @@ cfg = RunConfig[Config](
         ),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
-            resample_period=9_0000,
+            resample_period=90_000,
+            lr_cooldown_length=0.3,
         ),
         #
         batch_size=4096,
         optim="Adam",
-        lr=1e-3,
+        lr=Swept(1e-3, 7e-3, 3e-4),
         betas=(0.9, 0.999),
         #
         use_autocast=True,
@@ -41,9 +42,15 @@ cfg = RunConfig[Config](
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
-        expected_biases=2,
+        expected_biases=None,
         # expected_encs=1,
     ),
     #
-    arch_cfg=Config(),
+    arch_cfg=Config(
+        use_enc_bias=2,
+        use_relu=Swept(True, False),
+        noise_mag=Swept(0.1, 0.03, 0.0),
+        p_soft=0.1,
+        end_l1_penalty=Swept(0.03, 0.0),
+    ),
 )

@@ -4,6 +4,7 @@ import torch.nn as nn
 
 import saeco.components as co
 import saeco.components.features.features as ft
+from saeco.components.features.optim_reset import FeatureParamType
 import saeco.core as cl
 from saeco.core import ReuseForward
 from saeco.architectures.initialization.initializer import Initializer, Tied
@@ -53,10 +54,31 @@ class HSMix(cl.Module):
         )
 
 
+class Config(SweepableConfig):
+    pre_bias: bool = False
+    # detach: bool = Swept(True, False)
+    bf: int = 32
+    num_layers: int = 3
+    l0_target_ratio: float = 2
+    use_enc_bias: int = True
+    use_relu: bool = True
+    noise_mag: float = 0.1
+    p_soft: float = 0.1
+    end_l1_penalty: float = 0.01
+    # decay_l1_penalty: float =
+
+
 class MultiGate(cl.Module):
-    def __init__(self, n_sections=3, targets: float | list[float] = 5):
+    def __init__(
+        self,
+        n_sections=3,
+        targets: float | list[float] = 5,
+        use_relu=True,
+        noise_mag=0.1,
+        p_soft=0.1,
+        end_l1_penalty=0.01,
+    ):
         super().__init__()
-        eps = 1e-6
         if isinstance(targets, float):
             targets = [targets] * (n_sections - 1)
         assert len(targets) == n_sections - 1
@@ -64,8 +86,11 @@ class MultiGate(cl.Module):
         self.all_acts = ReuseForward(
             cl.Router(
                 *(
-                    [nn.ReLU()]
-                    + [ReuseForward(HSMix(0.1)) for _ in range(n_sections - 1)]
+                    [nn.ReLU() if use_relu else nn.Identity()]
+                    + [
+                        ReuseForward(HSMix(p_soft=p_soft, mag_noise=noise_mag))
+                        for _ in range(n_sections - 1)
+                    ]
                 )
             ).reduce(lambda *l: l)
         )
@@ -101,7 +126,11 @@ class MultiGate(cl.Module):
         )
 
         self.penalizers = [None] + [
-            L0TargetingL1Penalty(target=t, scale=1 ** (-i))
+            (
+                L0TargetingL1Penalty(
+                    target=t or 0, scale=2, increment=0 if t is None else 0.0003
+                )
+            )
             for i, t in enumerate(targets)
         ]
 
@@ -117,7 +146,7 @@ class MultiGate(cl.Module):
         self.update_penalty_l0s = Seq(
             calculate_hard=cl.Parallel(
                 *(
-                    [co.ops.Lambda(lambda l: l[0].relu())]
+                    [self.acts_0]
                     + [
                         cl.Seq(
                             mask=cl.Seq(
@@ -144,8 +173,7 @@ class MultiGate(cl.Module):
             ).reduce(lambda a, b, *z: a * b),
             freqs=EMAFreqTracker(),
             metrics=co.metrics.ActMetrics(),
-            penalty=L1Penalty(scale=0.1),
-            # penalty=LinearDecayL1Penalty(begin_scale=0, end=5_000),
+            # penalty=L1Penalty(scale=1),
         )
 
         self.apply_penalty = Seq(
@@ -178,28 +206,49 @@ class MultiGate(cl.Module):
                 binary_initial_value=None,
             ),
         )
+        self.penalty = LinearDecayL1Penalty(
+            begin=0.3,
+            end=15_000,
+            begin_scale=0,
+            end_scale=end_l1_penalty,
+        )
 
     def forward(self, pre_acts_list: list[torch.Tensor], *, cache: cl.Cache, **kwargs):
         assert len(pre_acts_list) == self.n_sections
 
-        l0s = cache(self).update_penalty_l0s(pre_acts_list)
+        cache(self).update_penalty_l0s(pre_acts_list)
         cache(self).apply_penalty(pre_acts_list)
-
-        return torch.where(
+        out = torch.where(
             cache(self).noised_mask(pre_acts_list),
             cache(self).out_det(pre_acts_list),
             cache(self).out(pre_acts_list),
         )
+        cache(self).penalty(out)
+        return out
 
 
-class Config(SweepableConfig):
-    pre_bias: bool = Swept(True, False)
-    detach: bool = Swept(True, False)
-    bf: int = 32
-    num_layers: int = 3
-    l0_target_ratio: float = 2
+class MGFeaturesParam(ft.FeaturesParam):
+    def __init__(
+        self,
+        param: nn.Parameter,
+        feature_index,
+        fptype: FeatureParamType | None = None,
+        resampled=True,
+        reset_optim_on_resample=True,
+    ):
+        super().__init__(
+            param, feature_index, fptype, resampled, reset_optim_on_resample
+        )
 
-    # decay_l1_penalty: float =
+
+def zero_normal_enc_bias_only_fn_factory(encoder: co.LinEncoder, d_dict):
+    @co.ops.Lambda
+    @torch.no_grad()
+    def zero_normal_enc_bias_only(x):
+        encoder.features["weight"][:d_dict].zero_()
+        return x
+
+    return zero_normal_enc_bias_only
 
 
 def multigate_sae(
@@ -211,24 +260,59 @@ def multigate_sae(
     init._decoder._weight_tie = None
     init.decoder
     decx3 = init.decoder.weight.data.repeat(1, cfg.num_layers).transpose(-2, -1)
+    init._encoder.bias = cfg.use_enc_bias > 0
 
     init._encoder._weight_tie = Tied(
         decx3 + torch.randn_like(decx3) * 0.03,
         Tied.TO_VALUE,
         "weight",
     )
+    # encoder = init.encoder
+    # encoder.stored_fake_res_weight = nn.Parameter(
+    #     init.encoder.wrapped.weight[: init.d_dict]
+    # )
+    # encoder.get_weight = lambda: encoder.stored_fake_res_weight
+    # encoder.stored_fake_res_bias = nn.Parameter(
+    #     init.encoder.wrapped.bias[: init.d_dict]
+    # )
+    # encoder.get_bias = lambda: encoder.stored_fake_res_bias
+    multigate = MultiGate(
+        cfg.num_layers,
+        [None, 100],
+        use_relu=cfg.use_relu,
+        noise_mag=cfg.noise_mag,
+        p_soft=cfg.p_soft,
+        end_l1_penalty=cfg.end_l1_penalty,
+    )
     model = Seq(
+        **useif(
+            cfg.use_enc_bias == 1,
+            update_enc_bias=zero_normal_enc_bias_only_fn_factory(
+                init._encoder, init.d_dict
+            ),
+        ),
         encoder=Seq(
             **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
             lin=init.encoder,
             split=co.ops.Lambda(lambda x: torch.split(x, init.d_dict, dim=-1)),
-            muligate=MultiGate(cfg.num_layers, [45, 100]),
         ),
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
-                init.decoder,
+        gate_x=cl.Parallel(
+            noise_gate=multigate.noised_mask,
+            acts=multigate,
+        ).reduce(
+            lambda g, a: [
+                torch.where(g, a, 0),
+                torch.where(~g, a, 0),
+            ]
+        ),
+        dec_router=cl.Router(
+            det_dec=init._decoder.detached_no_bias,
+            decoder=ft.OrthogonalizeFeatureGrads(
+                ft.NormFeatures(
+                    init.decoder,
+                ),
             ),
-        ),
+        ).reduce(lambda a, b: a + b),
     )
 
     # losses
@@ -249,6 +333,6 @@ def run(cfg):
 
 
 if __name__ == "__main__":
-    do_sweep(True, "rand")
+    do_sweep(True)
 else:
     from .tg2_config import cfg, PROJECT
