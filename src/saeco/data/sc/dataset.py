@@ -163,6 +163,12 @@ class DataConfig(SweepableConfig):
 
         return squeezeyielder()
 
+    def get_split_tokens(self, split, num_tokens=None):
+        return TokensData(self, self.model_cfg.model).get_tokens_from_split(
+            split if isinstance(split, SplitConfig) else getattr(self, f"{split}split"),
+            num_tokens=num_tokens,
+        )
+
 
 class TokensData:
     def __init__(self, cfg: DataConfig, model: HookedTransformer):
