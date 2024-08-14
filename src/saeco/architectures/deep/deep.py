@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
 
-from saeco.architectures.initialization.tools import bias
-from saeco.architectures.initialization.tools import weight
-from saeco.architectures.initialization.tools import mlp_layer
+from saeco.initializer.tools import bias
+from saeco.initializer.tools import weight
+from saeco.initializer.tools import mlp_layer
 import saeco.core as cl
 from saeco.core.collections.parallel import Parallel
 from saeco.components import (
@@ -139,26 +139,3 @@ def deep_sae(
         sparsity_loss=SparsityPenaltyLoss(model),
     )
     return [model], losses
-
-
-d_data = 768
-d_dict = 8 * d_data
-
-
-def test_train(model, losses):
-    features = torch.randn(d_dict, d_data).cuda()
-    from saeco.trainer.trainer import Trainer
-    import tqdm
-    import wandb
-
-    trainer = Trainer({}, Trainable([model], losses).cuda())
-    batch_size = 4096 * 4
-
-    @torch.no_grad()
-    def data_generator():
-        for i in tqdm.trange(10000):
-            rand = torch.rand(batch_size, d_dict, device="cuda")
-            x = rand @ features
-            yield x
-
-    trainer.train(data_generator())

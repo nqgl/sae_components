@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from saeco.architectures.initialization.tools import (
+from saeco.initializer.tools import (
     reused,
     weight,
     bias,

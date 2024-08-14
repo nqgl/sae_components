@@ -1,50 +1,24 @@
+from saeco.trainer.RunConfig import RunConfig
+from saeco.initializer.initializer_config import InitConfig
+from saeco.trainer.TrainConfig import TrainConfig
 from saeco.trainer.trainable import Trainable
 
-from saeco.trainer.trainer import Trainer, TrainConfig
-from typing import Generic, TypeVar
+from saeco.trainer.trainer import Trainer
+from typing import TypeVar
 from saeco.architectures.outdated.gate_hierarch import (
     hierarchical_softaux,
     HierarchicalSoftAuxConfig,
     HGatesConfig,
 )
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.trainer.normalizers import (
     ConstL2Normalizer,
     GeneralizedNormalizer,
-    GNConfig,
 )
 from saeco.misc.lazy import lazyprop, defer_to_and_set
-from saeco.sweeps import SweepableConfig
-from pydantic import Field
 from saeco.components.resampling.anthropic_resampling import (
     AnthResampler,
-    AnthResamplerConfig,
 )
-
-
-class SAEConfig(SweepableConfig):
-    d_data: int = 768
-    dict_mult: int = 8
-
-    @lazyprop
-    def d_dict(self):
-        return self.d_data * self.dict_mult
-
-    @d_dict.setter
-    def d_dict(self, value):
-        assert self.dict_mult is None
-        setattr(self, "_d_dict", value)
-
-
-T = TypeVar("T", bound=SweepableConfig)
-
-
-class RunConfig(SweepableConfig, Generic[T]):
-    train_cfg: TrainConfig
-    arch_cfg: T
-    normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
-    resampler_config: AnthResamplerConfig = Field(default_factory=AnthResamplerConfig)
-    sae_cfg: SAEConfig = Field(default_factory=SAEConfig)
 
 
 class TrainingRunner:
@@ -63,7 +37,7 @@ class TrainingRunner:
         return f"{self.model_name}{self.cfg.train_cfg.lr}"
 
     @lazyprop
-    def buf(self) -> iter:
+    def data(self) -> iter:
         return iter(self.cfg.train_cfg.data_cfg.get_databuffer())
 
     @lazyprop
@@ -117,17 +91,22 @@ class TrainingRunner:
             init=self.initializer, cfg=self.cfg.normalizer_cfg
         )
 
-        normalizer.prime_normalizer(self.buf)
+        normalizer.prime_normalizer(self.data)
         return normalizer
 
     @normalizer.setter
     def normalizer(self, value):
         self._normalizer = value
-        self._normalizer.prime_normalizer(self.buf)
+        self._normalizer.prime_normalizer(self.data)
 
     @lazyprop
     def trainer(self):
-        trainer = Trainer(self.cfg.train_cfg, self.trainable, namestuff=self.name)
+        trainer = Trainer(
+            self.cfg.train_cfg,
+            run_cfg=self.cfg,
+            model=self.trainable,
+            wandb_run_label=self.name,
+        )
         trainer.post_step()
         return trainer
 
@@ -163,7 +142,7 @@ def main():
                 relu_gate_encoders=False,
             )
         ),
-        sae_cfg=SAEConfig(normalizer="L2Normalizer"),
+        sae_cfg=InitConfig(normalizer="L2Normalizer"),
     )
 
     tr = TrainingRunner(cfg, hierarchical_softaux)

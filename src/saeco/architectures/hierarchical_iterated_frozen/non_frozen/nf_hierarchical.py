@@ -9,7 +9,7 @@ from saeco.components.hierarchical import get_acts_only
 from saeco.components.hierarchical import ActsGateSubstitutor
 import saeco.core as cl
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,

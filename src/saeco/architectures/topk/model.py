@@ -7,7 +7,7 @@ import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,

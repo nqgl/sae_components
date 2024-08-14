@@ -2,7 +2,7 @@ import torch
 
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
@@ -19,6 +19,8 @@ from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.components.hooks import ClipGrad
+from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.TrainConfig import TrainConfig
 
 
 class Config(SweepableConfig):
@@ -53,7 +55,7 @@ def sae(
 
 
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.runner import TrainingRunner, TrainConfig, RunConfig
+from saeco.trainer.runner import TrainingRunner
 from saeco.data import DataConfig, ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep
 
@@ -141,7 +143,7 @@ def run(cfg: FreqBalanceSweep):
     tr.resampler.assign_model(tr.trainable)
     tr.resampler.wholistic_freqbalance(
         model=tr.trainable,
-        datasrc=tr.buf,
+        datasrc=tr.data,
         target_l0=cfg.target_l0,
         target_l1=cfg.target_l1,
     )

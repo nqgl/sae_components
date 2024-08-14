@@ -54,7 +54,6 @@ class SplitConfig(SweepableConfig):
 # @dataclass
 class DataConfig(SweepableConfig):
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"
-    model_name: str = "gpt2"
     model_cfg: ModelConfig = Field(default_factory=ModelConfig)
     # model_cfg.acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
     trainsplit: SplitConfig = Field(
@@ -91,7 +90,7 @@ class DataConfig(SweepableConfig):
         raise NotImplementedError
 
     def idstr(self):
-        return f"{self.dataset.replace('/', '_')}_{self.seq_len}_{self.seq_mul}_{self.set_bos}_{self.model_name}"
+        return f"{self.dataset.replace('/', '_')}_{self.seq_len}_{self.seq_mul}_{self.set_bos}"
 
     def _get_tokens_split_path(self, split: SplitConfig):
         return (

@@ -8,7 +8,7 @@ import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
@@ -323,7 +323,7 @@ def run(cfg):
         tr.resampler.assign_model(tr.trainable)
         tr.resampler.wholistic_freqbalance(
             model=tr.trainable,
-            datasrc=tr.buf,
+            datasrc=tr.data,
             target_l0=2,
             target_l1=(m := m * 0.9),
         )

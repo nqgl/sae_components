@@ -1,12 +1,14 @@
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
+from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.TrainConfig import TrainConfig
 from saeco.trainer.normalizers import GNConfig
 from saeco.core.reused_forward import ReuseForward
 from saeco.core import Seq
@@ -59,7 +61,7 @@ def ln_sae(
     return models, losses
 
 
-from saeco.trainer.runner import TrainingRunner, TrainConfig, RunConfig, DataConfig
+from saeco.trainer.runner import TrainingRunner, DataConfig
 from saeco.data.sc.dataset import ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep
 

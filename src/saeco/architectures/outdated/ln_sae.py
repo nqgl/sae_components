@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
@@ -15,6 +15,7 @@ import saeco.components.features.features as ft
 import saeco.components as co
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
+from saeco.trainer.TrainConfig import TrainConfig
 
 
 class Config(SweepableConfig):
@@ -76,7 +77,8 @@ def ln_sae(
     return models, losses
 
 
-from saeco.trainer.runner import TrainingRunner, TrainConfig, RunConfig, DataConfig
+from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.runner import TrainingRunner, DataConfig
 from saeco.data.sc.dataset import ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep
 

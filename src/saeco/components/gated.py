@@ -3,7 +3,7 @@ import saeco.components as co
 import einops
 import torch
 import torch.nn as nn
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.misc import useif
 
 SOFT_CLS = lambda x: cl.Seq(x, nn.Sigmoid())

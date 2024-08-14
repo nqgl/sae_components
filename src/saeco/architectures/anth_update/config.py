@@ -6,7 +6,8 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.runner import RunConfig, TrainConfig
+from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.TrainConfig import TrainConfig
 
 PROJECT = "sae sweeps"
 

@@ -7,7 +7,7 @@ import saeco.components.features.features as ft
 from saeco.components.features.optim_reset import FeatureParamType
 import saeco.core as cl
 from saeco.core import ReuseForward
-from saeco.architectures.initialization.initializer import Initializer, Tied
+from saeco.initializer import Initializer, Tied
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
@@ -330,6 +330,7 @@ from saeco.trainer.runner import TrainingRunner
 def run(cfg):
     tr = TrainingRunner(cfg, model_fn=multigate_sae)
     tr.trainer.train()
+    tr.trainer.save()
 
 
 if __name__ == "__main__":

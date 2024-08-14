@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,

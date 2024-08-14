@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
@@ -14,7 +14,9 @@ import saeco.components.features.features as ft
 import saeco.components as co
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco.trainer.runner import SAEConfig
+from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.TrainConfig import TrainConfig
+from saeco.initializer.initializer_config import InitConfig
 from saeco.configs import RunSchedulingConfig
 
 
@@ -62,8 +64,6 @@ def sae(
 
 from saeco.trainer.runner import (
     TrainingRunner,
-    TrainConfig,
-    RunConfig,
 )
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -113,10 +113,10 @@ cfg = RunConfig[Config](
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
     ),
-    sae_cfg=SAEConfig(dict_mult=16),
+    sae_cfg=InitConfig(dict_mult=16),
 )
 tr = TrainingRunner(cfg, model_fn=model_fn)
-data = tr.buf
+data = tr.data
 model = tr.trainable
 import torch
 import tqdm

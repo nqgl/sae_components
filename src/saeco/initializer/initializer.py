@@ -1,4 +1,4 @@
-from saeco.architectures.initialization.linear_factory import LinearFactory, Tied
+from saeco.initializer.linear_factory import LinearFactory, Tied
 import saeco.components as co
 from saeco.core.basic_ops import Add
 
@@ -86,6 +86,3 @@ class Initializer:
 
     def data_bias(self):
         return self.bias(self.d_data)
-
-
-from saeco.components.features.param_metadata import ParamMetadata

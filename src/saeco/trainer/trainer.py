@@ -4,10 +4,9 @@ import torch
 import wandb
 from typing import Protocol, runtime_checkable, Optional
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
-from dataclasses import Field
 from saeco.data.sc.model_cfg import ModelConfig
 from saeco.trainer.OptimConfig import OptimConfig, get_optim_cls
-from saeco.trainer.schedule_cfg import RunSchedulingConfig
+from saeco.trainer.TrainConfig import TrainConfig
 from saeco.trainer.train_cache import TrainCache
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.post_backward_normalization import (
@@ -15,60 +14,24 @@ from saeco.trainer.post_backward_normalization import (
     do_post_step,
 )
 from .recons import get_recons_loss
-from saeco.data.sc.dataset import DataConfig, SplitConfig, TokensData
-from saeco.sweeps import SweepableConfig, Swept
-from pydantic import Field
+from saeco.data.sc.dataset import TokensData
 from .l0targeter import L0Targeter
-from saeco.misc import lazycall
 from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 from contextlib import contextmanager
-
-
-v = OptimConfig
-
-
-class TrainConfig(SweepableConfig):
-    data_cfg: DataConfig = Field(default_factory=DataConfig)
-    wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
-    coeffs: dict[str, float | Swept[float]] = Field(
-        default_factory=lambda: dict(sparsity_loss=1e-3)
-    )
-    # coeffs: Coeffs = Field(default_factory=Coeffs)
-    l0_target: Optional[float] = None
-    l0_targeting_enabled: bool = True
-    l0_target_adjustment_size: float = 0.0003
-    use_autocast: bool = True
-    batch_size: int = 4096
-    lr: float = 3e-4
-    betas: tuple[float, float] = (0.9, 0.999)
-    use_lars: bool = False
-    kwargs: dict = Field(default_factory=dict)
-    optim: str = "RAdam"
-    raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
-    use_averaged_model: bool = True
-
-    @property
-    @lazycall
-    def schedule(self):
-        return self.raw_schedule_cfg.step_scheduler
-
-    @property
-    def use_schedulefree(self):
-        return self.optim == "ScheduleFree"
-
-    def get_optim(self):
-        return get_optim_cls(self.optim)
+from .RunConfig import RunConfig
 
 
 class Trainer:
     def __init__(
         self,
         cfg: TrainConfig,
+        run_cfg: RunConfig,
         model: Trainable,
-        namestuff=None,
+        wandb_run_label=None,
         optim: torch.optim.Optimizer | None = None,
     ):
         self.cfg: TrainConfig = cfg
+        self.run_cfg: RunConfig = run_cfg
         self.trainable = model
         self.t = 1
         self.log_t_offset = 0
@@ -107,7 +70,7 @@ class Trainer:
         # if self.cfg.use_schedulefree:
         # self.optim = ScheduleFreeWrapper(self.optim)
 
-        self.namestuff = namestuff
+        self.namestuff = wandb_run_label
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model
         ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
@@ -350,6 +313,11 @@ class Trainer:
         self.log(d)
 
     def save(self):
-        torch.save(
-            self.sae.state_dict(), "/root/workspace/" + wandb.run.name + f"_{self.t}.pt"
-        )
+        from pathlib import Path
+
+        d = Path.home() / "workspace/saved_models/"
+        d.mkdir(exist_ok=True, parents=True)
+        cfg_path = d / f"{wandb.run.name}_{self.t}.json"
+        assert not cfg_path.exists()
+        torch.save(self.trainable.state_dict(), d / f"{wandb.run.name}_{self.t}.pt")
+        cfg_path.write_text(self.run_cfg.model_dump_json())

@@ -2,7 +2,9 @@ from saeco.architectures.gate_hierarch import (
     hierarchical_softaux,
     HierarchicalSoftAuxConfig,
 )
-from saeco.trainer.runner import TrainingRunner, TrainConfig, RunConfig
+from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.runner import TrainingRunner
 from saeco.sweeps import Swept, SweepableConfig
 
 PROJECT = "sweep test"

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components.ops.detach import Thresh
 import saeco.core as cl
 from saeco.core.collections.parallel import Parallel
@@ -109,47 +109,3 @@ def main():
     y = model(x, cache=cache)
 
     print(y)
-
-
-def test_train(model, losses, data):
-    d_data = 768
-    d_dict = 8 * d_data
-    features = torch.randn(d_dict, d_data).cuda()
-    from saeco.trainer.trainer import Trainer
-    import tqdm
-    import wandb
-
-    trainer = Trainer({}, Trainable([model], losses).cuda())
-    batch_size = 4096
-
-    trainer.train(data)
-
-
-def main():
-    d_data = 768
-    d_dict = 8 * d_data
-    features = torch.randn(d_dict, d_data).cuda()
-    model, losses = gated_sae(d_data, d_dict)
-    from saeco.trainer.trainer import Trainer
-    import tqdm
-    import wandb
-
-    trainer = Trainer({}, Trainable([model], losses).cuda())
-    batch_size = 4096
-
-    @torch.no_grad()
-    def data_generator():
-        rand = torch.rand(batch_size, d_dict, device="cuda")
-        for i in tqdm.trange(10000):
-            rand[:] = rand + 0.001
-            x = rand @ features
-            yield x
-
-    # for i in data_generator():
-    #     pass
-
-    trainer.train(data_generator())
-
-
-if __name__ == "__main__":
-    main()

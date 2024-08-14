@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
     EMAFreqTracker,
@@ -14,7 +14,9 @@ import saeco.components.features.features as ft
 import saeco.components as co
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco.trainer.runner import SAEConfig
+from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.TrainConfig import TrainConfig
+from saeco.initializer.initializer_config import InitConfig
 from saeco.configs import RunSchedulingConfig
 
 
@@ -62,8 +64,6 @@ def sae(
 
 from saeco.trainer.runner import (
     TrainingRunner,
-    TrainConfig,
-    RunConfig,
 )
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -140,7 +140,7 @@ cfg = RunConfig[Config](
         freq_balance=(25 if quick_check else Swept(None, 3.5, 10, 25, 50)),
         freq_balance_strat=Swept("sep", "mix"),
     ),
-    sae_cfg=SAEConfig(dict_mult=16),
+    sae_cfg=InitConfig(dict_mult=16),
 )
 
 

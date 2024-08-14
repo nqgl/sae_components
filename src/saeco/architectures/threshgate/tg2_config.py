@@ -1,3 +1,4 @@
+from saeco.trainer.RunConfig import RunConfig
 from .tg_model2 import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -6,7 +7,7 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.runner import RunConfig, TrainConfig
+from saeco.trainer.TrainConfig import TrainConfig
 
 PROJECT = "sae sweeps"
 
@@ -16,7 +17,7 @@ cfg = RunConfig[Config](
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=1_000,
             resample_period=90_000,
             lr_cooldown_length=0.3,
         ),

@@ -4,6 +4,7 @@
 from saeco.data.sc.dataset import DataConfig, SplitConfig
 from transformer_lens import HookedTransformer
 
+from saeco.trainer.TrainConfig import TrainConfig
 from saeco.trainer.trainable import Trainable
 
 gpt2 = HookedTransformer.from_pretrained("gpt2")
@@ -29,7 +30,7 @@ from saeco.architectures.remax import remax_sae, remax1_sae
 from saeco.architectures.deep.catseq import deep_catseq, deep_catseq_resid
 import wandb
 import torch
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 
 # def test_train(models, losses, name, l0_target=45, lr=3e-4):
 #     from saeco.trainer.trainer import Trainer, TrainConfig
@@ -162,9 +163,9 @@ from abc import ABC, abstractmethod
 from torch import Tensor
 from jaxtyping import Float
 
-from saeco.architectures.initialization.tools import bias
-from saeco.architectures.initialization.tools import weight
-from saeco.architectures.initialization.tools import mlp_layer
+from saeco.initializer.tools import bias
+from saeco.initializer.tools import weight
+from saeco.initializer.tools import mlp_layer
 from saeco.components.ops.detach import Thresh
 import saeco.core as cl
 from saeco.core.collections.parallel import Parallel
@@ -389,7 +390,7 @@ from saeco.trainer.normalizers import (
 
 
 def train_cond(model_fn, l0_target=45, lr=3e-4):
-    from saeco.trainer.trainer import Trainer, TrainConfig
+    from saeco.trainer.trainer import Trainer
 
     name = "(cond)" + model_fn.__name__
     models, losses = model_fn(768, 768 * 8)
@@ -402,7 +403,7 @@ def train_cond(model_fn, l0_target=45, lr=3e-4):
         lr=lr,
     )
     trainable = Trainable(models, losses).cuda()
-    trainer = Trainer(cfg, trainable, namestuff=name + f"_{lr:.0e}")
+    trainer = Trainer(cfg, trainable, wandb_run_label=name + f"_{lr:.0e}")
     buf = trainer.get_databuffer()
     trainable.normalizer.prime_normalizer(buf)
     trainer.post_step()
@@ -419,7 +420,7 @@ PROJECT = "nn.Linear Check"
 
 
 def train_lars(model_fn, l0_target=45, lr=3e-4):
-    from saeco.trainer.trainer import Trainer, TrainConfig
+    from saeco.trainer.trainer import Trainer
 
     name = "(lars)" + model_fn.__name__
     models, losses = model_fn(Initializer(768, dict_mult=8, l0_target=l0_target))
@@ -434,7 +435,7 @@ def train_lars(model_fn, l0_target=45, lr=3e-4):
         wandb_cfg=dict(project=PROJECT),
     )
     trainable = Trainable(models, losses, normalizer=L2Normalizer()).cuda()
-    trainer = Trainer(cfg, trainable, namestuff=name + f"_{lr:.0e}")
+    trainer = Trainer(cfg, trainable, wandb_run_label=name + f"_{lr:.0e}")
     buf = iter(trainer.get_databuffer())
     trainable.normalizer.prime_normalizer(buf)
     trainer.post_step()

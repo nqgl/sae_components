@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from saeco.architectures.initialization.initializer import Initializer
+from saeco.initializer import Initializer
 import saeco.core as cl
 from saeco.components import (
     L1Penalty,
