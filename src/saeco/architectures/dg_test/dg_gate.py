@@ -149,6 +149,7 @@ def run(cfg):
     tr = TrainingRunner(cfg, model_fn=gated_dg_sae)
     for i in range(5):
         tr.trainer.train(num_steps=10_000)
+        tr.trainer.save()
         tr.trainer.cfg.batch_size *= 2
 
 

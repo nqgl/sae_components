@@ -1,4 +1,5 @@
 from saeco.trainer.RunConfig import RunConfig
+from saeco.initializer import InitConfig
 from .dg_gate import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -14,7 +15,7 @@ PROJECT = "sae sweeps"
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=DataConfig(
-            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=False))
+            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
@@ -48,4 +49,5 @@ cfg = RunConfig[Config](
         relu_first_acts=False,
         gelu_mid=False,
     ),
+    init_cfg=InitConfig(dict_mult=16),
 )

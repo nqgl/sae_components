@@ -8,6 +8,7 @@ from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.TrainConfig import TrainConfig
+from saeco.initializer import InitConfig
 
 PROJECT = "sae sweeps"
 
@@ -42,6 +43,7 @@ cfg = RunConfig[Config](
         optim_reset_cfg=OptimResetValuesConfig(),
     ),
     #
+    init_cfg=InitConfig(),
     arch_cfg=Config(
         ...,
     ),

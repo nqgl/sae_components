@@ -140,7 +140,7 @@ cfg = RunConfig[Config](
         freq_balance=(25 if quick_check else Swept(None, 3.5, 10, 25, 50)),
         freq_balance_strat=Swept("sep", "mix"),
     ),
-    sae_cfg=InitConfig(dict_mult=16),
+    init_cfg=InitConfig(dict_mult=16),
 )
 
 
