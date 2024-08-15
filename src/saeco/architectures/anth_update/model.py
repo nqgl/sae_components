@@ -20,6 +20,8 @@ from saeco.core import Seq
 from saeco.misc import useif
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.sweeps import SweepableConfig
+from saeco.sweeps import do_sweep
+from saeco.trainer.runner import TrainingRunner
 
 
 class AnthUpdateConfig(SweepableConfig):
@@ -51,3 +53,14 @@ def anth_update_model(
     )
 
     return models, losses
+
+
+def run(cfg):
+    tr = TrainingRunner(cfg.run_cfg, model_fn=anth_update_model)
+    tr.trainer.train()
+
+
+if __name__ == "__main__":
+    do_sweep(True, "rand")
+else:
+    from .config import cfg, PROJECT

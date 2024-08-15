@@ -18,4 +18,4 @@ class RunConfig(SweepableConfig, Generic[T]):
     arch_cfg: T
     normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
     resampler_config: AnthResamplerConfig = Field(default_factory=AnthResamplerConfig)
-    sae_cfg: InitConfig = Field(default_factory=InitConfig)
+    init_cfg: InitConfig = Field(default_factory=InitConfig)

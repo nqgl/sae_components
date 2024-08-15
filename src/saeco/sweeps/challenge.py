@@ -113,7 +113,7 @@ cfg = RunConfig[Config](
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
     ),
-    sae_cfg=InitConfig(dict_mult=16),
+    init_cfg=InitConfig(dict_mult=16),
 )
 tr = TrainingRunner(cfg, model_fn=model_fn)
 data = tr.data

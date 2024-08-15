@@ -43,8 +43,8 @@ class TrainingRunner:
     @lazyprop
     def initializer(self) -> Initializer:
         return Initializer(
-            self.cfg.sae_cfg.d_data,
-            dict_mult=self.cfg.sae_cfg.dict_mult,
+            self.cfg.init_cfg.d_data,
+            dict_mult=self.cfg.init_cfg.dict_mult,
             l0_target=self.cfg.train_cfg.l0_target,
             # median=getmed(buf=self.buf, normalizer=self.normalizer),
             # weight_scale=2,
@@ -142,7 +142,7 @@ def main():
                 relu_gate_encoders=False,
             )
         ),
-        sae_cfg=InitConfig(normalizer="L2Normalizer"),
+        init_cfg=InitConfig(normalizer="L2Normalizer"),
     )
 
     tr = TrainingRunner(cfg, hierarchical_softaux)

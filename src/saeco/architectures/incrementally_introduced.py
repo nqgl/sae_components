@@ -147,7 +147,7 @@ def run(cfg: FreqBalanceSweep):
         target_l0=cfg.target_l0,
         target_l1=cfg.target_l1,
     )
-    dictrange = torch.arange(cfg.run_cfg.sae_cfg.d_dict)
+    dictrange = torch.arange(cfg.run_cfg.init_cfg.d_dict)
 
     features = [
         f
