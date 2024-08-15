@@ -137,7 +137,7 @@ class Cache:
         def __init__(self):
             raise NotImplementedError
 
-    __RESERVED_NAMES = ["has", "watching"]
+    __RESERVED_NAMES = ["has", "watching", "destruct"]
     _NULL_ATTR = ...
     _NULLTYPES = [NotWatched, Expected, ExpectedIfWatched, _NULL_ATTR]  # TODO these
     _unwatched_writes = ...
@@ -156,6 +156,7 @@ class Cache:
         self._subcaches: dict = {}
         self._parent: Cache = parent
         self._subcache_index = subcache_index
+        self._is_root = parent is None
         super().__setattr__("has", CacheHas(self))
         super().__setattr__("watching", CacheWatching(self))
 
@@ -333,11 +334,12 @@ class Cache:
         return self
 
     def clone(self, parent=False):
-        clone = self.__class__()
         if parent:
-            clone._parent = self
+            clone = self.__class__(parent=self)
+            # clone._parent = self
             clone.parent_iadd(self)
         else:
+            clone = self.__class__()
             clone += self
         return clone
 
@@ -440,12 +442,17 @@ class Cache:
             a = a._parent
         return a
 
-    def destroy_children(self):
+    def destruct(self):
         for k, cache in [i for i in self._subcaches.items()]:
-            cache.destroy_children()
+            cache.destruct()
             del self._subcaches[k]
             del cache
+
         del self.__dict__
+
+    def __del__(self):
+        if hasattr(self, "_is_root") and self._is_root:
+            self.destruct()
 
     @property
     def _is_dead(self):

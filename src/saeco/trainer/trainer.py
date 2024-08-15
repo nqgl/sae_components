@@ -212,9 +212,7 @@ class Trainer:
 
             self.full_log(cache)
             self.t += 1
-            del cache.forward_reuse_dict
-            cache.destroy_children()
-            del cache
+            cache.destruct()
             if self.cfg.use_averaged_model:
                 self.averaged_model.update_parameters(self.trainable)
             if self.t % self.intermittent_metric_freq == 0:
