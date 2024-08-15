@@ -99,7 +99,7 @@ class Trainable(cl.Module):
             made_cache = True
         out = self.model(x, cache=cache)
         if made_cache:
-            cache.destroy_children()
+            cache.destruct()
             del cache
         return out
 
@@ -137,3 +137,16 @@ class Trainable(cl.Module):
             list(self.parameters())
         ), f"param_groups did not cover all parameters"
         return groups
+
+    def get_acts(self, x, cache: TrainCache = None):
+        made_cache = False
+        if cache is None:
+            cache = TrainCache()
+            made_cache = True
+        cache.acts = ...
+        cache(self)(x)
+        acts = cache.acts
+        if made_cache:
+            cache.destruct()
+            del cache
+        return acts
