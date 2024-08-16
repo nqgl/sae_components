@@ -37,7 +37,7 @@ def thresh_shrink(shrink_amount, eps, mult_by_shrank):
         @staticmethod
         @custom_fwd
         def forward(ctx, x):
-            shrink = torch.randn_like(x) * shrink_amount
+            shrink = torch.rand_like(x) * shrink_amount
             gate = x > 0
             ctx.save_for_backward(shrink, x)
             return torch.where(gate, 1 - shrink, 0)
