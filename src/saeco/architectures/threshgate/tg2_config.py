@@ -1,5 +1,5 @@
 from saeco.trainer.RunConfig import RunConfig
-from .tg_model2 import Config
+from .tg_model2 import Config, HardSoftConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -17,21 +17,21 @@ cfg = RunConfig[Config](
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=1_000,
+            run_length=50_000,
             resample_period=90_000,
             lr_cooldown_length=0.3,
         ),
         #
         batch_size=4096,
         optim="Adam",
-        lr=Swept(1e-3, 7e-4, 3e-4),
+        lr=5e-4,
         betas=(0.9, 0.999),
         #
         use_autocast=True,
         use_lars=True,
         #
         l0_target=25,
-        l0_target_adjustment_size=0.0001,
+        l0_target_adjustment_size=0.0003,
         l0_targeting_enabled=True,
         coeffs={
             "sparsity_loss": 1e-3,
@@ -50,8 +50,14 @@ cfg = RunConfig[Config](
     arch_cfg=Config(
         use_enc_bias=1,
         use_relu=Swept(True, False),
-        noise_mag=Swept(0.1, 0.03, 0.0),
-        p_soft=0.1,
-        end_l1_penalty=Swept(0.01, 0.0),
+        hs_cfg=HardSoftConfig(
+            p_soft=Swept(0.1, 0.3),
+            noise_mag=None,
+            eps=Swept(
+                1.0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3
+            ),  # gauss perf was best w .3 / .1
+            mult_by_shrank=Swept(True, False),
+        ),
+        end_l1_penalty=0.01,
     ),
 )

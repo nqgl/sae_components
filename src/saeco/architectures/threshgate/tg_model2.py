@@ -1,6 +1,7 @@
 import torch
 
 import torch.nn as nn
+from typing import Callable
 
 import saeco.components as co
 import saeco.components.features.features as ft
@@ -27,20 +28,52 @@ from saeco.components.penalties.l1_penalizer import (
 from saeco.sweeps import SweepableConfig, Swept
 import einops
 from saeco.components.hierarchical import hl2ll
+from torch.cuda.amp import custom_bwd, custom_fwd
+from saeco.components.jumprelu.kernels_fns import rect, gauss
+
+
+def thresh_shrink(shrink_amount, eps, mult_by_shrank):
+    class ThreshShrinkSoft(torch.autograd.Function):
+        @staticmethod
+        @custom_fwd
+        def forward(ctx, x):
+            shrink = torch.randn_like(x) * shrink_amount
+            gate = x > 0
+            ctx.save_for_backward(shrink, x)
+            return torch.where(gate, 1 - shrink, 0)
+
+        @staticmethod
+        @custom_bwd
+        def backward(ctx: torch.Any, grad_output):
+            (shrank, x) = ctx.saved_tensors
+            if mult_by_shrank:
+                return 1 / eps * gauss((x) / eps) * grad_output * shrank
+            return 1 / eps * gauss((x) / eps) * grad_output
+
+            return shrank * grad_output
+
+    return ThreshShrinkSoft.apply
+
+
+class HardSoftConfig(SweepableConfig):
+    noise_mag: float | None = 0.1
+    p_soft: float = 0.1
+    eps: float = 0.03
+    mult_by_shrank: bool = False
 
 
 class HSMix(cl.Module):
-    def __init__(self, p_soft: float, mag_noise=0.1):
+    def __init__(self, cfg: HardSoftConfig, soft_cls=nn.Sigmoid):
         super().__init__()
-        self.p_soft = p_soft
+        self.p_soft = cfg.p_soft
         self.hard = ReuseForward(co.ops.Lambda(lambda x: (x > 0).half()))
 
-        if mag_noise is None:
-            self.soft = nn.Sigmoid()
+        if cfg.noise_mag is None:
+            self.soft = soft_cls()
         else:
             self.soft = Seq(
-                co.ops.Lambda(lambda x: x + (torch.rand_like(x) - 0.5) * mag_noise),
-                nn.Sigmoid(),
+                co.ops.Lambda(lambda x: x + (torch.rand_like(x) - 0.5) * cfg.noise_mag),
+                soft_cls(),
             )
         self.rand = ReuseForward(
             co.ops.Lambda(lambda x: torch.rand_like(x) < self.p_soft)
@@ -54,42 +87,65 @@ class HSMix(cl.Module):
         )
 
 
+class ThreshHSMix(HSMix):
+    def __init__(self, cfg: HardSoftConfig):
+        super().__init__(
+            cfg,
+            soft_cls=lambda: co.ops.Lambda(
+                thresh_shrink(0.1, eps=cfg.eps, mult_by_shrank=cfg.mult_by_shrank)
+            ),
+        )
+
+
+hs_types = {
+    "sigmoid": HSMix,
+    "shrankthresh": ThreshHSMix,
+}
+
+
 class Config(SweepableConfig):
+    hs_cfg: HardSoftConfig = HardSoftConfig()
     pre_bias: bool = False
     # detach: bool = Swept(True, False)
     bf: int = 32
     num_layers: int = 3
-    l0_target_ratio: float = 2
+    # l0_target_ratio: float = 2
     use_enc_bias: int = True
     use_relu: bool = True
-    noise_mag: float = 0.1
-    p_soft: float = 0.1
     end_l1_penalty: float = 0.01
-    # decay_l1_penalty: float =
+    hs_type: str = "shrankthresh"
+
+
+def expand_to_list(i, n):
+    if isinstance(i, list):
+        assert len(i) == n
+        return i
+    return [i] * n
 
 
 class MultiGate(cl.Module):
     def __init__(
         self,
+        hs_cfg: HardSoftConfig | list[HardSoftConfig],
+        targets: float | list[float],
+        hs_generator: Callable | list[Callable] = HSMix,
         n_sections=3,
-        targets: float | list[float] = 5,
         use_relu=True,
-        noise_mag=0.1,
-        p_soft=0.1,
         end_l1_penalty=0.01,
     ):
         super().__init__()
-        if isinstance(targets, float):
-            targets = [targets] * (n_sections - 1)
-        assert len(targets) == n_sections - 1
+        targets = expand_to_list(targets, n_sections - 1)
+        hs_generator = expand_to_list(hs_generator, n_sections - 1)
+        hs_cfg = expand_to_list(hs_cfg, n_sections - 1)
+
         self.n_sections = n_sections
         self.all_acts = ReuseForward(
             cl.Router(
                 *(
                     [nn.ReLU() if use_relu else nn.Identity()]
                     + [
-                        ReuseForward(HSMix(p_soft=p_soft, mag_noise=noise_mag))
-                        for _ in range(n_sections - 1)
+                        ReuseForward(hs_generator[i - 1](cfg=hs_cfg[i - 1]))
+                        for i in range(1, n_sections)
                     ]
                 )
             ).reduce(lambda *l: l)
@@ -207,9 +263,9 @@ class MultiGate(cl.Module):
             ),
         )
         self.penalty = LinearDecayL1Penalty(
-            begin=0.3,
+            begin_scale=0.3,
             end=15_000,
-            begin_scale=0,
+            begin=0,
             end_scale=end_l1_penalty,
         )
 
@@ -277,11 +333,11 @@ def multigate_sae(
     # )
     # encoder.get_bias = lambda: encoder.stored_fake_res_bias
     multigate = MultiGate(
-        cfg.num_layers,
-        [None, 100],
+        n_sections=cfg.num_layers,
+        targets=[None, 100],
         use_relu=cfg.use_relu,
-        noise_mag=cfg.noise_mag,
-        p_soft=cfg.p_soft,
+        hs_generator=hs_types[cfg.hs_type],
+        hs_cfg=cfg.hs_cfg,
         end_l1_penalty=cfg.end_l1_penalty,
     )
     model = Seq(
