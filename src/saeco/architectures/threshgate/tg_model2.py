@@ -37,7 +37,7 @@ def thresh_shrink(shrink_amount, eps, mult_by_shrank):
         @staticmethod
         @custom_fwd
         def forward(ctx, x):
-            shrink = torch.rand_like(x) * shrink_amount
+            shrink = torch.randn_like(x) * shrink_amount
             gate = x > 0
             ctx.save_for_backward(shrink, x)
             return torch.where(gate, 1 - shrink, 0)
@@ -60,6 +60,7 @@ class HardSoftConfig(SweepableConfig):
     p_soft: float = 0.1
     eps: float = 0.03
     mult_by_shrank: bool = False
+    post_noise: float | None = 0.1
 
 
 class HSMix(cl.Module):
@@ -97,23 +98,93 @@ class ThreshHSMix(HSMix):
         )
 
 
+def hs_from_soft(soft_cls):
+    class CustHS(HSMix):
+        def __init__(self, cfg: HardSoftConfig):
+            super().__init__(
+                cfg,
+                soft_cls=soft_cls,
+            )
+
+    return CustHS
+
+
+class RandSig_fn(torch.autograd.Function):
+    @staticmethod
+    @custom_fwd
+    def forward(ctx, x):
+        sig = x.sigmoid()
+        gated = torch.rand_like(x) < sig
+        ctx.save_for_backward(x)
+        return torch.where(gated, 0.9, 0).to(x.dtype)
+
+    @staticmethod
+    @custom_bwd
+    def backward(ctx, grad_output):
+        (x,) = ctx.saved_tensors
+        return grad_output * x.sigmoid() * (1 - x.sigmoid())
+
+
+class RandSig(nn.Module):
+    def forward(self, x):
+        return RandSig_fn.apply(x)
+
+
+RandSigHS = hs_from_soft(RandSig)
+
+
+def fromnoise_op(noise_op):
+    class NormalrandSig_fn(torch.autograd.Function):
+        @staticmethod
+        @custom_fwd
+        def forward(ctx, x):
+            sig = x.sigmoid()
+            gated = torch.rand_like(x) < sig
+            noise = torch.randn_like(x) * 0.1
+            ctx.save_for_backward(x, noise)
+
+            return torch.where(gated, 1 - noise, 0).to(x.dtype)
+
+        @staticmethod
+        @custom_bwd
+        def backward(ctx, grad_output):
+            (x, noise) = ctx.saved_tensors
+            return noise_op(noise) * grad_output * x.sigmoid() * (1 - x.sigmoid())
+
+    class NormalrandSig(nn.Module):
+        def forward(self, x):
+            return NormalrandSig_fn.apply(x)
+
+    return NormalrandSig
+
+
+NormalrandSigHS = hs_from_soft(fromnoise_op(torch.relu))
+ExpNormalrandSigHS = hs_from_soft(fromnoise_op(torch.exp))
+SigNormalrandSigHS = hs_from_soft(fromnoise_op(torch.sigmoid))
+IgnoreNoiseGradSigHS = hs_from_soft(fromnoise_op(lambda x: 1))
+
 hs_types = {
     "sigmoid": HSMix,
     "shrankthresh": ThreshHSMix,
+    "randsig": RandSigHS,
+    "normrandsig": NormalrandSigHS,
+    "expnormrandsig": ExpNormalrandSigHS,
+    "signormrandsig": SigNormalrandSigHS,
+    "ignoreshrank": IgnoreNoiseGradSigHS,
 }
 
 
 class Config(SweepableConfig):
     hs_cfg: HardSoftConfig = HardSoftConfig()
     pre_bias: bool = False
-    # detach: bool = Swept(True, False)
     bf: int = 32
+    detach: bool = True
     num_layers: int = 3
     # l0_target_ratio: float = 2
     use_enc_bias: int = True
     use_relu: bool = True
     end_l1_penalty: float = 0.01
-    hs_type: str = "shrankthresh"
+    hs_type: str = ""
 
 
 def expand_to_list(i, n):
@@ -132,12 +203,13 @@ class MultiGate(cl.Module):
         n_sections=3,
         use_relu=True,
         end_l1_penalty=0.01,
+        detach=True,
     ):
         super().__init__()
         targets = expand_to_list(targets, n_sections - 1)
         hs_generator = expand_to_list(hs_generator, n_sections - 1)
         hs_cfg = expand_to_list(hs_cfg, n_sections - 1)
-
+        self.detach = detach
         self.n_sections = n_sections
         self.all_acts = ReuseForward(
             cl.Router(
@@ -264,7 +336,7 @@ class MultiGate(cl.Module):
         )
         self.penalty = LinearDecayL1Penalty(
             begin_scale=0.3,
-            end=15_000,
+            end=25_000,
             begin=0,
             end_scale=end_l1_penalty,
         )
@@ -274,11 +346,14 @@ class MultiGate(cl.Module):
 
         cache(self).update_penalty_l0s(pre_acts_list)
         cache(self).apply_penalty(pre_acts_list)
-        out = torch.where(
-            cache(self).noised_mask(pre_acts_list),
-            cache(self).out_det(pre_acts_list),
-            cache(self).out(pre_acts_list),
-        )
+        if self.detach:
+            out = torch.where(
+                cache(self).noised_mask(pre_acts_list),
+                cache(self).out_det(pre_acts_list),
+                cache(self).out(pre_acts_list),
+            )
+        else:
+            out = cache(self).out(pre_acts_list)
         cache(self).penalty(out)
         return out
 
@@ -339,6 +414,7 @@ def multigate_sae(
         hs_generator=hs_types[cfg.hs_type],
         hs_cfg=cfg.hs_cfg,
         end_l1_penalty=cfg.end_l1_penalty,
+        detach=cfg.detach,
     )
     model = Seq(
         **useif(
@@ -356,10 +432,14 @@ def multigate_sae(
             noise_gate=multigate.noised_mask,
             acts=multigate,
         ).reduce(
-            lambda g, a: [
-                torch.where(g, a, 0),
-                torch.where(~g, a, 0),
-            ]
+            (
+                lambda g, a: [
+                    torch.where(g, a, 0),
+                    torch.where(~g, a, 0),
+                ]
+            )
+            if cfg.detach
+            else (lambda g, a: [torch.zeros_like(a), a])
         ),
         dec_router=cl.Router(
             det_dec=init._decoder.detached_no_bias,

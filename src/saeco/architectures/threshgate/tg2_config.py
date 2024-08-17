@@ -24,8 +24,8 @@ cfg = RunConfig[Config](
         #
         batch_size=4096,
         optim="Adam",
-        lr=5e-4,
-        betas=(0.9, 0.999),
+        lr=Swept(1e-3, 5e-4),
+        betas=(0.9, 0.997),
         #
         use_autocast=True,
         use_lars=True,
@@ -51,13 +51,15 @@ cfg = RunConfig[Config](
         use_enc_bias=1,
         use_relu=Swept(True, False),
         hs_cfg=HardSoftConfig(
-            p_soft=Swept(0.1, 0.3),
+            p_soft=Swept(1.0, 0.75),
             noise_mag=None,
-            eps=Swept(
-                1.0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3
-            ),  # gauss perf was best w .3 / .1
-            mult_by_shrank=Swept(True, False),
+            eps=0.2,
+            # mult_by_shrank=Swept(True, False),
         ),
-        end_l1_penalty=0.01,
+        hs_type=Swept(
+            "normrandsig", "expnormrandsig", "signormrandsig", "ignoreshrank", "sigmoid"
+        ),
+        end_l1_penalty=0.001,
+        detach=False,
     ),
 )
