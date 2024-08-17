@@ -61,6 +61,9 @@ class HardSoftConfig(SweepableConfig):
     eps: float = 0.03
     mult_by_shrank: bool = False
     post_noise: float | None = 0.1
+    uniform_noise: bool = True
+    noise_scale: float = 0.1
+    gate_backwards: bool = True
 
 
 class HSMix(cl.Module):
@@ -133,23 +136,36 @@ class RandSig(nn.Module):
 RandSigHS = hs_from_soft(RandSig)
 
 
-def fromnoise_op(noise_op):
+def fromnoise_op(
+    noise_op,
+    uniform_noise=False,
+    noise_scale=0.1,
+    gate_backwards=True,
+):
     class NormalrandSig_fn(torch.autograd.Function):
         @staticmethod
         @custom_fwd
         def forward(ctx, x):
             sig = x.sigmoid()
             gated = torch.rand_like(x) < sig
-            noise = torch.randn_like(x) * 0.1
-            ctx.save_for_backward(x, noise)
+            noise = (
+                (torch.rand_like(x) - 0.5) * (12**0.5)  # var-> 1
+                if uniform_noise
+                else torch.randn_like(x)
+            )
+            noise = noise * noise_scale
+            ctx.save_for_backward(sig, noise, gated)
 
             return torch.where(gated, 1 - noise, 0).to(x.dtype)
 
         @staticmethod
         @custom_bwd
         def backward(ctx, grad_output):
-            (x, noise) = ctx.saved_tensors
-            return noise_op(noise) * grad_output * x.sigmoid() * (1 - x.sigmoid())
+            (sig, noise, gated) = ctx.saved_tensors
+            grad = noise_op(noise) * grad_output * sig * (1 - sig)
+            if gate_backwards:
+                return torch.where(gated, grad, 0)
+            return grad
 
     class NormalrandSig(nn.Module):
         def forward(self, x):
@@ -158,7 +174,20 @@ def fromnoise_op(noise_op):
     return NormalrandSig
 
 
-NormalrandSigHS = hs_from_soft(fromnoise_op(torch.relu))
+class NormalrandSigHS(HSMix):
+    def __init__(self, cfg: HardSoftConfig):
+        super().__init__(
+            cfg,
+            soft_cls=fromnoise_op(
+                torch.relu,
+                uniform_noise=cfg.uniform_noise,
+                noise_scale=cfg.noise_scale,
+                gate_backwards=cfg.gate_backwards,
+            ),
+        )
+
+
+NormalrandSigHS
 ExpNormalrandSigHS = hs_from_soft(fromnoise_op(torch.exp))
 SigNormalrandSigHS = hs_from_soft(fromnoise_op(torch.sigmoid))
 IgnoreNoiseGradSigHS = hs_from_soft(fromnoise_op(lambda x: 1))

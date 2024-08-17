@@ -24,7 +24,7 @@ cfg = RunConfig[Config](
         #
         batch_size=4096,
         optim="Adam",
-        lr=Swept(1e-3, 5e-4),
+        lr=1e-3,
         betas=(0.9, 0.997),
         #
         use_autocast=True,
@@ -55,10 +55,11 @@ cfg = RunConfig[Config](
             noise_mag=None,
             eps=0.2,
             # mult_by_shrank=Swept(True, False),
+            uniform_noise=Swept(True, False),
+            noise_scale=Swept(0.02, 0.05, 0.1, 0.2),
+            gate_backwards=Swept(True, False),
         ),
-        hs_type=Swept(
-            "normrandsig", "expnormrandsig", "signormrandsig", "ignoreshrank", "sigmoid"
-        ),
+        hs_type="normrandsig",
         end_l1_penalty=0.001,
         detach=False,
     ),
