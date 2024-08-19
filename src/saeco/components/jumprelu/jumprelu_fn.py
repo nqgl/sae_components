@@ -14,7 +14,7 @@ class H_z_minus_thresh_fn(torch.autograd.Function):
     def forward(ctx, z, thresh, kernel, eps):
 
         thresh = thresh.relu()
-        gate = z > thresh
+        gate = (z > thresh) & (z > 0)
         ctx.save_for_backward(z, thresh)
         ctx.kernel = kernel
         ctx.eps = eps
@@ -30,15 +30,54 @@ class H_z_minus_thresh_fn(torch.autograd.Function):
         return None, thresh_grad, None, None
 
 
+def modified_H(n):
+    class H_z_minus_thresh_modified_fn(torch.autograd.Function):
+        @staticmethod
+        @custom_fwd
+        def forward(ctx, z, thresh, kernel, eps):
+
+            thresh = thresh.relu()
+            gate = (z > thresh) & (z > 0)
+            ctx.save_for_backward(z, thresh)
+            ctx.kernel = kernel
+            ctx.eps = eps
+            return torch.where(gate, 1, 0).to(z.dtype)
+
+        @staticmethod
+        @custom_bwd
+        def backward(ctx, grad_output):
+            z, thresh = ctx.saved_tensors
+            eps = ctx.eps
+            kernel = ctx.kernel
+            thresh_grad = -1 / eps * kernel((z - thresh) / eps) * grad_output
+            if n == 1:
+                return -thresh_grad, thresh_grad, None, None
+            if n == 2:
+                return -thresh_grad, torch.where(z > 0, thresh_grad, 0), None, None
+            if n == 3:
+                return torch.where(z > 0, -thresh_grad, 0), thresh_grad, None, None
+            if n == 4:
+                return None, torch.where(z > 0, thresh_grad, 0), None, None
+
+    return H_z_minus_thresh_modified_fn.apply
+
+
 class HStep(nn.Module):
-    def __init__(self, thresh, kernel, eps):
+    def __init__(self, thresh, kernel, eps, modified_grad=False, exp=False):
         super().__init__()
         self.thresh = thresh
         self.kernel = kernel
         self.eps = eps
+        self.exp = exp
+        self.H = H_z_minus_thresh_fn.apply
+        if modified_grad:
+            self.H = modified_H(modified_grad)
 
     def forward(self, x):
-        return H_z_minus_thresh_fn.apply(x, self.thresh, self.kernel, self.eps)
+        thresh = self.thresh
+        if self.exp:
+            thresh = thresh.exp()
+        return self.H(x, thresh, self.kernel, self.eps)
 
 
 class JumpReLU_fn(torch.autograd.Function):
@@ -63,12 +102,61 @@ class JumpReLU_fn(torch.autograd.Function):
         return z_grad, thresh_grad, None, None
 
 
+def jumprelu_modified(n):
+    class JumpReLU_Modified_fn(torch.autograd.Function):
+        @staticmethod
+        @custom_fwd
+        def forward(ctx, z, thresh, kernel, eps):
+            thresh = thresh.relu()
+            gate = z > thresh
+            ctx.save_for_backward(z, thresh, gate)
+            ctx.eps = eps
+            ctx.kernel = kernel
+            return torch.where(gate, z, 0)
+
+        @staticmethod
+        @custom_bwd
+        def backward(ctx, grad_output):
+            z, thresh, gate = ctx.saved_tensors
+            eps = ctx.eps
+            kernel = ctx.kernel
+            thresh_grad = -thresh / eps * kernel((z - thresh) / eps) * grad_output
+            z_grad = torch.where(gate, grad_output, 0)
+            if n == 1:
+                return z_grad - thresh_grad, thresh_grad, None, None
+            if n == 2:
+                return (
+                    z_grad - thresh_grad,
+                    torch.where(z > 0, thresh_grad, 0),
+                    None,
+                    None,
+                )
+            if n == 3:
+                return (
+                    z_grad - torch.where(z > 0, thresh_grad, 0),
+                    thresh_grad,
+                    None,
+                    None,
+                )
+            if n == 4:
+                return (
+                    z_grad,
+                    torch.where(z > 0, thresh_grad, 0),
+                    None,
+                    None,
+                )
+
+    return JumpReLU_Modified_fn.apply
+
+
 class L0Penalty(Penalty):
     def __init__(
         self,
         thresh,
         eps,
         kernel=rect,
+        modified_grad=False,
+        exp=False,
         scale=1.0,
     ):
         super().__init__()
@@ -77,6 +165,8 @@ class L0Penalty(Penalty):
             thresh=thresh,
             kernel=kernel,
             eps=eps,
+            exp=exp,
+            modified_grad=modified_grad,
         )
 
     def penalty(self, x, *, cache):
@@ -88,14 +178,21 @@ from saeco.components.features import FeaturesParam
 
 
 class JumpReLU(cl.Module):
-    def __init__(self, thresh, eps, kernel=rect):
+    def __init__(self, thresh, eps, kernel=rect, modified_jumprelu=False, exp=False):
         super().__init__()
         self.thresh = thresh
         self.kernel = kernel
         self.eps = eps
+        self.jumprelu = JumpReLU_fn.apply
+        if modified_jumprelu:
+            self.jumprelu = jumprelu_modified(modified_jumprelu)
+        self.exp = exp
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        return JumpReLU_fn.apply(x, self.thresh, self.kernel, self.eps)
+        thresh = self.thresh
+        if self.exp:
+            thresh = thresh.exp()
+        return self.jumprelu(x, thresh, self.kernel, self.eps)
 
     @property
     def features(self):

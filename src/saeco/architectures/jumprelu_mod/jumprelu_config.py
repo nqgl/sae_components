@@ -1,5 +1,5 @@
 from saeco.trainer.RunConfig import RunConfig
-from .jumprelu_model import Config
+from .modified_jumprelu_model import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -22,16 +22,16 @@ cfg = RunConfig[Config](
         #
         batch_size=4096,
         optim="Adam",
-        lr=1e-3,
+        lr=1.5e-3,
         betas=(0.9, 0.999),
         #
-        use_autocast=True,
+        use_autocast=False,
         use_lars=True,
         #
         l0_target=25,
         l0_target_adjustment_size=0.0003,
         coeffs={
-            "sparsity_loss": 7e-4,
+            "sparsity_loss": 1e-4,
             "L2_loss": 1,
         },
         #
@@ -43,13 +43,14 @@ cfg = RunConfig[Config](
     #
     arch_cfg=Config(
         pre_bias=False,
-        eps=3e-3,
-        thresh_initial_value=0.5,
-        kernel="inv2",
-        thresh_lr_mult=3,
-        modified_jumprelu_grad=4,
-        modified_thresh_grad=Swept(1, 2, 3),
+        eps=0.3,  # Swept(1e-1, 3e-1),
+        thresh_initial_value=1,
+        kernel="rect",
+        thresh_lr_mult=1,
+        modified_jumprelu_grad=8,  # Swept(5, 6),
+        modified_thresh_grad=4,
         penalize_pre_acts=True,
-        exp=False,
+        exp=True,
+        leniency=Swept[float](0.8),
     ),
 )

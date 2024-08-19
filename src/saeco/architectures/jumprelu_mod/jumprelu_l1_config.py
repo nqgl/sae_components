@@ -1,5 +1,5 @@
 from saeco.trainer.RunConfig import RunConfig
-from .jumprelu_model import Config
+from .jumprelu_l1_model import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -17,21 +17,22 @@ cfg = RunConfig[Config](
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000, resample_period=12_500, lr_cooldown_length=0.4
+            run_length=50_000,
+            resample_period=12_500,
         ),
         #
         batch_size=4096,
         optim="Adam",
-        lr=1e-3,
+        lr=Swept(1e-3),
         betas=(0.9, 0.999),
         #
         use_autocast=True,
         use_lars=True,
         #
         l0_target=25,
-        l0_target_adjustment_size=0.0003,
+        l0_target_adjustment_size=0.0002,
         coeffs={
-            "sparsity_loss": 7e-4,
+            "sparsity_loss": 3e-3,
             "L2_loss": 1,
         },
         #
@@ -43,13 +44,11 @@ cfg = RunConfig[Config](
     #
     arch_cfg=Config(
         pre_bias=False,
-        eps=3e-3,
-        thresh_initial_value=0.5,
-        kernel="inv2",
-        thresh_lr_mult=3,
-        modified_jumprelu_grad=4,
-        modified_thresh_grad=Swept(1, 2, 3),
-        penalize_pre_acts=True,
-        exp=False,
+        eps=Swept(3e-2),  ### Swept(1.0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3),
+        thresh_initial_value=1,
+        kernel="rect",  ### Swept("rect", "tri", "exp", "trap"),
+        l1_begin_scale=Swept(0.3, 0.1, 0.03),
+        l1_end_scale=Swept(0.0, 0.01),
+        l1_end=Swept(20_000, 35_000, 49_000),
     ),
 )

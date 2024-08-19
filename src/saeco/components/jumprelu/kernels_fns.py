@@ -32,6 +32,25 @@ def softtrap(x: torch.Tensor) -> torch.Tensor:
     return torch.exp(-((x * 2.16) ** 4) / 2)
 
 
+def inv2(x: torch.Tensor) -> torch.Tensor:
+    k = 1
+    h = 1
+    a = k / 2 / h
+    q = a * k / 2
+
+    return q / ((x.abs() * k + a).pow(2))
+
+
+def inv(x: torch.Tensor) -> torch.Tensor:
+    h = 1
+    r = 1.5
+    ri = r - 1
+    a = 2
+    q = (a) ** r
+    k = 1 / ((ri / 2 / q) * a**ri)
+    return q / ((x.abs() * k + a).pow(r))
+
+
 kernels = dict(
     rect=rect,
     tri=tri,
@@ -40,6 +59,8 @@ kernels = dict(
     gauss=gauss,
     bimodal=bimodal,
     softtrap=softtrap,
+    inv2=inv2,
+    inv=inv,
 )
 
 
@@ -79,3 +100,5 @@ if __name__ == "__main__":
     check(gauss)
     check(bimodal)
     check(softtrap)
+    check(inv2, samples=1024 * 128)
+    check(inv, range=200, samples=1024 * 1024)

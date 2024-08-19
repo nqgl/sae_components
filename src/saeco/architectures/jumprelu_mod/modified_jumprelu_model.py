@@ -4,6 +4,7 @@ import torch.nn as nn
 
 import saeco.components as co
 import saeco.components.features.features as ft
+import saeco.components.jumprelu.jumprelu_fn2
 import saeco.core as cl
 
 from saeco.initializer import Initializer
@@ -23,6 +24,12 @@ from saeco.sweeps import SweepableConfig
 from saeco.components.jumprelu.jumprelu_fn import HStep, JumpReLU, L0Penalty
 from saeco.components.jumprelu.kernels_fns import kernels
 from saeco.components.features.param_metadata import ParamMetadata
+import saeco.components.jumprelu.jumprelu_fn as jfun
+from saeco.components.jumprelu.jumprelu_fn2 import modify_modified
+
+modify_modified()
+#
+# jfun.jumprelu_modified = saeco.components.jumprelu.jumprelu_fn2.jumprelu_modified2
 
 
 class Config(SweepableConfig):
@@ -40,6 +47,7 @@ class Config(SweepableConfig):
     modified_thresh_grad: int = False
     penalize_pre_acts: bool = True
     exp: bool = False
+    leniency: float = 1.0
 
     def get_kernel(self):
         return kernels[self.kernel]
@@ -52,7 +60,7 @@ def jumprelu_sae(
     init.new_encoder_bias()
     thresh = nn.Parameter(
         torch.zeros(init.d_dict) + cfg.thresh_initial_value
-    )  # TODO resample thresh
+    )  # TODO resample (reset on resample) thresh
     if cfg.exp:
         with torch.no_grad():
             thresh = thresh.log_()
@@ -69,7 +77,7 @@ def jumprelu_sae(
                     kernel=cfg.get_kernel(),
                     eps=cfg.eps,
                     exp=cfg.exp,
-                    modified_grad=cfg.modified_thresh_grad,
+                    modified_grad=(cfg.modified_thresh_grad, cfg.leniency, 768),
                 ),
             ),
             nonlinearity=JumpReLU(
@@ -77,7 +85,7 @@ def jumprelu_sae(
                 kernel=cfg.get_kernel(),
                 eps=cfg.eps,
                 exp=cfg.exp,
-                modified_jumprelu=cfg.modified_jumprelu_grad,
+                modified_jumprelu=(cfg.modified_jumprelu_grad, cfg.leniency, 768),
             ),
         ),
         freqs=EMAFreqTracker(),
@@ -89,7 +97,7 @@ def jumprelu_sae(
                 kernel=cfg.get_kernel(),
                 eps=cfg.eps,
                 exp=cfg.exp,
-                modified_grad=cfg.modified_thresh_grad,
+                modified_grad=(cfg.modified_thresh_grad, cfg.leniency, 768),
             ),
         ),
         decoder=ft.OrthogonalizeFeatureGrads(
