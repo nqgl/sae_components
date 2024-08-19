@@ -161,19 +161,19 @@ class L0Targeter(L0TargeterProto):
 
         self.inv = True
 
-        self.i = MultiEma([0.001, 0.0003, 0.0001], weights=[1, 1, 1], reweight=False)
+        self.i = MultiEma([0.001, 0.0003, 0.0001], weights=[1, 1, 0.3], reweight=False)
         self.p = lfema(0.003)
         # MultiEma([0.01], reweight=False)
         self.velocity = 0
 
-        self.d = diffemas([0.01], [0.3, 0.5], [0.1])
+        self.d = diffemas([0.03], [0.3, 0.5], [0.1])
         # diffemas([0.011, 0.003, 0.05, 0.1], [0.4, 0.5], [0.07, 0.1])
         # MultiEma(
         #     [0.08, 0.03, 0.2],
         #     weights=[1, -0.9, -0.1],
         #     reweight=False,
         # )
-        self.dd = MultiEma([0.01, 0.007, 0.003])
+        self.dd = MultiEma([0.1, 0.007, 0.003])
         # MultiEma(
         #     [0.007, 0.01, 0.003, 0.0012],
         #     # [0.003 * 1.62 ** (-i) for i in range(8)],
@@ -195,11 +195,11 @@ class L0Targeter(L0TargeterProto):
             reweight=False,
         )
         self.dd2 = MultiEma(
-            [0.0005],
+            [0.003],
             # [0.01 * (1.6 ** (-i)) for i in range(4)],
             reweight=False,
         )
-        self.dd2.ema += 1
+        self.dd2.ema += 0.5
 
         self.mo = torch.zeros(1).cuda()
         self.mo_beta = 0.1
@@ -223,7 +223,7 @@ class L0Targeter(L0TargeterProto):
 
     @property
     def D(self):
-        return self.d.value * self.d_c / self.dd2.value**2
+        return self.d.value * self.d_c / self.dd2.value
 
     @property
     def A(self):
@@ -249,17 +249,19 @@ class L0Targeter(L0TargeterProto):
         # self.a.decay(0.001)
         self.a.update(self.d.value)
         self.aa.update(self.a.value)
-        dsign = self.d.value.sign()
-        if dsign != self.last_dsign:
-            interval = t - self.last_flip_t
-            if interval < 1000:
-                if self.last_flip_interval < 1000:
-                    self.dd2.ema += 1.5
-                self.dd2.ema += 0.3
-            self.last_flip_interval = interval
-            self.last_flip_t = t
-        else:
-            self.dd2.update(torch.ones(1).cuda() * 0.3)
+        dsign = self.dd.value.sign()
+
+        if t > 2000:
+            if dsign != self.last_dsign:
+                interval = t - self.last_flip_t
+                if interval < 1000:
+                    if self.last_flip_interval < 1000:
+                        self.dd2.ema += 1.5
+                    self.dd2.ema += 0.3
+                self.last_flip_interval = interval
+                self.last_flip_t = t
+            else:
+                self.dd2.update(torch.ones(1).cuda() * 0.3)
         self.last_dsign = dsign
 
     def __call__(self, l0: float, t: int) -> float:
@@ -292,7 +294,7 @@ class L0Targeter(L0TargeterProto):
                 step.clamp(-1, 1)
                 + self.P.clamp(-1, 1)
                 + self.I.clamp(-1, 1)
-                + self.D.clamp(-1.2, 1.2)
+                + self.D.clamp(-1, 1) * 1.5
                 + self.A.clamp(-1, 1)
             ).item()
 
