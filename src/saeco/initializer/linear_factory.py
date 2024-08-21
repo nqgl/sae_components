@@ -174,7 +174,7 @@ class LinearFactory:
 
         if self._bias_tie is not None:
             self._bias_tie(temp)
-        return temp.bias
+        return nn.Parameter(temp.bias)
 
     @property
     def raw(self):

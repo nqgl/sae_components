@@ -219,7 +219,9 @@ class Trainer:
                 self.trainable.eval()
                 self.do_intermittent_metrics()
                 self.trainable.train()
-            if self.t % self.eval_step_freq == 0:
+            if self.t % self.eval_step_freq == 0 or (
+                self.t > self.cfg.schedule.run_length - 1000 and self.t % 5 == 0
+            ):
                 self.trainable.eval()
                 self.eval_step(x)
                 self.trainable.train()

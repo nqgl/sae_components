@@ -90,14 +90,14 @@ def jumprelu_modified2(n):
                 z_grad = (
                     torch.where(z > 0, grad_output, 0)
                     + shrinkgrad_adjustment(
-                        torch.where(((z < thresh)) & (z > 0), thresh, 0),
+                        torch.where(((z < thresh)) & (z > thresh / 2), z, 0),
                         leniency=leniency,
                         dd=dd,
                         b=b,
                     )
                     * 0.5
-                ) * ((z / (thresh + 1e-7)).clamp(0, 1))
-                z_grad = torch.where(z > thresh, z_grad, z_grad * 0.5)
+                )
+                z_grad = torch.where(z > thresh, z_grad, z_grad * 0.1)
 
             thresh_grad = (
                 -thresh / eps * kernel((z - thresh) / eps) * (grad_output + adjustment)
@@ -171,6 +171,13 @@ def jumprelu_modified2(n):
             if n == 8:
                 return (
                     z_grad,
+                    torch.where(z > 0, thresh_grad, 0),
+                    None,
+                    None,
+                )
+            if n == 9:
+                return (
+                    z_grad - torch.where(z < thresh, thresh_grad, 0),
                     torch.where(z > 0, thresh_grad, 0),
                     None,
                     None,
