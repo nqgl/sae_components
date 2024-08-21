@@ -1,5 +1,5 @@
 from saeco.trainer.RunConfig import RunConfig
-from .tg_model2 import Config, HardSoftConfig
+from .tg_grad_model import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -8,6 +8,7 @@ from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.TrainConfig import TrainConfig
+from saeco.initializer import InitConfig
 
 PROJECT = "sae sweeps"
 
@@ -18,49 +19,39 @@ cfg = RunConfig[Config](
         ),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
-            resample_period=90_000,
-            lr_cooldown_length=0.3,
+            resample_period=4000,
         ),
         #
         batch_size=4096,
         optim="Adam",
-        lr=Swept(1e-3, 6e-4),
-        betas=(0.9, 0.997),
+        lr=Swept(1e-3, 3e-4),
+        betas=(0.9, 0.999),
         #
-        use_autocast=True,
+        use_autocast=False,
         use_lars=True,
         #
         l0_target=25,
         l0_target_adjustment_size=0.0003,
-        l0_targeting_enabled=True,
+        l0_targeting_enabled=Swept(True, False),
+        use_averaged_model=False,
         coeffs={
-            "sparsity_loss": 1e-3,
+            "sparsity_loss": 3e-4,
             "L2_loss": 1,
         },
         #
         wandb_cfg=dict(project=PROJECT),
-        use_averaged_model=False,
     ),
     resampler_config=AnthResamplerConfig(
-        optim_reset_cfg=OptimResetValuesConfig(),
-        expected_biases=None,
-        # expected_encs=1,
+        optim_reset_cfg=OptimResetValuesConfig(), expected_biases=None
     ),
     #
+    init_cfg=InitConfig(dict_mult=8),
     arch_cfg=Config(
-        use_enc_bias=1,
-        use_relu=True,
-        hs_cfg=HardSoftConfig(
-            p_soft=Swept(0.75, 0.5, 0.33),
-            noise_mag=None,
-            eps=0.2,
-            # mult_by_shrank=Swept(True, False),
-            uniform_noise=True,  # Swept(True, False),
-            noise_scale=Swept(0.1, 0.2, 0.3, 0.4, 0.5),
-            gate_backwards=False,
-        ),
-        hs_type="normrandsig",
-        end_l1_penalty=0.0,
-        detach=False,
+        uniform_noise=False,
+        noise_mult=0.3,
+        exp_mag=False,
+        leniency_targeting=Swept(True, False),
+        decay_l1=Swept(True, False),
+        mag_weights=Swept(True, False),
     ),
 )
