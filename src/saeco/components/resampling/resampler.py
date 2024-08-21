@@ -69,6 +69,7 @@ class Resampler(ABC):
         self._encs = None
         self._decs = None
         self._biases = None
+        self._other_types = None
         # self._freq_tracker = None
 
     def get_feature_indices_to_reset(self):
@@ -92,7 +93,7 @@ class Resampler(ABC):
         assert self.cfg.expected_decs is None or self.cfg.expected_decs == len(
             self.decs
         )
-        for r in self.encs + self.decs + self.biases:
+        for r in self.encs + self.decs + self.biases + self.other_types:
             r.set_cfg(self.cfg)
             r.resample(
                 indices=i,
@@ -117,6 +118,7 @@ class Resampler(ABC):
         encs = []
         decs = []
         biases = []
+        other_types = []
         for param in get_resampled_params(self.model):
             if param.type == "enc":
                 encs.append(param)
@@ -125,9 +127,7 @@ class Resampler(ABC):
             elif param.type == "bias":
                 biases.append(param)
             else:
-                raise ValueError(
-                    f'Unexpected resample site {param} of type {param.type}"'
-                )
+                other_types.append(param)
 
         if self._encs is None:
             self._encs = encs
@@ -135,6 +135,8 @@ class Resampler(ABC):
             self._decs = decs
         if self._biases is None:
             self._biases = biases
+        if self._other_types is None:
+            self._other_types = other_types
 
     @property
     @lazycall
@@ -184,6 +186,12 @@ class Resampler(ABC):
             self._encs = []
         self._encs.append(bias)
         return bias
+
+    @property
+    def other_types(self) -> list[Resamplable]:
+        if self._other_types is None:
+            self.setup_resample_types()
+        return self._other_types
 
     @torch.no_grad()
     def bias_freqbalance(
