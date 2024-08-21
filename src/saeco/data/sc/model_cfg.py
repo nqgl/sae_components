@@ -32,6 +32,7 @@ class ModelConfig(SweepableConfig):
             nonlocal model
             if model is None:
                 model = HookedTransformer.from_pretrained(self.model_name)
+                model = model.cuda()
             return model
 
         def setmodel(m):
