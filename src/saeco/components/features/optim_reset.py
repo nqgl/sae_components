@@ -118,6 +118,7 @@ class FeatureParamType(str, Enum):
     bias = "bias"
     dec = "dec"
     enc = "enc"
+    other = "other"
 
 
 from saeco.sweeps import SweepableConfig

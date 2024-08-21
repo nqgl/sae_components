@@ -193,6 +193,8 @@ class FeaturesParam:
                 new_directions = new_directions[0]
             elif self.type == "dec":
                 new_directions = new_directions[1]
+            elif self.type == "other":
+                new_directions = new_directions[0]
         if not self.type == "bias":
             new_directions = new_directions / new_directions.norm(dim=1, keepdim=True)
         if self.type == "enc":
