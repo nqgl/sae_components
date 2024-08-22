@@ -318,26 +318,51 @@ class L0Targeter(L0TargeterProto):
         }
 
 
-# class L0Targeter(L0TargeterProto):
-#     def __init__(
-#         self,
-#         l0_target: Optional[float],
-#         schedule: RunSchedulingConfig,
-#     ):
-#         self.target = l0_target
-#         self.schedule = schedule
+class BasicL0Targeter(L0TargeterProto):
+    def __init__(
+        self,
+        l0_target: Optional[float],
+        schedule: RunSchedulingConfig,
+    ):
+        self.target = l0_target
+        self.schedule = schedule
 
-#     def __call__(self, l0: float, t: int) -> float:
-#         # if not self.schedule.dynamic_adjust(t):
-#         #     return 0
-#         gentle_zone_radius = 1
-#         distance = abs(l0 - self.target) / gentle_zone_radius
-#         stepscale = min(
-#             1,
-#             (distance * 6 + 1) / 7,
-#         )
+    def __call__(self, l0: float, t: int) -> float:
+        # if not self.schedule.dynamic_adjust(t):
+        #     return 0
+        return -1 if self.target > l0 else 1
 
-#         return (-1 if self.target > l0 else 1) * stepscale
+    def loggables(self, t):
+        return {}
 
-#     def loggables(self, t):
-#         return {}
+
+class GentleBasicL0Targeter(L0TargeterProto):
+    def __init__(
+        self,
+        l0_target: Optional[float],
+        schedule: RunSchedulingConfig,
+    ):
+        self.target = l0_target
+        self.schedule = schedule
+
+    def __call__(self, l0: float, t: int) -> float:
+        # if not self.schedule.dynamic_adjust(t):
+        #     return 0
+        gentle_zone_radius = 2
+        distance = abs(l0 - self.target) / gentle_zone_radius
+        stepscale = min(
+            1,
+            (distance * 6 + 1) / 7,
+        )
+
+        return (-1 if self.target > l0 else 1) * stepscale
+
+    def loggables(self, t):
+        return {}
+
+
+TARGETER_TYPES = {
+    "basic": BasicL0Targeter,
+    "pid": L0Targeter,
+    "gentle_basic": GentleBasicL0Targeter,
+}

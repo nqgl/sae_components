@@ -15,7 +15,7 @@ from saeco.trainer.post_backward_normalization import (
 )
 from .recons import get_recons_loss
 from saeco.data.sc.dataset import TokensData
-from .l0targeter import L0Targeter
+from .l0targeter import L0Targeter, TARGETER_TYPES
 from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 from contextlib import contextmanager
 from .RunConfig import RunConfig
@@ -77,7 +77,7 @@ class Trainer:
         self.intermittent_metric_freq = 1000
         self.eval_step_freq = 100
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
-        self.l0_targeter = L0Targeter(
+        self.l0_targeter = TARGETER_TYPES[self.cfg.l0_targeter_type](
             l0_target=self.cfg.l0_target,
             schedule=self.cfg.schedule,
         )

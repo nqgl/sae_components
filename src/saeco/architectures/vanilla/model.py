@@ -26,7 +26,7 @@ class Config(SweepableConfig):
     pre_bias: bool = False
 
 
-def sae(
+def vanilla_sae(
     init: Initializer,
     cfg: Config,
 ):
@@ -59,7 +59,7 @@ from saeco.trainer.runner import TrainingRunner
 
 
 def run(cfg):
-    tr = TrainingRunner(cfg, model_fn=sae)
+    tr = TrainingRunner(cfg, model_fn=vanilla_sae)
     tr.trainer.train()
 
 

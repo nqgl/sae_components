@@ -32,6 +32,7 @@ cfg = RunConfig[Config](
         #
         l0_target=25,
         l0_target_adjustment_size=0.0002,
+        l0_targeter_type=Swept("pid", "basic", "gentle_basic"),
         coeffs={
             "sparsity_loss": 3e-3,
             "L2_loss": 1,

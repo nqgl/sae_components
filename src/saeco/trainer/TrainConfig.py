@@ -15,6 +15,7 @@ class TrainConfig(SweepableConfig):
         default_factory=lambda: dict(sparsity_loss=1e-3)
     )
     # coeffs: Coeffs = Field(default_factory=Coeffs)
+    l0_targeter_type: str = "gentle_basic"
     l0_target: float | None = None
     l0_targeting_enabled: bool = True
     l0_target_adjustment_size: float = 0.0003

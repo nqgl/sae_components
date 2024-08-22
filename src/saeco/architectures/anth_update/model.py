@@ -56,11 +56,11 @@ def anth_update_model(
 
 
 def run(cfg):
-    tr = TrainingRunner(cfg.run_cfg, model_fn=anth_update_model)
+    tr = TrainingRunner(cfg, model_fn=anth_update_model)
     tr.trainer.train()
 
 
 if __name__ == "__main__":
-    do_sweep(True, "rand")
+    do_sweep(True)
 else:
     from .config import cfg, PROJECT
