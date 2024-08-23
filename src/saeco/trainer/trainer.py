@@ -72,8 +72,8 @@ class Trainer:
 
         self.namestuff = wandb_run_label
         self.llm_val_tokens = TokensData(
-            self.cfg.data_cfg, self.subject_model
-        ).get_tokens(self.cfg.data_cfg.testsplit)
+            self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
+        ).get_tokens()
         self.intermittent_metric_freq = 1000
         self.eval_step_freq = 100
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
