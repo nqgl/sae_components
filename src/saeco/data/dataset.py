@@ -55,7 +55,7 @@ class DataConfig(SweepableConfig):
         raise NotImplementedError
 
     def idstr(self):
-        seq_len = self.seq_len if self.seq_len is not None else "null"
+        seq_len = str(self.seq_len) if self.seq_len is not None else "null"
         fromdisk = "fromdisk_" if self.load_from_disk else ""
         extra_strs = fromdisk + seq_len
         return f"{self.dataset.replace('/', '_')}_{extra_strs}_{self.set_bos}"

@@ -17,6 +17,9 @@ class SplitConfig(SweepableConfig):
         return f"{self.split}[{self.start}_p:{self.end}_p]"
 
     def get_split_key(self):
+        """
+        Value passed to the "split" keyword argument of datasets.load_dataset
+        """
         if self.start is None and self.end is None:
             return self.split
         return ReadInstruction(

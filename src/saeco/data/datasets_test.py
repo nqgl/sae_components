@@ -25,18 +25,11 @@ from saeco.data import (
 )
 
 c = DataConfig(
-    # dataset="cyrilzhang/TinyStories-tokenized-gpt2-1024",
-    # trainsplit=SplitConfig(
-    #     splitname="train", tokens_from_split=1_000_000, start=0, end=2
-    # ),
-    trainsplit=SplitConfig(
-        start=0,
-        end=40,
-        tokens_from_split=None,
-    ),
+    dataset="cyrilzhang/TinyStories-tokenized-gpt2-1024",
+    trainsplit=SplitConfig(splitname="train", start=4, end=5),
     seq_len=128,
     model_cfg=ModelConfig(),
-    generation_config=DataGenerationProcessConfig(llm_batch_size=2**15),
+    # generation_config=DataGenerationProcessConfig(llm_batch_size=2**15),
 )
 i = 0
 for d in c.get_databuffer():
