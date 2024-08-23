@@ -148,9 +148,7 @@ class DataConfig(SweepableConfig):
 
 
 class TokensData:
-    def __init__(
-        self, cfg: DataConfig, model: HookedTransformer, split: SplitConfig = None
-    ):
+    def __init__(self, cfg: DataConfig, model: HookedTransformer, split: SplitConfig):
         self.cfg = cfg
         self.model = model
         self.split = split
