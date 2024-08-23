@@ -63,6 +63,9 @@ class AppendDiskTensor:
         self.write(t)
 
     def shufflekill(self):
+        """
+        shuffle the .h5, turn it into a tensor saved as .pt, then deletes the original .h5
+        """
         t = self.read()
         t = t[torch.randperm(t.shape[0])]
         torch.save(t, str(self.path).split(".")[0] + ".pt")

@@ -16,6 +16,7 @@ class DataGenerationProcessConfig(BaseModel):
     target_gb_per_pile: float | None = 1
     meta_batch_size: int = 2**19  # how many tokens to send in each meta-batch
     llm_batch_size: int = 2**17  # batch size when running the LLM
+    num_document_distribution_batches: int = 100
 
     def num_act_piles(self, num_tokens):
         if self.acts_per_pile is None:

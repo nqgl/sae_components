@@ -1,6 +1,6 @@
 from pydantic import Field
 from transformer_lens import HookedTransformer
-from saeco.data.sc.DataGenerationProcessConfig import DataGenerationProcessConfig
+from saeco.data.DataGenerationProcessConfig import DataGenerationProcessConfig
 from saeco.data.sc.SplitConfig import SplitConfig
 from saeco.data.sc.model_cfg import ModelConfig
 from saeco.data.sc.tabletensor import Piler
@@ -14,21 +14,6 @@ from saeco.data.sc.locations import DATA_DIRS
 
 import einops
 import tqdm
-
-
-class SplitConfig(SweepableConfig):
-    splitname: str
-    start: int
-    end: int
-    split_key: str = "train"
-    tokens_from_split: Optional[int] = None
-
-    @property
-    def split_dir_id(self):
-        return f"{self.split_key}[{self.start}_p:{self.end}_p]"
-
-    def get_split_key(self):
-        return f"{self.split_key}[{self.start}%:{self.end}%]"
 
 
 # @dataclass
@@ -241,7 +226,10 @@ class TokensData:
         tqdm.tqdm.write(f"Storing tokens for {split.splitname}")
         piler = self.tokens_piler(write=True, num_tokens=self.num_tokens)
         tqdm.tqdm.write("Distributing tokens to piles")
-        doc_dist_batch_size = self.documents.shape[0] // 100
+        doc_dist_batch_size = (
+            self.documents.shape[0]
+            // self.cfg.generation_config.num_document_distribution_batches
+        )
         for i in tqdm.tqdm(
             range(
                 0,
@@ -274,7 +262,11 @@ class TokensData:
         ), f"{tokens.shape} from piler vs {num_tokens} requested\
                 this is expected if tokens per split is small, otherwise a bug.\
                     \n piles requested: {num_piles}, available: {piler.num_piles}"
-        return tokens[:num_tokens] if num_tokens is not None else tokens
+        return (
+            tokens[: num_tokens // tokens.shape[1] + 1]
+            if num_tokens is not None
+            else tokens
+        )
 
 
 class ActsData:
@@ -286,37 +278,36 @@ class ActsData:
         tokens_data = TokensData(self.cfg, self.model, split=split)
         tokens = tokens_data.get_tokens(num_tokens=split.tokens_from_split)
         acts_piler = self.cfg.acts_piler(
-            split, write=True, num_tokens=tokens_data.num_tokens
+            split,
+            write=True,
+            num_tokens=split.tokens_from_split or tokens_data.num_tokens,
         )
 
         tqdm.tqdm.write(f"Storing acts for {split.splitname}")
 
-        def tokens_generator():
-            meta_batch_size = (
-                self.cfg.generation_config.meta_batch_size // self.cfg.seq_len
-            )
-            for i in tqdm.tqdm(
-                range(
-                    0,
-                    (len(tokens) // meta_batch_size) * meta_batch_size,
-                    meta_batch_size,
-                )
-            ):
-                yield tokens[i : i + meta_batch_size]
-
-        for acts in self.acts_generator_from_tokens_generator(tokens_generator()):
+        meta_batch_size = (
+            self.cfg.generation_config.meta_batch_size // tokens_data.seq_len
+        )
+        tokens_split = tokens.split(meta_batch_size)
+        for acts in tqdm.tqdm(
+            self.acts_generator_from_tokens_generator(
+                tokens_split,
+                llm_batch_size=self.cfg.generation_config.llm_batch_size
+                // tokens_data.seq_len,
+            ),
+            total=len(tokens_split),
+        ):
             acts_piler.distribute(acts)
         acts_piler.shuffle_piles()
 
-    def acts_generator_from_tokens_generator(self, tokens_generator):
+    def acts_generator_from_tokens_generator(self, tokens_generator, llm_batch_size):
         for tokens in tokens_generator:
-            acts = self.to_acts(tokens)
+            acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
 
-    def to_acts(self, tokens):
+    def to_acts(self, tokens, llm_batch_size):
         acts_list = []
-        llm_batch_size = self.cfg.generation_config.llm_batch_size // self.cfg.seq_len
-        assert tokens.shape[0] % llm_batch_size == 0
+        # assert tokens.shape[0] % llm_batch_size == 0
         with torch.autocast(device_type="cuda"):
             with torch.inference_mode():
 
@@ -325,9 +316,10 @@ class ActsData:
 
                 for i in range(
                     0,
-                    tokens.shape[0] // llm_batch_size * llm_batch_size,
+                    tokens.shape[0],
                     llm_batch_size,
                 ):
+
                     self.model.run_with_hooks(
                         tokens[i : i + llm_batch_size],
                         stop_at_layer=self.cfg.model_cfg.acts_cfg.layer_num + 1,
@@ -351,13 +343,24 @@ class ActsData:
         id = id or 0
         nw = nw or 1
         piler = self.cfg.acts_piler(split)
-        assert nsteps == None or nsteps <= split.approx_num_tokens // batch_size
+        assert (
+            nsteps is None
+            or split.tokens_from_split is None
+            or nsteps <= split.tokens_from_split // batch_size
+        )
         print("\nProgress bar activation batch count is approximate\n")
-        progress = tqdm.trange(nsteps or split.approx_num_tokens // batch_size)
+        progress = (
+            tqdm.trange(nsteps or split.tokens_from_split // batch_size)
+            if split.tokens_from_split is not None
+            else None
+        )
         for p in range(id, piler.num_piles, nw):
             print("get next pile")
             print(id, nw, p)
             pile = piler[p]
+            if progress is None:
+                progress = tqdm.trange(pile.shape[0] * piler.num_piles // batch_size)
+
             assert pile.dtype == torch.float16
             print("got next pile")
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
