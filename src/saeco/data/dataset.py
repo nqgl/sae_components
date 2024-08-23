@@ -1,16 +1,16 @@
 from pydantic import Field
 from transformer_lens import HookedTransformer
-from saeco.data.DataGenerationProcessConfig import DataGenerationProcessConfig
-from saeco.data.sc.SplitConfig import SplitConfig
-from saeco.data.sc.model_cfg import ModelConfig
-from saeco.data.sc.tabletensor import Piler
+from saeco.data.generation_config import DataGenerationProcessConfig
+from saeco.data.split_config import SplitConfig
+from saeco.data.model_cfg import ModelConfig
+from saeco.data.tabletensor import Piler
 import datasets
 import torch
 
 from saeco.sweeps import SweepableConfig
 from typing import Optional
 
-from saeco.data.sc.locations import DATA_DIRS
+from saeco.data.locations import DATA_DIRS
 
 import einops
 import tqdm

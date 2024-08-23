@@ -1,4 +1,4 @@
-from .sc.SplitConfig import SplitConfig
-from .sc.dataset import DataConfig, ModelConfig
-from .sc.model_cfg import ActsDataConfig
-from .DataGenerationProcessConfig import DataGenerationProcessConfig
+from .split_config import SplitConfig
+from .dataset import DataConfig, ModelConfig
+from .model_cfg import ActsDataConfig
+from .generation_config import DataGenerationProcessConfig

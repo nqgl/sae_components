@@ -1,7 +1,7 @@
 import datasets
 from pydantic import BaseModel
 
-from saeco.data.sc.SplitConfig import SplitConfig
+from saeco.data.split_config import SplitConfig
 
 datasets.ReadInstruction(
     "train",
