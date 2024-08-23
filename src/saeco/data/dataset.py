@@ -41,7 +41,7 @@ class DataConfig(SweepableConfig):
         )
     )
     set_bos: bool = True
-    seq_len: int | None = None
+    seq_len: int | None = 128
     tokens_column_name: str = "input_ids"
     generation_config: DataGenerationProcessConfig = Field(
         default_factory=DataGenerationProcessConfig
