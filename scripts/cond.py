@@ -1,8 +1,8 @@
 # %%
 
 
-from saeco.data.sc.SplitConfig import SplitConfig
-from saeco.data.sc.dataset import DataConfig
+from saeco.data.split_config import SplitConfig
+from saeco.data.dataset import DataConfig
 from transformer_lens import HookedTransformer
 
 from saeco.trainer.TrainConfig import TrainConfig

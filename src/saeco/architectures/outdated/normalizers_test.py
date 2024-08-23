@@ -62,7 +62,7 @@ def ln_sae(
 
 
 from saeco.trainer.runner import TrainingRunner, DataConfig
-from saeco.data.sc.dataset import ModelConfig, ActsDataConfig
+from saeco.data.dataset import ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep
 
 
