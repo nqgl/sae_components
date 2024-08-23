@@ -1,7 +1,7 @@
 import torch
 import tqdm
 import einops
-from saeco.data.sc.model_cfg import ActsDataConfig
+from saeco.data.model_cfg import ActsDataConfig
 
 
 # @torch.no_grad()

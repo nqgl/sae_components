@@ -4,7 +4,7 @@ import torch
 import wandb
 from typing import Protocol, runtime_checkable, Optional
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
-from saeco.data.sc.model_cfg import ModelConfig
+from saeco.data.model_cfg import ModelConfig
 from saeco.trainer.OptimConfig import OptimConfig, get_optim_cls
 from saeco.trainer.TrainConfig import TrainConfig
 from saeco.trainer.train_cache import TrainCache
@@ -14,7 +14,7 @@ from saeco.trainer.post_backward_normalization import (
     do_post_step,
 )
 from .recons import get_recons_loss
-from saeco.data.sc.dataset import TokensData
+from saeco.data.dataset import TokensData
 from .l0targeter import L0Targeter, TARGETER_TYPES
 from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 from contextlib import contextmanager
@@ -73,7 +73,7 @@ class Trainer:
         self.namestuff = wandb_run_label
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model
-        ).get_tokens_from_split(self.cfg.data_cfg.testsplit)
+        ).get_tokens(self.cfg.data_cfg.testsplit)
         self.intermittent_metric_freq = 1000
         self.eval_step_freq = 100
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
