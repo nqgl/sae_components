@@ -30,7 +30,6 @@ c = DataConfig(
     #     splitname="train", tokens_from_split=1_000_000, start=0, end=2
     # ),
     trainsplit=SplitConfig(
-        splitname="train",
         start=0,
         end=40,
         tokens_from_split=None,

@@ -19,11 +19,10 @@ import tqdm
 # @dataclass
 class DataConfig(SweepableConfig):
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"
-
+    load_from_disk: bool = False
     model_cfg: ModelConfig = Field(default_factory=ModelConfig)
     trainsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
-            splitname="train",
             start=0,
             end=40,
             tokens_from_split=400_000_000,
@@ -31,14 +30,12 @@ class DataConfig(SweepableConfig):
     )
     testsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
-            splitname="test",
             start=80,
             end=90,
         )
     )
     valsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
-            splitname="val",
             start=90,
             end=100,
         )
@@ -59,7 +56,9 @@ class DataConfig(SweepableConfig):
 
     def idstr(self):
         seq_len = self.seq_len if self.seq_len is not None else "null"
-        return f"{self.dataset.replace('/', '_')}_{seq_len}_{self.set_bos}"
+        fromdisk = "fromdisk_" if self.load_from_disk else ""
+        extra_strs = fromdisk + seq_len
+        return f"{self.dataset.replace('/', '_')}_{extra_strs}_{self.set_bos}"
 
     def _get_tokens_split_path(self, split: SplitConfig):
         return (
@@ -90,11 +89,7 @@ class DataConfig(SweepableConfig):
     ) -> Piler:
         num_piles = None
         if write:
-            bytes_per_pile = target_gb_per_pile * 2**30
-            dtype_bytes = 2  # hardcoded assumption of float16
-            b_per_act = self.model_cfg.acts_cfg.d_data * dtype_bytes
-            total_b = num_tokens * b_per_act
-            num_piles = (total_b + bytes_per_pile - 1) // bytes_per_pile
+            num_piles = self.generation_config.num_act_piles(num_tokens)
         return Piler(
             self._acts_piles_path(split),
             dtype=torch.float16,
@@ -136,13 +131,19 @@ class DataConfig(SweepableConfig):
         )
 
     def load_dataset_from_split(self, split: SplitConfig, to_torch=True):
-        dataset = datasets.load_dataset(
-            self.dataset,
-            split=split.get_split_key(),
-            cache_dir=DATA_DIRS.CACHE_DIR,
-        )
+        if self.load_from_disk:
+            dataset = datasets.load_from_disk(
+                self.dataset,
+            )
+        else:
+            dataset = datasets.load_dataset(
+                self.dataset,
+                split=split.get_split_key(),
+                cache_dir=DATA_DIRS.CACHE_DIR,
+            )
+
         if to_torch:
-            dataset.set_format(type="torch", columns=["input_ids"])
+            dataset.set_format(type="torch", columns=[self.tokens_column_name])
         return dataset
 
 
@@ -223,7 +224,7 @@ class TokensData:
         )
 
     def _store_split(self, split: SplitConfig):
-        tqdm.tqdm.write(f"Storing tokens for {split.splitname}")
+        tqdm.tqdm.write(f"Storing tokens for {split.split}")
         piler = self.tokens_piler(write=True, num_tokens=self.num_tokens)
         tqdm.tqdm.write("Distributing tokens to piles")
         doc_dist_batch_size = (
@@ -283,7 +284,7 @@ class ActsData:
             num_tokens=split.tokens_from_split or tokens_data.num_tokens,
         )
 
-        tqdm.tqdm.write(f"Storing acts for {split.splitname}")
+        tqdm.tqdm.write(f"Storing acts for {split.get_split_key()}")
 
         meta_batch_size = (
             self.cfg.generation_config.meta_batch_size // tokens_data.seq_len
@@ -305,7 +306,7 @@ class ActsData:
             acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
 
-    def to_acts(self, tokens, llm_batch_size):
+    def to_acts(self, tokens, llm_batch_size, rearrange=True, skip_exclude=False):
         acts_list = []
         # assert tokens.shape[0] % llm_batch_size == 0
         with torch.autocast(device_type="cuda"):
@@ -319,20 +320,21 @@ class ActsData:
                     tokens.shape[0],
                     llm_batch_size,
                 ):
-
                     self.model.run_with_hooks(
                         tokens[i : i + llm_batch_size],
+                        **self.cfg.model_cfg.model_kwargs,
                         stop_at_layer=self.cfg.model_cfg.acts_cfg.layer_num + 1,
                         fwd_hooks=[(self.cfg.model_cfg.acts_cfg.hook_site, hook_fn)],
                     )
-        acts = torch.cat(acts_list, dim=0)
-        if self.cfg.model_cfg.acts_cfg.excl_first:
+        acts = torch.cat(acts_list, dim=0).half()
+        if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
-        acts = einops.rearrange(
-            acts,
-            "batch seq d_data -> (batch seq) d_data",
-        )
-        return acts.half()
+        if rearrange:
+            acts = einops.rearrange(
+                acts,
+                "batch seq d_data -> (batch seq) d_data",
+            )
+        return acts
 
     def acts_generator(
         self, split: SplitConfig, batch_size, nsteps=None, id=None, nw=None

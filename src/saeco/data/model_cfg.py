@@ -22,7 +22,7 @@ class ActsDataConfig(SweepableConfig):
 class ModelConfig(SweepableConfig):
     model_name: str = "gpt2-small"
     acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
-    # d_data: int = 768
+    model_kwargs: dict = Field(default_factory=dict)
 
     def __init__(self, /, **data: utils.Any) -> None:
         super().__init__(**data)
