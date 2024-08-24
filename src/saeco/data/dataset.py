@@ -47,13 +47,6 @@ class DataConfig(SweepableConfig):
         default_factory=DataGenerationProcessConfig
     )
 
-    def __post_init__(self):
-        self.validate_splits()
-
-    def validate_splits(self):  # TODO
-        return
-        raise NotImplementedError
-
     def idstr(self):
         seq_len = str(self.seq_len) if self.seq_len is not None else "null"
         fromdisk = "fromdisk_" if self.load_from_disk else ""

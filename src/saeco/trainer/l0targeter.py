@@ -161,7 +161,7 @@ class L0Targeter(L0TargeterProto):
 
         self.inv = True
 
-        self.i = MultiEma([0.001, 0.0003, 0.0001], weights=[1, 1, 0.3], reweight=False)
+        self.i = MultiEma([0.001, 0.0003], weights=[1, 1], reweight=False)
         self.p = lfema(0.003)
         # MultiEma([0.01], reweight=False)
         self.velocity = 0
@@ -219,7 +219,10 @@ class L0Targeter(L0TargeterProto):
 
     @property
     def I(self):
-        return self.i.value * self.i_c
+        v = self.i.value * self.i_c
+        if (v.sign() != self.p.value.sign()).item():
+            return torch.zeros_like(v)
+        return v
 
     @property
     def D(self):
