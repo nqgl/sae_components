@@ -75,23 +75,24 @@ class EncoderBias(WrapsModule):
 class NormFeatures(WrapsModule):
     wrapped: HasFeatures
 
-    def __init___(self, wrapped: HasFeatures):
-        assert isinstance(
-            wrapped, HasFeatures
-        ), "Module must have features attribute (eg, make it Encoder/Decoder)"
+    def __init__(self, wrapped: HasFeatures, index=None, ord=2):
         super().__init__(wrapped)
+        self.index = index
+        self.ord = ord
 
     def post_step_hook(self):
         self.normalize_features()
 
     @torch.no_grad()
     def normalize_features(self):
-        fps = list(self.wrapped.features.values())
-        assert len(fps) == 1
-        fp = fps[0]
-        assert fp.type == "dec"
-        features = fp.features
-        norm = torch.norm(fp.features, dim=-1, keepdim=True)
+        if self.index is None:
+            fps = list(self.wrapped.features.values())
+            assert len(fps) == 1
+            fp = fps[0]
+            assert fp.type == "dec"
+        else:
+            fp = self.wrapped.features[self.index]
+        norm = torch.linalg.vector_norm(fp.features, dim=-1, keepdim=True, ord=self.ord)
         if (norm == 0).any():
             print("Norm is zero, not normalizing.")
             return
@@ -102,21 +103,22 @@ class OrthogonalizeFeatureGrads(WrapsModule):
     wrapped: HasFeatures
     t: int
 
-    def __init___(self, wrapped: HasFeatures):
-        assert isinstance(
-            wrapped, HasFeatures
-        ), "Module must have features attribute (eg, make it Encoder/Decoder)"
+    def __init__(self, wrapped: HasFeatures, index=None):
         super().__init__(wrapped)
+        self.index = index
 
     def post_backward_hook(self):
         self.orthogonalize_feature_grads()
 
     @torch.no_grad()
     def orthogonalize_feature_grads(self):
-        fps = list(self.wrapped.features.values())
-        assert len(fps) == 1
-        fp = fps[0]
-        assert fp.type == "dec"
+        if self.index is None:
+            fps = list(self.wrapped.features.values())
+            assert len(fps) == 1
+            fp = fps[0]
+            assert fp.type == "dec"
+        else:
+            fp = self.wrapped.features[self.index]
         if fp.grad is None:
             return
         dec_normed = fp.features / fp.features.norm(dim=-1, keepdim=True)

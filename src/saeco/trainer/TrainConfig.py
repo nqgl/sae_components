@@ -28,6 +28,7 @@ class TrainConfig(SweepableConfig):
     optim: str = "RAdam"
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
     use_averaged_model: bool = True
+    checkpoint_period: int | None = None
 
     @property
     @lazycall

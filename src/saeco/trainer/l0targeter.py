@@ -161,7 +161,7 @@ class L0Targeter(L0TargeterProto):
 
         self.inv = True
 
-        self.i = MultiEma([0.001, 0.0003, 0.0001], weights=[1, 1, 0.3], reweight=False)
+        self.i = MultiEma([0.001, 0.0003], weights=[1, 1], reweight=False)
         self.p = lfema(0.003)
         # MultiEma([0.01], reweight=False)
         self.velocity = 0
@@ -219,7 +219,10 @@ class L0Targeter(L0TargeterProto):
 
     @property
     def I(self):
-        return self.i.value * self.i_c
+        v = self.i.value * self.i_c
+        if (v.sign() != self.p.value.sign()).item():
+            return torch.zeros_like(v)
+        return v
 
     @property
     def D(self):
@@ -355,7 +358,10 @@ class GentleBasicL0Targeter(L0TargeterProto):
             (distance * 6 + 1) / 7,
         )
 
-        return (-1 if self.target > l0 else 1) * stepscale
+        v = (-1 if self.target > l0 else 1) * stepscale
+        if isinstance(v, torch.Tensor):
+            v = v.item()
+        return v
 
     def loggables(self, t):
         return {}

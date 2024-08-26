@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
+import saeco.components.features.features as ft
 from saeco.sweeps import SweepableConfig
 from saeco.components.penalties.l0targeter import L0Targeting
 
@@ -162,7 +163,7 @@ class Config(SweepableConfig):
     uniform_noise: bool = True
     noise_mult: float = 0.1
     exp_mag: bool = True
-    mag_weights: bool = True
+    mag_weights: bool = False
     window_fn: str = "sig"
     decay_l1: bool = True
     leniency_targeting: bool = False
@@ -170,20 +171,31 @@ class Config(SweepableConfig):
 
 
 class BinaryEncoder(cl.Module):
-    def __init__(self, cfg: Config, init: Initializer, targeting=True):
+    def __init__(
+        self, cfg: Config, init: Initializer, d_in_override=None, targeting=True
+    ):
         super().__init__()
         self.cfg = cfg
         self.mag = init._encoder.new_bias()
         self.mag.data -= 1
         # self.mag.data += 2
         self.gate = init.encoder
-        self.gate.weight.grad
-        self.targeting = L0Targeting(init.l0_target, scale=1)
+        self.targeting = L0Targeting(
+            init.l0_target,
+            scale=cfg.leniency,
+            increment=0.0001 if cfg.leniency_targeting else 0.0,
+        )
         self.GT_fn = GT2(windows[cfg.window_fn])
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         cache.leniency = ...
         cache.leniency = self.targeting.value
+        if (
+            (not self.cfg.leniency_targeting)
+            and cache._ancestor.has.trainstep
+            and cache._ancestor.trainstep <= 5000
+        ):
+            self.targeting.value = cache._ancestor.trainstep / 5000
         out = gate(
             self.mag.unsqueeze(0).expand(x.shape[0], -1),
             [self.gate(x)],
@@ -238,4 +250,58 @@ class GTTest(cl.Module):
         return {
             "mag": FeaturesParam(self.mag.weight, 0, "other"),
             "mag_bias": FeaturesParam(self.mag.bias, 0, "bias"),
+        }
+
+
+class GTMulti(cl.Module):
+    def __init__(
+        self, cfg: Config, init: Initializer, d_in_override=None, targeting=True
+    ):
+        super().__init__()
+        self.cfg = cfg
+        if cfg.mag_weights:
+            self.mag = init._encoder.new_bias()
+            self.mag.data -= 1
+        # self.mag.data += 2
+        self.gate = init.encoder
+        self.targeting = L0Targeting(
+            init.l0_target,
+            scale=cfg.leniency,
+            increment=0.0001 if cfg.leniency_targeting else 0.0,
+        )
+        self.GT_fn = GT2(windows[cfg.window_fn])
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        cache.leniency = ...
+        cache.leniency = self.targeting.value
+        if (
+            (not self.cfg.leniency_targeting)
+            and cache._ancestor.has.trainstep
+            and cache._ancestor.trainstep <= 5000
+        ):
+            self.targeting.value = cache._ancestor.trainstep / 5000
+        out = gate(
+            self.mag.unsqueeze(0).expand(x.shape[0], -1),
+            [self.gate(x)],
+            GT_fn=self.GT_fn,
+            exp_mag=True,
+            training=self.training,
+            uniform_noise=self.cfg.uniform_noise,
+            noise_mult=self.cfg.noise_mult,
+            leniency=self.targeting.value,
+        )
+        cache(self).targeting(out)
+        return out
+
+    @property
+    def features(self):
+        return {"mag": FeaturesParam(self.mag, 0, "bias")}
+
+
+class OtherLinear(nn.Linear):
+    @property
+    def features(self):
+        return {
+            "weight": ft.FeaturesParam(self.weight, 0, fptype="other"),
+            "bias": ft.FeaturesParam(self.bias, 0, fptype="bias"),
         }

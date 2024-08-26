@@ -15,10 +15,11 @@ from saeco.trainer.normalizers import (
     ConstL2Normalizer,
     GeneralizedNormalizer,
 )
-from saeco.misc.lazy import lazyprop, defer_to_and_set
+from saeco.misc.lazy import defer_to_and_set
 from saeco.components.resampling.anthropic_resampling import (
     AnthResampler,
 )
+from functools import cached_property, cache
 
 
 class TrainingRunner:
@@ -28,19 +29,19 @@ class TrainingRunner:
         self._models = None
         self._losses = None
 
-    @lazyprop
+    @cached_property
     def model_name(self):
         return self.model_fn.__name__
 
-    @lazyprop
+    @cached_property
     def name(self):
         return f"{self.model_name}{self.cfg.train_cfg.lr}"
 
-    @lazyprop
+    @cached_property
     def data(self) -> iter:
         return iter(self.cfg.train_cfg.data_cfg.get_databuffer())
 
-    @lazyprop
+    @cached_property
     def initializer(self) -> Initializer:
         return Initializer(
             self.cfg.init_cfg.d_data,
@@ -57,17 +58,17 @@ class TrainingRunner:
             return self.model_fn(self.initializer)
         return self.model_fn(self.initializer, self.cfg.arch_cfg)
 
-    @lazyprop
+    @cached_property
     def models(self):
         models, losses = self.get_model_fn_output()
         return models
 
-    @lazyprop
+    @cached_property
     def losses(self):
         models, losses = self.get_model_fn_output()
         return losses
 
-    @lazyprop
+    @cached_property
     def trainable(self) -> Trainable:
         return Trainable(
             self.models,
@@ -76,7 +77,7 @@ class TrainingRunner:
             resampler=self.resampler,
         ).cuda()
 
-    @lazyprop
+    @cached_property
     def resampler(self) -> AnthResampler:
         res = AnthResampler(self.cfg.resampler_config)
         res.assign_model(
@@ -84,7 +85,7 @@ class TrainingRunner:
         )  # TODO not a big fan of this. maybe just remove the assigning model part of resample class
         return res
 
-    @lazyprop
+    @cached_property
     def normalizer(self):
         # normalizer = NORMALIZERS[self.cfg.sae_cfg.normalizer]()
         normalizer = GeneralizedNormalizer(
@@ -99,7 +100,7 @@ class TrainingRunner:
         self._normalizer = value
         self._normalizer.prime_normalizer(self.data)
 
-    @lazyprop
+    @cached_property
     def trainer(self):
         trainer = Trainer(
             self.cfg.train_cfg,
@@ -107,7 +108,7 @@ class TrainingRunner:
             model=self.trainable,
             wandb_run_label=self.name,
         )
-        trainer.post_step()
+        # trainer.post_step()
         return trainer
 
 

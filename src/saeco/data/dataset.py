@@ -47,13 +47,6 @@ class DataConfig(SweepableConfig):
         default_factory=DataGenerationProcessConfig
     )
 
-    def __post_init__(self):
-        self.validate_splits()
-
-    def validate_splits(self):  # TODO
-        return
-        raise NotImplementedError
-
     def idstr(self):
         seq_len = str(self.seq_len) if self.seq_len is not None else "null"
         fromdisk = "fromdisk_" if self.load_from_disk else ""
@@ -145,6 +138,20 @@ class DataConfig(SweepableConfig):
         if to_torch:
             dataset.set_format(type="torch", columns=[self.tokens_column_name])
         return dataset
+
+    def acts_data(self) -> "ActsData":
+        return ActsData(self, self.model_cfg.model)
+
+    def tokens_data(self, split="train") -> "TokensData":
+        return TokensData(
+            self,
+            self.model_cfg.model,
+            split=(
+                split
+                if isinstance(split, SplitConfig)
+                else getattr(self, f"{split}split")
+            ),
+        )
 
 
 class TokensData:
