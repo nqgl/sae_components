@@ -49,6 +49,7 @@ class LinWeights(WrapsModule):
     def set_resampled(self, resample=True) -> "LinDecoder":
         for k, fp in self.features.items():
             fp.resampled = resample
+        return self
 
 
 from saeco.misc import lazycall, lazyprop
@@ -80,6 +81,33 @@ class LinEncoder(LinWeights):
         }
         if self.bias is not None:
             d["bias"] = FeaturesParam(self.get_bias(), feature_index=0, fptype="bias")
+        return d
+
+
+class LongEncoder(LinWeights):  # TODO wip
+    def __init__(self, wrapped: nn.Linear, split: list[int], bfs: list):
+        super().__init__(wrapped)
+        self.split = split
+        self.bfs = bfs
+
+    @property
+    @lazycall
+    def features(self) -> dict[str, FeaturesParam]:
+
+        d = {
+            "weight": FeaturesParam(self.get_weight(), feature_index=0, fptype="enc"),
+        }
+        weight = self.get_weight().split(self.split, dim=0)
+        for i, (s, w) in enumerate(weight):
+            d[f"weight_{i}"] = FeaturesParam(
+                weight,
+                feature_index=0,
+                fptype="enc" if i == 0 else "other",
+            )
+        if self.bias is not None:
+            bias = self.get_bias().split(self.split, dim=0)
+            for i, (s, b) in enumerate(zip(self.split, bias)):
+                d[f"bias{i}"] = FeaturesParam(b, feature_index=0, fptype="bias")
         return d
 
     # def features_transform(self, tensor: Tensor) -> Tensor:

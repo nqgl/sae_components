@@ -6,7 +6,6 @@ from typing import Protocol, runtime_checkable, Optional
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from saeco.data.model_cfg import ModelConfig
 from saeco.trainer.OptimConfig import OptimConfig, get_optim_cls
-from saeco.trainer.TrainConfig import TrainConfig
 from saeco.trainer.train_cache import TrainCache
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.post_backward_normalization import (
@@ -19,6 +18,7 @@ from .l0targeter import L0Targeter, TARGETER_TYPES
 from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 from contextlib import contextmanager
 from .RunConfig import RunConfig
+from saeco.trainer.TrainConfig import TrainConfig
 
 
 class Trainer:
@@ -176,7 +176,7 @@ class Trainer:
         if wandb.run is None:
             wandb.init(
                 **self.cfg.wandb_cfg,
-                config={"model": repr(self.trainable), "cfg": self.cfg},
+                config=self.run_cfg.model_dump(),
                 reinit=True,
             )
         if self.namestuff is not None:
@@ -205,6 +205,12 @@ class Trainer:
             if not self.cfg.use_autocast:
                 x = x.float()
             self.optim.zero_grad()
+            if self.t % self.eval_step_freq == 0 or (
+                self.t > self.cfg.schedule.run_length - 1000 and self.t % 5 == 0
+            ):
+                self.trainable.eval()
+                self.eval_step(x)
+                self.trainable.train()
 
             cache = self.get_cache()
 
@@ -219,12 +225,11 @@ class Trainer:
                 self.trainable.eval()
                 self.do_intermittent_metrics()
                 self.trainable.train()
-            if self.t % self.eval_step_freq == 0 or (
-                self.t > self.cfg.schedule.run_length - 1000 and self.t % 5 == 0
+            if (
+                self.cfg.checkpoint_period is not None
+                and self.t % self.cfg.checkpoint_period == 0
             ):
-                self.trainable.eval()
-                self.eval_step(x)
-                self.trainable.train()
+                self.save()
             if self.cfg.schedule.is_resample_step(self.t):
                 self.trainable.resampler.resample(
                     data_source=buffer, optimizer=self.optim, model=self.trainable
@@ -273,19 +278,23 @@ class Trainer:
         self.log_recons("recons/with_bos/", True)
         self.log_recons("recons/no_bos/", False)
 
-    def log_recons(self, label, proc_bos, num_batches=5, dumb_rescaled=False):
+    def log_recons(self, label, proc_bos, num_batches=5):
         def run_rescaled_model(x):
-            cache = self.get_cache()
-            cache.scale = ...
-            cache.scale = True
-            return self.trainable(x, cache=cache)
+            with torch.autocast(
+                device_type="cuda",
+                dtype=torch.float16 if self.cfg.use_autocast else torch.float32,
+            ):
+                cache = self.get_cache()
+                cache.scale = ...
+                cache.scale = True
+                return self.trainable(x, cache=cache)
 
         self.log(
             {
                 (label + k): v
                 for k, v in get_recons_loss(
                     self.subject_model,
-                    run_rescaled_model if dumb_rescaled else self.trainable,
+                    self.trainable,
                     buffer=None,
                     all_tokens=self.llm_val_tokens,
                     cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
@@ -315,7 +324,7 @@ class Trainer:
     def save(self):
         from pathlib import Path
 
-        d = Path.home() / "workspace/saved_models/"
+        d = Path.home() / "workspace/saved_models/" / f"sweep_{wandb.run.sweep_id}"
         d.mkdir(exist_ok=True, parents=True)
         cfg_path = d / f"{wandb.run.name}_{self.t}.json"
         assert not cfg_path.exists()

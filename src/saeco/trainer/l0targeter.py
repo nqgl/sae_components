@@ -358,7 +358,10 @@ class GentleBasicL0Targeter(L0TargeterProto):
             (distance * 6 + 1) / 7,
         )
 
-        return (-1 if self.target > l0 else 1) * stepscale
+        v = (-1 if self.target > l0 else 1) * stepscale
+        if isinstance(v, torch.Tensor):
+            v = v.item()
+        return v
 
     def loggables(self, t):
         return {}

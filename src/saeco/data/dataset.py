@@ -139,6 +139,20 @@ class DataConfig(SweepableConfig):
             dataset.set_format(type="torch", columns=[self.tokens_column_name])
         return dataset
 
+    def acts_data(self) -> "ActsData":
+        return ActsData(self, self.model_cfg.model)
+
+    def tokens_data(self, split="train") -> "TokensData":
+        return TokensData(
+            self,
+            self.model_cfg.model,
+            split=(
+                split
+                if isinstance(split, SplitConfig)
+                else getattr(self, f"{split}split")
+            ),
+        )
+
 
 class TokensData:
     def __init__(self, cfg: DataConfig, model: HookedTransformer, split: SplitConfig):
