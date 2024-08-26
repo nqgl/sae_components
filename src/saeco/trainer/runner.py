@@ -15,7 +15,7 @@ from saeco.trainer.normalizers import (
     ConstL2Normalizer,
     GeneralizedNormalizer,
 )
-from saeco.misc.lazy import defer_to_and_set
+from saeco.misc.lazy import defer_to_and_set, lazyprop
 from saeco.components.resampling.anthropic_resampling import (
     AnthResampler,
 )
@@ -85,7 +85,7 @@ class TrainingRunner:
         )  # TODO not a big fan of this. maybe just remove the assigning model part of resample class
         return res
 
-    @cached_property
+    @lazyprop
     def normalizer(self):
         # normalizer = NORMALIZERS[self.cfg.sae_cfg.normalizer]()
         normalizer = GeneralizedNormalizer(
