@@ -23,11 +23,22 @@ from functools import cached_property, cache
 
 
 class TrainingRunner:
-    def __init__(self, cfg: RunConfig, model_fn):
+    def __init__(self, cfg: RunConfig, model_fn, state_dict=None):
         self.cfg = cfg
         self.model_fn = model_fn
         self._models = None
         self._losses = None
+        self._state_dict = None
+        self._trainable_loaded = False
+
+    @property
+    def state_dict(self):
+        return self._state_dict
+
+    @state_dict.setter
+    def state_dict(self, value):
+        assert self._state_dict is None and self._trainable_loaded is False
+        self._state_dict = value
 
     @cached_property
     def model_name(self):
@@ -70,12 +81,16 @@ class TrainingRunner:
 
     @cached_property
     def trainable(self) -> Trainable:
-        return Trainable(
+        self._trainable_loaded = True
+        trainable = Trainable(
             self.models,
             self.losses,
             normalizer=self.normalizer,
             resampler=self.resampler,
         ).cuda()
+        if self.state_dict is not None:
+            trainable.load_state_dict(self.state_dict)
+        return trainable
 
     @cached_property
     def resampler(self) -> AnthResampler:
