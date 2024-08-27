@@ -9,5 +9,6 @@ class CachingConfig(BaseModel):
     store_dense: bool = False
     documents_per_micro_batch: int = 16
     llm_batch_size: int | None = None
-
+    dirname: str = "test"
+    store_feature_tensors: bool = True
     STANDARD_FILE_NAME: ClassVar = "cache_config.json"

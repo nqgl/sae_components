@@ -18,6 +18,7 @@ class Chunk:
     dense_acts: Float[torch.Tensor, "doc seq d_dict"] | None = None
     sparse_acts: Float[torch.Tensor, "nnz 3"] | None = None
     _cfg: CachingConfig | None = None
+    sparsify_batch_size: int = 100
 
     # default_sparse: bool = True
     @property
@@ -34,6 +35,37 @@ class Chunk:
         if self.sparse_acts is not None:
             return self
         self.sparse_acts = self.dense_acts.to_sparse_coo()
+        # if self.dense_acts.shape[0] > self.sparsify_batch_size:
+        #     indices = []
+        #     values = []
+        #     for i in range(0, self.dense_acts.shape[0], self.sparsify_batch_size):
+        #         batch = self.dense_acts[i : i + self.sparsify_batch_size]
+        #         sparse_batch = batch.to_sparse_coo()
+        #         indices.append(sparse_batch.indices())
+        #         values.append(sparse_batch.values())
+        #     indices = torch.cat(indices, dim=1)
+        #     values = torch.cat(values)
+        #     self.sparse_acts = torch.sparse_coo_tensor(
+        #         indices, values, self.dense_acts.shape
+        #     )
+        # else:
+
+    def make_dense_disk_storage(self, seq_len, d_dict, dtype_bytes=4):
+        shape = [self.cfg.docs_per_chunk, seq_len, d_dict]
+        numel = shape[0] * shape[1] * shape[2]
+        assert not self.dense_disk_storage_path.exists()
+        storage = torch.FloatTensor(
+            torch.UntypedStorage.from_file(
+                str(self.dense_disk_storage_path),
+                shared=True,
+                nbytes=numel * dtype_bytes,
+            )
+        )
+        storage.reshape(shape)
+
+    @property
+    def dense_disk_storage_path(self):
+        return self.dense_path.parent / f"{self.dense_path.stem}.bin"
 
     def densify(self):
         assert self.sparse_acts is not None

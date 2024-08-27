@@ -4,6 +4,7 @@ from pathlib import Path
 from saeco.evaluation.chunk import Chunk
 import torch
 from functools import cached_property
+from saeco.evaluation.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 @define
@@ -11,6 +12,7 @@ class SavedActs:
     path: Path
     chunks: list[Chunk] = field(init=False)
     num_chunks: int = field(init=False)
+    feature_tensors: list[SparseGrowingDiskTensor] | None = field(init=False)
 
     # cfg: CachingConfig
     @cached_property
@@ -18,6 +20,17 @@ class SavedActs:
         return CachingConfig.model_validate_json(
             (self.path / CachingConfig.STANDARD_FILE_NAME).read_text()
         )
+
+    @feature_tensors.default
+    def _feature_tensors_initializer(self):
+        feat_dir = self.path / "features"
+        num_features = len(list(feat_dir.glob("feature*")))
+        if self.cfg.store_feature_tensors:
+            return [
+                SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
+                for i in range(num_features)
+            ]
+        return None
 
     @chunks.default
     def _chunks_initializer(self):
@@ -38,6 +51,10 @@ class SavedActs:
         ):
             l.append(torch.sparse_coo_tensor(indices, values, s))
         return l
+
+    def active_feature_tensor(self, feature_id) -> torch.Tensor:
+        assert self.cfg.store_feature_tensors
+        return self.feature_tensors[feature_id].tensor
 
     def where_feature_active_big_tensor(self, feature_ids, intersection=False):
         indices_l = []
@@ -117,16 +134,20 @@ class SavedActs:
 
     @property
     def tokens(self):
-        return ChunksGetter(self.chunks, "tokens")
+        return ChunksGetter(self, "tokens", chunk_indexing=False)
+
+    @property
+    def ctokens(self):
+        return ChunksGetter(self, "tokens")
 
     @property
     def acts(self):
-        return ChunksGetter(self.chunks, "acts")
+        return ChunksGetter(self, "acts")
 
 
 @define
 class ChunksGetter:
-    chunks: list[Chunk]
+    saved_acts: SavedActs
     target_attr: str
     chunk_indexing: bool = True
 
@@ -139,11 +160,20 @@ class ChunksGetter:
             if self.chunk_indexing:
                 chunk_ids = sl[0:1]
                 return [
-                    getattr(self.chunks[chunk_id], self.target_attr)[
+                    getattr(self.saved_acts.chunks[chunk_id], self.target_attr)[
                         sl[1:][chunk_ids == chunk_id]
                     ]
                     for chunk_id in chunk_ids.unique()
                 ]
 
             else:
-                assert False
+                chunk_ids = sl[0] // self.saved_acts.cfg.docs_per_chunk
+                cdoc_idx = sl[0] % self.saved_acts.cfg.docs_per_chunk
+                return torch.cat(
+                    [
+                        getattr(self.saved_acts.chunks[chunk_id], self.target_attr)[
+                            torch.cat([cdoc_idx, *sl[1:]])[chunk_ids == chunk_id]
+                        ]
+                        for chunk_id in chunk_ids.unique()
+                    ]
+                )

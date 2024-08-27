@@ -9,6 +9,7 @@ from pathlib import Path
 from attrs import define, field
 from torch import Tensor
 import einops
+from saeco.evaluation.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 # storage_dir: Path = Path.home() / "workspace/data/caching"
@@ -42,18 +43,22 @@ class ActsCacher:
         self.acts_data = self.model_context.cfg.train_cfg.data_cfg.acts_data()
 
     def store_acts(self):
+        seq_len = next(self.tokens_source).shape[1]
         cacher = Cacher(
+            d_dict=self.model_context.cfg.init_cfg.d_dict,
+            seq_len=seq_len,
             cfg=self.cfg,
             tokens_source=self.tokens_source,
             get_llm_acts=self.get_llm_acts,
             sae_model=self.model_context.trainable,
-            path=self.stored_path(),
+            path=self.path(),
         )
         cacher.store(self.cfg.num_chunks)
-        (self.stored_path() / CachingConfig.STANDARD_FILE_NAME).write_text(
+        (self.path() / CachingConfig.STANDARD_FILE_NAME).write_text(
             self.cfg.model_dump_json()
         )
 
+    @torch.inference_mode()
     def get_llm_acts(self, tokens: Int[Tensor, "doc seq"]):
         return self.acts_data.to_acts(
             tokens,
@@ -63,9 +68,9 @@ class ActsCacher:
             skip_exclude=True,
         )
 
-    def stored_path(self):
+    def path(self):
         root = Path.home() / "workspace" / "cached_sae_acts"
-        path = root / "test"  # TODO
+        path = root / self.cfg.dirname  # TODO
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -82,12 +87,26 @@ Acts = Float[torch.Tensor, "doc seq d_data"]
 
 @define
 class Cacher:
+    d_dict: int
+    seq_len: int
     cfg: CachingConfig
     tokens_source: Iterator[Tokens]
     get_llm_acts: Callable[[Tokens], Acts]
     sae_model: Trainable
     path: Path
+    feature_tensors: list[SparseGrowingDiskTensor] | None = field(init=False)
     chunk_counter: int = 0
+
+    @feature_tensors.default
+    def _feature_tensors_initializer(self):
+        if self.cfg.store_feature_tensors:
+            return [
+                SparseGrowingDiskTensor.create(
+                    self.path / "features" / f"feature{i}", shape=[None, self.seq_len]
+                )
+                for i in range(self.d_dict)
+            ]
+        return None
 
     def store(self, n_chunks=None):
         assert self.cfg.store_dense or self.cfg.store_sparse
@@ -95,13 +114,22 @@ class Cacher:
             if n_chunks is not None and chunk_id >= n_chunks:
                 break
             chunk.save_tokens()
+            # chunk.force_dense_to_disk()
             if self.cfg.store_sparse:
                 chunk.sparsify()
                 chunk.save_sparse()
+                # if not self.cfg.store_dense:
+                # chunk.remove_dense_from_disk()
             if self.cfg.store_dense:
                 chunk.save_dense()
+            if self.cfg.store_feature_tensors:
+                print("Storing feature tensors")
+                for i, feat_acts in enumerate(chunk.dense_acts.split(1, dim=2)):
+                    self.feature_tensors[i].append(feat_acts.squeeze(-1))
             del chunk
             print(f"Stored chunk {chunk_id}")
+        for ft in self.feature_tensors:
+            ft.finalize()
 
     def chunk_generator(self):
         for tokens in self.tokens_source:
@@ -114,6 +142,7 @@ class Cacher:
             self.chunk_counter += 1
             yield chunk
 
+    @torch.inference_mode()
     def batched_tokens_to_sae_acts(self, tokens: Tensor):
         # this could be optimized more by having separate batch sizes for llm and sae
         sae_acts = []
@@ -121,6 +150,7 @@ class Cacher:
             batch_tokens = tokens[i : i + self.cfg.documents_per_micro_batch]
             batch_subj_acts = self.get_llm_acts(batch_tokens)
             batch_sae_acts = self.get_sae_acts(batch_subj_acts)
+            del batch_subj_acts
             sae_acts.append(batch_sae_acts)
         return torch.cat(sae_acts, dim=0)
 
