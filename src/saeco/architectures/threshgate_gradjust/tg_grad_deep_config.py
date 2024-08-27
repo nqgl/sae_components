@@ -10,7 +10,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.TrainConfig import TrainConfig
 from saeco.initializer import InitConfig
 
-PROJECT = "sae sweeps"
+PROJECT = "ezpod_test"
 
 cfg = RunConfig[DeepConfig](
     train_cfg=TrainConfig(
@@ -18,13 +18,13 @@ cfg = RunConfig[DeepConfig](
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=Swept(50_000),
             resample_period=4000,
         ),
         #
         batch_size=4096,
-        optim="Adam",
-        lr=7e-4,
+        optim="ScheduleFree",
+        lr=3e-3,
         betas=(0.9, 0.999),
         #
         use_autocast=False,
@@ -41,23 +41,35 @@ cfg = RunConfig[DeepConfig](
         },
         #
         wandb_cfg=dict(project=PROJECT),
+        checkpoint_period=5000,
     ),
     resampler_config=AnthResamplerConfig(
-        optim_reset_cfg=OptimResetValuesConfig(), expected_biases=None
+        optim_reset_cfg=OptimResetValuesConfig(),
+        expected_biases=None,
+        expected_decs=None,
     ),
     #
     init_cfg=InitConfig(dict_mult=8),
     arch_cfg=DeepConfig(
         uniform_noise=True,
         noise_mult=1,
-        exp_mag=False,
-        decay_l1_to=Swept(0.0, 1.0, 0.03),
+        # uniform_noise=Swept(True, False),
+        # noise_mult=Swept(0.3, 1.0),
+        decay_l1_to=0.03,
         mag_weights=False,
-        leniency=0.4,
-        leniency_targeting=Swept(True, False),
-        deep_enc=Swept(True, False),
-        deep_dec=Swept(True, False),
-        use_layernorm=Swept(True, False),
+        leniency=0.35,
+        leniency_targeting=True,
+        deep_enc=False,
+        deep_dec=1,
+        # use_layernorm=Swept(True, False),
+        # l1_max_only=Swept(True, False),
+        use_layernorm=True,
         l1_max_only=False,
+        penalize_after=False,
+        resid=True,
+        dec_mlp_expansion_factor=8,
+        resample_dec=False,
+        dec_mlp_nonlinearity="leakyrelu",
+        norm_deep_dec=True,
     ),
 )
