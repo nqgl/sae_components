@@ -40,9 +40,10 @@ class RandResampledFP(ft.FeaturesParam):
 
 
 class OtherLinear(ft.LinWeights):
-    def __init__(self, lin, weight_param_index=0):
+    def __init__(self, lin, weight_param_index=0, channel_split=False):
         super().__init__(lin)
         self.weight_param_index = weight_param_index
+        self.channel_split = channel_split
 
     @property
     @lazycall

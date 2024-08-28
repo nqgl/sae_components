@@ -10,7 +10,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.TrainConfig import TrainConfig
 from saeco.initializer import InitConfig
 
-PROJECT = "ezpod_test"
+PROJECT = "binarize"
 
 cfg = RunConfig[DeepConfig](
     train_cfg=TrainConfig(
@@ -18,25 +18,26 @@ cfg = RunConfig[DeepConfig](
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=Swept(50_000),
-            resample_period=4000,
+            run_length=100_000,
+            resample_period=4_000,
         ),
         #
         batch_size=4096,
-        optim="ScheduleFree",
-        lr=3e-3,
+        optim="Adam",
+        lr=3e-4,
         betas=(0.9, 0.999),
+        weight_decay=None,
         #
         use_autocast=False,
         use_lars=True,
         #
-        l0_target=25,
+        l0_target=512,
         l0_target_adjustment_size=0.0003,
         l0_targeting_enabled=False,
         l0_targeter_type="pid",
         use_averaged_model=False,
         coeffs={
-            "sparsity_loss": 3e-4,
+            "sparsity_loss": 1e-4,
             "L2_loss": 1,
         },
         #
@@ -44,32 +45,35 @@ cfg = RunConfig[DeepConfig](
         checkpoint_period=5000,
     ),
     resampler_config=AnthResamplerConfig(
-        optim_reset_cfg=OptimResetValuesConfig(),
+        optim_reset_cfg=OptimResetValuesConfig(b2_scale=8),
         expected_biases=None,
         expected_decs=None,
     ),
     #
-    init_cfg=InitConfig(dict_mult=8),
+    init_cfg=InitConfig(dict_mult=2),
     arch_cfg=DeepConfig(
         uniform_noise=True,
         noise_mult=1,
         # uniform_noise=Swept(True, False),
         # noise_mult=Swept(0.3, 1.0),
-        decay_l1_to=0.03,
+        decay_l1_to=0.0,
         mag_weights=False,
-        leniency=0.35,
-        leniency_targeting=True,
+        leniency=1,
+        leniency_targeting=False,
         deep_enc=False,
-        deep_dec=1,
+        deep_dec=0,
         # use_layernorm=Swept(True, False),
         # l1_max_only=Swept(True, False),
-        use_layernorm=True,
+        use_layernorm=False,
         l1_max_only=False,
-        penalize_after=False,
+        penalize_after=True,
         resid=True,
         dec_mlp_expansion_factor=8,
-        resample_dec=False,
-        dec_mlp_nonlinearity="leakyrelu",
+        resample_dec=True,
+        dec_mlp_nonlinearity="prelu",
         norm_deep_dec=True,
+        squeeze_channels=1,
+        dropout=0.0,
+        signed_mag=False,
     ),
 )

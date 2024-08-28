@@ -17,8 +17,8 @@ class Collection(Module):
         **collection_dict: Union[nn.Parameter, nn.Module],
     ):
         super().__init__()
-        assert (len(collection_list) > 0) ^ (
-            len(collection_dict) > 0
+        assert (len(collection_list) == 0) or (
+            len(collection_dict) == 0
         ), "Either unnamed or named modules should be provided, but not both"
 
         if len(collection_list) > 0:

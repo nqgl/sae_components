@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from saeco.architectures.threshgate_gradjust.other_lin import OtherLinear
-from saeco.architectures.threshgate_gradjust.threshgate import (
+from saeco.architectures.threshgate_gradjust.threshgrad import (
     BinaryEncoder,
     GTTest,
 )
@@ -32,7 +32,14 @@ from saeco.initializer.tools import (
 )
 
 
-def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.LeakyReLU, normalize=False):
+def mlp_layer(
+    d_in,
+    d_hidden,
+    d_out=None,
+    nonlinearity=nn.LeakyReLU,
+    normalize=False,
+    no_resample=False,
+):
     d_out = d_out or d_in
     if nonlinearity is nn.PReLU:
         nonlinearity = nn.PReLU(d_hidden).cuda()
@@ -42,14 +49,15 @@ def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.LeakyReLU, normalize=F
     proj_in.features["bias"].resampled = False
     proj_out = OtherLinear(nn.Linear(d_hidden, d_out), weight_param_index=1)
     proj_out.features["weight"].resampled = False
+    if no_resample:
+        proj_out.features["bias"].resampled = False
+        proj_in.features["weight"].resampled = False
 
     if normalize:
-        proj_in = ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(proj_in, index="weight", ord=2), index="weight"
-        )
-        proj_out = ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(proj_out, index="weight", ord=2), index="weight"
-        )
+        proj_in = ft.NormFeatures(proj_in, index="weight", ord=2, max_only=True)
+
+        proj_out = ft.NormFeatures(proj_out, index="weight", ord=2, max_only=True)
+
     return Seq(proj_in=proj_in, nonlinearity=nonlinearity, proj_out=proj_out)
 
 
@@ -73,6 +81,9 @@ class DeepConfig(SweepableConfig):
     resample_dec: bool = True
     dec_mlp_nonlinearity: str = "relu"
     norm_deep_dec: bool = False
+    squeeze_channels: int = 1
+    dropout: float = 0.0
+    signed_mag: bool = False
 
 
 class L1Checkpoint(cl.PassThroughModule):
@@ -116,19 +127,35 @@ def deep_tg_grad_sae(
             else co.L1Penalty()
         )
     )
+
+    def dropout_no_scale(p):
+        drop = torch.nn.Dropout(p=p)
+
+        @co.ops.Lambda
+        def scaleif(x):
+            if drop.training:
+                return x * (1 - p)
+            return x
+
+        return Seq(drop=drop, scale=scaleif)
+
     # lin = OtherLinear(init.d_data, init.d_data)
+    if cfg.squeeze_channels > 1:
+        init._decoder.d_in = init.d_dict // cfg.squeeze_channels
+        init._decoder._weight_tie = None
 
     def dec_layer():
         return Seq(
             mlp=mlp_layer(
-                init.d_dict,
+                init.d_dict // cfg.squeeze_channels,
                 init.d_data * cfg.dec_mlp_expansion_factor,
                 nonlinearity=nonlinearities[cfg.dec_mlp_nonlinearity],
                 normalize=cfg.norm_deep_dec,
+                no_resample=cfg.squeeze_channels > 1,
             ),
             **useif(
                 cfg.use_layernorm,
-                ln=nn.LayerNorm(init.d_dict),
+                ln=nn.LayerNorm(init.d_dict // cfg.squeeze_channels),
             ),
         )
 
@@ -152,24 +179,50 @@ def deep_tg_grad_sae(
     model = Seq(
         encoder=Seq(
             **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
-            # **useif(
-            #     cfg.deep_enc,
-            #     resids=cl.collections.seq.ResidualSeq(
-            #         layer=Seq(
-            #             mlp_layer(
-            #                 init.d_data,
-            #                 init.d_data * 4,
-            #                 nonlinearity=nn.PReLU,
-            #                 scale=0.1,
-            #             ),
-            #             nn.LayerNorm(init.d_data),
-            #         ),
-            #     ),
-            # ),
-            lin=GTTest(cfg, init) if cfg.mag_weights else BinaryEncoder(cfg, init),
+            **useif(
+                cfg.deep_enc,
+                resids=cl.collections.seq.ResidualSeq(
+                    layer=Seq(
+                        mlp_layer(
+                            init.d_data,
+                            init.d_data * 4,
+                            nonlinearity=nn.PReLU,
+                            no_resample=True,
+                            # scale=0.1,
+                        ),
+                        nn.LayerNorm(init.d_data),
+                    ),
+                ),
+            ),
+            lin=(
+                gt := (
+                    GTTest(cfg, init)
+                    if cfg.mag_weights
+                    else BinaryEncoder(
+                        cfg,
+                        init,
+                        apply_targeting_externally=(cfg.squeeze_channels > 1),
+                        signed_mag=cfg.signed_mag,
+                    )
+                )
+            ),
         ),
         freqs=EMAFreqTracker(),
+        **useif(
+            cfg.squeeze_channels > 1,
+            pre_squeeze_metrics=co.metrics.ActMetrics("pre-squeeze"),
+            squeeze=Seq(
+                split=co.ops.Lambda(
+                    lambda x: torch.split(x, init.d_dict // cfg.squeeze_channels, dim=1)
+                ),
+                route_add=cl.collections.Router(
+                    *[cl.ops.Identity() for _ in range(cfg.squeeze_channels)]
+                ).reduce(lambda a, b: a + b, binary=True),
+            ),
+        ),
         metrics=co.metrics.ActMetrics(),
+        **useif(cfg.squeeze_channels > 1, gt_targeting=gt.targeting),
+        **useif(cfg.dropout > 0, dropout=dropout_no_scale(cfg.dropout)),
         **useif(not cfg.penalize_after, **penalty),
         **useif(cfg.deep_dec, deep=deep),
         **useif(cfg.penalize_after, **penalty),
@@ -178,7 +231,7 @@ def deep_tg_grad_sae(
             ft.NormFeatures(
                 init.decoder.set_resampled(cfg.resample_dec),
             ),
-        ),
+        ).set_resampled(cfg.squeeze_channels == 1),
     )
 
     models = [model]

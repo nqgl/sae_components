@@ -45,6 +45,8 @@ class Trainer:
                     betas=cfg.betas,
                     warmup_steps=cfg.schedule.lr_warmup_length,
                 )
+                if cfg.weight_decay is not None:
+                    opt_kwargs["weight_decay"] = cfg.weight_decay
                 self.optim = AdamWScheduleFree(
                     self.trainable.param_groups(opt_kwargs),
                     **opt_kwargs,
@@ -54,6 +56,8 @@ class Trainer:
                     lr=cfg.lr,
                     betas=cfg.betas,
                 )
+                if cfg.weight_decay is not None:
+                    opt_kwargs["weight_decay"] = cfg.weight_decay
                 self.optim = get_optim_cls(self.cfg.optim)(
                     self.trainable.param_groups(opt_kwargs),
                     **opt_kwargs,

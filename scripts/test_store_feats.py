@@ -35,7 +35,9 @@ modelss = Path.home() / "workspace/saved_models/"
 
 
 name = "sweep_None/(lars)anth_update_model0.001[30.3]-95_10000"
-name = "sweep_None/(lars)deep_tg_grad_sae0.003[25.0]-31_10000"
+# name = "sweep_None/(lars)deep_tg_grad_sae0.003[25.0]-31_10000"
+name = "sweep_None/(lars)deep_tg_grad_sae0.002[25.0]-66_25000"
+name = "sweep_f6h6fg5m/(lars)deep_tg_grad_sae0.0007[50.0]-2_100000"
 
 
 def load(cfg: BaseModel, model_fn, name):
@@ -44,7 +46,13 @@ def load(cfg: BaseModel, model_fn, name):
     cfg_path = modelss / (name + ".json")
     cfg = cfg.model_validate_json(cfg_path.read_text())
     tr = TrainingRunner(cfg, model_fn)
-    tr.trainable.load_state_dict(torch.load(pt_path))
+    state = torch.load(pt_path)
+    # for k in list(state.keys()):
+    #     if "proj_in.wrapped" in k:
+    #         state[k.replace("proj_in.wrapped", "proj_in")] = state.pop(k)
+    #     if "proj_out.wrapped" in k:
+    #         state[k.replace("proj_out.wrapped", "proj_out")] = state.pop(k)
+    tr.trainable.load_state_dict(state)
     return tr
 
 
@@ -79,18 +87,17 @@ def re_store(cfg):
     return ac
 
 
-re_store(
-    CachingConfig(
-        store_dense=False,
-        dirname="feat_store",
-        num_chunks=100,
-        docs_per_chunk=100,
-        documents_per_micro_batch=32,
-    ),
-)
+# re_store(
+#     CachingConfig(
+#         store_dense=False,
+#         dirname="feat_store2",
+#         num_chunks=2,
+#         docs_per_chunk=50,
+#         documents_per_micro_batch=16,
+#     ),
+# )
 
-
-path = Path.home() / "workspace" / "cached_sae_acts" / "feat_store"
+path = Path.home() / "workspace" / "cached_sae_acts" / "feat_store2"
 # %%
 # c = Chunk.load_chunks_from_dir(path, load_sparse_only=True)
 # print(len(c))
@@ -117,7 +124,7 @@ def get_features_and_active_docs(feature_ids):
     return feature_tensors, active_documents, active_documents_idxs
 
 
-feature_ids = [213, 218, 1, 2, 3, 4]
+feature_ids = [1, 2, 4]
 
 feats, docs, doc_ids = get_features_and_active_docs(feature_ids)
 
@@ -157,7 +164,7 @@ from rich.console import Console
 
 console = Console()
 console.print("Hello", style="rgb(175,0,255)")
-values = [70, 10, 255]
+values = [110, 15, 240]
 color_vecs = [
     torch.tensor(
         [
@@ -189,13 +196,15 @@ def print_activity(tokens, feature_activity, document_id, colors=color_vecs):
 
     # if feature_activity.coalesce().values().shape[0] > 1:
     #     print("multiple activations", feature_activity.coalesce().values().shape[0])
-    console.print(f"\n\n\n\nDocument {document_id}", style="underline bold")
-    console.print("\n" + "-" * 30 + "\n")
+    console.print(
+        f"\n\n\n\nDocument {document_id}", style="underline bold", highlight=False
+    )
+    console.print("\n" + "-" * 30 + "\n", highlight=False)
     for j, fa in enumerate(feature_activity):
         if fa.any():
             color = colors[j]
             console.print(
-                f"Fature {feature_ids[j]} active",
+                f"Feature {feature_ids[j]} active",
                 [f"{i:.02}" for i in fa.coalesce().values()],
                 style=f"rgb({color[0]},{color[1]},{color[2]}) bold italic",
             )
@@ -209,11 +218,12 @@ def print_activity(tokens, feature_activity, document_id, colors=color_vecs):
                     t,
                     style=f"rgb({color[0]},{color[1]},{color[2]}) underline bold italic",
                     end="",
+                    highlight=False,
                 )
         if not active:
-            console.print(t, style="rgb(255,255,255)", end="")
+            console.print(t, style="rgb(255,255,255)", end="", highlight=False)
         # console.print(" ", end="")
-    console.print("\n" * 5)
+    console.print("\n" * 5, highlight=False)
 
 
 # def explain_colors():
