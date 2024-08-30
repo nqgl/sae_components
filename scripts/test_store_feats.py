@@ -37,7 +37,8 @@ modelss = Path.home() / "workspace/saved_models/"
 name = "sweep_None/(lars)anth_update_model0.001[30.3]-95_10000"
 # name = "sweep_None/(lars)deep_tg_grad_sae0.003[25.0]-31_10000"
 name = "sweep_None/(lars)deep_tg_grad_sae0.002[25.0]-66_25000"
-name = "sweep_f6h6fg5m/(lars)deep_tg_grad_sae0.0007[50.0]-2_100000"
+name = "sweep_f6h6fg5m/(lars)deep_tg_grad_sae0.001[512.0]-40_100001"
+name = "binarize/(lars)deep_tg_grad_sae0.0003[100]-74_100001"
 
 
 def load(cfg: BaseModel, model_fn, name):
@@ -45,7 +46,8 @@ def load(cfg: BaseModel, model_fn, name):
     pt_path = modelss / (name + ".pt")
     cfg_path = modelss / (name + ".json")
     cfg = cfg.model_validate_json(cfg_path.read_text())
-    tr = TrainingRunner(cfg, model_fn)
+    from llm_finetune import tr
+
     state = torch.load(pt_path)
     # for k in list(state.keys()):
     #     if "proj_in.wrapped" in k:
@@ -57,6 +59,7 @@ def load(cfg: BaseModel, model_fn, name):
 
 
 tr = load(cfg, deep_tg_grad_sae, name)
+# tr = TrainingRunner(cfg, model_fn=deep_tg_grad_sae)
 tr.trainable.eval()
 
 # %%
@@ -103,30 +106,36 @@ path = Path.home() / "workspace" / "cached_sae_acts" / "feat_store2"
 # print(len(c))
 from saeco.evaluation.saved_acts import SavedActs
 
-tr.trainable.model.model.module.freqs.freqs
+# tr.trainable.model.model.module.freqs.freqs
 
 sa = SavedActs(path)
 
 
 @timed
-def get_features_and_active_docs(feature_ids):
+def get_features_and_active_docs(feature_ids, intersection=False):
     feature_tensors = [sa.active_feature_tensor(fid) for fid in feature_ids]
     # active_documents_l = [
     #     f.indices()[0, f.values() != 0].unique() for f in feature_tensors
     # ]
     f = feature_tensors[0].clone()
     for ft in feature_tensors[1:]:
-        f += ft
+        if intersection:
+            f = f * ft
+        else:
+            f += ft
     assert f.is_sparse
     f = f.coalesce()
     active_documents_idxs = f.indices()[0][f.values() != 0].unique()
     active_documents = sa.tokens[active_documents_idxs.unsqueeze(0)]
+    if intersection:
+        feature_tensors = [f]
     return feature_tensors, active_documents, active_documents_idxs
 
 
-feature_ids = [1, 2, 4]
+1, 2, 4
+feature_ids = [14, 15, 16, 17, 18, 19]
 
-feats, docs, doc_ids = get_features_and_active_docs(feature_ids)
+feats, docs, doc_ids = get_features_and_active_docs(feature_ids, intersection=False)
 
 
 # sa = SavedActs(path_small)
@@ -205,23 +214,43 @@ def print_activity(tokens, feature_activity, document_id, colors=color_vecs):
             color = colors[j]
             console.print(
                 f"Feature {feature_ids[j]} active",
-                [f"{i:.02}" for i in fa.coalesce().values()],
+                # [f"{i:.02}" for i in fa.coalesce().values()],
                 style=f"rgb({color[0]},{color[1]},{color[2]}) bold italic",
             )
     for i, t in enumerate(tokstrs):
         active: bool = False
         for j, fa in enumerate(feature_activity):
             if fa[i]:
-                active = True
                 color = colors[j]
-                console.print(
-                    t,
-                    style=f"rgb({color[0]},{color[1]},{color[2]}) underline bold italic",
-                    end="",
-                    highlight=False,
-                )
+                if not active:
+                    console.print(
+                        "[",
+                        style=f"rgb({color[0]},{color[1]},{color[2]}) underline bold italic",
+                        end="",
+                        highlight=False,
+                    )
+                # else:
+                #     console.print(
+                #         f"[+{j}]",
+                #         style=f"rgb({color[0]},{color[1]},{color[2]}) underline bold italic",
+                #         end="",
+                #         highlight=False,
+                #     )
+
+                # active = True
         if not active:
             console.print(t, style="rgb(255,255,255)", end="", highlight=False)
+        for j, fa in enumerate(feature_activity):
+            if fa[i]:
+                color = colors[j]
+                if not active:
+                    console.print(
+                        "]",
+                        style=f"rgb({color[0]},{color[1]},{color[2]}) underline bold italic",
+                        end="",
+                        highlight=False,
+                    )
+
         # console.print(" ", end="")
     console.print("\n" * 5, highlight=False)
 
@@ -235,3 +264,5 @@ for i in range(docs.shape[0]):
         [f[doc_ids[i]] for f in feats],
         document_id=doc_ids[i],
     )
+
+# %%
