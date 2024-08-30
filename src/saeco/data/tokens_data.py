@@ -1,16 +1,18 @@
-from saeco.data.dataset import DataConfig
 from saeco.data.split_config import SplitConfig
 from saeco.data.tabletensor import Piler
-
 
 import einops
 import torch
 import tqdm
 from transformer_lens import HookedTransformer
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.data.dataset import DataConfig
 
 
 class TokensData:
-    def __init__(self, cfg: DataConfig, model: HookedTransformer, split: SplitConfig):
+    def __init__(self, cfg: "DataConfig", model: HookedTransformer, split: SplitConfig):
         self.cfg = cfg
         self.model = model
         self.split = split

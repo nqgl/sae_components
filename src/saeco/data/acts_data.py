@@ -1,17 +1,18 @@
 from saeco.data.tokens_data import TokensData
 from saeco.data.bufferized_iter import bufferized_iter
-from saeco.data.dataset import DataConfig
 from saeco.data.split_config import SplitConfig
-
-
 import einops
 import torch
 import tqdm
 from transformer_lens import HookedTransformer
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.data.dataset import DataConfig
 
 
 class ActsData:
-    def __init__(self, cfg: DataConfig, model: HookedTransformer):
+    def __init__(self, cfg: "DataConfig", model: HookedTransformer):
         self.cfg = cfg
         self.model = model
 
@@ -122,6 +123,8 @@ class ActsData:
         else:
             assert nsteps is None
             # pile = piler[id]
+            spares = []
+            nspare = 0
             for p in range(id % nw, piler.num_piles, nw):
                 print("get next pile")
                 print(id, nw, p)
@@ -133,6 +136,22 @@ class ActsData:
                 print("got next pile")
                 for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                     yield pile[i : i + batch_size]
+                spare = pile[len(pile) // batch_size * batch_size :]
+                if len(spare) > 0:
+                    spares.append(spare)
+                    nspare += len(spare)
+                    if nspare > batch_size:
+                        consolidated = torch.cat(spares, dim=0)
+                        for i in range(
+                            0, len(consolidated) // batch_size * batch_size, batch_size
+                        ):
+                            yield consolidated[i : i + batch_size]
+                        spare = consolidated[
+                            len(consolidated) // batch_size * batch_size :
+                        ]
+                        spares = [spare]
+                        nspare = len(spare)
+
             # for i in range(0, len(pile) // batch_size * batch_size, batch_size):
             #     yield pile[i : i + batch_size]
 
@@ -190,7 +209,6 @@ class ActsDataset(torch.utils.data.IterableDataset):
         if worker_info is None:
             return gen_fn(self.split, self.batch_size)
         bpp = self.acts.cfg.generation_config.acts_per_pile // self.batch_size
-        bpp = 340
         id = worker_info.id
         nw = worker_info.num_workers
         offset = (id % nw) * bpp // nw
