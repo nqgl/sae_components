@@ -27,7 +27,8 @@ from saeco.architectures.deep.deep_resid_gated import (
     deep_resid_gated2_wider2,
 )
 from saeco.architectures.outdated.topk import topk_sae
-from saeco.architectures.remax import remax_sae, remax1_sae
+
+# from saeco.architectures.remax import remax_sae, remax1_sae
 from saeco.architectures.deep.catseq import deep_catseq, deep_catseq_resid
 import wandb
 import torch
