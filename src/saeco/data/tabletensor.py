@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 from typing import Union, List
 import tqdm
+from safetensors.torch import save_file, load_file
 
 # path = Path("data/table_test.h5")
 # t = torch.arange(32).reshape(2, 16)
@@ -71,15 +72,41 @@ class AppendDiskTensor:
         torch.save(t, str(self.path).split(".")[0] + ".pt")
         self.path.unlink()
 
-    def readtensor(self):
-        return torch.load(
-            str(self.path).split(".")[0] + ".pt",
-            map_location=(
-                torch.device("cpu")
-                if self.dtype == torch.float16
-                else torch.device("cpu")
-            ),
-        )
+    def shufflekill_safetensor(self):
+        """
+        shuffle the .h5, turn it into a tensor saved as .safetensors, then deletes the original .h5
+        """
+        pt = self.path.with_suffix(".pt")
+        if pt.exists():
+            mm = bool((int(self.path.stem[-1]) % 4) // 2)
+            print("mm state:", mm)
+            t = self.readtensor(pt=True, mmap=mm)
+        else:
+            t = self.read()
+            t = t[torch.randperm(t.shape[0])]
+        save_file({"tensor": t}, self.path.with_suffix(".safetensors"))
+        self.path.unlink(missing_ok=True)
+
+    def readtensor(self, pt=False, mmap=False):
+        ptpath = self.path.with_suffix(".pt")
+
+        if pt:
+            if ptpath.exists():
+                return torch.load(
+                    str(self.path).split(".")[0] + ".pt",
+                    map_location=(
+                        torch.device("cpu")
+                        if self.dtype == torch.float16
+                        else torch.device("cpu")
+                    ),
+                    mmap=mmap,
+                )
+        if ptpath.exists():
+            print(f"converting .pt {ptpath} to safetensors")
+            self.shufflekill_safetensor()
+            ptpath.unlink()
+        st = self.path.with_suffix(".safetensors")
+        return load_file(st)["tensor"]
 
 
 class Piler:

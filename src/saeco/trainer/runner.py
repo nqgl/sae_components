@@ -1,6 +1,6 @@
-from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.run_config import RunConfig
 from saeco.initializer.initializer_config import InitConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.trainable import Trainable
 
 from saeco.trainer.trainer import Trainer

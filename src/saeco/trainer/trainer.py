@@ -13,12 +13,15 @@ from saeco.trainer.post_backward_normalization import (
     do_post_step,
 )
 from .recons import get_recons_loss
-from saeco.data.dataset import TokensData
+from saeco.data.tokens_data import TokensData
 from .l0targeter import L0Targeter, TARGETER_TYPES
 from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 from contextlib import contextmanager
-from .RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from .run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
+import tqdm
+
+# torch.multiprocessing.set_start_method("spawn")
 
 
 class Trainer:
@@ -35,6 +38,7 @@ class Trainer:
         self.trainable = model
         self.t = 1
         self.log_t_offset = 0
+        self.log_freq = 10
         assert optim is None
         if optim is not None:
             self.optim = optim
@@ -71,14 +75,11 @@ class Trainer:
 
             self.optim = LARS(self.optim)
             assert optim is None or not isinstance(optim, LARS)
-        # if self.cfg.use_schedulefree:
-        # self.optim = ScheduleFreeWrapper(self.optim)
 
         self.namestuff = wandb_run_label
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
         ).get_tokens()
-        self.intermittent_metric_freq = 1000
         self.eval_step_freq = 100
         self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
         self.l0_targeter = TARGETER_TYPES[self.cfg.l0_targeter_type](
@@ -156,10 +157,25 @@ class Trainer:
                 )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def get_databuffer(self, num_batches=None, num_workers=0):
-        return self.cfg.data_cfg.get_databuffer(
+    def get_databuffer(self, num_batches=None, num_workers=0, queue_size=256):
+        buf = self.cfg.data_cfg.get_databuffer(
             num_workers=num_workers, batch_size=self.cfg.batch_size
         )
+        if queue_size is not None:
+            queue = [next(buf).cuda(non_blocking=True) for _ in range(queue_size)]
+
+            def qbuf():
+                try:
+                    while True:
+                        yield queue.pop(0)
+                        queue.append(next(buf).cuda(non_blocking=True))
+                except StopIteration:
+                    print("GPU buffer source depleted")
+                    for x in queue:
+                        yield x
+
+            return qbuf()
+        return buf
 
     def get_cache(self):
         c = TrainCache()
@@ -172,8 +188,17 @@ class Trainer:
         return c
 
     def train(self, buffer=None, num_steps=None):
+        try:
+            self._train(buffer=buffer, num_steps=num_steps)
+        finally:
+            if self.cfg.save_on_complete:
+                self.save()
+                if self.cfg.use_averaged_model:
+                    self.save(averaged=True)
+
+    def _train(self, buffer=None, num_steps=None):
         if buffer is None:
-            buffer = self.get_databuffer(num_workers=0)
+            buffer = self.get_databuffer(num_workers=6)
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
         self.post_step()
@@ -204,10 +229,9 @@ class Trainer:
 
             buffer = buf()
 
-        for x in buffer:
-            x = x.cuda()
+        for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
             if not self.cfg.use_autocast:
-                x = x.float()
+                x = x.float()  # TODO maybe cast other direction instead
             self.optim.zero_grad()
             if self.t % self.eval_step_freq == 0 or (
                 self.t > self.cfg.schedule.run_length - 1000 and self.t % 5 == 0
@@ -225,7 +249,7 @@ class Trainer:
             cache.destruct()
             if self.cfg.use_averaged_model:
                 self.averaged_model.update_parameters(self.trainable)
-            if self.t % self.intermittent_metric_freq == 0:
+            if self.t % self.cfg.intermittent_metric_freq == 0:
                 self.trainable.eval()
                 self.do_intermittent_metrics()
                 self.trainable.train()
@@ -271,11 +295,12 @@ class Trainer:
         else:
             trainable = self.trainable
         cache = self.get_cache()
-        if self.cfg.use_autocast:
-            with torch.autocast(device_type="cuda"):
+        with torch.no_grad():
+            if self.cfg.use_autocast:
+                with torch.autocast(device_type="cuda"):
+                    loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
+            else:
                 loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
-        else:
-            loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
         self.eval_log(cache)
 
     def do_intermittent_metrics(self, buffer=None):
@@ -309,7 +334,7 @@ class Trainer:
         )
 
     def full_log(self, cache: Cache):
-        if self.t % 10 != 0:  # and self.t % 23000 > 100:
+        if self.t % self.log_freq != 0:  # and self.t % 23000 > 100:
             return
         # if wandb.run is not None:
         self.log(
@@ -325,12 +350,25 @@ class Trainer:
         # if wandb.run is not None:
         self.log(d)
 
-    def save(self):
+    def save(self, averaged=False):
         from pathlib import Path
 
-        d = Path.home() / "workspace/saved_models/" / f"sweep_{wandb.run.sweep_id}"
-        d.mkdir(exist_ok=True, parents=True)
-        cfg_path = d / f"{wandb.run.name}_{self.t}.json"
-        assert not cfg_path.exists()
-        torch.save(self.trainable.state_dict(), d / f"{wandb.run.name}_{self.t}.pt")
+        save_dir = Path.home() / "workspace/saved_models/"
+        if wandb.run.project:
+            save_dir /= wandb.run.project
+        if wandb.run.sweep_id:
+            save_dir /= f"sweep{wandb.run.sweep_id}"
+        name = f"{wandb.run.name}/{self.t}"
+        if averaged:
+            name = f"{name}_averaged"
+        save_dir.mkdir(exist_ok=True, parents=True)
+        cfg_path = save_dir / f"{name}.json"
+        model_path = save_dir / f"{name}.pt"
+        assert (not cfg_path.exists()) and (not model_path.exists())
+        cfg_path.parent.mkdir(exist_ok=True, parents=True)
+        model_path.parent.mkdir(exist_ok=True, parents=True)
+        if averaged:
+            torch.save(self.averaged_model.state_dict(), model_path)
+        else:
+            torch.save(self.trainable.state_dict(), model_path)
         cfg_path.write_text(self.run_cfg.model_dump_json())
