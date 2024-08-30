@@ -76,8 +76,6 @@ def replacement_hook(
     mlp_post_reconstr = encoder(acts_re.reshape(-1, cfg.d_data))
 
     mlp_post_reconstr = mlp_post_reconstr.reshape(acts_shape)
-    seq_len = acts_shape[1]
-    assert seq_len == 128
     # print(acts[:, 0])
     # assert False, acts[0, 0]
     if bos_processed_with_hook:
