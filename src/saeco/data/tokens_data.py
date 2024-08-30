@@ -128,3 +128,23 @@ class TokensData:
             if num_tokens is not None
             else tokens
         )
+
+    def get_tokens_iter(
+        self,
+        batch_size,
+        id=None,
+        nw=None,
+    ):
+        assert id == nw == None or id is not None and nw is not None
+        id = id or 0
+        nw = nw or 1
+        if not self.cfg._tokens_piles_path(self.split).exists():
+            self._store_split(self.split)
+
+        piler = self.tokens_piler()
+        for p in range(id % nw, piler.num_piles, nw):
+            print("get next tokens pile")
+            print(id, nw, p)
+            pile = piler[p]
+            for i in range(0, len(pile) // batch_size * batch_size, batch_size):
+                yield pile[i : i + batch_size]
