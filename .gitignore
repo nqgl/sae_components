@@ -6,3 +6,6 @@ nqgl/sae/models/
 notes/
 models-from-remote/
 *.egg-info
+*.bin
+*.metadata
+*.json
