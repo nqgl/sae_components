@@ -41,6 +41,10 @@ class ActsCacher:
         self.tokens_source = tokens_source
         self.model_context = model_context
         self.acts_data = self.model_context.cfg.train_cfg.data_cfg.acts_data()
+        if self.cfg.exclude_bos_from_storage is None:
+            self.cfg.exclude_bos_from_storage = (
+                self.model_context.cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first
+            )
 
     def store_acts(self):
         seq_len = next(self.tokens_source).shape[1]
@@ -163,6 +167,8 @@ class Cacher:
         sae_acts = einops.rearrange(
             sae_acts_flat, "(doc seq) d_dict -> doc seq d_dict", doc=ndoc, seq=seq_len
         )
+        if self.cfg.exclude_bos_from_storage:
+            sae_acts[:, 0] = 0
         return sae_acts
 
 

@@ -12,3 +12,4 @@ class CachingConfig(BaseModel):
     dirname: str = "test"
     store_feature_tensors: bool = True
     STANDARD_FILE_NAME: ClassVar = "cache_config.json"
+    exclude_bos_from_storage: bool | None = None
