@@ -5,7 +5,7 @@ from saeco.data.split_config import SplitConfig
 from saeco.data.dataset import DataConfig
 from transformer_lens import HookedTransformer
 
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.trainable import Trainable
 
 gpt2 = HookedTransformer.from_pretrained("gpt2")

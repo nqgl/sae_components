@@ -22,8 +22,8 @@ import saeco.core as cl
 
 
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.data import DataConfig, ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep

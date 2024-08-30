@@ -14,8 +14,8 @@ import saeco.components.features.features as ft
 import saeco.components as co
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco.trainer.RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.initializer.initializer_config import InitConfig
 from saeco.configs import RunSchedulingConfig
 

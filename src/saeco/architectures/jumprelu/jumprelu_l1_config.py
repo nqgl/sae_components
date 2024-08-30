@@ -1,4 +1,4 @@
-from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.run_config import RunConfig
 from .jumprelu_l1_model import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -7,7 +7,7 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 
 PROJECT = "sae sweeps"
 
@@ -44,11 +44,11 @@ cfg = RunConfig[Config](
     #
     arch_cfg=Config(
         pre_bias=False,
-        eps=Swept(3e-2),  ### Swept(1.0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3),
+        eps=1e-2,  ### Swept(1.0, 3e-1, 1e-1, 3e-2, 1e-2, 3e-3),
         thresh_initial_value=1,
         kernel="rect",  ### Swept("rect", "tri", "exp", "trap"),
-        l1_begin_scale=Swept(0.3, 0.1, 0.03),
-        l1_end_scale=Swept(0.0, 0.01),
-        l1_end=Swept(20_000, 35_000, 49_000),
+        l1_begin_scale=0.1,
+        l1_end_scale=0.03,
+        l1_end=20_000,
     ),
 )

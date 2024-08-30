@@ -4,8 +4,8 @@ from saeco.architectures.gate_hierarch import (
     HierarchicalSoftAuxConfig,
     HGatesConfig,
 )
-from saeco.trainer.RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.sweeps import Swept, Sweeper
 

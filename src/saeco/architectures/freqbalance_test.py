@@ -13,8 +13,8 @@ from saeco.components import (
 from saeco.core.reused_forward import ReuseForward
 from saeco.core import Seq
 import saeco.components.features.features as ft
-from saeco.trainer.RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.normalizers import GNConfig
 import saeco.components as co
 from saeco.misc import useif

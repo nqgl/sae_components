@@ -69,6 +69,7 @@ class DeepConfig(SweepableConfig):
     mag_weights: bool = True
     window_fn: str = "sig"
     decay_l1_to: float = 1
+    decay_l1_end: int = 40_000
     leniency_targeting: bool = False
     leniency: float = 1
     deep_enc: bool = False
@@ -84,6 +85,7 @@ class DeepConfig(SweepableConfig):
     squeeze_channels: int = 1
     dropout: float = 0.0
     signed_mag: bool = False
+    measure_in_gate: bool = True
 
 
 class L1Checkpoint(cl.PassThroughModule):
@@ -120,12 +122,10 @@ def deep_tg_grad_sae(
     init: Initializer,
     cfg: DeepConfig,
 ):
-    penalty = dict(
-        penalty=(
-            co.LinearDecayL1Penalty(40_000, end_scale=cfg.decay_l1_to)
-            if cfg.decay_l1_to != 1
-            else co.L1Penalty()
-        )
+    penalty = (
+        co.LinearDecayL1Penalty(cfg.decay_l1_end, end_scale=cfg.decay_l1_to)
+        if cfg.decay_l1_to != 1
+        else co.L1Penalty()
     )
 
     def dropout_no_scale(p):
@@ -203,6 +203,14 @@ def deep_tg_grad_sae(
                         init,
                         apply_targeting_externally=(cfg.squeeze_channels > 1),
                         signed_mag=cfg.signed_mag,
+                        penalty=(
+                            Seq(
+                                penalty=penalty,
+                                metrics=co.metrics.ActMetrics(),
+                            )
+                            if cfg.measure_in_gate
+                            else None
+                        ),
                     )
                 )
             ),
@@ -220,12 +228,18 @@ def deep_tg_grad_sae(
                 ).reduce(lambda a, b: a + b, binary=True),
             ),
         ),
-        metrics=co.metrics.ActMetrics(),
+        **useif(
+            not cfg.measure_in_gate,
+            metrics=co.metrics.ActMetrics(),
+        ),
         **useif(cfg.squeeze_channels > 1, gt_targeting=gt.targeting),
         **useif(cfg.dropout > 0, dropout=dropout_no_scale(cfg.dropout)),
-        **useif(not cfg.penalize_after, **penalty),
+        **useif(
+            (not cfg.measure_in_gate) and (not cfg.penalize_after),
+            penalty=penalty,
+        ),
         **useif(cfg.deep_dec, deep=deep),
-        **useif(cfg.penalize_after, **penalty),
+        **useif((not cfg.measure_in_gate) and cfg.penalize_after, penalty=penalty),
         deep_metrics=co.metrics.ActMetrics("deep_metrics"),
         decoder=ft.OrthogonalizeFeatureGrads(
             ft.NormFeatures(
@@ -249,7 +263,6 @@ from saeco.trainer.runner import TrainingRunner
 def run(cfg):
     tr = TrainingRunner(cfg, model_fn=deep_tg_grad_sae)
     tr.trainer.train()
-    tr.trainer.save()
 
 
 if __name__ == "__main__":

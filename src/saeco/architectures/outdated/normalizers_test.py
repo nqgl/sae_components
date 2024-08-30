@@ -7,8 +7,8 @@ from saeco.components import (
     L2Loss,
     SparsityPenaltyLoss,
 )
-from saeco.trainer.RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.normalizers import GNConfig
 from saeco.core.reused_forward import ReuseForward
 from saeco.core import Seq
@@ -85,7 +85,7 @@ train_cfg = TrainConfig(
     batch_size=4096,
     use_lars=True,
     betas=(0.9, 0.99),
-    schedule.run_length=20e3,
+    run_length=20e3,
 )
 acfg = Config(
     pre_bias=Swept[bool](False),
