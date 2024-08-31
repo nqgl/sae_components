@@ -18,6 +18,7 @@ from .l0targeter import L0Targeter, TARGETER_TYPES
 from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 from contextlib import contextmanager
 from .run_config import RunConfig
+from .saved_model_source_info import ModelReloadInfo
 from saeco.trainer.train_config import TrainConfig
 import tqdm
 
@@ -32,13 +33,16 @@ class Trainer:
         model: Trainable,
         wandb_run_label=None,
         optim: torch.optim.Optimizer | None = None,
+        reload_info: ModelReloadInfo | None = None,
     ):
         self.cfg: TrainConfig = cfg
         self.run_cfg: RunConfig = run_cfg
         self.trainable = model
+        self.reload_info = reload_info
         self.t = 1
         self.log_t_offset = 0
         self.log_freq = 10
+
         assert optim is None
         if optim is not None:
             self.optim = optim
@@ -361,14 +365,16 @@ class Trainer:
         name = f"{wandb.run.name}/{self.t}"
         if averaged:
             name = f"{name}_averaged"
+        savename = save_dir / name
         save_dir.mkdir(exist_ok=True, parents=True)
-        cfg_path = save_dir / f"{name}.json"
-        model_path = save_dir / f"{name}.pt"
+        cfg_path = savename.with_suffix(".json")
+        model_path = savename.with_suffix(".pt")
+        reload_info = savename.with_suffix(".reload_info.json")
         assert (not cfg_path.exists()) and (not model_path.exists())
         cfg_path.parent.mkdir(exist_ok=True, parents=True)
-        model_path.parent.mkdir(exist_ok=True, parents=True)
         if averaged:
             torch.save(self.averaged_model.state_dict(), model_path)
         else:
             torch.save(self.trainable.state_dict(), model_path)
         cfg_path.write_text(self.run_cfg.model_dump_json())
+        reload_info.write_text(self.reload_info.model_dump_json())

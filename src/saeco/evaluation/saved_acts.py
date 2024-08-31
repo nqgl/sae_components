@@ -177,3 +177,7 @@ class ChunksGetter:
                         for chunk_id in chunk_ids.unique()
                     ]
                 )
+
+    @property
+    def ndoc(self):
+        return len(self.saved_acts.chunks) * self.saved_acts.cfg.docs_per_chunk

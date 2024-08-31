@@ -4,11 +4,12 @@ from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.chunk import Chunk
 from saeco.trainer import Trainable
 
-# from saeco.architectures.anth_update import cfg, anth_update_model
-from saeco.architectures.threshgate_gradjust.tg_grad_deep_model import (
-    cfg,
-    deep_tg_grad_sae,
-)
+from saeco.architectures.anth_update import cfg, anth_update_model
+
+# from saeco.architectures.threshgate_gradjust.tg_grad_deep_model import (
+#     cfg,
+#     deep_tg_grad_sae,
+# )
 from pydantic import BaseModel
 from saeco.trainer.runner import TrainingRunner
 import saeco.core as cl
@@ -36,8 +37,8 @@ modelss = Path.home() / "workspace/saved_models/"
 
 name = "sweep_None/(lars)anth_update_model0.001[30.3]-95_10000"
 # name = "sweep_None/(lars)deep_tg_grad_sae0.003[25.0]-31_10000"
-name = "sweep_None/(lars)deep_tg_grad_sae0.002[25.0]-66_25000"
-name = "sweep_f6h6fg5m/(lars)deep_tg_grad_sae0.0007[50.0]-2_100000"
+# name = "sweep_None/(lars)deep_tg_grad_sae0.002[25.0]-66_25000"
+# name = "sweep_f6h6fg5m/(lars)deep_tg_grad_sae0.0007[50.0]-2_100000"
 
 
 def load(cfg: BaseModel, model_fn, name):
@@ -56,7 +57,7 @@ def load(cfg: BaseModel, model_fn, name):
     return tr
 
 
-tr = load(cfg, deep_tg_grad_sae, name)
+tr = load(cfg, anth_update_model, name)
 tr.trainable.eval()
 
 # %%
