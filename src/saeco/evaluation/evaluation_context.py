@@ -1,12 +1,14 @@
 from .acts_cacher import ActsCacher, CachingConfig
 from .saved_acts import SavedActs
-from saeco.trainer import TrainingRunner
+from saeco.trainer import TrainingRunner, RunConfig
 from attr import define, field
 import torch
 from pathlib import Path
 from torch import Tensor
 import tqdm
 import einops
+import nnsight
+from .nnsite import getsite, setsite, tlsite_to_nnsite
 
 
 @define
@@ -210,3 +212,66 @@ class Evaluation:
     @property
     def d_dict(self):
         return self.training_runner.cfg.init_cfg.d_dict
+
+    @property
+    def sae_cfg(self) -> RunConfig:
+        return self.training_runner.cfg
+
+    @property
+    def cache_cfg(self) -> CachingConfig:
+        return self.saved_acts.cfg
+
+    def sae_with_patch(
+        self,
+        patch_fn,
+        for_nnsight=True,
+        cache_template=None,
+        call_patch_with_cache=False,
+        act_name=None,
+    ):
+        """
+        patch_fn maps from acts to patched acts and returns the patched acts
+        """
+
+        def shaped_hook(shape):
+            def acts_hook(cache, acts):
+                """
+                Act_name=None corresponds to the main activations, usually correct
+                """
+                if cache._parent is None:
+                    return acts
+                if cache.act_metrics_name is not act_name:
+                    return acts
+                acts = einops.rearrange(
+                    acts, "(doc seq) dict -> doc seq dict", doc=shape[0], seq=shape[1]
+                )
+                out = (
+                    patch_fn(acts, cache=cache)
+                    if call_patch_with_cache
+                    else patch_fn(acts)
+                )
+                return einops.rearrange(out, "doc seq dict -> (doc seq) dict")
+
+            return acts_hook
+
+        def call_sae(x):
+            cache = self.sae.make_cache()
+            cache.acts = ...
+            cache.act_metrics_name = ...
+            shape = x.shape
+            x = einops.rearrange(x, "doc seq data -> (doc seq) data")
+            if cache_template is not None:
+                cache += cache_template
+            cache.register_write_callback("acts", shaped_hook(shape))
+            out = self.sae(x, cache=cache)
+            return einops.rearrange(
+                out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
+            )
+
+        if not for_nnsight:
+            return call_sae
+
+        def apply_nnsight(x):
+            return nnsight.apply(call_sae, x)
+
+        return apply_nnsight

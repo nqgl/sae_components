@@ -66,7 +66,13 @@ class Metrics(cl.Parallel):
     def __init__(
         self, *, _support_parameters=True, _support_modules=True, **collection_dict
     ):
-        collection_dict = {"identity": cl.ops.Identity(), **collection_dict}
+        if "acts" not in collection_dict:
+            collection_dict = {
+                **collection_dict,
+                "identity": cl.ops.Identity(),
+            }
+        else:
+            assert list(collection_dict.keys())[-1] == "acts"
         super().__init__(
             _support_parameters=_support_parameters,
             _support_modules=_support_modules,
@@ -74,7 +80,7 @@ class Metrics(cl.Parallel):
         )
 
         def metrics_reduce(*l):
-            return l[0]
+            return l[-1]
 
         super().reduce(metrics_reduce)
 
@@ -111,7 +117,7 @@ class ActMetrics(Metrics):
         super().__init__(**d, **kwargs, acts=cl.ops.Identity())
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-
+        cache.act_metrics_name = self.name
         return super().forward(
             x, cache=GlobalizedCache(cache, subname=self.name), **kwargs
         )

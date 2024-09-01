@@ -145,6 +145,18 @@ class SavedActs:
         return ChunksGetter(self, "acts")
 
 
+def torange(s: slice):
+    kw = {}
+
+    if s.start:
+        kw["start"] = s.start
+    if s.stop:
+        kw["end"] = s.stop
+    if s.step:
+        kw["step"] = s.step
+    return torch.arange(**kw)
+
+
 @define
 class ChunksGetter:
     saved_acts: SavedActs
@@ -152,8 +164,13 @@ class ChunksGetter:
     chunk_indexing: bool = True
 
     def __getitem__(self, sl):
+        if isinstance(sl, slice):
+            sl = (sl,)
+
         if isinstance(sl, tuple):
-            sl = torch.stack((sl), dim=0)
+            sl = [(torange(s) if isinstance(s, slice) else s) for s in sl]
+            if all([isinstance(i, torch.Tensor) for i in sl]):
+                sl = torch.stack(sl, dim=0)
         if isinstance(sl, torch.Tensor):
             # assert sl.dtype == torch.int64
             # this seems like it would be super slow, I'm not a fan
@@ -169,10 +186,39 @@ class ChunksGetter:
             else:
                 chunk_ids = sl[0] // self.saved_acts.cfg.docs_per_chunk
                 cdoc_idx = sl[0] % self.saved_acts.cfg.docs_per_chunk
+
+                return torch.cat(
+                    [
+                        getattr(self.saved_acts.chunks[chunk_id], self.target_attr)[
+                            torch.stack([cdoc_idx, *sl[1:]])[
+                                :, chunk_ids == chunk_id
+                            ].tolist()
+                        ]
+                        for chunk_id in chunk_ids.unique()
+                    ]
+                )
+
                 return torch.cat(
                     [
                         getattr(self.saved_acts.chunks[chunk_id], self.target_attr)[
                             torch.cat([cdoc_idx, *sl[1:]])[chunk_ids == chunk_id]
+                        ]
+                        for chunk_id in chunk_ids.unique()
+                    ]
+                )
+
+            if False:
+                chunk_ids = sl[0] // self.saved_acts.cfg.docs_per_chunk
+                cdoc_idx = sl[0] % self.saved_acts.cfg.docs_per_chunk
+                return torch.cat(
+                    [
+                        getattr(self.saved_acts.chunks[chunk_id], self.target_attr)[
+                            [
+                                i  # unholy
+                                for i in torch.cat([cdoc_idx.unsqueeze(0), sl[1:]])[
+                                    :, chunk_ids == chunk_id
+                                ]
+                            ]
                         ]
                         for chunk_id in chunk_ids.unique()
                     ]
