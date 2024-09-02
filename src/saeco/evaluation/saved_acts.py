@@ -142,7 +142,7 @@ class SavedActs:
 
     @property
     def acts(self):
-        return ChunksGetter(self, "acts")
+        return ChunksGetter(self, "acts", chunk_indexing=False)
 
 
 def torange(s: slice):
@@ -163,12 +163,67 @@ class ChunksGetter:
     target_attr: str
     chunk_indexing: bool = True
 
+    def document_index(self, sl):
+        if self.chunk_indexing:
+            assert False
+        if isinstance(sl, slice):
+            sl = torange(sl)
+        cdoc_idx = sl % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = sl // self.saved_acts.cfg.docs_per_chunk
+        if isinstance(sl, int):
+            return getattr(self.saved_acts.chunks[chunk_ids], self.target_attr)[
+                cdoc_idx
+            ]
+        else:
+            assert isinstance(sl, torch.Tensor)
+            chunks = chunk_ids.unique()
+        return torch.cat(
+            [
+                getattr(
+                    self.saved_acts.chunks[chunk_id], self.target_attr
+                ).index_select(dim=0, index=cdoc_idx[chunk_ids == chunk_id])
+                for chunk_id in chunks
+            ]
+        )
+
     def __getitem__(self, sl):
+        if not isinstance(sl, tuple):
+            return self.document_index(sl)
+        return self.document_index(sl[0])[
+            :, sl[1:]
+        ]  # slower than needs to be but mostly slow for tokens and those are prob not bottleneck ever
+
+        # not set in stone what approach to use so keeping old code around for now:
+        if not self.chunk_indexing:
+            if isinstance(sl, tuple | list):
+                if sl[0] == slice(None, None, None):
+                    chunks = range(len(self.saved_acts.chunks))
+                    ...
+                else:
+                    chunk_ids = sl[0] // self.saved_acts.cfg.docs_per_chunk
+                    cdoc_idx = sl[0] % self.saved_acts.cfg.docs_per_chunk
+                    chunks = chunk_ids.unique()
+                from_chunks = []
+                for chunk_id in chunks:
+
+                    chunk = getattr(self.saved_acts.chunks[chunk_id], self.target_attr)
+
+                    [
+                        torch.stack([cdoc_idx, *sl[1:]])[
+                            :, chunk_ids == chunk_id
+                        ].tolist()
+                    ]
+
+                return torch.cat(from_chunks)
         if isinstance(sl, slice):
             sl = (sl,)
 
-        if isinstance(sl, tuple):
+        if isinstance(sl, tuple | list):
             sl = [(torange(s) if isinstance(s, slice) else s) for s in sl]
+            sl = [
+                torch.tensor([i], dtype=torch.int64) if isinstance(i, int) else i
+                for i in sl
+            ]
             if all([isinstance(i, torch.Tensor) for i in sl]):
                 sl = torch.stack(sl, dim=0)
         if isinstance(sl, torch.Tensor):

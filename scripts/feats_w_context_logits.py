@@ -116,13 +116,13 @@ cache.acts = ...
 # print(out1)
 # # %%
 
-tangent = torch.zeros(1, 10, 6144).cuda()
-tangent[0, 3, :] = 1
-i = torch.arange(10).reshape(2, 5)
-i[0, 3] += 2000
-ec.saved_acts.tokens[i].shape
-ec.saved_acts.tokens[torch.arange(6).unsqueeze(0)].shape
-ec.saved_acts.tokens[0:5, 0:5].shape
+# tangent = torch.zeros(1, 10, 6144).cuda()
+# tangent[0, 3, :] = 1
+# i = torch.arange(10).reshape(2, 5)
+# i[0, 3] += 2000
+# # ec.saved_acts.tokens[i].shape
+# ec.saved_acts.tokens[torch.arange(6).unsqueeze(0)].shape
+# ec.saved_acts.tokens[0:5, 0:5].shape
 
 
 def patch_hook(acts):
@@ -154,36 +154,19 @@ with nnsight_model.trace("The Eieffel Tower is in the city of") as tracer:
     out2 = nnsight_model.output.save()
 
 
-print(out1)
-print(out1.logits - out2.logits)
-print(tangent)
+# print(out1)
+# print(out1.logits - out2.logits)
+# print(tangent)
 # %%
 
 import torch.autograd.forward_ad as fwAD
 
 
-def fwad_hook(acts):
-    tangent = torch.zeros_like(acts)
-    tangent[0, 3, :] = 1
-
-    return fwAD.make_dual(acts, tangent)
+def active(document, position):
+    return ec.saved_acts.acts[document][position]
 
 
-patched_sae = ec.sae_with_patch(fwad_hook)
-with fwAD.dual_level():
-    with nnsight_model.trace("The Eieffel Tower is in the city of") as tracer:
-
-        lm_acts = getsite(nnsight_model, nn_name)
-        orig_lm_acts = lm_acts.save()
-        acts_re = patched_sae(orig_lm_acts).save()
-        setsite(nnsight_model, nn_name, acts_re)
-        out = nnsight_model.output.save()
-        tangent = nnsight.apply(fwAD.unpack_dual, out.logits).tangent.save()
-
-out1 = out.value.logits
-print(out1)
-print(tangent)
-
+active(4, 5)
 
 ec.saved_acts.tokens[0:5]
 # %%
@@ -198,11 +181,76 @@ with fwAD.dual_level():
         setsite(nnsight_model, nn_name, acts_re)
         out = nnsight_model.output.save()
         tangent = nnsight.apply(fwAD.unpack_dual, out.logits).tangent.save()
+# %%
+
+acts_list = []
+
+
+def grad_hook(acts: Tensor):
+    acts.retain_grad()
+    acts_list.append(acts)
+    return acts
+
+
+tokens = ec.saved_acts.tokens[0:5]
+with nnsight_model.trace(tokens) as tracer:
+    lm_acts = getsite(nnsight_model, nn_name)
+    orig_lm_acts = lm_acts.save()
+    acts_re = ec.sae_with_patch(grad_hook)(orig_lm_acts).save()
+    setsite(nnsight_model, nn_name, acts_re)
+    out = nnsight_model.output
+    logits122 = out.logits[:, 122, tokens[:, 122]]
+    logits122.sum().backward()
+
+
+# %%
+acts_list2 = []
+
+
+def grad_hook(acts: Tensor):
+    # acts.retain_grad()
+    # acts_list2.append(acts)
+    return acts
+
+
+tokens = ec.saved_acts.tokens[0:5]
+grads = []
+ec.sae.training = False
+with nnsight_model.trace(tokens) as tracer:
+    lm_acts = getsite(nnsight_model, nn_name)
+    orig_lm_acts = lm_acts.save()
+    res = ec.sae_with_patch(grad_hook, return_sae_acts=True)(orig_lm_acts)
+    setsite(nnsight_model, nn_name, res[0])
+    out = nnsight_model.output.save()
+    for i in range(tokens.shape[1]):
+        grads.append(res[1].grad.save())
+        res[1].grad = None
+        out.logits[torch.arange(5), i, tokens[torch.arange(5), i]].sum().backward(
+            retain_graph=True
+        )
+    # logits122.sum().backward(retain_graph=True)
+    # grads.save()
+    # for logit in logits122:
+
+    # torch.autograd.grad()
+# torch.ones().backward(,
+
+# %%
+# ograds=grads
+
+(grads[2] == ograds[0]).all()
+# %%
+(grads[4] == grads[2]).all()
+
+len(grads)
+grads
+# %%
+
+sae_acts_grad
+acts_list2[0].grad.shape
+# %%
+acts_list[0].grad.shape
 
 # %%
 
-ec.saved_acts.tokens[torch.arange(5).long().unsqueeze(1)]
-ec.saved_acts.acts[torch.arange(5).long().unsqueeze(0)]
-# %%
-ec.saved_acts.chunks[0].acts.values
 # %%

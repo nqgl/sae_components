@@ -9,6 +9,7 @@ import tqdm
 import einops
 import nnsight
 from .nnsite import getsite, setsite, tlsite_to_nnsite
+import torch.autograd.forward_ad as fwAD
 
 
 @define
@@ -18,6 +19,7 @@ class Evaluation:
     cache_path: Path | None = None
     saved_acts: SavedActs | None = None
     cache_name: str | None = None
+    nnsight_model: nnsight.LanguageModel | None = None
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:
@@ -112,7 +114,7 @@ class Evaluation:
     def _active_docs_values_and_indices(self, feature):
         active_documents_idxs = self.active_document_indices(feature)
         active_documents = self.saved_acts.tokens[
-            active_documents_idxs.unsqueeze(0)
+            active_documents_idxs
         ]  # unsqueeze gets this back into the normal indexing shape
         return active_documents, active_documents_idxs
 
@@ -228,12 +230,13 @@ class Evaluation:
         cache_template=None,
         call_patch_with_cache=False,
         act_name=None,
+        return_sae_acts=False,
     ):
         """
         patch_fn maps from acts to patched acts and returns the patched acts
         """
 
-        def shaped_hook(shape):
+        def shaped_hook(shape, return_acts_l=None):
             def acts_hook(cache, acts):
                 """
                 Act_name=None corresponds to the main activations, usually correct
@@ -250,11 +253,15 @@ class Evaluation:
                     if call_patch_with_cache
                     else patch_fn(acts)
                 )
+                if return_sae_acts:
+                    return_acts_l.append(out)
                 return einops.rearrange(out, "doc seq dict -> (doc seq) dict")
 
             return acts_hook
 
         def call_sae(x):
+            acts_l = []
+            assert len(acts_l) == 0
             cache = self.sae.make_cache()
             cache.acts = ...
             cache.act_metrics_name = ...
@@ -262,11 +269,19 @@ class Evaluation:
             x = einops.rearrange(x, "doc seq data -> (doc seq) data")
             if cache_template is not None:
                 cache += cache_template
-            cache.register_write_callback("acts", shaped_hook(shape))
+            if return_sae_acts:
+                hook = shaped_hook(shape, acts_l)
+            else:
+                hook = shaped_hook(shape)
+            cache.register_write_callback("acts", hook)
             out = self.sae(x, cache=cache)
-            return einops.rearrange(
+            out = einops.rearrange(
                 out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
             )
+            if return_sae_acts:
+                assert len(acts_l) == 1
+                return (out, acts_l[0])
+            return out
 
         if not for_nnsight:
             return call_sae
@@ -275,3 +290,83 @@ class Evaluation:
             return nnsight.apply(call_sae, x)
 
         return apply_nnsight
+
+    def run_with_sae(self, tokens, patch=lambda x: x):
+        with self.nnsight_model.trace(tokens) as tracer:
+            lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+            res = self.sae_with_patch(patch, return_sae_acts=True)(lm_acts)
+            patch_in = self._skip_bos_if_appropriate(lm_acts, res[0])
+            setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
+            out = self.nnsight_model.output.save()
+        return out
+
+    def run_with_sae2(
+        self,
+        tokens,
+        patch=lambda x: x,
+        sae_acts_hook=lambda x: x,
+        out_hook=lambda x: x,
+    ):
+        assert tokens.ndim == 2
+        with self.nnsight_model.trace(tokens) as tracer:
+            lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+            res = self.sae_with_patch(patch, return_sae_acts=True)(lm_acts)
+            nnsight.apply(sae_acts_hook, res[1])
+            setsite(self.nnsight_model, self.nnsight_site_name, res[0])
+            out = self.nnsight_model.output
+            hout = nnsight.apply(out_hook, out)
+            out = hout if hout is not None else out
+            out = out.save()
+        return out
+
+    @property
+    def nnsight_site_name(self):
+        return tlsite_to_nnsite(
+            self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
+        )
+
+    def forward_ad_with_sae(
+        self, tokens, tangent=None, tangent_gen=None, patch_hook=lambda x: x
+    ):
+        assert tokens.ndim == 2
+        assert tangent or tangent_gen
+        if tangent:
+
+            def fwad_hook(acts):
+                acts = patch_hook(acts)
+                return fwAD.make_dual(acts, tangent)
+
+        else:
+
+            def fwad_hook(acts):
+                acts = patch_hook(acts)
+                return fwAD.make_dual(acts, tangent_gen(acts))
+
+        patched_sae = self.sae_with_patch(fwad_hook)
+        with fwAD.dual_level():
+            with self.nnsight_model.trace(tokens) as tracer:
+                lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+                orig_lm_acts = lm_acts.save()
+                acts_re = patched_sae(orig_lm_acts).save()
+                patch_in = self._skip_bos_if_appropriate(lm_acts, acts_re)
+                setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
+                out = self.nnsight_model.output.save()
+                tangent = nnsight.apply(fwAD.unpack_dual, out.logits).tangent.save()
+
+        return out, tangent
+
+    def _skip_bos_if_appropriate(self, lm_acts, reconstructed_acts):
+        if self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first:
+            return torch.cat([lm_acts[:, :1], reconstructed_acts[:, 1:]], dim=1)
+        return reconstructed_acts
+
+    def patchdiff(self, tokens, patch_fn):
+        normal = self.run_with_sae(tokens)
+        patched = self.run_with_sae(tokens, patch_fn)
+        return patched.logits - normal.logits
+
+    def detokenize(self, tokens):
+        return self.llm.tokenizer._tokenizer.decode_batch(
+            [[t] for t in tokens],
+            skip_special_tokens=False,
+        )

@@ -16,6 +16,8 @@ from saeco.trainer.train_cache import TrainCache
 from functools import wraps
 from saeco.evaluation.evaluation_context import Evaluation
 import nnsight
+
+
 ec = Evaluation.from_model_name(
     "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"
 )
@@ -63,7 +65,9 @@ from rich.highlighter import Highlighter
 color = color_vecs[0]
 
 
-def print_activity(tokens, feature_activity, document_id, colors=color_vecs):
+def print_activity(
+    tokens, feature_activity, document_id, feature_ids, colors=color_vecs
+):
     # tokstrs = llm.tokenizer.convert_ids_to_tokens(tokens, skip_special_tokens=True)
     tokstrs = ec.llm.tokenizer._tokenizer.decode_batch(
         [[t] for t in tokens],
@@ -135,8 +139,12 @@ def select_active():
         print_activity(
             fdocs[i],
             [f[i] for f in top_feats],
+            feature_ids=feature_ids,
             document_id=i,
         )
+
+
+select_active()
 
 
 def blocked(n_feats=6144, block_size=64):
@@ -181,7 +189,7 @@ def sequential(n_feats=6144):
 
 
 # co1 = blocked()
-# co2 = sequential()x 
+# co2 = sequential()x
 
 mc = ec.masked_activation_cosims()
 
@@ -197,3 +205,6 @@ def test_masked(masking_idx, masked, mc):
     mcs = (f1 * f2).sum()
     assert torch.allclose(mcs, mc[masking_idx, masked])
 
+
+def logit_effect_of_feature(feature_id, documents: Int[Tensor, "doc seq"]):
+    nnsight
