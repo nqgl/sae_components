@@ -34,7 +34,7 @@ class GrowingDiskTensor:
     cat_axis: int = 0
     finalized: bool = False
     variable_axis_len: int = 0
-    storage_len: int = 100
+    storage_len: int = 2**14
     tensor: torch.Tensor = field(init=False)
 
     @tensor.default

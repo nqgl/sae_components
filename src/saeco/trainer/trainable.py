@@ -138,10 +138,13 @@ class Trainable(cl.Module):
         ), f"param_groups did not cover all parameters"
         return groups
 
+    def make_cache(self) -> TrainCache:
+        return TrainCache()
+
     def get_acts(self, x, cache: TrainCache = None):
         made_cache = False
         if cache is None:
-            cache = TrainCache()
+            cache = self.make_cache()
             made_cache = True
         cache.acts = ...
         cache(self)(x)

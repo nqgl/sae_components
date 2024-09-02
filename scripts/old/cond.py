@@ -5,7 +5,7 @@ from saeco.data.split_config import SplitConfig
 from saeco.data.dataset import DataConfig
 from transformer_lens import HookedTransformer
 
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.trainable import Trainable
 
 gpt2 = HookedTransformer.from_pretrained("gpt2")
@@ -27,7 +27,8 @@ from saeco.architectures.deep.deep_resid_gated import (
     deep_resid_gated2_wider2,
 )
 from saeco.architectures.outdated.topk import topk_sae
-from saeco.architectures.remax import remax_sae, remax1_sae
+
+# from saeco.architectures.remax import remax_sae, remax1_sae
 from saeco.architectures.deep.catseq import deep_catseq, deep_catseq_resid
 import wandb
 import torch

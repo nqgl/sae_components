@@ -75,10 +75,11 @@ class EncoderBias(WrapsModule):
 class NormFeatures(WrapsModule):
     wrapped: HasFeatures
 
-    def __init__(self, wrapped: HasFeatures, index=None, ord=2):
+    def __init__(self, wrapped: HasFeatures, index=None, ord=2, max_only=False):
         super().__init__(wrapped)
         self.index = index
         self.ord = ord
+        self.max_only = max_only
 
     def post_step_hook(self):
         self.normalize_features()
@@ -96,7 +97,10 @@ class NormFeatures(WrapsModule):
         if (norm == 0).any():
             print("Norm is zero, not normalizing.")
             return
-        fp.features[:] = fp.features / norm
+        if not self.max_only:
+            fp.features[:] = fp.features / norm
+        else:
+            fp.features[:] = torch.where(norm > 1, fp.features / norm, fp.features)
 
 
 class OrthogonalizeFeatureGrads(WrapsModule):

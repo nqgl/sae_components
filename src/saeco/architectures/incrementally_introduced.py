@@ -19,8 +19,8 @@ from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.components.hooks import ClipGrad
-from saeco.trainer.RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 
 
 class Config(SweepableConfig):

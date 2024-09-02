@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
-import saeco.components.features.features as ft
 from saeco.sweeps import SweepableConfig
 from saeco.components.penalties.l0targeter import L0Targeting
 
@@ -73,38 +72,48 @@ def GT2(grad_window=sig_grad):
         @custom_fwd
         def forward(ctx, gate_pre, gate_post, noise, mag, leniency, dd=768):
             gate = gate_pre > 0
-            ctx.save_for_backward(gate_pre, noise, mag, gate)
+            ctx.save_for_backward(gate_pre, mag, gate)
             ctx.gate_post = gate_post
             ctx.leniency = leniency
             ctx.dd = dd
+            ctx.noise = noise
             return gate.float()
 
         @staticmethod
         @custom_bwd
         def backward(ctx: torch.Any, grad_output):
-            gate_pre, noise, mag, gate = ctx.saved_tensors
+
+            gate_pre, mag, gate = ctx.saved_tensors
             gate_post = ctx.gate_post
             leniency = ctx.leniency
+            noise = ctx.noise
+
+            offgrad_mask = (~gate) & (grad_output != 0) & (noise > 0)
+            # grad_output = torch.where(mag != 0, grad_output / mag, 0)
             dd = ctx.dd
             b = gate_pre.shape[0]
-            offgrad_mask = (~gate) & (grad_output != 0)
             off_adjustment = shrinkgrad_adjustment(
                 mag,
                 leniency=leniency,
                 dd=dd,
                 b=b,
             )
-            grad_gate = (noise > 0) & (gate_post > 0)
+            grad_gate = (noise < 0) & (gate_post > 0)
             adjustment = shrinkgrad_adjustment(
-                noise,
+                -noise,
                 leniency=leniency,
                 dd=dd,
                 b=b,
             )
             # grad_output = torch.where(grad_gate, , 0)
-            grad_output = grad_output + adjustment
-            out = torch.where(grad_gate, grad_output, 0) + torch.where(
-                offgrad_mask, grad_output + off_adjustment, 0
+            # grad_output = (
+            #     grad_output + adjustment
+            # )  # TODO should +adj be moved to the .where below?
+            #    #  seems like clear yes, so trying that
+            out = torch.where(grad_gate, grad_output + adjustment, 0) + torch.where(
+                offgrad_mask,
+                grad_output + adjustment,
+                0,
             )
             return (
                 out * grad_window(gate_pre),
@@ -126,13 +135,17 @@ def gate(
     uniform_noise=False,
     noise_mult=1,
     leniency=1,
+    penalty_fn=None,
 ):
     future_gate_post = torch.ones_like(mag)
     mag = mag.relu() if not exp_mag else mag.exp()
     gate = None
+    p_noise = 0.2
+    noise_mask = torch.rand_like(mag) < p_noise
+
     noise = (
         torch.where(
-            mag > 0,
+            (mag > 0),
             (0.5 - torch.rand_like(mag)) if uniform_noise else torch.randn_like(mag),
             0,
         )
@@ -148,8 +161,10 @@ def gate(
             gate = gate * g
     with torch.no_grad():
         future_gate_post[:] = gate[:]
-
-    out = gate * (mag - noise)
+        noise[:] = torch.where((gate > 0) | noise_mask, noise, 0)
+    if penalty_fn is not None:
+        penalty_fn(gate * mag.detach())
+    out = gate * mag + noise
     return out
 
 
@@ -172,7 +187,12 @@ class Config(SweepableConfig):
 
 class BinaryEncoder(cl.Module):
     def __init__(
-        self, cfg: Config, init: Initializer, d_in_override=None, targeting=True
+        self,
+        cfg: Config,
+        init: Initializer,
+        penalty=None,
+        apply_targeting_externally=False,
+        signed_mag: bool = False,
     ):
         super().__init__()
         self.cfg = cfg
@@ -183,9 +203,12 @@ class BinaryEncoder(cl.Module):
         self.targeting = L0Targeting(
             init.l0_target,
             scale=cfg.leniency,
-            increment=0.0001 if cfg.leniency_targeting else 0.0,
+            increment=0.0002 if cfg.leniency_targeting else 0.0,
         )
         self.GT_fn = GT2(windows[cfg.window_fn])
+        self.apply_targeting_externally = apply_targeting_externally
+        self.signed_mag = signed_mag
+        self.penalty = penalty
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         cache.leniency = ...
@@ -195,18 +218,30 @@ class BinaryEncoder(cl.Module):
             and cache._ancestor.has.trainstep
             and cache._ancestor.trainstep <= 5000
         ):
+
             self.targeting.value = cache._ancestor.trainstep / 5000
+        mag = self.mag.unsqueeze(0).expand(x.shape[0], -1)
         out = gate(
-            self.mag.unsqueeze(0).expand(x.shape[0], -1),
+            mag.abs() if self.signed_mag else mag,
             [self.gate(x)],
             GT_fn=self.GT_fn,
-            exp_mag=True,
+            exp_mag=not self.signed_mag,
             training=self.training,
             uniform_noise=self.cfg.uniform_noise,
             noise_mult=self.cfg.noise_mult,
-            leniency=self.targeting.value,
+            leniency=self.targeting.value
+            * (
+                1
+                if not cache._ancestor.has.trainer
+                else cache._ancestor.trainer.cfg.schedule.lr_scale(
+                    cache._ancestor.trainstep
+                )
+            ),
+            penalty_fn=cache(self).penalty if self.penalty is not None else None,
         )
-        cache(self).targeting(out)
+        if not self.apply_targeting_externally:
+            cache(self).targeting(out)
+        out = out * torch.sign(mag) if self.signed_mag else out
         return out
 
     @property
@@ -296,12 +331,3 @@ class GTMulti(cl.Module):
     @property
     def features(self):
         return {"mag": FeaturesParam(self.mag, 0, "bias")}
-
-
-class OtherLinear(nn.Linear):
-    @property
-    def features(self):
-        return {
-            "weight": ft.FeaturesParam(self.weight, 0, fptype="other"),
-            "bias": ft.FeaturesParam(self.bias, 0, fptype="bias"),
-        }

@@ -1,4 +1,4 @@
-from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.run_config import RunConfig
 from .nf_hierarchical import HSAEConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -7,7 +7,7 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 
 PROJECT = "sae sweeps"
 

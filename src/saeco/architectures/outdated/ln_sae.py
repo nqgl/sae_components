@@ -15,7 +15,7 @@ import saeco.components.features.features as ft
 import saeco.components as co
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 
 
 class Config(SweepableConfig):
@@ -77,7 +77,7 @@ def ln_sae(
     return models, losses
 
 
-from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner, DataConfig
 from saeco.data.dataset import ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep

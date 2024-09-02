@@ -2,7 +2,7 @@ import torch
 
 import torch.nn as nn
 
-from saeco.architectures.threshgate_gradjust.threshgate import (
+from saeco.architectures.threshgate_gradjust.threshgrad import (
     Config,
     BinaryEncoder,
     GTTest,

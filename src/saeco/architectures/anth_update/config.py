@@ -1,4 +1,4 @@
-from saeco.trainer.RunConfig import RunConfig
+from saeco.trainer.run_config import RunConfig
 from .model import AnthUpdateConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -7,7 +7,7 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig
 
 PROJECT = "L0Targeting"
@@ -40,6 +40,7 @@ cfg = RunConfig[AnthUpdateConfig](
         },
         #
         wandb_cfg=dict(project=PROJECT),
+        checkpoint_period=5000,
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),

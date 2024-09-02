@@ -24,8 +24,8 @@ import saeco.core as cl
 
 
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.RunConfig import RunConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.data import DataConfig, ModelConfig, ActsDataConfig
 from saeco.sweeps import Swept, do_sweep
@@ -72,21 +72,22 @@ class PhasedSAE(cl.Module):
         if cache.has.trainstep:
             if cache.trainstep % self.cfg.phase_length == 0:
                 ...
-            cache.trainstep -> which phase we are in
-        
+            # cache.trainstep -> which phase we are in
 
-            cache.trainer.optim 
+            cache.trainer.optim
         frozen_enc = self.encoder
 
         frozen_i = ...
         current_block_i = ...
 
-        
     def parameters(self, recurse: bool = True):
         for param in super().parameters(recurse):
-            if  param not in (self.frozen_encoder, self.frozen_encoder_bias, self.frozen_decoder):
+            if param not in (
+                self.frozen_encoder,
+                self.frozen_encoder_bias,
+                self.frozen_decoder,
+            ):
                 yield param
-        
 
 
 def sae(

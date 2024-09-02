@@ -29,6 +29,9 @@ class TrainConfig(SweepableConfig):
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
     use_averaged_model: bool = True
     checkpoint_period: int | None = None
+    save_on_complete: bool = True
+    weight_decay: float | None = None
+    intermittent_metric_freq: int = 1000
 
     @property
     @lazycall

@@ -88,7 +88,9 @@ class SparseGrowingDiskTensor:
     def tensor(self):
         assert self.indices.finalized and self.values.finalized
         return torch.sparse_coo_tensor(
-            self.indices.tensor, self.values.tensor, self.shape
+            self.indices.tensor,
+            self.values.tensor,
+            self.shape,
         ).coalesce()
 
     @property

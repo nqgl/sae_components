@@ -1,9 +1,10 @@
-from saeco.trainer.RunConfig import RunConfig
+from .saved_model_source_info import ModelReloadInfo
+from .run_config import RunConfig
 from saeco.initializer.initializer_config import InitConfig
-from saeco.trainer.TrainConfig import TrainConfig
-from saeco.trainer.trainable import Trainable
+from .train_config import TrainConfig
+from .trainable import Trainable
 
-from saeco.trainer.trainer import Trainer
+from .trainer import Trainer
 from typing import TypeVar
 from saeco.architectures.outdated.gate_hierarch import (
     hierarchical_softaux,
@@ -20,6 +21,7 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResampler,
 )
 from functools import cached_property, cache
+from pathlib import Path
 
 
 class TrainingRunner:
@@ -28,7 +30,7 @@ class TrainingRunner:
         self.model_fn = model_fn
         self._models = None
         self._losses = None
-        self._state_dict = None
+        self._state_dict = state_dict
         self._trainable_loaded = False
 
     @property
@@ -89,7 +91,8 @@ class TrainingRunner:
             resampler=self.resampler,
         ).cuda()
         if self.state_dict is not None:
-            trainable.load_state_dict(self.state_dict)
+            load_result = trainable.load_state_dict(self.state_dict)
+            print("loaded state dict into trainable:", load_result)
         return trainable
 
     @cached_property
@@ -122,9 +125,52 @@ class TrainingRunner:
             run_cfg=self.cfg,
             model=self.trainable,
             wandb_run_label=self.name,
+            reload_info=ModelReloadInfo.from_model_fn(self.model_fn),
         )
         # trainer.post_step()
         return trainer
+
+    @classmethod
+    def load_saved(
+        cls,
+        cfg,
+        model_fn,
+        name,
+        modify_cfg_fn=lambda x: x,
+        modify_state_dict_fn=lambda x: x,
+        models_dir: Path = Path.home() / "workspace/saved_models/",
+    ) -> "TrainingRunner":
+        import torch
+
+        pt_path = models_dir / (name + ".pt")
+        cfg_path = models_dir / (name + ".json")
+        cfg = modify_cfg_fn(cfg.model_validate_json(cfg_path.read_text()))
+        state = modify_state_dict_fn(torch.load(pt_path))
+        tr = TrainingRunner(cfg, model_fn, state_dict=state)
+        # tr.trainable.load_state_dict(state)
+        return tr
+
+    @classmethod
+    def autoload(
+        cls,
+        name,
+        modify_cfg_fn=lambda x: x,
+        modify_state_dict_fn=lambda x: x,
+        models_dir: Path = Path.home() / "workspace/saved_models/",
+    ) -> "TrainingRunner":
+        modelpath: Path = models_dir / (name + ".json")
+        reload_info = ModelReloadInfo.model_validate_json(
+            modelpath.with_suffix(".reload_info.json").read_text()
+        )
+        model_fn, cfg = reload_info.get_model_and_cfg()
+        return cls.load_saved(
+            cfg,
+            model_fn,
+            name,
+            modify_cfg_fn=modify_cfg_fn,
+            modify_state_dict_fn=modify_state_dict_fn,
+            models_dir=models_dir,
+        )
 
 
 def main():

@@ -2,7 +2,7 @@ from saeco.components.resampling.anthropic_resampling import AnthResamplerConfig
 from saeco.sweeps import SweepableConfig
 from saeco.trainer.normalizers import GNConfig
 from saeco.initializer.initializer_config import InitConfig
-from saeco.trainer.TrainConfig import TrainConfig
+from saeco.trainer.train_config import TrainConfig
 
 
 from pydantic import Field

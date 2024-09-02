@@ -3,6 +3,7 @@ from typing import ClassVar
 
 
 class CachingConfig(BaseModel):
+    model_name: str | None = None
     docs_per_chunk: int = 100
     num_chunks: int = 30
     store_sparse: bool = True
@@ -11,4 +12,5 @@ class CachingConfig(BaseModel):
     llm_batch_size: int | None = None
     dirname: str = "test"
     store_feature_tensors: bool = True
+    exclude_bos_from_storage: bool | None = None
     STANDARD_FILE_NAME: ClassVar = "cache_config.json"

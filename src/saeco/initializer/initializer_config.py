@@ -4,13 +4,8 @@ from saeco.sweeps import SweepableConfig
 
 class InitConfig(SweepableConfig):
     d_data: int = 768
-    dict_mult: int = 8
+    dict_mult: int | float = 8
 
-    @lazyprop
+    @property
     def d_dict(self):
-        return self.d_data * self.dict_mult
-
-    @d_dict.setter
-    def d_dict(self, value):
-        assert self.dict_mult is None
-        setattr(self, "_d_dict", value)
+        return int(self.d_data * self.dict_mult)

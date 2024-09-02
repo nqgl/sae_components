@@ -87,6 +87,7 @@ from saeco.trainer.runner import TrainingRunner
 def run(cfg):
     tr = TrainingRunner(cfg, model_fn=jumprelu_l1_sae)
     tr.trainer.train()
+    tr.trainer.save()
 
 
 if __name__ == "__main__":
