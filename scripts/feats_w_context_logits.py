@@ -15,7 +15,7 @@ import saeco.core as cl
 import torch
 from saeco.trainer.train_cache import TrainCache
 from functools import wraps
-from saeco.evaluation.evaluation_context import Evaluation
+from saeco.evaluation.evaluation import Evaluation
 import nnsight
 
 from rich.highlighter import Highlighter
@@ -171,6 +171,11 @@ active(4, 5)
 ec.saved_acts.tokens[0:5]
 # %%
 
+
+def fwad_hook(acts):
+    return fwAD.make_dual(acts, acts)
+
+
 patched_sae = ec.sae_with_patch(fwad_hook)
 with fwAD.dual_level():
     with nnsight_model.trace(ec.saved_acts.tokens[0:5]) as tracer:
@@ -238,19 +243,19 @@ with nnsight_model.trace(tokens) as tracer:
 # %%
 # ograds=grads
 
-(grads[2] == ograds[0]).all()
-# %%
-(grads[4] == grads[2]).all()
+# (grads[2] == ograds[0]).all()
+# # %%
+# (grads[4] == grads[2]).all()
 
-len(grads)
-grads
-# %%
+# len(grads)
+# grads
+# # %%
 
-sae_acts_grad
-acts_list2[0].grad.shape
-# %%
-acts_list[0].grad.shape
+# sae_acts_grad
+# acts_list2[0].grad.shape
+# # %%
+# acts_list[0].grad.shape
 
-# %%
+# # %%
 
-# %%
+# # %%

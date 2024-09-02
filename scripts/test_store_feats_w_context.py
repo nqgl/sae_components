@@ -14,7 +14,7 @@ import saeco.core as cl
 import torch
 from saeco.trainer.train_cache import TrainCache
 from functools import wraps
-from saeco.evaluation.evaluation_context import Evaluation
+from saeco.evaluation.evaluation import Evaluation
 import nnsight
 
 
