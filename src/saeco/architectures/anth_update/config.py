@@ -30,12 +30,12 @@ cfg = RunConfig[AnthUpdateConfig](
         use_autocast=True,
         use_lars=True,
         #
-        l0_target=Swept(30.3),  # , 86.5, 308.8),
-        l0_target_adjustment_size=Swept(0.0003, 0.0001, 0.001, 0.003),
-        l0_targeter_type=Swept("pid", "basic", "gentle_basic"),
+        l0_target=30,  # , 86.5, 308.8),
+        l0_target_adjustment_size=0.001,
+        l0_targeter_type="pid",
         l0_targeting_enabled=True,
         coeffs={
-            "sparsity_loss": Swept(1e-2, 3e-2, 2e-4),
+            "sparsity_loss": Swept(3e-4),
             "L2_loss": 1,
         },
         #
