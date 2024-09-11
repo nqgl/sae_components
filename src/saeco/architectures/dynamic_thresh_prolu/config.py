@@ -4,7 +4,13 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
+from saeco.data import (
+    ActsDataConfig,
+    DataConfig,
+    ModelConfig,
+    SplitConfig,
+    DataGenerationProcessConfig,
+)
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
@@ -14,10 +20,17 @@ PROJECT = "sae sweeps"
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=DataConfig(
-            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=False))
+            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
+            trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),
+            generation_config=DataGenerationProcessConfig(
+                # tokens_per_pile=2**25,
+                acts_per_pile=2**16,
+                meta_batch_size=2**17,
+                llm_batch_size=2**15,
+            ),
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=10_000,
             resample_period=9_000,
             lr_resample_warmup_length=0.1,
         ),

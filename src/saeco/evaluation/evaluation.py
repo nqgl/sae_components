@@ -74,11 +74,6 @@ class Evaluation:
     #         f += ft
     #     assert f.is_sparse
     #     f = f.coalesce()
-
-    def isfeature(self, tensor):
-        # TODO
-        return True
-
     def get_active_documents(self, feature_ids):
         features = self.get_features(feature_ids)
         return self.select_active_documents(self.features_union(features))

@@ -12,11 +12,12 @@ class SavedActs:
     path: Path
     chunks: list[Chunk] = field(init=False)
     num_chunks: int = field(init=False)
+    cfg: CachingConfig = field(init=False)
     feature_tensors: list[SparseGrowingDiskTensor] | None = field(init=False)
 
     # cfg: CachingConfig
-    @cached_property
-    def cfg(self):
+    @cfg.default
+    def _cfg_initializer(self):
         return CachingConfig.model_validate_json(
             (self.path / CachingConfig.STANDARD_FILE_NAME).read_text()
         )
