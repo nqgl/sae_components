@@ -365,3 +365,35 @@ class Evaluation:
             [[t] for t in tokens],
             skip_special_tokens=False,
         )
+
+    def forward_token_attribution_to_features(self, tokens, seq_range):
+        assert tokens.ndim == 1 or tokens.ndim == 2 and tokens.shape[0] == 1
+        if tokens.ndim == 1:
+            tokens = tokens.unsqueeze(0)
+        tokens = tokens.repeat(seq_range[1] - seq_range[0], 1, 1)
+
+        def tangentize_embedding(embedding):
+            assert embedding.ndim == 3
+            return (
+                fwAD.make_dual(
+                    torch.ones_like(embedding[:, :, 0]).unsqueeze(-1),
+                    torch.eye(embedding.shape[1]).unsqueeze(-1)[
+                        seq_range[0] : seq_range[1]
+                    ],
+                )
+                * embedding
+            )
+
+        with fwAD.dual_level():
+            with self.nnsight_model.trace(tokens) as tracer:
+                embed = self.nnsight_model.transformer.wte.output
+                self.nnsight_model.transformer.wte.output = nnsight.apply(
+                    tangentize_embedding, embed
+                )
+                lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+                res = self.sae_with_patch(lambda x: x, return_sae_acts=True)(lm_acts)
+                sae_acts = res[1]
+
+                acts_tangent = nnsight.apply(fwAD.unpack_dual, sae_acts).tangent.save()
+                lm_acts.stop()
+        return acts_tangent

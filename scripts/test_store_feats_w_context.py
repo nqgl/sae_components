@@ -18,9 +18,10 @@ from saeco.evaluation.evaluation import Evaluation
 import nnsight
 
 
-ec = Evaluation.from_model_name(
-    "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"
-)
+# ec = Evaluation.from_model_name(
+#     "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"
+# )
+ec = Evaluation.from_cache_name("dyn_thresh")
 # ec.store_acts(
 #     CachingConfig(
 #         store_dense=False,

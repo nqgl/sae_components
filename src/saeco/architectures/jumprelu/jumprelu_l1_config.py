@@ -17,7 +17,7 @@ cfg = RunConfig[Config](
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=500,
             resample_period=12_500,
         ),
         #

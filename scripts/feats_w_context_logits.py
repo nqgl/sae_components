@@ -21,7 +21,16 @@ import nnsight
 from rich.highlighter import Highlighter
 
 # from transformers import GPT2LMHeadModel
-ec = Evaluation.from_cache_name("ec_test")
+ec = Evaluation.from_cache_name("dyn_thresh")
+# ec = Evaluation.from_model_name("sae sweeps/dyn_thresh/50001")
+# ec.store_acts(
+#     caching_cfg=CachingConfig(
+#         docs_per_chunk=1000,
+#         num_chunks=10,
+#         dirname="dyn_thresh",
+#     ),
+#     displace_existing=True,
+# )
 # %%
 nnsight_model = nnsight.LanguageModel("openai-community/gpt2", device_map="cuda")
 
