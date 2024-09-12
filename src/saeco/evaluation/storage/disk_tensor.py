@@ -39,14 +39,18 @@ def tensorclass(dtype):
 class DiskTensor:
     path: Path
     metadata: DiskTensorMetadata
-    tensor: torch.Tensor = field(init=False)
     finalized: bool = False
+    tensor: torch.Tensor = field(init=False, default=None)
 
-    @tensor.default
+    # @tensor.default
     def _tensor_default(self):
         if self.path.exists():
             self.finalized = True
-        return self.open_disk_tensor()
+        return self.open_disk_tensor(create=not self.finalized)
+
+    def __attrs_post_init__(self):
+        assert self.tensor is None
+        self.tensor = self._tensor_default()
 
     def create_tensor(self):
         return self.open_disk_tensor(create=True)
@@ -67,12 +71,7 @@ class DiskTensor:
                 shared=True,
                 nbytes=self.nbytes,
             )
-        ).reshape(
-            *[
-                s if i != self.cat_axis else self.storage_len
-                for i, s in enumerate(self.metadata.shape)
-            ]
-        )
+        ).reshape(self.storage_shape)
 
     @classmethod
     def open(cls, path):

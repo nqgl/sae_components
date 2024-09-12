@@ -106,7 +106,7 @@ from saeco.evaluation.saved_acts import SavedActs
 
 tr.trainable.model.model.module.freqs.freqs
 
-sa = SavedActs(path)
+sa = SavedActs.from_path(path)
 
 
 @timed

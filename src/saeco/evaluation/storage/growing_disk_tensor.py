@@ -1,8 +1,8 @@
-from attr import define, field
+from attrs import define, field
 from pathlib import Path
 import torch
 
-from .disk_tensor import DiskTensorMetadata
+from .disk_tensor import DiskTensorMetadata, DiskTensor
 
 
 # class DiskTensorMetadata(DiskTensorMetadata):
@@ -10,46 +10,9 @@ from .disk_tensor import DiskTensorMetadata
 
 
 @define
-class GrowingDiskTensor:
-    path: Path
-    metadata: DiskTensorMetadata
+class GrowingDiskTensor(DiskTensor):
     cat_axis: int | None = None
-    finalized: bool = False
     storage_len: int = 2**14
-    tensor: torch.Tensor = field(init=False)
-
-    @tensor.default
-    def _tensor_default(self):  ###
-        if self.path.exists():
-            self.finalized = True
-        return self.create_tensor()
-
-    def create_tensor(self):  ###
-        return self.tensorclass(
-            torch.UntypedStorage.from_file(
-                str(self.path),
-                shared=True,
-                nbytes=self.nbytes_from_length(self.storage_len),
-            )
-        ).reshape(
-            *[
-                s if i != self.cat_axis else self.storage_len
-                for i, s in enumerate(self.metadata.shape)
-            ]
-        )
-
-    @property
-    def tensorclass(self):  ###
-        if self.metadata.dtype == torch.float32:
-            return torch.FloatTensor
-        elif self.metadata.dtype == torch.int64:
-            return torch.LongTensor
-        elif self.metadata.dtype == torch.bool:
-            return torch.BoolTensor
-        elif self.metadata.dtype == torch.float16:
-            return torch.HalfTensor
-        else:
-            raise ValueError(f"Unsupported dtype {self.metadata.dtype}")
 
     def resize(self, new_len, truncate=False):
         assert not self.finalized
@@ -73,12 +36,7 @@ class GrowingDiskTensor:
 
     def finalize(self):
         self.resize(self.metadata.shape[self.cat_axis], truncate=True)
-        ###  super call past here
-        self.metadata.shape = list(self.metadata.shape)
-        self.finalized = True
-        metadata_path = self.path.with_suffix(".metadata")
-        assert not metadata_path.exists()
-        metadata_path.write_text(self.metadata.model_dump_json())
+        super().finalize()
 
     @classmethod
     def open(cls, path: Path):
@@ -116,17 +74,16 @@ class GrowingDiskTensor:
                 shape=shape,
                 dtype_str=str(dtype),
             ),
+            finalized=False,
         )
         return inst
 
-    def nbytes_from_length(self, length):  ### just override storage shape
-        size = self.metadata.dtype.itemsize
-        for i, s in enumerate(self.metadata.shape):
-            if i == self.cat_axis:
-                size *= length
-            else:
-                size *= s
-        return size
+    @property
+    def storage_shape(self):
+        return [
+            s if i != self.cat_axis else self.storage_len
+            for i, s in enumerate(self.metadata.shape)
+        ]
 
     def append(self, tensor):
         length = tensor.shape[self.cat_axis]

@@ -40,7 +40,7 @@ class Evaluation:
                     f"{acts_cacher.path()} already exists. Set displace_existing=True to move existing files."
                 )
         acts_cacher.store_acts()
-        self.saved_acts = SavedActs(acts_cacher.path())
+        self.saved_acts = SavedActs.from_path(acts_cacher.path())
 
     @property
     def path(self):
@@ -54,7 +54,7 @@ class Evaluation:
             name = Path(name)
             if not name.exists():
                 name = Path.home() / "workspace" / "cached_sae_acts" / name
-        saved = SavedActs(name)
+        saved = SavedActs.from_path(name)
         inst = cls.from_model_name(saved.cfg.model_name)
         inst.saved_acts = saved
         return inst

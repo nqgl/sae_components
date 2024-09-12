@@ -12,36 +12,41 @@ from jaxtyping import Float, Int
 @define
 class SavedActs:
     path: Path
-    chunks: list[Chunk] = field(init=False)
-    num_chunks: int = field(init=False)
-    cfg: CachingConfig = field(init=False)
-    feature_tensors: list[SparseGrowingDiskTensor] | None = field(init=False)
+    cfg: CachingConfig
+    chunks: list[Chunk]
+    feature_tensors: list[SparseGrowingDiskTensor] | None = None
 
-    # cfg: CachingConfig
-    @cfg.default
-    def _cfg_initializer(self):
+    @classmethod
+    def from_path(cls, path: Path):
+        cfg = cls._cfg_initializer(path)
+        feature_tensors = cls._feature_tensors_initializer(path, cfg)
+        chunks = cls._chunks_initializer(path)
+        return cls(path=path, cfg=cfg, chunks=chunks, feature_tensors=feature_tensors)
+
+    @classmethod
+    def _cfg_initializer(cls, path: Path):
         return CachingConfig.model_validate_json(
-            (self.path / CachingConfig.STANDARD_FILE_NAME).read_text()
+            (path / CachingConfig.STANDARD_FILE_NAME).read_text()
         )
 
-    @feature_tensors.default
-    def _feature_tensors_initializer(self):
-        feat_dir = self.path / "features"
+    @classmethod
+    def _feature_tensors_initializer(cls, path: Path, cfg: CachingConfig):
+        feat_dir = path / "features"
         num_features = len(list(feat_dir.glob("feature*")))
-        if self.cfg.store_feature_tensors:
+        if cfg.store_feature_tensors:
             return [
                 SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
                 for i in range(num_features)
             ]
         return None
 
-    @chunks.default
-    def _chunks_initializer(self):
-        return Chunk.load_chunks_from_dir(self.path, lazy=True)
+    @property
+    def num_chunks(self):
+        return len(self.chunks)
 
-    @num_chunks.default
-    def _num_chunks_initializer(self):
-        return len(Chunk.load_chunks_from_dir(self.path, lazy=True))
+    @classmethod
+    def _chunks_initializer(cls, path: Path):
+        return Chunk.load_chunks_from_dir(path, lazy=True)
 
     @property
     def iter_chunks(self):
@@ -275,6 +280,7 @@ class ChunksGetter:
             return (
                 self.get_chunk(chunk_id).index_select(dim=dim, index=index).coalesce()
             )
+
         isel = TimedFunc(isel)
         docs_l = [
             isel(chunk_id=chunk_id, dim=0, index=cdoc_idx[chunk_ids == chunk_id])

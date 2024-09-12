@@ -32,7 +32,7 @@ doc_ids
 
 # print()
 
-getnum = 1000
+getnum = 50
 doc_ids = torch.arange(getnum)
 doc_ids[getnum // 2 :] += 123
 doc_ids2 = torch.arange(getnum)
@@ -51,7 +51,6 @@ r[1] - r2[0]
 doc_ids2
 doc_ids
 
-getnum = 2000
 mul = 1
 doc_ids = torch.arange(0, getnum * mul, mul)
 doc_ids[getnum // 2 :] += 123
