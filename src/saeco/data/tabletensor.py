@@ -63,7 +63,7 @@ class AppendDiskTensor:
         self.init_file(force=True)
         self.write(t)
 
-    def shufflekill(self):
+    def shuffle_and_finalize_pt_old(self):
         """
         shuffle the .h5, turn it into a tensor saved as .pt, then deletes the original .h5
         """
@@ -72,15 +72,14 @@ class AppendDiskTensor:
         torch.save(t, str(self.path).split(".")[0] + ".pt")
         self.path.unlink()
 
-    def shufflekill_safetensor(self):
+    def shuffle_and_finalize(self):
         """
         shuffle the .h5, turn it into a tensor saved as .safetensors, then deletes the original .h5
         """
         pt = self.path.with_suffix(".pt")
+
         if pt.exists():
-            mm = bool((int(self.path.stem[-1]) % 4) // 2)
-            print("mm state:", mm)
-            t = self.readtensor(pt=True, mmap=mm)
+            t = self.readtensor(pt=True, mmap=True)
         else:
             t = self.read()
             t = t[torch.randperm(t.shape[0])]
@@ -88,6 +87,8 @@ class AppendDiskTensor:
         self.path.unlink(missing_ok=True)
 
     def readtensor(self, pt=False, mmap=False):
+        if self.path.exists():
+            self.shuffle_and_finalize()
         ptpath = self.path.with_suffix(".pt")
 
         if pt:
@@ -103,7 +104,7 @@ class AppendDiskTensor:
                 )
         if ptpath.exists():
             print(f"converting .pt {ptpath} to safetensors")
-            self.shufflekill_safetensor()
+            self.shuffle_and_finalize()
             ptpath.unlink()
         st = self.path.with_suffix(".safetensors")
         return load_file(st)["tensor"]
@@ -145,7 +146,7 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
 
         for pile in tqdm.tqdm(self.piles):
-            pile.shufflekill()
+            pile.shuffle_and_finalize()
 
     def __getitem__(self, i):
         if isinstance(i, int):

@@ -28,10 +28,11 @@ c = DataConfig(
     dataset="cyrilzhang/TinyStories-tokenized-gpt2-1024",
     trainsplit=SplitConfig(splitname="train", start=4, end=5),
     seq_len=128,
-    model_cfg=ModelConfig(),
+    model_cfg=ModelConfig(model_name="gemma-2b"),
     # generation_config=DataGenerationProcessConfig(llm_batch_size=2**15),
 )
 i = 0
+model = c.model_cfg.model
 for d in c.get_databuffer():
     i += 1
 

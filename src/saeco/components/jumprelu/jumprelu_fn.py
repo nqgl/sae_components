@@ -15,6 +15,7 @@ class H_z_minus_thresh_fn(torch.autograd.Function):
 
         thresh = thresh.relu()
         gate = (z > thresh) & (z > 0)
+        ctx.z = z
         ctx.save_for_backward(z, thresh)
         ctx.kernel = kernel
         ctx.eps = eps
@@ -28,6 +29,10 @@ class H_z_minus_thresh_fn(torch.autograd.Function):
         kernel = ctx.kernel
         thresh_grad = -1 / eps * kernel((z - thresh) / eps) * grad_output
         return None, thresh_grad, None, None
+
+    @staticmethod
+    def jvp(ctx: torch.Any, *grad_inputs: torch.Any) -> torch.Any:
+        return torch.zeros_like(ctx.z)
 
 
 def modified_H(n):
@@ -95,11 +100,17 @@ class JumpReLU_fn(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, grad_output):
         z, thresh, gate = ctx.saved_tensors
+        ctx.gate = gate
         eps = ctx.eps
         kernel = ctx.kernel
         thresh_grad = -thresh / eps * kernel((z - thresh) / eps) * grad_output
         z_grad = torch.where(gate, grad_output, 0)
         return z_grad, thresh_grad, None, None
+
+    @staticmethod
+    def jvp(ctx: torch.Any, grad_in_z, grad_in_thresh, *etc: torch.Any) -> torch.Any:
+
+        return torch.where(ctx.gate, grad_in_z, 0)
 
 
 def jumprelu_modified(n):
