@@ -99,10 +99,10 @@ class GrowingDiskTensor:
         path: Path,
         shape: list[int],
         dtype: torch.dtype,
-        initial_nnz: int = 2**25,
+        initial_nnz: int = 2**15,
         cat_axis=0,
     ):
-        cat_len = (
+        cat_len = int(
             initial_nnz
             // torch.prod(torch.tensor(shape[:cat_axis] + shape[cat_axis + 1 :])).item()
             + 1
@@ -114,7 +114,7 @@ class GrowingDiskTensor:
             cat_axis=cat_axis,
             metadata=DiskTensorMetadata(
                 shape=shape,
-                dtype=dtype,
+                dtype_str=str(dtype),
             ),
         )
         return inst
