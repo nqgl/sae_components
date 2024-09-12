@@ -22,8 +22,8 @@ ec = Evaluation.from_model_name(model_name)
 ec.store_acts(
     CachingConfig(
         dirname=storage_name,
-        num_chunks=70,
-        docs_per_chunk=100,
+        num_chunks=200,
+        docs_per_chunk=30,
         documents_per_micro_batch=16,
     ),
     displace_existing=True,

@@ -1,7 +1,7 @@
 # %%
 from pathlib import Path
 from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
+from saeco.evaluation.storage.chunk import Chunk
 from saeco.evaluation.nnsite import getsite, setsite, tlsite_to_nnsite
 from saeco.trainer import Trainable
 

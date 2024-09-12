@@ -29,7 +29,7 @@ def load_sparse_tensor(filename):
         shape = TensorShape.model_validate_json(f.metadata()["json_dump"]).shape
 
     loaded_data = load_file(filename)
-    print(loaded_data.keys())
+    # print(loaded_data.keys())
     indices = loaded_data["indices"]
     values = loaded_data["values"]
     # Create a sparse COO  tensor from the loaded data

@@ -2,14 +2,14 @@ import torch
 from jaxtyping import Int, Float
 from saeco.data import DataConfig
 from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
+from saeco.evaluation.storage.chunk import Chunk
 from saeco.trainer import Trainable, TrainingRunner
 from typing import Any, Callable, Iterator
 from pathlib import Path
 from attrs import define, field
 from torch import Tensor
 import einops
-from saeco.evaluation.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from saeco.evaluation.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 # storage_dir: Path = Path.home() / "workspace/data/caching"
@@ -118,12 +118,9 @@ class Cacher:
             if n_chunks is not None and chunk_id >= n_chunks:
                 break
             chunk.save_tokens()
-            # chunk.force_dense_to_disk()
             if self.cfg.store_sparse:
                 chunk.sparsify()
                 chunk.save_sparse()
-                # if not self.cfg.store_dense:
-                # chunk.remove_dense_from_disk()
             if self.cfg.store_dense:
                 chunk.save_dense()
             if self.cfg.store_feature_tensors:

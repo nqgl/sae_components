@@ -15,11 +15,11 @@ import torch.autograd.forward_ad as fwAD
 @define
 class Evaluation:
     model_name: str
-    training_runner: TrainingRunner = field()
+    training_runner: TrainingRunner = field(repr=False)
     cache_path: Path | None = None
-    saved_acts: SavedActs | None = None
+    saved_acts: SavedActs | None = field(default=None, repr=False)
     cache_name: str | None = None
-    nnsight_model: nnsight.LanguageModel | None = None
+    nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:

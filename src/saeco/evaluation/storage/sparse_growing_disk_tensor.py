@@ -1,4 +1,4 @@
-from saeco.evaluation.growing_disk_tensor import GrowingDiskTensor
+from saeco.evaluation.storage.growing_disk_tensor import GrowingDiskTensor
 
 
 import torch

@@ -1,7 +1,7 @@
 # %%
 from pathlib import Path
 from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
+from saeco.evaluation.storage.chunk import Chunk
 from saeco.trainer import Trainable
 
 # from saeco.architectures.anth_update import cfg, anth_update_model

@@ -1,10 +1,12 @@
 from attr import define, field
 from saeco.evaluation.saved_acts_config import CachingConfig
 from pathlib import Path
-from saeco.evaluation.chunk import Chunk
+from saeco.evaluation.storage.chunk import Chunk
 import torch
 from functools import cached_property
-from saeco.evaluation.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from saeco.evaluation.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from torch import Tensor
+from jaxtyping import Float, Int
 
 
 @define
@@ -109,7 +111,7 @@ class SavedActs:
                     acts.shape,
                 )
 
-    def __getitem__(self, sl):
+    def __getitem__(self, sl: torch.Tensor):
         if isinstance(sl, tuple):
             ...
         if isinstance(sl, torch.Tensor):
@@ -158,13 +160,266 @@ def torange(s: slice):
     return torch.arange(**kw)
 
 
+def sparse_to_mask(t):
+    v = torch.ones_like(t.values(), dtype=torch.bool)
+    return torch.sparse_coo_tensor(t.indices(), v, t.shape)
+
+
+# def sparse_mask_by_indices(t, indices):
+def indices_to_sparse_mask(indices, shape):
+    v = torch.ones(indices.shape[1], dtype=torch.bool)
+    for p in range(indices.shape[0], len(shape)):
+        v = v.unsqueeze(-1).expand(-1, shape[p])
+    return torch.sparse_coo_tensor(indices, v, shape)
+
+
+# indices_to_sparse_mask(cdoc_idx[chunk_ids == i].unsqueeze(0), (10,3))
+
+
+def overlap_mask(t1, t2):
+    m1 = sparse_to_mask(t1)
+    m2 = sparse_to_mask(t2)
+    return m1 * m2
+
+
+from nqgl.mlutils.profiling.time_gpu import TimedFunc
+
+
 @define
 class ChunksGetter:
     saved_acts: SavedActs
     target_attr: str
     chunk_indexing: bool = True
 
-    def document_index(self, sl):
+    def get_chunk(self, i) -> Tensor:
+        return getattr(self.saved_acts.chunks[i], self.target_attr)
+
+    def document_select(self, docs: Int[Tensor, "sdoc"]):
+        cdoc_idx = docs % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = docs // self.saved_acts.cfg.docs_per_chunk
+        chunks, i_u = chunk_ids.unique(return_inverse=True)
+        return [
+            self.get_chunk(chunk_id).index_select(
+                dim=0, index=cdoc_idx[chunk_ids == chunk_id]
+            )
+            for chunk_id in chunks
+        ], i_u
+
+    def document_select(self, docs: Int[Tensor, "sdoc"]):
+        cdoc_idx = docs % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = docs // self.saved_acts.cfg.docs_per_chunk
+        i = 2
+        cdoc_idx[chunk_ids == i]
+        chunks, i_u = chunk_ids.unique(return_inverse=True)
+        docs_l = [
+            self.get_chunk(chunk_id).index_select(
+                dim=0, index=cdoc_idx[chunk_ids == chunk_id]
+            )
+            for chunk_id in chunks
+        ]
+        ndocs_l = [sel.shape[0] for sel in docs_l]
+        ndocs = torch.tensor(ndocs_l, dtype=torch.int64)
+        ndocs_cum = torch.cumsum(ndocs, dim=0)
+        ndocs_cum = torch.cat([torch.tensor([0]), ndocs_cum])
+        arange = torch.arange(ndocs.max())
+        invert2doc = torch.zeros_like(docs) - 1
+        for i, c in enumerate(chunks):
+            mask = i_u == i
+            invert2doc[mask] = arange[: mask.count_nonzero()] + ndocs_cum[i]
+        assert invert2doc.numel() == invert2doc.unique().numel()
+        assert invert2doc.min() == 0 and invert2doc.max() == docs.numel() - 1
+        return TimedFunc(torch.cat)(docs_l)[invert2doc]
+
+    def document_select_sparse(self, docs: Int[Tensor, "sdoc"]):
+
+        cdoc_idx = docs % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = docs // self.saved_acts.cfg.docs_per_chunk
+        chunks, i_u = chunk_ids.unique(return_inverse=True)
+        docs_l = [
+            self.get_chunk(chunk_id)
+            .index_select(dim=0, index=cdoc_idx[chunk_ids == chunk_id])
+            .coalesce()
+            for chunk_id in chunks
+        ]
+        ndocs_l = [sel.shape[0] for sel in docs_l]
+        ndocs = torch.tensor(ndocs_l, dtype=torch.int64)
+        ndocs_cum = torch.cumsum(ndocs, dim=0)
+        ndocs_cum = torch.cat([torch.tensor([0]), ndocs_cum])
+        arange = torch.arange(docs.shape[0])
+        # invert2doc = torch.zeros_like(docs) - 1
+        # for i, c in enumerate(chunks):
+        #     mask = i_u == i
+        #     invert2doc[mask] = arange[: mask.count_nonzero()] + ndocs_cum[i]
+        values = []
+        indices = []
+        for i, (chunk_id, docs_t) in enumerate(zip(chunks, docs_l)):
+            docidx = docs_t.indices()
+            idx = docidx.clone()
+            for j in range(docs_t.shape[0]):
+                mask = docidx[0] == j
+                idx[0][mask] = arange[chunk_ids == chunk_id][j]
+            # cdoc_idx[chunk_ids == chunk_id]
+            indices.append(idx)
+            values.append(docs_t.values())
+        indices = torch.cat(indices, dim=1)
+        values = torch.cat(values)
+        shape = [docs.shape[0], *docs_l[0].shape[1:]]
+        return torch.sparse_coo_tensor(indices, values, shape)
+
+    def document_select_sparse_sorted(self, docs: Int[Tensor, "sdoc"]):
+        cdoc_idx = docs % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = docs // self.saved_acts.cfg.docs_per_chunk
+        chunks = TimedFunc(chunk_ids.unique)()
+
+        def isel(chunk_id, dim, index):
+            return (
+                self.get_chunk(chunk_id).index_select(dim=dim, index=index).coalesce()
+            )
+        isel = TimedFunc(isel)
+        docs_l = [
+            isel(chunk_id=chunk_id, dim=0, index=cdoc_idx[chunk_ids == chunk_id])
+            for chunk_id in chunks
+        ]
+        return TimedFunc(torch.cat)(docs_l)
+        # ndocs_l = [sel.shape[0] for sel in docs_l]
+        # ndocs = torch.tensor(ndocs_l, dtype=torch.int64)
+        # ndocs_cum = torch.cumsum(ndocs, dim=0)
+        # ndocs_cum = torch.cat([torch.tensor([0]), ndocs_cum])
+        # arange = torch.arange(docs.shape[0])
+        # # invert2doc = torch.zeros_like(docs) - 1
+        # # for i, c in enumerate(chunks):
+        # #     mask = i_u == i
+        # #     invert2doc[mask] = arange[: mask.count_nonzero()] + ndocs_cum[i]
+        # values = []
+        # indices = []
+        # for i, (chunk_id, docs_t) in enumerate(zip(chunks, docs_l)):
+        #     docidx = docs_t.indices()
+        #     idx = docidx.clone()
+        #     for j in range(docs_t.shape[0]):
+        #         mask = docidx[0] == j
+        #         idx[0][mask] = arange[mask]
+        #     cdoc_idx[chunk_ids == chunk_id]
+        #     indices.append(idx)
+        #     values.append(docs_t.values())
+        # indices = torch.cat(indices, dim=1)
+        # values = torch.cat(values)
+        # shape = [docs.shape[0], *docs_l[0].shape[1:]]
+        # return torch.sparse_coo_tensor(indices, values, shape)
+
+    def ds(self, indices):
+        if indices.ndim == 1:
+            indices = indices.unsqueeze(0)
+        docs = indices[0]
+        cdoc_idx = docs % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = docs // self.saved_acts.cfg.docs_per_chunk
+        unique_chunks, chunk_inv = chunk_ids.unique(return_inverse=True)
+        sel_chunks = [
+            self.get_chunk(chunk_id).index_select(
+                dim=0, index=cdoc_idx[chunk_ids == chunk_id]
+            )
+            for chunk_id in unique_chunks
+        ]
+        ncs = [sel.shape[0] for sel in sel_chunks]
+        sel_chunks = torch.cat(sel_chunks)
+        ncs = torch.tensor(ncs, dtype=torch.int64)
+
+        new_indices = torch.cat([cdoc_idx, *indices[1:]], dim=0)
+
+        # if indices.shape[0] >1:
+
+    def masked_index(self, sl: torch.Tensor):
+        if self.chunk_indexing:
+            assert False
+        if isinstance(sl, slice):
+            sl = torange(sl)
+        cdoc_idx = sl % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = sl // self.saved_acts.cfg.docs_per_chunk
+        if isinstance(sl, int):
+            return getattr(self.saved_acts.chunks[chunk_ids], self.target_attr)[
+                cdoc_idx
+            ]
+        else:
+            assert isinstance(sl, torch.Tensor)
+            chunks = chunk_ids.unique()
+            shape = [2, 1, 2]
+            # mask_values = []
+
+            mask_ids = []
+            content_ids = []
+            content_values = []
+            for chunk_id in range(len(self.saved_acts.chunks)):
+                cmask = chunk_ids == chunk_id
+                if not cmask.any():
+                    continue
+                chunk_tensor = getattr(
+                    self.saved_acts.chunks[chunk_id], self.target_attr
+                )
+                ids = sl[cmask]
+                chunk_indices = torch.cat(
+                    [
+                        cdoc_idx[cmask].unsqueeze(0),
+                        ids[1:],
+                    ],
+                    dim=0,
+                )
+                overlap = overlap_mask(chunk_tensor, chunk_indices)
+                # values =
+
+        #         ns = shape[ids.ndim :]
+        #         values = chunk[0]
+        # return torch.cat(
+        #     [
+        #         getattr(
+        #             self.saved_acts.chunks[chunk_id], self.target_attr
+        #         ).index_select(dim=0, index=cdoc_idx[chunk_ids == chunk_id])
+        #         for chunk_id in chunks
+        #     ]
+        # )
+
+    def masked_index_of_sparse(self, sl: torch.Tensor):
+        if self.chunk_indexing:
+            assert False
+        if isinstance(sl, slice):
+            sl = torange(sl)
+        cdoc_idx = sl[0] % self.saved_acts.cfg.docs_per_chunk
+        chunk_ids = sl[0] // self.saved_acts.cfg.docs_per_chunk
+        if isinstance(sl, int):
+            assert False
+        else:
+            mask_ids = []
+            content_ids = []
+            content_values = []
+            for chunk_id in range(len(self.saved_acts.chunks)):
+                chunk_mask = chunk_ids == chunk_id
+                if not chunk_mask.any():
+                    continue
+                chunk: Chunk = getattr(
+                    self.saved_acts.chunks[chunk_id], self.target_attr
+                )
+                ids = sl[:, chunk_mask]
+                doc_ids = torch.cat(
+                    [
+                        cdoc_idx[chunk_mask].unsqueeze(0),
+                        ids[1:],
+                    ],
+                    dim=0,
+                )
+                t = chunk[doc_ids]
+                indices = t.indices()
+                indices[0] += chunk_id * self.saved_acts.cfg.docs_per_chunk
+                mask_ids.append(indices)
+                content_ids.append(indices)
+                content_values.append(t.values())
+            mask_ids = torch.cat(mask_ids, dim=1)
+            content_ids = torch.cat(content_ids, dim=1)
+            content_values = torch.cat(content_values)
+            shape = [
+                self.saved_acts.cfg.num_chunks * self.saved_acts.cfg.docs_per_chunk,
+                *t.shape[1:],
+            ]
+            return torch.sparse_coo_tensor(mask_ids, content_values, shape)
+
+    def document_index(self, sl: torch.Tensor):
         if self.chunk_indexing:
             assert False
         if isinstance(sl, slice):
@@ -187,7 +442,7 @@ class ChunksGetter:
             ]
         )
 
-    def __getitem__(self, sl):
+    def __getitem__(self, sl: torch.Tensor):
         if not isinstance(sl, tuple):
             return self.document_index(sl)
         return self.document_index(sl[0])[
