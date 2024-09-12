@@ -5,56 +5,57 @@ import torch
 from .disk_tensor import DiskTensorMetadata
 
 
+# class DiskTensorMetadata(DiskTensorMetadata):
+#     cat_axis: int
+
+
 @define
 class GrowingDiskTensor:
     path: Path
-    shape: list[int]
-    dtype: torch.dtype
-    cat_axis: int = 0
+    metadata: DiskTensorMetadata
+    cat_axis: int | None = None
     finalized: bool = False
-    variable_axis_len: int = 0
     storage_len: int = 2**14
     tensor: torch.Tensor = field(init=False)
 
     @tensor.default
-    def _tensor_default(self):
+    def _tensor_default(self):  ###
         if self.path.exists():
             self.finalized = True
         return self.create_tensor()
 
-    def create_tensor(self):
+    def create_tensor(self):  ###
         return self.tensorclass(
             torch.UntypedStorage.from_file(
-                str(self.path), shared=True, nbytes=self.nbytes(self.storage_len)
+                str(self.path),
+                shared=True,
+                nbytes=self.nbytes_from_length(self.storage_len),
             )
         ).reshape(
             *[
                 s if i != self.cat_axis else self.storage_len
-                for i, s in enumerate(self.shape)
+                for i, s in enumerate(self.metadata.shape)
             ]
         )
 
-    def path_variation(self, s):
-        return self.path.with_name(self.path.name + str(s))
-
     @property
-    def tensorclass(self):
-        if self.dtype == torch.float32:
+    def tensorclass(self):  ###
+        if self.metadata.dtype == torch.float32:
             return torch.FloatTensor
-        elif self.dtype == torch.int64:
+        elif self.metadata.dtype == torch.int64:
             return torch.LongTensor
-        elif self.dtype == torch.bool:
+        elif self.metadata.dtype == torch.bool:
             return torch.BoolTensor
-        elif self.dtype == torch.float16:
+        elif self.metadata.dtype == torch.float16:
             return torch.HalfTensor
         else:
-            raise ValueError(f"Unsupported dtype {self.dtype}")
+            raise ValueError(f"Unsupported dtype {self.metadata.dtype}")
 
     def resize(self, new_len, truncate=False):
         assert not self.finalized
         old_tensor = self.tensor
         temp = self.path.rename(
-            self.path_variation("old"),
+            self.path.with_suffix(".old"),
         )
         old_len = self.storage_len
         self.storage_len = new_len
@@ -71,19 +72,13 @@ class GrowingDiskTensor:
         self.tensor = new_tensor
 
     def finalize(self):
-        self.resize(self.variable_axis_len, truncate=True)
-        self.shape = list(self.shape)
-        self.shape[self.cat_axis] = self.variable_axis_len
+        self.resize(self.metadata.shape[self.cat_axis], truncate=True)
+        ###  super call past here
+        self.metadata.shape = list(self.metadata.shape)
         self.finalized = True
-        metadata = DiskTensorMetadata(
-            shape=self.shape,
-            dtype=str(self.dtype),
-            length=self.variable_axis_len,
-            cat_axis=self.cat_axis,
-        )
         metadata_path = self.path.with_suffix(".metadata")
         assert not metadata_path.exists()
-        metadata_path.write_text(metadata.model_dump_json())
+        metadata_path.write_text(self.metadata.model_dump_json())
 
     @classmethod
     def open(cls, path: Path):
@@ -92,10 +87,8 @@ class GrowingDiskTensor:
         )
         inst = cls(
             path=path,
-            shape=metadata.shape,
-            dtype=metadata.torch_dtype,
-            storage_len=metadata.length,
-            cat_axis=metadata.cat_axis,
+            metadata=metadata,
+            storage_len=None,
         )
         assert inst.finalized
         return inst
@@ -106,22 +99,29 @@ class GrowingDiskTensor:
         path: Path,
         shape: list[int],
         dtype: torch.dtype,
-        initial_nnz: int = 4096,
+        initial_nnz: int = 2**25,
         cat_axis=0,
     ):
-        assert initial_nnz > 0
+        cat_len = (
+            initial_nnz
+            // torch.prod(torch.tensor(shape[:cat_axis] + shape[cat_axis + 1 :])).item()
+            + 1
+        )
+        assert cat_len > 0
         inst = cls(
             path=path,
-            shape=shape,
-            storage_len=initial_nnz,
-            dtype=dtype,
+            storage_len=cat_len,
             cat_axis=cat_axis,
+            metadata=DiskTensorMetadata(
+                shape=shape,
+                dtype=dtype,
+            ),
         )
         return inst
 
-    def nbytes(self, length):
-        size = self.dtype.itemsize
-        for i, s in enumerate(self.shape):
+    def nbytes_from_length(self, length):  ### just override storage shape
+        size = self.metadata.dtype.itemsize
+        for i, s in enumerate(self.metadata.shape):
             if i == self.cat_axis:
                 size *= length
             else:
@@ -131,18 +131,21 @@ class GrowingDiskTensor:
     def append(self, tensor):
         length = tensor.shape[self.cat_axis]
         assert (
-            list(tensor.shape[: self.cat_axis]) == self.shape[: self.cat_axis]
+            list(tensor.shape[: self.cat_axis]) == self.metadata.shape[: self.cat_axis]
             and list(tensor.shape[self.cat_axis + 1 :])
-            == self.shape[self.cat_axis + 1 :]
+            == self.metadata.shape[self.cat_axis + 1 :]
         )
         assert not self.finalized
-        while self.variable_axis_len + length >= self.storage_len:
+        while self.metadata.shape[self.cat_axis] + length >= self.storage_len:
             self.resize(self.storage_len * 2)
         append_slice = [slice(None)] * self.cat_axis + [
-            slice(self.variable_axis_len, self.variable_axis_len + length)
+            slice(
+                self.metadata.shape[self.cat_axis],
+                self.metadata.shape[self.cat_axis] + length,
+            )
         ]
         self.tensor[append_slice] = tensor
-        self.variable_axis_len += length
+        self.metadata.shape[self.cat_axis] += length
 
 
 if __name__ == "__main__":

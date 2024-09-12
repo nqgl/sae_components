@@ -74,7 +74,10 @@ class SparseGrowingDiskTensor:
             assert indices[i].max() < idx and indices[i].min() >= 0
         self.indices.append(indices)
         self.values.append(tensor.values())
-        assert self.values.variable_axis_len == self.indices.variable_axis_len
+        assert (
+            self.values.metadata.shape[self.cat_axis]
+            == self.indices.metadata.shape[self.cat_axis]
+        )
 
     def finalize(self):
         self.indices.finalize()

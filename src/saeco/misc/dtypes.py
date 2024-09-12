@@ -12,5 +12,7 @@ D2S = {v: k for k, v in S2D.items()}
 
 def str_to_dtype(dtype: str) -> torch.dtype:
     if "torch." in dtype:
-        return S2D[dtype.replace("torch.", "")]
+        dtype = dtype.replace("torch.", "")
+    if dtype not in S2D:
+        raise ValueError(f"Unsupported dtype string: {dtype}")
     return S2D[dtype]
