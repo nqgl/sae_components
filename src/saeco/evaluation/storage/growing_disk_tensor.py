@@ -40,12 +40,9 @@ class GrowingDiskTensor(DiskTensor):
 
     @classmethod
     def open(cls, path: Path):
-        metadata = DiskTensorMetadata.model_validate_json(
-            (path.with_suffix(".metadata")).read_text()
-        )
         inst = cls(
             path=path,
-            metadata=metadata,
+            metadata=cls._open_metdata(path),
             storage_len=None,
         )
         assert inst.finalized

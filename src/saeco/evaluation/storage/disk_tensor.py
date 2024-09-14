@@ -4,6 +4,7 @@ import torch
 from pydantic import BaseModel
 from pathlib import Path
 from saeco.misc import str_to_dtype
+from safetensors.torch import save_file, load_file
 
 
 class DiskTensorMetadata(BaseModel):
@@ -44,9 +45,19 @@ class DiskTensor:
 
     # @tensor.default
     def _tensor_default(self):
+        safepath = self.path.with_suffix(".safetensors")
+        if safepath.exists():
+            self.finalized = True
+            return load_file(safepath)["finalized_tensor"]
         if self.path.exists():
             self.finalized = True
         return self.open_disk_tensor(create=not self.finalized)
+
+    @classmethod
+    def _open_metdata(cls, path: Path):
+        return DiskTensorMetadata.model_validate_json(
+            (path.with_suffix(".metadata")).read_text()
+        )
 
     def __attrs_post_init__(self):
         assert self.tensor is None
@@ -99,8 +110,20 @@ class DiskTensor:
     def metadata_path(self):
         return self.path.with_suffix(".metadata")
 
+    def _save_safe(self):
+        save_file(
+            {"finalized_tensor": self.tensor},
+            self.path.with_suffix(".safetensors"),
+        )
+
     def finalize(self):
         # self.resize(self.metadata.shape[self.cat_axis], truncate=True)
         self.finalized = True
         assert not self.metadata_path.exists()
+        # TODO
+
+        self._save_safe()
+        self.path.unlink()
+        assert False
+
         self.metadata_path.write_text(self.metadata.model_dump_json())
