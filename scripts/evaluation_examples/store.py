@@ -22,7 +22,7 @@ ec = Evaluation.from_model_name(model_name)
 ec.store_acts(
     CachingConfig(
         dirname=storage_name,
-        num_chunks=10,
+        num_chunks=30,
         docs_per_chunk=100,
         documents_per_micro_batch=16,
         # exclude_bos_from_storage=True,

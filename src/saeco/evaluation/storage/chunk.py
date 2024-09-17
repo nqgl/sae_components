@@ -1,4 +1,4 @@
-from saeco.evaluation.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
+from .sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from saeco.evaluation.saved_acts_config import CachingConfig
 
 import torch
@@ -31,9 +31,9 @@ class Chunk:
         return self._cfg
 
     def sparsify(self):
-        assert self.dense_acts is not None
         if self.sparse_acts is not None:
-            return self
+            return
+        assert self.dense_acts is not None
         self.sparse_acts = self.dense_acts.to_sparse_coo()
         # if self.dense_acts.shape[0] > self.sparsify_batch_size:
         #     indices = []
@@ -50,18 +50,18 @@ class Chunk:
         #     )
         # else:
 
-    def make_dense_disk_storage(self, seq_len, d_dict, dtype_bytes=4):
-        shape = [self.cfg.docs_per_chunk, seq_len, d_dict]
-        numel = shape[0] * shape[1] * shape[2]
-        assert not self.dense_disk_storage_path.exists()
-        storage = torch.FloatTensor(
-            torch.UntypedStorage.from_file(
-                str(self.dense_disk_storage_path),
-                shared=True,
-                nbytes=numel * dtype_bytes,
-            )
-        )
-        storage.reshape(shape)
+    # def make_dense_disk_storage(self, seq_len, d_dict, dtype_bytes=4):
+    #     shape = [self.cfg.docs_per_chunk, seq_len, d_dict]
+    #     numel = shape[0] * shape[1] * shape[2]
+    #     assert not self.dense_disk_storage_path.exists()
+    #     storage = torch.FloatTensor(
+    #         torch.UntypedStorage.from_file(
+    #             str(self.dense_disk_storage_path),
+    #             shared=True,
+    #             nbytes=numel * dtype_bytes,
+    #         )
+    #     )
+    #     storage.reshape(shape)
 
     @property
     def dense_disk_storage_path(self):
@@ -136,11 +136,11 @@ class Chunk:
         return inst
 
     @classmethod
-    def chunks_from_dir_iter(self, path, load_sparse_only: bool = False, lazy=False):
+    def chunks_from_dir_iter(cls, path, load_sparse_only: bool = False, lazy=False):
         i = 0
         while True:
             try:
-                chunk = self.load_from_dir(path, i, load_sparse_only, lazy=lazy)
+                chunk = cls.load_from_dir(path, i, load_sparse_only, lazy=lazy)
                 if not chunk.exists:
                     break
                 yield chunk
@@ -149,8 +149,8 @@ class Chunk:
                 break
 
     @classmethod
-    def load_chunks_from_dir(self, path, load_sparse_only: bool = False, lazy=False):
-        return list(self.chunks_from_dir_iter(path, load_sparse_only, lazy=lazy))
+    def load_chunks_from_dir(cls, path, load_sparse_only: bool = False, lazy=False):
+        return list(cls.chunks_from_dir_iter(path, load_sparse_only, lazy=lazy))
 
     def load(self, load_sparse_only: bool = False):
         assert self.tokens_path.exists()

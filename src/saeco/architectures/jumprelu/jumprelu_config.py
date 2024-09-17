@@ -16,18 +16,18 @@ cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=gemma_2_2b_openwebtext,
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=12_000,
+            run_length=6_000,
             resample_period=12_500,
             # lr_cooldown_length=0.4
         ),
         #
-        batch_size=4096 // 2,
+        batch_size=4096,
         optim="Adam",
-        lr=1e-3,
+        lr=Swept(1e-4, 3e-4, 1e-3),
         betas=(0.9, 0.995),
         #
         use_autocast=True,
-        use_lars=True,
+        use_lars=Swept(True, False),
         #
         l0_target=50,
         l0_target_adjustment_size=0.0003,
@@ -45,12 +45,12 @@ cfg = RunConfig[Config](
     #
     arch_cfg=Config(
         pre_bias=False,
-        eps=1e-2,
+        eps=Swept(1e-2, 1e-3, 1e-4, 3e-4, 3e-3, 3e-2, 1e-1),
         thresh_initial_value=0.5,
-        kernel="rect",
+        kernel=Swept("rect", "gauss", "tri"),
         thresh_lr_mult=1,
-        modified_jumprelu_grad=0,
-        modified_thresh_grad=0,
+        modified_jumprelu_grad=Swept(2, 3, 4, 5),
+        modified_thresh_grad=Swept(2, 3, 4, 5),
         penalize_pre_acts=True,
         exp=False,
     ),

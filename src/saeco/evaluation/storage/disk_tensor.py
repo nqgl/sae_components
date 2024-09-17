@@ -86,11 +86,15 @@ class DiskTensor:
 
     @classmethod
     def open(cls, path):
-        raise NotImplementedError
+        return cls(
+            path=path,
+            metadata=cls._open_metdata(path),
+        )
 
     @classmethod
-    def create(cls, path, shape, dtype, initial_nnz=4096, cat_axis=0):
-        raise NotImplementedError
+    def create(cls, path, shape, dtype):
+        metadata = DiskTensorMetadata(shape=shape, dtype_str=str(dtype))
+        return cls(path=path, metadata=metadata)
 
     @property
     def storage_shape(self):
@@ -124,6 +128,21 @@ class DiskTensor:
 
         self._save_safe()
         self.path.unlink()
-        assert False
+        # assert False
 
         self.metadata_path.write_text(self.metadata.model_dump_json())
+
+
+def main():
+    path = Path("test")
+    dt = DiskTensor.create(path, [10, 10], torch.int64)
+    dt.tensor[:] = torch.arange(100).reshape(10, 10)
+    dt.finalize()
+    print(dt.tensor)
+
+    dt = DiskTensor.open(path)
+    print(dt.tensor)
+
+
+if __name__ == "__main__":
+    main()

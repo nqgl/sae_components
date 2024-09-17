@@ -1,31 +1,61 @@
-from .acts_cacher import ActsCacher, CachingConfig
-from .saved_acts import SavedActs
-from saeco.trainer import TrainingRunner, RunConfig
-from attr import define, field
-import torch
+from functools import cached_property
 from pathlib import Path
-from torch import Tensor
-import tqdm
+
 import einops
 import nnsight
-from .nnsite import getsite, setsite, tlsite_to_nnsite
+import torch
 import torch.autograd.forward_ad as fwAD
+import tqdm
+from attr import define, field
+from torch import Tensor
+
+from saeco.trainer import RunConfig, TrainingRunner
+from .acts_cacher import ActsCacher, CachingConfig
+from .filtered_evaluation import FilteredTensor
+from .metadata import MetaDatas
+from .nnsite import getsite, setsite, tlsite_to_nnsite
+from .saved_acts import SavedActs
+from .storage.filtered_chunk import FilteredChunk
 
 
 @define
 class Evaluation:
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
-    cache_path: Path | None = None
+    # cache_name: str | None = None
     saved_acts: SavedActs | None = field(default=None, repr=False)
-    cache_name: str | None = None
+    # cache_path: Path | None = None
     nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
+    # metadatas: MetaDatas = field(init=False)
+
+    @cached_property
+    def metadatas(self):
+        return MetaDatas(self.path, self.cache_cfg)
+
+    @classmethod
+    def from_cache_name(cls, name: Path | str):
+        if isinstance(name, str):
+            name = Path(name)
+            if not name.exists():
+                name = Path.home() / "workspace" / "cached_sae_acts" / name
+        saved = SavedActs.from_path(name)
+        inst = cls.from_model_name(saved.cfg.model_name)
+        inst.saved_acts = saved
+        return inst
+
+    @classmethod
+    def from_model_name(cls, name: str):
+        tr = TrainingRunner.autoload(name)
+        inst = cls(training_runner=tr, model_name=name)
+        return inst
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:
             caching_cfg.model_name = self.model_name
         assert caching_cfg.model_name == self.model_name
-        acts_cacher = ActsCacher(caching_cfg, self.training_runner, self.cache_path)
+        acts_cacher = ActsCacher(
+            caching_config=caching_cfg, model_context=self.training_runner
+        )
         if acts_cacher.path().exists():
             if displace_existing:
                 import time
@@ -44,26 +74,9 @@ class Evaluation:
 
     @property
     def path(self):
-        if self.cache_name is None:
+        if self.saved_acts is None:
             raise ValueError("cache_name must be set")
-        return Path.home() / "workspace" / "cached_sae_acts" / self.cache_name
-
-    @classmethod
-    def from_cache_name(cls, name: Path | str):
-        if isinstance(name, str):
-            name = Path(name)
-            if not name.exists():
-                name = Path.home() / "workspace" / "cached_sae_acts" / name
-        saved = SavedActs.from_path(name)
-        inst = cls.from_model_name(saved.cfg.model_name)
-        inst.saved_acts = saved
-        return inst
-
-    @classmethod
-    def from_model_name(cls, name: str):
-        tr = TrainingRunner.autoload(name)
-        inst = cls(training_runner=tr, model_name=name)
-        return inst
+        return self.cache_cfg.path
 
     # def get_features_and_active_docs(self, feature_ids):
     #     feature_tensors = [
@@ -108,9 +121,7 @@ class Evaluation:
 
     def _active_docs_values_and_indices(self, feature):
         active_documents_idxs = self.active_document_indices(feature)
-        active_documents = self.saved_acts.tokens[
-            active_documents_idxs
-        ]  # unsqueeze gets this back into the normal indexing shape
+        active_documents = self.saved_acts.tokens[active_documents_idxs]
         return active_documents, active_documents_idxs
 
     def get_top_activating(self, feature: Tensor, percentile=10):
@@ -135,8 +146,20 @@ class Evaluation:
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
-            acts = chunk.acts.cuda().to_dense()
-            fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+            if isinstance(chunk, FilteredChunk):
+                if chunk.acts.mask.ndim == 1:
+                    if chunk.acts.mask.sum() == 0:
+                        continue
+                    acts = chunk.acts.value.cuda().to_dense()
+
+                    fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+                else:
+                    assert chunk.acts.value.ndim == 2
+                    acts = chunk.acts.value.cuda().to_dense()
+                    fds = acts
+            else:
+                acts = chunk.acts.cuda().to_dense()
+                fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
             f2s = fds.pow(2).sum(-1)
             assert f2s.shape == (self.d_dict,)
             f2sum += f2s
@@ -144,7 +167,7 @@ class Evaluation:
         norms = f2sum.sqrt()
         mat /= norms.unsqueeze(0)
         mat /= norms.unsqueeze(1)
-        prod = mat.diag().prod()
+        prod = mat.diag()[~mat.diag().isnan()].prod()
         assert prod < 1.001 and prod > 0.999
         return mat
 

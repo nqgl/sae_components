@@ -1,2 +1,2 @@
-model_name = "sae sweeps/(lars)sae0.0003[25.0]-10293/10001"
-storage_name = "stored_acts2"
+model_name = "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"
+storage_name = "stored_acts"
