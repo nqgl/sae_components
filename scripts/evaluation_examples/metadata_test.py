@@ -26,8 +26,8 @@ filt_eval = Evaluation(
     nnsight_model=ec.nnsight_model,
 )
 
-reg_cosims = ec.activation_cosims()
 filt_cosims = filt_eval.activation_cosims()
+reg_cosims = ec.activation_cosims()
 # now use this metadata as a filter and then get correlations
 
 

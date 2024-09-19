@@ -8,6 +8,7 @@ import torch.autograd.forward_ad as fwAD
 import tqdm
 from attr import define, field
 from torch import Tensor
+from torch.masked import MaskedTensor
 
 from saeco.trainer import RunConfig, TrainingRunner
 from .acts_cacher import ActsCacher, CachingConfig
@@ -16,6 +17,12 @@ from .metadata import MetaDatas
 from .nnsite import getsite, setsite, tlsite_to_nnsite
 from .saved_acts import SavedActs
 from .storage.filtered_chunk import FilteredChunk
+
+
+def tocuda(t):
+    if isinstance(t, MaskedTensor):
+        return MaskedTensor(t.get_data().cuda(), t.get_mask().cuda())
+    return t.cuda()
 
 
 @define
@@ -146,23 +153,29 @@ class Evaluation:
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
-            if isinstance(chunk, FilteredChunk):
-                if chunk.acts.mask.ndim == 1:
-                    if chunk.acts.mask.sum() == 0:
-                        continue
-                    acts = chunk.acts.value.cuda().to_dense()
+            # if isinstance(chunk, FilteredChunk):
+            #     if chunk.acts.mask.ndim == 1:
+            #         if chunk.acts.mask.sum() == 0:
+            #             continue
+            #         acts = chunk.acts.value.cuda().to_dense()
 
-                    fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
-                else:
-                    assert chunk.acts.value.ndim == 2
-                    acts = chunk.acts.value.cuda().to_dense()
-                    fds = acts
-            else:
-                acts = chunk.acts.cuda().to_dense()
-                fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+            #         fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+            #     else:
+            #         assert chunk.acts.value.ndim == 2
+            #         acts = chunk.acts.value.cuda().to_dense()
+            #         fds = acts
+            # else:
+
+            acts = chunk.acts.to_dense()
+            acts = tocuda(acts)
+            assert acts.ndim == 3
+            fds = acts.reshape(-1, acts.shape[-1]).transpose(-2, -1)
+            # fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+            # print("chk", (chk - fds).abs().sum())
+            # fds = fds.get_data
             f2s = fds.pow(2).sum(-1)
             assert f2s.shape == (self.d_dict,)
-            f2sum += f2s
+            f2sum = f2s + f2sum
             mat += fds @ fds.transpose(-2, -1)
         norms = f2sum.sqrt()
         mat /= norms.unsqueeze(0)

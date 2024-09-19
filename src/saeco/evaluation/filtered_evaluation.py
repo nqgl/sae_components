@@ -43,23 +43,31 @@ class Filter:
         assert len(chunked) == cfg.num_chunks
         return chunked
 
+    def filter_chunk_output(self, output, chunk):
+        return output[self.chunk_filters(chunk.cfg)[chunk.idx]]
+
     def mask(self, tensor, chunk=None):
         if chunk is None:
             mask = self.filter
         else:
             mask = self.chunk_filters(chunk.cfg)[chunk.idx]
         # if tensor.is_sparse:
-        #     mask = mask.to_sparse_coo()
         #     if mask.shape != tensor.shape:
-        #         xv = mask.values()
-        #         for i in range(tensor.ndim - mask.ndim):
-        #             xv = xv.unsqueeze(-1)
-        #         expand = [-1] * mask.ndim
-        #         mask = torch.sparse_coo_tensor(
-        #             indices=mask.indices(),
-        #             values=xv.expand(expand + list(tensor.shape[mask.ndim :])),
-        #             size=tensor.shape,
-        #         )
+        #         while mask.ndim < tensor.ndim:
+        #             mask = mask.unsqueeze(-1)
+        #         mask = mask.expand(tensor.shape)
+        #     mask = mask.to_sparse_coo()
+        ## xv = mask.values()
+        ## for i in range(tensor.ndim - mask.ndim):
+        ##     xv = xv.unsqueeze(-1)
+        ## expand = [-1] * mask.ndim
+        ## mask = torch.sparse_coo_tensor(
+        ##     indices=mask.indices(),
+        ##     values=xv.expand(expand + list(tensor.shape[mask.ndim :])),
+        ##     size=tensor.shape,
+        ## )
+
+        # return MaskedTensor(tensor, mask)
         return FilteredTensor.from_unmasked_value(tensor, mask)
 
 
@@ -79,9 +87,57 @@ def index_sparse_with_bool(value, mask):
 
 
 @define
+class SliceMask:
+    slices: tuple[slice, ...]
+    shape: tuple[int, ...]
+
+    def __post_init__(self):
+        assert len(self.slices) == len(self.shape)
+        for i, slc in enumerate(self.slices):
+            assert isinstance(slc, slice)
+            assert slc.start is None or slc.start >= 0 and slc.start < self.shape[i]
+            assert slc.stop is None or slc.stop <= self.shape[i]
+            assert slc.start is None or slc.stop is None or slc.start <= slc.stop
+
+    def numel(self):
+        n = 1
+        for slc, dim in zip(self.slices, self.shape):
+            step = slc.step or 1
+            if slc.start is None and slc.stop is None:
+                n *= dim // step
+            elif slc.start is None:
+                n *= slc.stop // step
+            elif slc.stop is None:
+                n *= (dim - slc.start) // step
+            else:
+                n *= (slc.stop - slc.start) // step
+        return n
+
+    def apply(self, tensor):
+        if tensor.shape[: len(self.shape)] != self.shape:
+            raise ValueError("Shape mismatch")
+        return tensor[self.slices]
+
+
+@define
+class Mask:
+    masks: list[Tensor | SliceMask]
+
+    def __attrs_post_init__(self):
+        # verify that the mask shapes are compatible when sequentially applied
+        ...
+
+    @property
+    def shape(self): ...
+
+
+@define
 class FilteredTensor:
     value: Tensor
     mask: Tensor
+
+    def __attrs_post_init__(self):
+        assert self.value.shape[0] == self.mask.sum()
 
     @classmethod
     def from_unmasked_value(cls, value: Tensor, mask: Tensor):
@@ -130,45 +186,13 @@ class FilteredTensor:
         )
         return MaskedTensor(t, self.mask)
 
-    @classmethod
-    def __torch_function__(cls, func, types, args=(), kwargs=None):
-        assert False
-        if kwargs is None:
-            kwargs = {}
-        t_args = []
-        f_args = []
-        allargs = list(args) + list(kwargs.values())
-
-        def rebuild_ak():
-            nargs = allargs[: len(args)]
-            nkwargs = {k: allargs[len(args) + i] for i, k in enumerate(kwargs.keys())}
-            return nargs, nkwargs
-
-        for i, arg in enumerate(allargs):
-            if isinstance(arg, FilteredTensor):
-                f_args.append(i)
-            elif isinstance(arg, Tensor):
-                t_args.append(i)
-        if len(f_args) + len(t_args) != 2:
-            return NotImplemented
-        if len(t_args) == 1:
-            t = args[t_args[0]]
-            f = args[f_args[0]]
-            as_filtered_values = t[f.mask]
-            allargs[t_args[0]] = as_filtered_values
-            allargs[f_args[0]] = f.value
-            nargs, nkwargs = rebuild_ak()
-            res = func(*nargs, **nkwargs)
-            return FilteredTensor(value=res, mask=f.mask)
-        elif len(f_args) == 2:
-            a = args[f_args[0]]
-            b = args[f_args[1]]
-            if len(args) == 2 and len(kwargs) == 0:
-                return intersect(a, b, func)
-            ai = a.mask_by_other(b.mask)
-
     def cuda(self):
         return FilteredTensor(value=self.value.cuda(), mask=self.mask.cuda())
+
+    def to(self, *args, **kwargs):
+        return FilteredTensor(
+            value=self.value.to(*args, **kwargs), mask=self.mask.to(*args, **kwargs)
+        )
 
     def to_dense(self):
         raise NotImplementedError()
@@ -185,8 +209,13 @@ class FilteredTensor:
     def coalesce(self):
         return FilteredTensor(value=self.value.coalesce(), mask=self.mask)
 
+    def inverse_indices(self):
+        return self.mask.nonzero().t()
 
-def intersect(a: FilteredTensor, b: FilteredTensor, op) -> FilteredTensor:
+
+def filtered_tensors_intersect(
+    a: FilteredTensor, b: FilteredTensor, op
+) -> FilteredTensor:
     ai = a.mask_by_other(b.mask)
     bi = b.mask_by_other(a.mask)
     return FilteredTensor(value=op(ai, bi), mask=a.mask & b.mask)
