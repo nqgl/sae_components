@@ -144,7 +144,7 @@ class Evaluation:
         values = torch.cat(values, dim=0)
         if only_return_selected:
             return values
-        return FilteredTensor(value=values, filter=mask)
+        return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
     def filter_acts(self, docs_filter, only_return_selected=False):
         if not only_return_selected:

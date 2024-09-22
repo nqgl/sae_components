@@ -8,7 +8,7 @@ from jaxtyping import Float, Int
 from saeco.evaluation.saved_acts_config import CachingConfig
 from safetensors.torch import load_file, save_file
 
-from ..filtered import Filter, FilteredTensor, SliceMask
+from ..filtered import Filter, FilteredTensor
 from ..filtered_evaluation import NamedFilter
 from .sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 
@@ -114,19 +114,20 @@ class Chunk:
     def load_tokens(self):
         self.loaded_tokens = self.read_tokens_raw()
 
-    def _to_filtered(self, chunk_tensor):
+    def _to_filtered(self, chunk_tensor: torch.Tensor):
         assert chunk_tensor.shape[0] == self.cfg.docs_per_chunk
-        sl = SliceMask.from_range(
-            self.cfg.docs_per_chunk * self.idx,
-            self.cfg.docs_per_chunk * (self.idx + 1),
-            shape=[self.cfg.num_docs],
+        sl = slice(
+            self.cfg.docs_per_chunk * self.idx, self.cfg.docs_per_chunk * (self.idx + 1)
         )
 
         filt = Filter(
             [sl],
             mask=sl.apply(self._filter.filter) if self._filter is not None else None,
+            shape=[self.cfg.num_docs, *chunk_tensor.shape[1:]],
         )
-        return FilteredTensor.from_unmasked_value(chunk_tensor, filt, presliced=True)
+        return FilteredTensor.from_unmasked_value(
+            chunk_tensor, filter=filt, presliced=True
+        )
 
     def read_sparse_raw(self):
         if self._sparse_acts is not None:

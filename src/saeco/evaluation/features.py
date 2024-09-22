@@ -6,7 +6,7 @@ from attr import define, field
 from jaxtyping import Float, Int
 from torch import Tensor
 
-from .filtered import Filter, FilteredTensor, SliceMask
+from .filtered import Filter, FilteredTensor
 
 from .filtered_evaluation import NamedFilter
 from .saved_acts_config import CachingConfig
@@ -51,14 +51,15 @@ class Features:
         if not isinstance(key, int):
             raise TypeError("need to implement handling other key type for features")
         tensor = self.feature_tensors[key].tensor
-        slicing = SliceMask(
-            [slice(None), slice(None), slice(key, key + 1)],
-            shape=[*tensor.shape[:2], len(self.feature_tensors)],
-        )
+        slicing = [None, None, slice(key, key + 1)]
+
+        shape = [*tensor.shape[:2], len(self.feature_tensors)]
+
         return FilteredTensor(
             value=tensor,
             filter=Filter(
                 slices=slicing,
                 mask=self.filter.filter if self.filter is not None else None,
+                shape=shape,
             ),
         )
