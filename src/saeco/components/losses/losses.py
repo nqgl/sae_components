@@ -1,9 +1,11 @@
+from abc import abstractmethod
+from typing import List, Protocol, runtime_checkable
+
 import torch
+
+import saeco.core as cl
 from saeco.components.sae_cache import SAECache
 from saeco.core.reused_forward import ReuseForward
-from typing import Protocol, runtime_checkable, List
-from abc import abstractmethod
-import saeco.core as cl
 
 # Not sure about this, should return to after the structure of gated example is more pinned down
 
@@ -68,7 +70,44 @@ class CosineSimilarityLoss(Loss):
 
 # # Maybe the losses should just be functions and take (model, x, cache) as arguments
 
+
 # # in trainer assert isinstance(model, HasLosses)
 # model = ...
 # mse = MSELoss(model)
 # l1 = L1Loss(model)
+class TruncatedLoss:
+    def __init__(self, *args, truncate_at: int, **kwargs):
+        self.truncate_at = truncate_at
+        super().__init__(*args, **kwargs)
+        self.module = self.module.module
+
+    def forward(self, x, *, y=None, cache: cl.Cache, **kwargs):
+        assert cache is not None
+        old_cache = cache
+        cache = cache.clone()
+        cache._ancestor.forward_reuse_dict = old_cache._ancestor.forward_reuse_dict
+
+        def acts_callback(cache: cl.Cache, acts):
+            if not cache.has.act_metrics_name:
+                return acts
+            if cache._parent is None:
+                return acts
+            if (
+                cache.act_metrics_name is not None
+            ):  # None corresponds to main activations
+                return acts
+            z = torch.zeros_like(acts)
+            z[:, : self.truncate_at] = acts[:, : self.truncate_at]
+            return z
+
+        cache.register_write_callback("acts", acts_callback)
+        pred = self.module(x, cache=cache)
+        if y is None:
+            y = x
+        l = self.loss(x, y, pred, cache)
+        cache.destruct()
+        return l
+
+
+class TruncatedL2Loss(TruncatedLoss, L2Loss):
+    pass

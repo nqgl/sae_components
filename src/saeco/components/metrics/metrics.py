@@ -117,6 +117,7 @@ class ActMetrics(Metrics):
         super().__init__(**d, **kwargs, acts=cl.ops.Identity())
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
+        cache.act_metrics_name = ...
         cache.act_metrics_name = self.name
         return super().forward(
             x, cache=GlobalizedCache(cache, subname=self.name), **kwargs

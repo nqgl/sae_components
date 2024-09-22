@@ -1,15 +1,17 @@
+from pathlib import Path
+from typing import Any, Callable, Iterator
+
+import einops
 import torch
-from jaxtyping import Int, Float
+from attrs import define, field
+from jaxtyping import Float, Int
+from torch import Tensor
+
 from saeco.data import DataConfig
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
-from saeco.trainer import Trainable, TrainingRunner
-from typing import Any, Callable, Iterator
-from pathlib import Path
-from attrs import define, field
-from torch import Tensor
-import einops
 from saeco.evaluation.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from saeco.trainer import Trainable, TrainingRunner
 
 
 # storage_dir: Path = Path.home() / "workspace/data/caching"
@@ -126,12 +128,12 @@ class Cacher:
             if self.cfg.store_feature_tensors:
                 if not self.cfg.eager_sparse_generation:
                     print("Storing feature tensors")
-                    for i, feat_acts in enumerate(chunk.dense_acts.split(1, dim=2)):
+                    for i, feat_acts in enumerate(chunk._dense_acts.split(1, dim=2)):
                         self.feature_tensors[i].append(feat_acts.squeeze(-1))
                 else:
                     print("Storing feature tensors")
 
-                    ff_sparse_acts = chunk.sparse_acts.transpose(0, 2).transpose(1, 2)
+                    ff_sparse_acts = chunk._sparse_acts.transpose(0, 2).transpose(1, 2)
                     for i in range(self.d_dict):
                         self.feature_tensors[i].append(ff_sparse_acts[i])
 

@@ -1,6 +1,7 @@
-from pydantic import BaseModel
-from typing import ClassVar
 from pathlib import Path
+from typing import ClassVar
+
+from pydantic import BaseModel
 
 
 class CachingConfig(BaseModel):

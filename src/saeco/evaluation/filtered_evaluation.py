@@ -33,7 +33,7 @@ from torch.masked import MaskedTensor
 
 
 @define
-class Filter:
+class NamedFilter:
     filter: Tensor
     filter_name: str
     # cfg: CachingConfig
@@ -46,29 +46,15 @@ class Filter:
     def filter_chunk_output(self, output, chunk):
         return output[self.chunk_filters(chunk.cfg)[chunk.idx]]
 
-    def mask(self, tensor, chunk=None):
-        if chunk is None:
-            mask = self.filter
-        else:
-            mask = self.chunk_filters(chunk.cfg)[chunk.idx]
-        # if tensor.is_sparse:
-        #     if mask.shape != tensor.shape:
-        #         while mask.ndim < tensor.ndim:
-        #             mask = mask.unsqueeze(-1)
-        #         mask = mask.expand(tensor.shape)
-        #     mask = mask.to_sparse_coo()
-        ## xv = mask.values()
-        ## for i in range(tensor.ndim - mask.ndim):
-        ##     xv = xv.unsqueeze(-1)
-        ## expand = [-1] * mask.ndim
-        ## mask = torch.sparse_coo_tensor(
-        ##     indices=mask.indices(),
-        ##     values=xv.expand(expand + list(tensor.shape[mask.ndim :])),
-        ##     size=tensor.shape,
-        ## )
+    def save_filter(self, root_path):
+        torch.save(self.filter, root_path / "filtered" / f"{self.filter_name}.pt")
 
-        # return MaskedTensor(tensor, mask)
-        return FilteredTensor.from_unmasked_value(tensor, mask)
+    # def mask(self, tensor, chunk=None):
+    #     if chunk is None:
+    #         mask = self.filter
+    #     else:
+    #         mask = self.chunk_filters(chunk.cfg)[chunk.idx]
+    #     return FilteredTensor.from_unmasked_value(tensor, mask)
 
 
 def index_sparse_with_bool(value, mask):

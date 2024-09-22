@@ -1,26 +1,27 @@
-import torch
-
-import torch.nn as nn
 import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
-from saeco.initializer import Initializer
+import torch
+
+import torch.nn as nn
+from pydantic import Field
 from saeco.components import (
-    L1Penalty,
-    LinearDecayL1Penalty,
     EMAFreqTracker,
-    L2Loss,
     FreqTracker,
+    L1Penalty,
+    L2Loss,
+    LinearDecayL1Penalty,
     SparsityPenaltyLoss,
 )
 
 from saeco.components.hooks.clipgrad import ClipGrad
+from saeco.components.losses.losses import TruncatedL2Loss
+from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.core import Seq
+from saeco.initializer import Initializer
 
 from saeco.misc import useif
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.sweeps import SweepableConfig, Swept
-from pydantic import Field
 
 # torch.backends.cudnn.benchmark = True
 
@@ -155,12 +156,14 @@ def dynamic_thresh_sae(
 ):
     thrlu = Thresholder(init, cfg.thresh_cfg)
     model = Seq(
-        encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
-            lin=init.encoder,
-            nonlinearity=thrlu,
+        encoder=cl.ReuseForward(
+            Seq(
+                **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+                lin=init.encoder,
+                nonlinearity=thrlu,
+                freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
+            )
         ),
-        freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
         metrics=co.metrics.ActMetrics(),
         penalty=LinearDecayL1Penalty(
             begin=cfg.l1_decay_start, end=cfg.l1_decay_end, end_scale=cfg.l1_end_scale
@@ -180,6 +183,22 @@ def dynamic_thresh_sae(
     return models, losses
 
 
+def truncate_wrap(model_fn, truncate_at):
+    def wrapped(init, cfg):
+        models, losses = model_fn(init, cfg)
+        return models, {
+            **losses,
+            **{
+                f"L2_loss_truncated{i}": TruncatedL2Loss(models[0], truncate_at=i)
+                for i in truncate_at
+            },
+        }
+
+    wrapped.__name__ = model_fn.__name__ + "_truncated"
+
+    return wrapped
+
+
 from saeco.sweeps import do_sweep
 from saeco.trainer.runner import TrainingRunner
 
@@ -195,7 +214,13 @@ def run(cfg):
     #     and cfg.arch_cfg.thresh_cfg.decay_toward_mean != 1e-2
     # ):
     #     raise ValueError("skipping redundant sweep")
-    tr = TrainingRunner(cfg, model_fn=dynamic_thresh_sae)
+    tr = TrainingRunner(
+        cfg,
+        model_fn=dynamic_thresh_sae,
+        # model_fn=truncate_wrap(dynamic_thresh_sae, [256, 512, 1024, 2048, 3072]),
+        # cfg,
+        # model_fn=truncate_wrap(dynamic_thresh_sae, [256, 512, 1024, 2048, 4096, 8192]),
+    )
     tr.trainer.train()
 
 

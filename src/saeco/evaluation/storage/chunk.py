@@ -1,13 +1,16 @@
-from .sparse_safetensors import load_sparse_tensor, save_sparse_tensor
-from saeco.evaluation.saved_acts_config import CachingConfig
+from functools import cached_property
+
+from pathlib import Path
 
 import torch
 from attrs import define, field
 from jaxtyping import Float, Int
+from saeco.evaluation.saved_acts_config import CachingConfig
 from safetensors.torch import load_file, save_file
-from functools import cached_property
 
-from pathlib import Path
+from ..filtered import Filter, FilteredTensor, SliceMask
+from ..filtered_evaluation import NamedFilter
+from .sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 
 
 @define
@@ -15,10 +18,11 @@ class Chunk:
     idx: int
     path: Path
     loaded_tokens: Int[torch.Tensor, "doc seq"] | None = None
-    dense_acts: Float[torch.Tensor, "doc seq d_dict"] | None = None
-    sparse_acts: Float[torch.Tensor, "nnz 3"] | None = None
+    _dense_acts: Float[torch.Tensor, "doc seq d_dict"] | None = None
+    _sparse_acts: Float[torch.Tensor, "nnz 3"] | None = None
     _cfg: CachingConfig | None = None
     sparsify_batch_size: int = 100
+    _filter: NamedFilter | None = None
 
     # default_sparse: bool = True
     @property
@@ -31,10 +35,10 @@ class Chunk:
         return self._cfg
 
     def sparsify(self):
-        if self.sparse_acts is not None:
+        if self._sparse_acts is not None:
             return
-        assert self.dense_acts is not None
-        self.sparse_acts = self.dense_acts.to_sparse_coo()
+        assert self._dense_acts is not None
+        self._sparse_acts = self._dense_acts.to_sparse_coo()
         # if self.dense_acts.shape[0] > self.sparsify_batch_size:
         #     indices = []
         #     values = []
@@ -68,10 +72,10 @@ class Chunk:
         return self.dense_path.parent / f"{self.dense_path.stem}.bin"
 
     def densify(self):
-        assert self.sparse_acts is not None
-        if self.dense_acts is not None:
+        assert self._sparse_acts is not None
+        if self._dense_acts is not None:
             return self
-        self.dense_acts = self.sparse_acts.to_dense()
+        self._dense_acts = self._sparse_acts.to_dense()
 
     @property
     def sparse_path(self):
@@ -86,15 +90,15 @@ class Chunk:
         return self.path / f"tokens_{self.idx}.safetensors"
 
     def save_sparse(self):
-        if self.sparse_acts is None:
+        if self._sparse_acts is None:
             self.sparsify()
         assert not self.sparse_path.exists()
-        save_sparse_tensor(self.sparse_acts, self.sparse_path)
+        save_sparse_tensor(self._sparse_acts, self.sparse_path)
 
     def save_dense(self):
-        assert self.dense_acts is not None
+        assert self._dense_acts is not None
         assert not self.dense_path.exists()
-        save_file({"acts": self.dense_acts}, self.dense_path)
+        save_file({"acts": self._dense_acts}, self.dense_path)
 
     def save_tokens(self):
         assert self.loaded_tokens is not None
@@ -102,45 +106,72 @@ class Chunk:
         save_file({"tokens": self.loaded_tokens}, self.tokens_path)
 
     def load_sparse(self):
-        self.sparse_acts = self.read_sparse()
+        self._sparse_acts = self.read_sparse_raw()
 
     def load_dense(self):
-        self.dense_acts = self.read_dense()
+        self._dense_acts = self.read_dense_raw()
 
     def load_tokens(self):
-        self.loaded_tokens = self.read_tokens()
+        self.loaded_tokens = self.read_tokens_raw()
 
-    def read_sparse(self):
-        if self.sparse_acts is not None:
-            return self.sparse_acts
+    def _to_filtered(self, chunk_tensor):
+        assert chunk_tensor.shape[0] == self.cfg.docs_per_chunk
+        sl = SliceMask.from_range(
+            self.cfg.docs_per_chunk * self.idx,
+            self.cfg.docs_per_chunk * (self.idx + 1),
+            shape=[self.cfg.num_docs],
+        )
+
+        filt = Filter(
+            [sl],
+            mask=sl.apply(self._filter.filter) if self._filter is not None else None,
+        )
+        return FilteredTensor.from_unmasked_value(chunk_tensor, filt, presliced=True)
+
+    def read_sparse_raw(self):
+        if self._sparse_acts is not None:
+            return self._sparse_acts
         return load_sparse_tensor(self.sparse_path)
 
-    def read_dense(self):
-        if self.dense_acts is not None:
-            return self.dense_acts
+    def read_dense_raw(self):
+        if self._dense_acts is not None:
+            return self._dense_acts
         return load_file(self.dense_path)["acts"]
 
-    def read_tokens(self):
+    def read_tokens_raw(self):
         if self.loaded_tokens is not None:
             return self.loaded_tokens
         return load_file(self.tokens_path)["tokens"]
 
+    def read_sparse(self):
+        return self._to_filtered(self.read_sparse_raw())
+
+    def read_dense(self):
+        return self._to_filtered(self.read_dense_raw())
+
+    def read_tokens(self):
+        return self._to_filtered(self.read_tokens_raw())
+
     @classmethod
     def load_from_dir(
-        cls, path, index, load_sparse_only: bool = False, lazy=False
+        cls, path, index, load_sparse_only: bool = False, lazy=False, filter=None
     ) -> "Chunk":
-        inst = cls(path=path, idx=index)
+        inst = cls(path=path, idx=index, filter=filter)
         if lazy:
             return inst
         inst.load(load_sparse_only=load_sparse_only)
         return inst
 
     @classmethod
-    def chunks_from_dir_iter(cls, path, load_sparse_only: bool = False, lazy=False):
+    def chunks_from_dir_iter(
+        cls, path, load_sparse_only: bool = False, lazy=False, filter=None
+    ):
         i = 0
         while True:
             try:
-                chunk = cls.load_from_dir(path, i, load_sparse_only, lazy=lazy)
+                chunk = cls.load_from_dir(
+                    path, i, load_sparse_only, lazy=lazy, filter=filter
+                )
                 if not chunk.exists:
                     break
                 yield chunk
@@ -149,8 +180,12 @@ class Chunk:
                 break
 
     @classmethod
-    def load_chunks_from_dir(cls, path, load_sparse_only: bool = False, lazy=False):
-        return list(cls.chunks_from_dir_iter(path, load_sparse_only, lazy=lazy))
+    def load_chunks_from_dir(
+        cls, path, load_sparse_only: bool = False, lazy=False, filter=None
+    ):
+        return list(
+            cls.chunks_from_dir_iter(path, load_sparse_only, lazy=lazy, filter=filter)
+        )
 
     def load(self, load_sparse_only: bool = False):
         assert self.tokens_path.exists()
@@ -176,6 +211,27 @@ class Chunk:
     @property
     def tokens(self):
         return self.read_tokens()
+
+    @property
+    def acts_raw(self):
+        if self._filter is not None:
+            raise ValueError("Accessing raw values, but the filter is not None")
+        return self.read_sparse_raw()
+
+    @property
+    def tokens_raw(self):
+        if self._filter is not None:
+            raise ValueError("Accessing raw values, but the filter is not None")
+        return self.read_tokens_raw()
+
+    @property
+    def acts_raw_unsafe(self):
+        return self.read_sparse_raw()
+
+    @property
+    def tokens_raw_unsafe(self):
+        return self.read_tokens_raw()
+
         # if not self.default_sparse:
         #     if self.dense_acts is None:
         #         return self.read_dense()

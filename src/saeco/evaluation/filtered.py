@@ -1,14 +1,34 @@
 from typing import List, Tuple, Union
 
+import attr
+
 import torch
-from attr import define, field
+from attrs import Converter, define, field
 from torch import Tensor
+
+
+def convert(fld, takes_self=False, takes_field=False):
+    def converter_wrapper(fn):
+        assert fld.converter is None
+        fld.converter = Converter(fn, takes_self=takes_self, takes_field=takes_field)
+        return fn
+
+    return converter_wrapper
 
 
 @define
 class SliceMask:
     slices: Tuple[slice, ...]
-    shape: Tuple[int, ...] = field(converter=tuple)
+    shape: Tuple[int, ...] = field()
+
+    @convert(shape)
+    @staticmethod
+    def shape_converter(value):
+        return tuple(value)
+
+    @classmethod
+    def from_range(self, _from, _to, shape):
+        return SliceMask(slices=(slice(_from, _to),), shape=shape)
 
     def __post_init__(self):
         assert len(self.slices) == len(self.shape)
@@ -55,29 +75,60 @@ class SliceMask:
 
 
 @define
-class Filt:
-    slices: list[SliceMask]
-    mask: Tensor | None
+class Filter:
+    slices: list[SliceMask] = field()
+    _mask: Tensor | torch.device = field()
+
+    @convert(slices)
+    @staticmethod
+    def slices_converter(value):
+        if isinstance(value, SliceMask):
+            return [value]
+        return value
+
+    @property
+    def mask(self):
+        if isinstance(self._mask, Tensor):
+            return self._mask
+        raise ValueError("Mask not available")
 
     @property
     def masks(self) -> List[Union[Tensor, SliceMask]]:
-        return self.slices + ([self.mask] if self.mask is not None else [])
+        return self.slices + ([self._mask] if isinstance(self._mask, Tensor) else [])
 
     def __attrs_post_init__(self):
         current_shape = self.masks[0].shape
-        for i, mask in enumerate(self.slices[1:] + [self.mask], start=1):
+        for i, mask in enumerate(self.masks[1:], start=1):
             prev_output_shape = self._get_output_shape(
                 self.slices[i - 1], current_shape
             )
             mask_shape = mask.shape
             if len(prev_output_shape) > len(mask_shape):
                 raise ValueError("Mask shape is too small")
-            if prev_output_shape != list(mask_shape[: len(prev_output_shape)]):
+            if not all(
+                [
+                    a == b or b == 1
+                    for a, b in zip(
+                        prev_output_shape, list(mask_shape[: len(prev_output_shape)])
+                    )
+                ]
+            ):
                 raise ValueError(
                     f"Mask shapes are not compatible when sequentially applied: "
                     f"expected {prev_output_shape}, got {mask_shape} at position {i}"
                 )
             current_shape = mask_shape
+        if not isinstance(self._mask, Tensor):
+            mask = torch.ones(1, dtype=torch.bool, device=self._mask or "cpu")
+            # this is the wrong place to be doing this
+            # the mask needs to be a size that the ft knows but F does not know
+            # solve by:
+            # 1.  refactor to use factories for construction everywhere and make mask from none here
+            # 2.  fully explicitly support None for Mask and fix all the annoying edge cases there
+            # hmm wait maybe its being weird with features because the features are along the last dimension?
+            # self._mask = mask
+            expected = self._get_output_shape(self.slices[-1], current_shape)
+            self._mask = mask.expand(expected[0], *([1] * len(expected[1:])))
 
     def _get_output_shape(self, mask, input_shape) -> Tuple[int, ...]:
         if isinstance(mask, Tensor):
@@ -97,15 +148,10 @@ class Filt:
         return shape
 
     def apply(self, tensor: Tensor) -> Tensor:
-        t = tensor
-        for mask in self.masks:
-            if isinstance(mask, SliceMask):
-                t = mask.apply(t)
-            else:
-                t = t[mask]
-        return t
+        self.slice(tensor)
+        return self.slice(tensor)[self.mask]
 
-    def intersect(self, other: "Filt") -> "Filt":
+    def intersect(self, other: "Filter") -> "Filter":
         raise NotImplementedError(
             "Intersect not implemented, need to make slice intersect"
         )
@@ -116,11 +162,49 @@ class Filt:
             t_view = mask.apply(t_view)
         return t_view
 
+    def apply_mask(self, tensor: Tensor) -> Tensor:
+        if self._mask is None:
+            return tensor
+        if tensor.is_sparse:
+            if not tensor.is_coalesced():
+                tensor = tensor.coalesce()
+
+            return index_sparse_with_bool(tensor, self.mask)
+        return tensor[self.mask]
+
     def writeat(self, target: Tensor, value):
         self.slice(target)[self.mask] = value
 
+    @classmethod
+    def from_whatever(cls, value):
+        if isinstance(value, Filter):
+            return value
+        if isinstance(value, SliceMask):
+            return cls([value], None)
+        if isinstance(value, Tensor):
+            return cls([], value)
+        if isinstance(value, tuple | list):
+            if all(isinstance(v, SliceMask) for v in value):
+                return cls(value, None)
+            if all(isinstance(v, slice) for v in value):
+                raise NotImplementedError("")
+                # return cls([SliceMask(slices=value)], None)
+            elif len(value) == 2:
+                slices, mask = value
+                assert isinstance(mask, Tensor | None)
+                if isinstance(slices, list):
+                    return cls(slices, mask)
+                elif isinstance(slices, SliceMask):
+                    return cls([slices], mask)
+                else:
+                    raise TypeError(f"Unsupported type {type(slices)}")
+        else:
+            raise ValueError(
+                f"Unsupported type(s) for automatic conversion to Filter {value}"
+            )
 
-def mask_to_tensor(mask: Union[Tensor, SliceMask]) -> Tensor:
+
+def slice_to_tensor(mask: Union[Tensor, SliceMask]) -> Tensor:
     if isinstance(mask, Tensor):
         return mask
     elif isinstance(mask, SliceMask):
@@ -149,32 +233,87 @@ def index_sparse_with_bool(value, mask):
 @define
 class FilteredTensor:
     value: Tensor
-    filter: Filt
+    filter: Filter = field(init=True, repr=False)
+
+    @convert(filter, takes_self=True)
+    @staticmethod
+    def filter_converter(filt, inst):
+        return Filter.from_whatever(filt)
 
     def __attrs_post_init__(self):
-        assert (
-            self.value.shape[0] == self.filter.mask.sum()
-        ), f"Value shape at dimension 0 ({self.value.shape}) does not match number of mask elements ({self.filter.mask.sum()})"
+        if self.filter._mask is not None:
+            assert (
+                self.value.shape[0] == self.filter.mask.sum()
+            ), f"Value shape at dimension 0 ({self.value.shape}) does not match number of mask elements ({self.filter.mask.sum()})"
+        else:
+            assert True  # TODO
+            # self.value.shape[0] == self.filter
 
     @classmethod
-    def from_unmasked_value(cls, value: Tensor, filter: Filt):
-        value_filtered = filter.apply(value)
-        return cls(value=value_filtered, filter=filter)
+    def from_unmasked_value(cls, value: Tensor, filter: Filter, presliced=False):
+        if presliced:
+            # if value.is_sparse:
+            # if not value.is_coalesced():
+            #     value = value.coalesce()
+            # return cls(
+            #     value=index_sparse_with_bool(value=value, mask=filter.mask),
+            #     filter=filter,
+            # )
+            return cls(value=filter.apply_mask(value), filter=filter)
+        return cls(value=filter.apply(value), filter=filter)
 
-    def mask_by_other(self, other_mask: Filt) -> Tensor:
-        assert self.filter.slices == other_mask.slices
-        mask = other_mask.mask
-        if self.filter.mask.ndim > mask.ndim:
-            mask = mask.expand(self.filter.mask.shape)
+    def mask_by_other(
+        self,
+        other: Union[Filter, Tensor, "FilteredTensor"],
+        return_ft=False,
+        presliced=None,
+    ) -> Union[Tensor, "FilteredTensor"]:
+        if isinstance(other, FilteredTensor):
+            other = other.filter
+        if isinstance(other, Filter):
+            assert self.filter.slices == other.slices
+            mask = other.mask
+        if isinstance(other, Tensor):
+            mask = other
+            if not presliced:
+                mask = self.filter.slice(mask)
+        else:
+            if presliced is not None:
+                raise ValueError("presliced has no effect when other is not Tensor")
+        if mask == slice(None, None):
+            filtered_mask = torch.ones(  # todo handle self.filter._mask == None
+                self.filter.mask.sum(), dtype=torch.bool, device=self.value.device
+            )
+        else:
+            if self.filter.mask.ndim > mask.ndim:
+                mask = right_expand(mask, self.filter.mask.shape)
+            filtered_mask = mask[self.filter.mask]
+
         if self.value.is_sparse:
             if not self.value.is_coalesced():
                 self.value = self.value.coalesce()
-            return index_sparse_with_bool(self.value, mask[self.filter])
-        return self.value[mask[self.filter]]
+            value = index_sparse_with_bool(self.value, filtered_mask)
+        else:
+            value = self.value[filtered_mask]
+        if not return_ft:
+            return value
+        selfmask = self.filter.mask
+        if selfmask.ndim < mask.ndim:
+            selfmask = right_expand(selfmask, mask.shape)
+        return FilteredTensor(
+            value=value,
+            filter=Filter(
+                slices=self.filter.slices,
+                mask=selfmask & mask,
+            ),
+        )
 
-    def to_dense(self, default_value=0) -> Tensor:
-        z = torch.full(self.filter.shape, default_value, dtype=self.value.dtype)
-        self.filter.slice(z)[self.filter.mask] = self.value
+    def to_dense(self) -> "FilteredTensor":
+        return FilteredTensor(value=self.value.to_dense(), filter=self.filter)
+
+    def to_dense_unfiltered(self, default_value=0) -> Tensor:
+        z = torch.full(self.shape, default_value, dtype=self.value.dtype)
+        self.filter.slice(z)[self.filter.mask] = self.value.to_dense()
         return z
 
     def to_filtered_like_self(self, t: Tensor) -> "FilteredTensor":
@@ -183,7 +322,7 @@ class FilteredTensor:
 
     @property
     def shape(self) -> Tuple[int, ...]:
-        return self.filter.shape + self.value.shape[1:]
+        return self.filter.shape + list(self.value.shape[1:])
 
     def cuda(self) -> "FilteredTensor":
         return self.to(torch.device("cuda"))
@@ -191,17 +330,49 @@ class FilteredTensor:
     def to(self, *args, **kwargs) -> "FilteredTensor":
         return FilteredTensor(
             value=self.value.to(*args, **kwargs),
-            filter=Filt(
+            filter=Filter(
                 slices=list(self.filter.slices),
-                mask=self.filter.mask.to(*args, **kwargs),
+                mask=(
+                    self.filter.mask.to(*args, **kwargs)
+                    if self.filter._mask is not None
+                    else self.filter.mask
+                ),
             ),
         )
 
     def __repr__(self):
         return f"FilteredTensor(value={self.value}, mask={self.filter})"
 
+    def __getitem__(self, i):
+        if isinstance(i, int) or isinstance(i, Tensor):
+            # super inefficient just proof of concept
+            for slc in self.filter.slices:
+                slc = slc.slices[0]
+                i *= slc.step or 1
+                i += slc.start or 0
+                if slc.stop is not None:
+                    if i >= slc.stop:
+                        raise IndexError(f"Index {i} out of bounds for slice {slc}")
+            return self.value[
+                self.filter.mask.nonzero()[i]
+            ]  # something like this but probably not this
+        raise NotImplementedError("todo if needed")
 
-def checker1(shape, slice_dims, a, b, c, unmasked_dims=0):
+
+def right_expand(t, shape):
+    assert len(shape) >= len(t.shape)
+    assert all(
+        [
+            t.shape[i] == shape[i] or shape[i] == -1 or t.shape[i] == 1
+            for i in range(len(t.shape))
+        ]
+    ), f"Shapes do not match for right-expand: {t.shape} and {shape}"
+    for i in range(len(shape) - len(t.shape)):
+        t = t.unsqueeze(-1)
+    return t.expand(shape)
+
+
+def checker1(shape, slice_dims, unmasked_dims=0):
     fts = []
     numel = torch.prod(torch.tensor(shape)).item()
     big_arange = torch.arange(numel).reshape(shape)
@@ -234,12 +405,12 @@ def checker1(shape, slice_dims, a, b, c, unmasked_dims=0):
         mask_b = ~mask_a
         fts.append(
             FilteredTensor.from_unmasked_value(
-                big_arange, Filt([SliceMask(sl_l, shape=shape[:slice_dims])], mask_a)
+                big_arange, Filter([SliceMask(sl_l, shape=shape[:slice_dims])], mask_a)
             )
         )
         fts.append(
             FilteredTensor.from_unmasked_value(
-                big_arange, Filt([SliceMask(sl_l, shape=shape[:slice_dims])], mask_b)
+                big_arange, Filter([SliceMask(sl_l, shape=shape[:slice_dims])], mask_b)
             )
         )
 
@@ -253,7 +424,7 @@ def checker1(shape, slice_dims, a, b, c, unmasked_dims=0):
     print("success")
 
 
-def checker2(shape, slice_dims, a, b, c, unmasked_dims=0):
+def checker2(shape, slice_dims, unmasked_dims=0):
     fts = []
     numel = torch.prod(torch.tensor(shape)).item()
     big_arange = torch.arange(numel).reshape(shape)
@@ -288,7 +459,7 @@ def checker2(shape, slice_dims, a, b, c, unmasked_dims=0):
         fts.append(
             FilteredTensor.from_unmasked_value(
                 big_arange,
-                Filt(
+                Filter(
                     [
                         SliceMask([sl], shape=[shape[0] // (4**i)])
                         for i, sl in enumerate(sl_l)
@@ -300,7 +471,7 @@ def checker2(shape, slice_dims, a, b, c, unmasked_dims=0):
         fts.append(
             FilteredTensor.from_unmasked_value(
                 big_arange,
-                Filt(
+                Filter(
                     [
                         SliceMask([sl], shape=[shape[0] // (4**i)])
                         for i, sl in enumerate(sl_l)
@@ -321,15 +492,14 @@ def checker2(shape, slice_dims, a, b, c, unmasked_dims=0):
 
 
 def main():
-
-    checker1([128, 128, 128, 128], 2, 1, 2, 3)
-
-    checker2([128, 128, 128, 128], 2, 1, 2, 3)
+    for i in range(1, 4):
+        checker1([128, 128, 128, 128], i)
+        checker2([128, 128, 128, 128], i)
 
     value = torch.arange(20)
     slice_mask = SliceMask(slices=(slice(2, 14, 2),), shape=(20,))
     tensor_mask = torch.tensor([True, False, True, True, False, True])
-    mask = Filt(slices=[slice_mask], mask=tensor_mask)
+    mask = Filter(slices=[slice_mask], mask=tensor_mask)
 
     ft = FilteredTensor.from_unmasked_value(value, mask)
 

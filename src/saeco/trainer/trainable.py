@@ -1,17 +1,19 @@
+from typing import Optional
+
+import torch
+import torch.nn as nn
+
 import saeco.core as cl
 from saeco.components.losses import (
-    Loss,
-    L2Loss,
-    SparsityPenaltyLoss,
     CosineSimilarityLoss,
+    L2Loss,
+    Loss,
+    SparsityPenaltyLoss,
 )
+from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
 from saeco.core import Cache
 from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
 from saeco.trainer.train_cache import TrainCache
-from saeco.components.resampling import Resampler, RandomResampler, AnthResampler
-from typing import Optional
-import torch
-import torch.nn as nn
 
 
 class Trainable(cl.Module):
@@ -112,8 +114,8 @@ class Trainable(cl.Module):
 
     def param_groups(self, optim_kwargs: dict) -> list[dict]:
         from saeco.components.features.param_metadata import (
-            ParamMetadata,
             MetaDataParam,
+            ParamMetadata,
         )
 
         normal = []

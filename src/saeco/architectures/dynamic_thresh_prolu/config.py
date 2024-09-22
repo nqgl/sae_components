@@ -1,5 +1,3 @@
-from saeco.trainer.run_config import RunConfig
-from .model import Config, ThreshConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -7,37 +5,35 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data import (
     ActsDataConfig,
     DataConfig,
+    DataGenerationProcessConfig,
     ModelConfig,
     SplitConfig,
-    DataGenerationProcessConfig,
 )
-from saeco.sweeps import SweepableConfig, Swept
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
 from saeco.data.data_config_definitions import gemma_2_2b_openwebtext
 from saeco.initializer import InitConfig
+from saeco.sweeps import SweepableConfig, Swept
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
+
+from .model import Config, ThreshConfig
 
 PROJECT = "sae sweeps"
 batch_exp = 2
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
+        # data_cfg=gemma_2_2b_openwebtext,
         data_cfg=DataConfig(
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
-            trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),
-            generation_config=DataGenerationProcessConfig(
-                # tokens_per_pile=2**25,
-                acts_per_pile=2**16,
-                meta_batch_size=2**17,
-                llm_batch_size=2**15,
-            ),
+            # trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),
         ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=10_000,
+            run_length=50_000,
             resample_period=9_000,
             lr_resample_warmup_length=0.1,
         ),
         #
-        batch_size=4096 // batch_exp,
+        batch_size=4096,
         optim="Adam",
         lr=Swept(1e-3),
         betas=(0.9, 0.995),
@@ -60,15 +56,15 @@ cfg = RunConfig[Config](
         expected_biases=2,
         bias_reset_value=0,
     ),
-    init_cfg=InitConfig(d_data=2048, d_dict=8),
+    init_cfg=InitConfig(d_data=768, d_dict=8),
     #
     arch_cfg=Config(
         thresh_cfg=ThreshConfig(
-            decay_toward_mean=Swept(0.1, 0.3, 1.0),
+            decay_toward_mean=10,  # Swept(0.1, 0.3, 1.0),
             initial_value=1,
         ),
-        l1_end_scale=0,
-        l1_decay_end=3_000 * batch_exp,
+        l1_end_scale=10_000,
+        l1_decay_end=0,
         l1_decay_start=0,
     ),
 )

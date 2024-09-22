@@ -1,26 +1,25 @@
-import torch.utils
-from saeco.core import Cache
-import torch
-import wandb
-from typing import Protocol, runtime_checkable, Optional
-from saeco.components.losses import L2Loss, SparsityPenaltyLoss
-from saeco.data.model_cfg import ModelConfig
-from saeco.trainer.OptimConfig import OptimConfig, get_optim_cls
-from saeco.trainer.train_cache import TrainCache
-from saeco.trainer.trainable import Trainable
-from saeco.trainer.post_backward_normalization import (
-    do_post_backward,
-    do_post_step,
-)
-from .recons import get_recons_loss
-from saeco.data.tokens_data import TokensData
-from .l0targeter import L0Targeter, TARGETER_TYPES
-from schedulefree import ScheduleFreeWrapper, AdamWScheduleFree
 from contextlib import contextmanager
+from typing import Optional, Protocol, runtime_checkable
+
+import torch
+import torch.utils
+import tqdm
+import wandb
+from schedulefree import AdamWScheduleFree, ScheduleFreeWrapper
+
+from saeco.components.losses import L2Loss, SparsityPenaltyLoss
+from saeco.core import Cache
+from saeco.data.model_cfg import ModelConfig
+from saeco.data.tokens_data import TokensData
+from saeco.trainer.OptimConfig import get_optim_cls, OptimConfig
+from saeco.trainer.post_backward_normalization import do_post_backward, do_post_step
+from saeco.trainer.train_cache import TrainCache
+from saeco.trainer.train_config import TrainConfig
+from saeco.trainer.trainable import Trainable
+from .l0targeter import L0Targeter, TARGETER_TYPES
+from .recons import get_recons_loss
 from .run_config import RunConfig
 from .saved_model_source_info import ModelReloadInfo
-from saeco.trainer.train_config import TrainConfig
-import tqdm
 
 # torch.multiprocessing.set_start_method("spawn")
 
@@ -342,7 +341,10 @@ class Trainer:
             return
         # if wandb.run is not None:
         self.log(
-            cache.logdict(exclude_contains=["normalization/mu", "normalization/std"])
+            cache.logdict(
+                exclude_contains=["normalization/mu", "normalization/std"],
+                excluded=["act_metrics_name"],
+            )
         )
 
     def eval_log(self, cache: Cache):

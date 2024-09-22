@@ -1,11 +1,13 @@
-from attrs import define, field
-from .storage.growing_disk_tensor import GrowingDiskTensor
-from .storage.disk_tensor import DiskTensor
-from .saved_acts_config import CachingConfig
-from pathlib import Path
-import torch
 import glob
+from pathlib import Path
+
+import torch
+from attrs import define, field
 from pydantic import BaseModel
+
+from .saved_acts_config import CachingConfig
+from .storage.disk_tensor import DiskTensor
+from .storage.growing_disk_tensor import GrowingDiskTensor
 
 
 @define
@@ -54,6 +56,10 @@ class Metadata:  # oh this maybe should just subclass DiskTensor
     seq_level: bool = False
     shape: list[int] = []
     dtype: torch.dtype = torch.float32
+
+    @property
+    def tensor(self):
+        return self.storage.tensor
 
     @classmethod
     def create(cls, path, shape, dtype, seq_level):

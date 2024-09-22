@@ -1,29 +1,30 @@
-from context import model_name, storage_name
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.trainer import Trainable
+from functools import wraps
 
-from saeco.architectures.anth_update import cfg, anth_update_model
-
-from jaxtyping import Int, Float
-from torch import Tensor
-from pydantic import BaseModel
-from saeco.trainer.runner import TrainingRunner
+import nnsight
 import saeco.core as cl
 import torch
-from saeco.trainer.train_cache import TrainCache
-from functools import wraps
-from saeco.evaluation.evaluation import Evaluation
-import nnsight
+from context import model_name, storage_name
+
+from jaxtyping import Float, Int
+from pydantic import BaseModel
 
 from rich.highlighter import Highlighter
+
+from saeco.architectures.anth_update import anth_update_model, cfg
+from saeco.evaluation.evaluation import Evaluation
+from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.trainer import Trainable
+from saeco.trainer.runner import TrainingRunner
+from saeco.trainer.train_cache import TrainCache
+from torch import Tensor
 
 
 ec = Evaluation.from_model_name(model_name)
 ec.store_acts(
     CachingConfig(
         dirname=storage_name,
-        num_chunks=30,
-        docs_per_chunk=100,
+        num_chunks=100,
+        docs_per_chunk=300,
         documents_per_micro_batch=16,
         # exclude_bos_from_storage=True,
     ),

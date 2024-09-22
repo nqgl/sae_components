@@ -1,15 +1,20 @@
-from attr import define, field
-from .saved_acts_config import CachingConfig
-from pathlib import Path
-from .storage.chunk import Chunk
-from .storage.filtered_chunk import FilteredChunk
-import torch
 from functools import cached_property
-from .storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
-from .filtered_evaluation import Filter
-from torch import Tensor
+from pathlib import Path
+
+import torch
+from attr import define, field
 from jaxtyping import Float, Int
+from torch import Tensor
+
+from .features import Features
+
+from .filtered_evaluation import NamedFilter
 from .metadata import MetaDatas
+from .saved_acts_config import CachingConfig
+from .storage.chunk import Chunk
+
+# from .storage.filtered_chunk import FilteredChunk
+from .storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 @define
@@ -17,17 +22,20 @@ class SavedActs:
     path: Path
     cfg: CachingConfig
     chunks: list[Chunk]
-
-    # filter here? or in eval?
-    feature_tensors: list[SparseGrowingDiskTensor] | None = None
-    data_filter: Filter | None = None
+    features: Features | None = None
+    data_filter: NamedFilter | None = None
 
     @classmethod
     def from_path(cls, path: Path):
         cfg = cls._cfg_initializer(path)
         feature_tensors = cls._feature_tensors_initializer(path, cfg)
         chunks = cls._chunks_initializer(path)
-        return cls(path=path, cfg=cfg, chunks=chunks, feature_tensors=feature_tensors)
+        return cls(
+            path=path,
+            cfg=cfg,
+            chunks=chunks,
+            features=Features.from_path(path, filter=None),
+        )
 
     @classmethod
     def _cfg_initializer(cls, path: Path):
@@ -52,14 +60,14 @@ class SavedActs:
 
     @classmethod
     def _filtered_chunks_initializer(cls, path: Path, filter):
-        return FilteredChunk.load_chunks_from_dir(filter=filter, path=path, lazy=True)
+        return Chunk.load_chunks_from_dir(filter=filter, path=path, lazy=True)
 
-    def filtered(self, filter: Filter):
+    def filtered(self, filter: NamedFilter):
         return SavedActs(
             path=self.path,
             cfg=self.cfg,
             chunks=self._filtered_chunks_initializer(self.path, filter),
-            feature_tensors=None,
+            features=Features.from_path(self.path, filter=filter),
             data_filter=filter,
         )
 
@@ -67,105 +75,17 @@ class SavedActs:
     def iter_chunks(self):
         return Chunk.chunks_from_dir_iter(path=self.path, lazy=True)
 
-    # def where_feature_active(self, feature_ids, intersection=False):
-    #     l = []
-    #     for c_indices, indices, values, s in self.iter_where_feature_active(
-    #         feature_ids=feature_ids, intersection=intersection
-    #     ):
-    #         l.append(torch.sparse_coo_tensor(indices, values, s))
-    #     return l
-
-    def active_feature_tensor(self, feature_id) -> torch.Tensor:
+    def active_feature_tensor(self, feature_id):
         assert self.cfg.store_feature_tensors
-        return self.feature_tensors[feature_id].tensor
-
-    # def where_feature_active_big_tensor(self, feature_ids, intersection=False):
-    #     indices_l = []
-    #     values_l = []
-    #     shape = None
-    #     for chunk_indices, indices, values, s in self.iter_where_feature_active(
-    #         feature_ids=feature_ids, intersection=intersection
-    #     ):
-    #         if shape is None:
-    #             shape = list(s)
-    #         else:
-    #             # shape[0] += s[0]
-    #             assert shape[1:] == list(s[1:])
-    #         indices_l.append(chunk_indices)
-    #         values_l.append(values)
-    #     ids = torch.cat(indices_l, dim=1)
-    #     values = torch.cat(values_l)
-    #     return torch.sparse_coo_tensor(ids, values, [self.cfg.num_chunks] + shape)
-
-    # def iter_where_feature_active(self, feature_ids, intersection=False):
-    #     for i, chunk in enumerate(self.iter_chunks):
-    #         acts = chunk.acts
-    #         assert acts.is_sparse
-    #         ids = acts.indices()
-    #         feat_ids = ids[2]
-    #         if intersection:
-    #             mask = torch.ones_like(feat_ids, dtype=torch.bool)
-    #         else:
-    #             mask = torch.zeros_like(feat_ids, dtype=torch.bool)
-    #         for feature_id in feature_ids:
-    #             if intersection:
-    #                 mask &= feat_ids == feature_id
-    #             else:
-    #                 mask |= feat_ids == feature_id
-    #         if mask.any():
-    #             indices = ids[:, mask]
-    #             values = chunk.acts.values()[mask]
-    #             chunk_indices = torch.cat(
-    #                 [
-    #                     torch.tensor((i), dtype=torch.int64)
-    #                     .unsqueeze(0)
-    #                     .expand(1, indices.shape[1]),
-    #                     indices,
-    #                 ],
-    #                 dim=0,
-    #             )
-    #             yield (
-    #                 chunk_indices,
-    #                 indices,
-    #                 values,
-    #                 acts.shape,
-    #             )
+        return self.features[feature_id]
 
     @property
     def tokens(self):
-        return ChunksGetter(self, "tokens", chunk_indexing=False)
-
-    @property
-    def ctokens(self):
-        return ChunksGetter(self, "tokens")
+        return ChunksGetter(self, "tokens_raw", chunk_indexing=False)
 
     @property
     def acts(self):
-        return ChunksGetter(self, "acts", chunk_indexing=False)
-
-    # def __getitem__(self, sl: torch.Tensor):
-    #     if isinstance(sl, tuple):
-    #         ...
-    #     if isinstance(sl, torch.Tensor):
-    #         assert sl.shape[1] == 3  # indices for (doc, seq, d_dict)
-    #         document = sl[:, 0]
-    #         chunk_ids = document // self.cfg.docs_per_chunk
-    #         document_id = document % self.cfg.docs_per_chunk
-    #         tensor = torch.cat(
-    #             [
-    #                 self.chunks[chunk_id][
-    #                     torch.cat(
-    #                         [
-    #                             document_id[chunk_ids == chunk_id],
-    #                             sl[1:, chunk_ids == chunk_id],
-    #                         ],
-    #                         dim=1,
-    #                     )
-    #                 ]
-    #                 for chunk_id in chunk_ids.unique()
-    #             ]
-    #         )
-    #         tensor[:, 1] += chunk_ids
+        return ChunksGetter(self, "acts_raw", chunk_indexing=False)
 
 
 #
@@ -602,10 +522,6 @@ class ChunksGetter:
                     ]
                 )
 
-    @property
-    def ndoc(self):
-        return len(self.saved_acts.chunks) * self.saved_acts.cfg.docs_per_chunk
-
 
 import torch
 from functorch import vmap
@@ -673,8 +589,6 @@ def sparse_tensor_select(sparse_tensor, index, keep_shape=True):
     new_indices = torch.vmap(lambda x: imap[x], chunk_size=1)(indices[0])
     return torch.sparse_coo_tensor(new_indices, values, new_shape)
 
-
-import torch
 
 import torch
 

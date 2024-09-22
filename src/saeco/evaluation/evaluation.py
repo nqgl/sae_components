@@ -8,29 +8,21 @@ import torch.autograd.forward_ad as fwAD
 import tqdm
 from attr import define, field
 from torch import Tensor
-from torch.masked import MaskedTensor
 
 from saeco.trainer import RunConfig, TrainingRunner
 from .acts_cacher import ActsCacher, CachingConfig
-from .filtered_evaluation import FilteredTensor
+from .filtered import FilteredTensor
 from .metadata import MetaDatas
 from .nnsite import getsite, setsite, tlsite_to_nnsite
 from .saved_acts import SavedActs
-from .storage.filtered_chunk import FilteredChunk
-
-
-def tocuda(t):
-    if isinstance(t, MaskedTensor):
-        return MaskedTensor(t.get_data().cuda(), t.get_mask().cuda())
-    return t.cuda()
 
 
 @define
 class Evaluation:
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
-    # cache_name: str | None = None
     saved_acts: SavedActs | None = field(default=None, repr=False)
+    # cache_name: str | None = None
     # cache_path: Path | None = None
     nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
     # metadatas: MetaDatas = field(init=False)
@@ -80,20 +72,23 @@ class Evaluation:
         self.saved_acts = SavedActs.from_path(acts_cacher.path())
 
     @property
+    def d_dict(self):
+        return self.training_runner.cfg.init_cfg.d_dict
+
+    @property
+    def sae_cfg(self) -> RunConfig:
+        return self.training_runner.cfg
+
+    @property
+    def cache_cfg(self) -> CachingConfig:
+        return self.saved_acts.cfg
+
+    @property
     def path(self):
         if self.saved_acts is None:
             raise ValueError("cache_name must be set")
         return self.cache_cfg.path
 
-    # def get_features_and_active_docs(self, feature_ids):
-    #     feature_tensors = [
-    #         self.saved_acts.active_feature_tensor(fid) for fid in feature_ids
-    #     ]
-    #     f = feature_tensors[0].clone()
-    #     for ft in feature_tensors[1:]:
-    #         f += ft
-    #     assert f.is_sparse
-    #     f = f.coalesce()
     def get_active_documents(self, feature_ids):
         features = self.get_features(feature_ids)
         return self.select_active_documents(self.features_union(features))
@@ -101,7 +96,7 @@ class Evaluation:
     def get_features(self, feature_ids):
         return [self.saved_acts.active_feature_tensor(fid) for fid in feature_ids]
 
-    def get_feature(self, feature_id):
+    def get_feature(self, feature_id) -> FilteredTensor:
         return self.saved_acts.active_feature_tensor(feature_id)
 
     @staticmethod
@@ -123,16 +118,61 @@ class Evaluation:
         return torch.sparse_coo_tensor(
             indices=doc_ids.unsqueeze(0),
             values=docs,
-            size=(self.saved_acts.tokens.ndoc, docs.shape[1]),
+            size=(self.cache_cfg.num_docs, docs.shape[1]),
         ).coalesce()
+
+    def filter_docs(self, docs_filter, only_return_selected=False, seq_level=False):
+        if not only_return_selected:
+            if seq_level:
+                mask = torch.zeros(
+                    self.cache_cfg.num_docs,
+                    self.sae_cfg.train_cfg.data_cfg.seq_len,
+                    dtype=torch.bool,
+                )
+
+            else:
+                mask = torch.zeros(self.cache_cfg.num_docs, dtype=torch.bool)
+        values = []
+        for chunk in self.saved_acts.chunks:
+            tokens = chunk.tokens.to(docs_filter.device)
+            filt_docs = tokens.mask_by_other(
+                docs_filter, return_ft=True, presliced=False
+            )
+            values.append(filt_docs.value)
+            if not only_return_selected:
+                filt_docs.filter.slice(mask)[:] = filt_docs.filter.mask
+        values = torch.cat(values, dim=0)
+        if only_return_selected:
+            return values
+        return FilteredTensor(value=values, filter=mask)
+
+    def filter_acts(self, docs_filter, only_return_selected=False):
+        if not only_return_selected:
+            mask = torch.zeros(self.cache_cfg.num_docs, dtype=torch.bool)
+        values = []
+        for chunk in self.saved_acts.chunks:
+            acts = chunk.acts
+            filt = acts.filter.slice(docs_filter)
+            if not filt.any():
+                continue
+            filt_docs = acts.mask_by_other(filt, return_ft=True, presliced=True)
+            values.append(filt_docs.value)
+            if not only_return_selected:
+                filt_docs.filter.slice(mask)[:] = filt_docs.filter.mask
+        values = torch.cat(values, dim=0)
+        if only_return_selected:
+            return values
+        return FilteredTensor(value=values, filter=mask)
 
     def _active_docs_values_and_indices(self, feature):
         active_documents_idxs = self.active_document_indices(feature)
         active_documents = self.saved_acts.tokens[active_documents_idxs]
         return active_documents, active_documents_idxs
 
-    def get_top_activating(self, feature: Tensor, percentile=10):
-        topk = feature.values().topk(int(feature.values().shape[0] * percentile / 100))
+    def get_top_activating(self, feature: Tensor, proportion=None, percentile=None):
+        assert proportion is None or percentile is None
+        proportion = proportion or (percentile / 100)
+        topk = feature.values().topk(int(feature.values().shape[0] * proportion))
         return torch.sparse_coo_tensor(
             feature.indices()[:, topk.indices],
             topk.values,
@@ -153,30 +193,13 @@ class Evaluation:
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
-            # if isinstance(chunk, FilteredChunk):
-            #     if chunk.acts.mask.ndim == 1:
-            #         if chunk.acts.mask.sum() == 0:
-            #             continue
-            #         acts = chunk.acts.value.cuda().to_dense()
-
-            #         fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
-            #     else:
-            #         assert chunk.acts.value.ndim == 2
-            #         acts = chunk.acts.value.cuda().to_dense()
-            #         fds = acts
-            # else:
-
-            acts = chunk.acts.to_dense()
-            acts = tocuda(acts)
+            acts = chunk.acts.value.cuda().to_dense()
             assert acts.ndim == 3
-            fds = acts.reshape(-1, acts.shape[-1]).transpose(-2, -1)
-            # fds = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
-            # print("chk", (chk - fds).abs().sum())
-            # fds = fds.get_data
-            f2s = fds.pow(2).sum(-1)
+            feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+            f2s = feats_mat.pow(2).sum(-1)
             assert f2s.shape == (self.d_dict,)
             f2sum = f2s + f2sum
-            mat += fds @ fds.transpose(-2, -1)
+            mat += feats_mat @ feats_mat.transpose(-2, -1)
         norms = f2sum.sqrt()
         mat /= norms.unsqueeze(0)
         mat /= norms.unsqueeze(1)
@@ -196,7 +219,7 @@ class Evaluation:
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
-            acts = chunk.acts.cuda().to_dense()
+            acts = chunk.acts.value.cuda().to_dense()
             feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
             feats_mask = feats_mat > threshold
 
@@ -208,51 +231,40 @@ class Evaluation:
         norms = f2sum.sqrt()
         mat /= maskedf2sum.sqrt()
         mat /= norms.unsqueeze(1)
-        prod = mat.diag().prod()
+        prod = mat.diag()[~mat.diag().isnan()].prod()
         assert prod < 1.001 and prod > 0.999
         return mat
 
-    def co_occurrence(self, threshold):
+    def co_occurrence(self, pooling="mean"):
         """
-        Returns the masked cosine similarities matrix.
-        Indexes are like: [masking feature, masked feature]
+        Pooling: "mean", "max" or "binary"
+        this could be done at sequence level if we want
         """
-        # threshold = 0
-        # mat = torch.zeros(self.d_dict, self.d_dict).cuda()
-        # f2sum = torch.zeros(self.d_dict).cuda()
-        # maskedf2sum = torch.zeros(self.d_dict, self.d_dict).cuda()
-        # for chunk in tqdm.tqdm(
-        #     self.saved_acts.chunks, total=len(self.saved_acts.chunks)
-        # ):
-        #     acts = chunk.acts.cuda().to_dense()
-        #     feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
-        #     feats_mask = feats_mat > threshold
-
-        #     f2s = feats_mat.pow(2).sum(-1)
-        #     assert f2s.shape == (self.d_dict,)
-        #     f2sum += f2s
-        #     maskedf2sum += feats_mask.float() @ feats_mat.transpose(-2, -1).pow(2)
-        #     mat += feats_mat @ feats_mat.transpose(-2, -1)
-        # norms = f2sum.sqrt()
-        # mat /= maskedf2sum.sqrt()
-        # mat /= norms.unsqueeze(1)
-        # prod = mat.diag().prod()
-        # assert prod < 1.001 and prod > 0.999
-        # return mat
-
-    def document_co_occurrence(self, threshold): ...
-
-    @property
-    def d_dict(self):
-        return self.training_runner.cfg.init_cfg.d_dict
-
-    @property
-    def sae_cfg(self) -> RunConfig:
-        return self.training_runner.cfg
-
-    @property
-    def cache_cfg(self) -> CachingConfig:
-        return self.saved_acts.cfg
+        threshold = 0
+        mat = torch.zeros(self.d_dict, self.d_dict).cuda()
+        f2sum = torch.zeros(self.d_dict).cuda()
+        for chunk in tqdm.tqdm(
+            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
+        ):
+            acts = chunk.acts.value.cuda().to_dense()
+            assert acts.ndim == 3
+            if pooling == "mean":
+                acts_pooled = acts.mean(1)
+            elif pooling == "max":
+                acts_pooled = acts.max(1).values
+            elif pooling == "binary":
+                acts_pooled = (acts > threshold).sum(1).float()
+            feats_mat = einops.rearrange(acts_pooled, "doc feat -> feat doc")
+            f2s = feats_mat.pow(2).sum(-1)
+            assert f2s.shape == (self.d_dict,)
+            f2sum = f2s + f2sum
+            mat += feats_mat @ feats_mat.transpose(-2, -1)
+        norms = f2sum.sqrt()
+        mat /= norms.unsqueeze(0)
+        mat /= norms.unsqueeze(1)
+        prod = mat.diag()[~mat.diag().isnan()].prod()
+        assert prod < 1.001 and prod > 0.999
+        return mat
 
     def sae_with_patch(
         self,
@@ -329,25 +341,6 @@ class Evaluation:
             patch_in = self._skip_bos_if_appropriate(lm_acts, res[0])
             setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
             out = self.nnsight_model.output.save()
-        return out
-
-    def run_with_sae2(
-        self,
-        tokens,
-        patch=lambda x: x,
-        sae_acts_hook=lambda x: x,
-        out_hook=lambda x: x,
-    ):
-        assert tokens.ndim == 2
-        with self.nnsight_model.trace(tokens) as tracer:
-            lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
-            res = self.sae_with_patch(patch, return_sae_acts=True)(lm_acts)
-            nnsight.apply(sae_acts_hook, res[1])
-            setsite(self.nnsight_model, self.nnsight_site_name, res[0])
-            out = self.nnsight_model.output
-            hout = nnsight.apply(out_hook, out)
-            out = hout if hout is not None else out
-            out = out.save()
         return out
 
     @property
