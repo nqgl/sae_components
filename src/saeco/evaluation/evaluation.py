@@ -94,10 +94,10 @@ class Evaluation:
         return self.select_active_documents(self.features_union(features))
 
     def get_features(self, feature_ids):
-        return [self.saved_acts.active_feature_tensor(fid) for fid in feature_ids]
+        return [self.features[fid] for fid in feature_ids]
 
     def get_feature(self, feature_id) -> FilteredTensor:
-        return self.saved_acts.active_feature_tensor(feature_id)
+        return self.features[feature_id]
 
     @staticmethod
     def features_union(feature_tensors):
@@ -122,6 +122,7 @@ class Evaluation:
         ).coalesce()
 
     def filter_docs(self, docs_filter, only_return_selected=False, seq_level=False):
+        ###
         if not only_return_selected:
             if seq_level:
                 mask = torch.zeros(
@@ -147,11 +148,12 @@ class Evaluation:
         return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
     def filter_acts(self, docs_filter, only_return_selected=False):
+        ###
         if not only_return_selected:
             mask = torch.zeros(self.cache_cfg.num_docs, dtype=torch.bool)
         values = []
         for chunk in self.saved_acts.chunks:
-            acts = chunk.acts
+            acts = chunk.acts.to(docs_filter.device)
             filt = acts.filter.slice(docs_filter)
             if not filt.any():
                 continue
@@ -162,14 +164,25 @@ class Evaluation:
         values = torch.cat(values, dim=0)
         if only_return_selected:
             return values
-        return FilteredTensor(value=values, filter=mask)
+        return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
     def _active_docs_values_and_indices(self, feature):
         active_documents_idxs = self.active_document_indices(feature)
         active_documents = self.saved_acts.tokens[active_documents_idxs]
         return active_documents, active_documents_idxs
 
-    def get_top_activating(self, feature: Tensor, proportion=None, percentile=None):
+    def top_activating_examples(self, feature_id: int, proportion=0.1):
+        assert 0 < proportion and proportion < 1
+        feature = self.features[feature_id]
+        top = self._get_top_activating(feature.value, proportion=proportion)
+        return feature.to_filtered_like_self(top)
+
+    @property
+    def features(self):
+        return self.saved_acts.features
+
+    @staticmethod
+    def _get_top_activating(feature: Tensor, proportion=None, percentile=None):
         assert proportion is None or percentile is None
         proportion = proportion or (percentile / 100)
         topk = feature.values().topk(int(feature.values().shape[0] * proportion))
@@ -350,20 +363,25 @@ class Evaluation:
         )
 
     def forward_ad_with_sae(
-        self, tokens, tangent=None, tangent_gen=None, patch_hook=lambda x: x
+        self,
+        tokens,
+        tangent=None,
+        tangent_gen=None,
+        patch_fn=lambda x: x,
+        return_prob_grads=False,
     ):
         assert tokens.ndim == 2
         assert tangent or tangent_gen
         if tangent:
 
             def fwad_hook(acts):
-                acts = patch_hook(acts)
+                acts = patch_fn(acts)
                 return fwAD.make_dual(acts, tangent)
 
         else:
 
             def fwad_hook(acts):
-                acts = patch_hook(acts)
+                acts = patch_fn(acts)
                 return fwAD.make_dual(acts, tangent_gen(acts))
 
         patched_sae = self.sae_with_patch(fwad_hook)
@@ -376,7 +394,11 @@ class Evaluation:
                 setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
                 out = self.nnsight_model.output.save()
                 tangent = nnsight.apply(fwAD.unpack_dual, out.logits).tangent.save()
-
+            if return_prob_grads:
+                soft = out.logits.softmax(-1)
+                probspace = fwAD.unpack_dual(soft).tangent
+        if return_prob_grads:
+            return out, tangent, probspace
         return out, tangent
 
     def _skip_bos_if_appropriate(self, lm_acts, reconstructed_acts):
@@ -384,12 +406,17 @@ class Evaluation:
             return torch.cat([lm_acts[:, :1], reconstructed_acts[:, 1:]], dim=1)
         return reconstructed_acts
 
-    def patchdiff(self, tokens, patch_fn):
+    def patchdiff(self, tokens, patch_fn, return_prob_diffs=False):
         normal = self.run_with_sae(tokens)
         patched = self.run_with_sae(tokens, patch_fn)
-        return patched.logits - normal.logits
+        diff = patched.logits - normal.logits
+        if return_prob_diffs:
+            return diff, (patched.logits.softmax(-1) - normal.logits.softmax(-1))
+        return diff
 
     def detokenize(self, tokens):
+        if tokens.shape[0] == 1:
+            tokens = tokens.squeeze(0)
         return self.llm.tokenizer._tokenizer.decode_batch(
             [[t] for t in tokens],
             skip_special_tokens=False,
@@ -426,3 +453,101 @@ class Evaluation:
                 acts_tangent = nnsight.apply(fwAD.unpack_dual, sae_acts).tangent.save()
                 lm_acts.stop()
         return acts_tangent
+
+    def patching_effect_on_dataset(self, feature_id, batch_size=32, scale=0):
+        """
+        this will be like,
+            - on the filtered dataset,
+            - where the feature occurs
+                - (for each position),
+        what happens when we ablate the feature?
+        """
+        feature = self.features[feature_id]
+        feature_active = feature.indices()
+        feature = feature.to_dense()
+        results = torch.zeros(128, 50257).cuda()
+        p_results = torch.zeros(128, 50257).cuda()
+        with torch.no_grad():
+            for chunk in tqdm.tqdm(self.saved_acts.chunks):
+                # print("new chunk")
+                tokens = chunk.tokens
+                docs, mask = tokens.index_where_valid(feature_active[0:1])
+                seq_pos = feature_active[1, mask]
+                for i in range(0, docs.shape[0], batch_size):
+                    # print("did batch", i)
+                    batch_docs = docs[i : i + batch_size]
+                    batch_seq_pos = seq_pos[i : i + batch_size]
+
+                    def patch_fn(acts):
+                        acts = acts.clone()
+                        acts[
+                            torch.arange(batch_seq_pos.shape[0]),
+                            batch_seq_pos,
+                            feature_id,
+                        ] *= scale
+                        return acts
+
+                    ldiff, pdiff = self.patchdiff(
+                        batch_docs, patch_fn, return_prob_diffs=True
+                    )
+
+                    for j in range(batch_docs.shape[0]):
+                        results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
+                        p_results[: -batch_seq_pos[j]] += pdiff[j, batch_seq_pos[j] :]
+        return results, p_results
+
+    def avg_fwad_effect_on_dataset(self, feature_id, batch_size=32, scale=1):
+        """
+        this will be like,
+            - on the filtered dataset,
+            - where the feature occurs
+                - (for each position),
+        what happens when we ablate the feature?
+        """
+        feature = self.features[feature_id]
+        feature_active = feature.indices()
+        feature = feature.to_dense()
+        results = torch.zeros(128, 50257).cuda()
+        p_results = torch.zeros(128, 50257).cuda()
+        with torch.no_grad():
+            for chunk in tqdm.tqdm(self.saved_acts.chunks):
+                # print("new chunk")
+                tokens = chunk.tokens
+                docs, mask = tokens.index_where_valid(feature_active[0:1])
+                seq_pos = feature_active[1, mask]
+                for i in range(0, docs.shape[0], batch_size):
+                    # print("did batch", i)
+                    batch_docs = docs[i : i + batch_size]
+                    batch_seq_pos = seq_pos[i : i + batch_size]
+
+                    def tangent_gen(acts):
+                        tangent = torch.zeros_like(acts)
+                        tangent[
+                            torch.arange(batch_seq_pos.shape[0]),
+                            batch_seq_pos,
+                            feature_id,
+                        ] = 1
+                        return acts
+
+                    def patch_fn(acts):
+                        acts = acts.clone()
+                        acts[
+                            torch.arange(batch_seq_pos.shape[0]),
+                            batch_seq_pos,
+                            feature_id,
+                        ] *= scale
+                        return acts
+
+                    effect = self.forward_ad_with_sae(
+                        batch_docs,
+                        tangent_gen=tangent_gen,
+                        patch_fn=patch_fn,
+                        return_prob_grads=True,
+                    )
+                    # effect = out.logits.softmax(-1) * effect
+                    # effect.tangent?
+                    for j in range(batch_docs.shape[0]):
+                        results[: -batch_seq_pos[j]] += effect.tangent[
+                            j, batch_seq_pos[j].item() :
+                        ]
+        return results

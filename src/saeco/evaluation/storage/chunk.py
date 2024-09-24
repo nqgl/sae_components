@@ -122,7 +122,7 @@ class Chunk:
 
         filt = Filter(
             [sl],
-            mask=sl.apply(self._filter.filter) if self._filter is not None else None,
+            mask=self._filter.filter[sl] if self._filter is not None else None,
             shape=[self.cfg.num_docs, *chunk_tensor.shape[1:]],
         )
         return FilteredTensor.from_unmasked_value(

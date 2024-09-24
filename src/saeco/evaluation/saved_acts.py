@@ -28,7 +28,6 @@ class SavedActs:
     @classmethod
     def from_path(cls, path: Path):
         cfg = cls._cfg_initializer(path)
-        feature_tensors = cls._feature_tensors_initializer(path, cfg)
         chunks = cls._chunks_initializer(path)
         return cls(
             path=path,
@@ -42,17 +41,6 @@ class SavedActs:
         return CachingConfig.model_validate_json(
             (path / CachingConfig.STANDARD_FILE_NAME).read_text()
         )
-
-    @classmethod
-    def _feature_tensors_initializer(cls, path: Path, cfg: CachingConfig):
-        feat_dir = path / "features"
-        num_features = len(list(feat_dir.glob("feature*")))
-        if cfg.store_feature_tensors:
-            return [
-                SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
-                for i in range(num_features)
-            ]
-        return None
 
     @classmethod
     def _chunks_initializer(cls, path: Path):
@@ -75,10 +63,6 @@ class SavedActs:
     def iter_chunks(self):
         return Chunk.chunks_from_dir_iter(path=self.path, lazy=True)
 
-    def active_feature_tensor(self, feature_id):
-        assert self.cfg.store_feature_tensors
-        return self.features[feature_id]
-
     @property
     def tokens(self):
         return ChunksGetter(self, "tokens_raw", chunk_indexing=False)
@@ -86,6 +70,14 @@ class SavedActs:
     @property
     def acts(self):
         return ChunksGetter(self, "acts_raw", chunk_indexing=False)
+
+    @property
+    def filtered_acts(self):
+        return ChunksGetter(self, "acts", chunk_indexing=False)
+
+    @property
+    def filtered_tokens(self):
+        return ChunksGetter(self, "tokens", chunk_indexing=False)
 
 
 #

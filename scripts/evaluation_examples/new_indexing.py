@@ -65,11 +65,23 @@ def index_by_feature_docs(i):
 @tg.timedfunc_wrapper()
 def index_by_feature(i):
     f = ec.get_feature(i)
-    f.shape
     mask = f.cuda().to_dense().value > 0
     return ec.filter_docs(mask, only_return_selected=False, seq_level=True)
 
 
+@tg.timedfunc_wrapper()
+def index_acts_by_feature_docs(i):
+    f = ec.get_feature(i)
+    mask = f.cuda().to_dense().value > 0
+    mask = mask.any(dim=1)
+    assert mask.ndim == 1
+    return ec.filter_acts(mask, only_return_selected=False)
+
+
 f = index_by_feature_docs(5)
 f2 = index_by_feature(5)
+af = index_acts_by_feature_docs(5)
 print()
+
+
+ec.forward_ad_with_sae()

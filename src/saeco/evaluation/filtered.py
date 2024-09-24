@@ -1,7 +1,7 @@
 from typing import List, Tuple, Union
 
 import torch
-from attrs import Converter, define, field
+from attrs import Converter, define, field, validators
 from torch import Tensor
 
 
@@ -20,6 +20,8 @@ def slice_shape(input_shape, slices: list[slice]) -> Tuple[int, ...]:
     out_shape = []
     assert len(input_shape) >= len(slices)
     for slc, shape in zip(slices, input_shape):
+        if isinstance(slc, int):
+            continue
         if slc is None:
             out_shape.append(shape)
             continue
@@ -77,7 +79,7 @@ class Filter:
             if not tensor.is_coalesced():
                 tensor = tensor.coalesce()
 
-            return index_sparse_with_bool(tensor, self.mask)
+            return index_sparse_with_bool(tensor, self.mask).coalesce()
         return tensor[self.mask]
 
     def writeat(self, target: Tensor, value):
@@ -108,6 +110,131 @@ class Filter:
                 f"Unsupported type(s) for automatic conversion to Filter {value}"
             )
 
+    def slice_attr_tensor(self, attr, default, remove_ints=False, device="cpu"):
+        if remove_ints:
+            return torch.tensor(
+                [
+                    (default if sl is None else getattr(sl, attr))
+                    for sl in self.slices
+                    if not isinstance(sl, int)
+                ],
+                dtype=torch.long,
+                device=device,
+            )
+        return torch.tensor(
+            [
+                (
+                    default
+                    if not isinstance(sl, slice) or (att := getattr(sl, attr)) is None
+                    else att
+                )
+                for sl in self.slices
+            ],
+            dtype=torch.long,
+            device=device,
+        )
+
+    def slice_starts_tensor(self, remove_ints=False, device="cpu") -> Tensor:
+        return self.slice_attr_tensor("start", 0, remove_ints, device)
+
+    def slice_stops_tensor(self, remove_ints=False, device="cpu") -> Tensor:
+        return self.slice_attr_tensor("stop", torch.inf, remove_ints, device)
+
+    def slice_steps_tensor(self, remove_ints=False, device="cpu") -> Tensor:
+        return self.slice_attr_tensor("step", 1, remove_ints, device)
+
+    def slice_indices(self, outer_indices: Tensor, return_mask=False):
+        assert all(
+            [
+                sl.step is None or sl.step == 1
+                for sl in self.slices
+                if isinstance(sl, slice)
+            ]
+        )
+        adjustment = self.slice_starts_tensor(
+            remove_ints=False, device=outer_indices.device
+        ).unsqueeze(-1)
+        indices = outer_indices - adjustment
+        mask = torch.ones_like(outer_indices[0], dtype=torch.bool)
+        for i, sl in enumerate(self.slices):
+            if isinstance(sl, int):
+                mask &= outer_indices[i] == sl
+        mask &= (indices >= 0).all(dim=0)
+        mask &= (indices % self.slice_steps_tensor().unsqueeze(-1) == 0).all(dim=0)
+        rmdim = [isinstance(sl, int) for sl in self.slices] + [False] * (
+            len(outer_indices.shape) - len(self.slices)
+        )
+        indices = torch.stack(
+            [index for rm, index in zip(rmdim, indices.unbind()) if not rm]
+        )
+        mask &= (
+            indices[: self.mask.shape[0]]
+            < torch.tensor(self.mask.shape[: indices.shape[0]]).unsqueeze(-1)
+        ).all(dim=0)
+        if return_mask:
+            return indices, mask
+        if not mask.all():
+            raise ValueError("Some indices out of bounds")
+        return indices
+
+    def mask_indices(self, sliced_indices):
+        maskrange = torch.arange(self.mask.sum())
+        n = torch.ones_like(self.mask, dtype=torch.long) * (-1)
+        n[self.mask] = maskrange
+        return torch.cat(
+            [
+                n[sliced_indices[: len(self.mask.shape)]],
+                sliced_indices[len(self.mask.shape) :],
+            ]
+        )
+
+    def invert_indices_slicing(self, inner_indices):
+        assert all(
+            [
+                sl.step is None or sl.step == 1
+                for sl in self.slices
+                if isinstance(sl, slice)
+            ]
+        )
+        adjustment = self.slice_starts_tensor(
+            remove_ints=True, device=inner_indices.device
+        ).unsqueeze(-1)
+        assert (
+            adjustment
+            == torch.tensor(
+                [
+                    (0 if sl is None else sl.start)
+                    for sl in self.slices
+                    if not isinstance(sl, int)
+                ],
+                device=inner_indices.device,
+                dtype=torch.long,
+            ).unsqueeze(-1)
+        ).all()
+        indices = inner_indices + adjustment
+        if any([isinstance(sl, int) for sl in self.slices]):
+            for i, sl in enumerate(self.slices):
+                if isinstance(sl, int):
+                    indices = torch.cat(
+                        [
+                            indices[:i],
+                            torch.tensor(
+                                [sl], dtype=torch.long, device=indices.device
+                            ).expand(1, indices.shape[1]),
+                            indices[i:],
+                        ]
+                    )
+        return indices
+
+    def invert_mask(self, inner_indices):
+        return torch.cat(
+            [
+                self.mask.nonzero()[inner_indices[0]].transpose(-2, -1),
+                inner_indices[1:],
+            ],
+            dim=0,
+        )
+
     def to(self, *args, **kwargs) -> "Filter":
         return Filter(
             slices=self.slices,
@@ -123,18 +250,19 @@ class Filter:
     def dimmap_o2i(self):
         return {i: o for o, i in enumerate(self.dimmap_i2o())}
 
-    def reduce(self, dim):
-        slices = [sl for i, sl in enumerate(self.slices) if i != dim]
-        shape = self.shape[:dim] + self.shape[dim + 1 :]
-        # TODO check if mask needs reduction and assert shape=1 there
-        # add and-reduce and or-reduce for shape != 1
-        return Filter(slices=slices, mask=self._mask, shape=shape)
+    # def reduce(self, dim):
+    #     slices = [sl for i, sl in enumerate(self.slices) if i != dim]
+    #     shape = self.shape[:dim] + self.shape[dim + 1 :]
+    #     # TODO check if mask needs reduction and assert shape=1 there
+    #     # add and-reduce and or-reduce for shape != 1
+    #     return Filter(slices=slices, mask=self._mask, shape=shape)
 
 
 def index_sparse_with_bool(value: Tensor, mask: Tensor):
+    assert value.shape[: mask.ndim] == mask.shape
     new_shape = [mask.count_nonzero()] + list(value.shape[mask.ndim :])
     include = mask[value.indices()[: mask.ndim].split(1)].squeeze()
-    z = torch.zeros_like(mask, dtype=torch.long)
+    z = torch.zeros_like(mask, dtype=torch.long, device=value.device)
     z[mask] = torch.arange(new_shape[0], device=value.device, dtype=torch.long)
     new_indices = value.indices()[:, include]
     new_indices = torch.cat(
@@ -148,16 +276,19 @@ def index_sparse_with_bool(value: Tensor, mask: Tensor):
 
 @define
 class FilteredTensor:
-    value: Tensor
-    filter: Filter = field(init=True, repr=False)
+    value: Tensor = field(init=True, validator=validators.instance_of(Tensor))
+    filter: Filter = field(
+        init=True, repr=False, validator=validators.instance_of(Filter)
+    )
 
-    @convert(filter, takes_self=True)
-    @staticmethod
-    def filter_converter(filt, inst):
-        return Filter.from_whatever(filt)
+    # @convert(filter, takes_self=True)
+    # @staticmethod
+    # def filter_converter(filt, inst):
+    #     return Filter.from_whatever(filt)
 
     def __attrs_post_init__(self):
         if self.filter._mask is not None:
+            assert tuple(self.value.shape) == self.filter._inner_shape()
             assert (
                 self.value.shape[0] == self.filter.mask.sum()
             ), f"Value shape at dimension 0 ({self.value.shape}) does not match number of mask elements ({self.filter.mask.sum()})"
@@ -184,6 +315,7 @@ class FilteredTensor:
         other: Union[Filter, Tensor, "FilteredTensor"],
         return_ft=False,
         presliced=None,
+        value_like=False,
     ) -> Union[Tensor, "FilteredTensor"]:
         if isinstance(other, FilteredTensor):
             other = other.filter
@@ -198,10 +330,8 @@ class FilteredTensor:
         else:
             if presliced is not None:
                 raise ValueError("presliced has no effect when other is not Tensor")
-        if mask == slice(None, None):
-            filtered_mask = torch.ones(  # todo handle self.filter._mask == None
-                self.filter.mask.sum(), dtype=torch.bool, device=self.value.device
-            )
+        if value_like:
+            filtered_mask = mask
         else:
             if self.filter.mask.ndim > mask.ndim:
                 mask = right_expand(mask, self.filter.mask.shape)
@@ -235,6 +365,11 @@ class FilteredTensor:
         self.filter.slice(z)[self.filter.mask] = self.value.to_dense()
         return z
 
+    def to_sparse_unfiltered(self, default_value=0) -> Tensor:
+        # sparse z
+        # values -> mask.nonzero() -> inverted slices
+        ...
+
     def to_filtered_like_self(self, t: Tensor) -> "FilteredTensor":
         return FilteredTensor(value=t, filter=self.filter)
 
@@ -254,9 +389,72 @@ class FilteredTensor:
     def __repr__(self):
         return f"FilteredTensor(value={self.value}, mask={self.filter})"
 
+    def internalize_indices(self, indices: Tensor):
+        assert indices.ndim == 2
+        ids, mask = self.filter.slice_indices(indices, return_mask=True)
+        ids = ids[:, mask]
+        ids = self.filter.mask_indices(ids)
+        new_mask = mask.clone()
+        new_mask[mask] = ids >= 0
+        ids = ids[:, (ids >= 0).all(dim=0)]
+        return ids, new_mask
+
+    def index_where_valid(self, indices: Tensor):
+        ids, mask = self.internalize_indices(indices)
+        return self.value[ids.unbind()], mask
+
     def __getitem__(self, i):
+        if isinstance(i, Tensor) and i.dtype == torch.bool:
+            return self.mask_by_other(i)
+        if isinstance(i, Tensor) and i.dtype == torch.int64:
+            si = self.filter.slice_indices(i)
+            indices = self.filter.mask_indices(si)
+            assert not (indices == -1).any()
+            return self.value[indices.unbind()]
         # if i need this first just implement slice inversion
-        raise NotImplementedError("todo if needed")
+        for sl in self.filter.slices:
+            if isinstance(sl, slice) and sl.step not in (None, 1):
+                raise NotImplementedError("Step != 1 not implemented")
+        # if isinstance(i, Tensor) and i.dtype == torch.int64:
+        #     if i.ndim == 1:
+        raise NotImplementedError()
+
+    # def select(self, select_fn):
+    #     if self.value.is_sparse:
+    #         self.value = self.value.coalesce()
+    #         vmask: Tensor = select_fn(self.value.values())
+    #         nv = torch.sparse_coo_tensor(
+    #             indices=self.value.indices()[:, vmask],
+    #             values=self.value.values()[vmask],
+    #             size=[vmask.count_nonzero(), *self.value.shape[1:]],
+    #         )
+    #         mask = torch.zeros_like(self.filter.mask)
+    #         mask[self.filter.mask] = vmask
+    #         return FilteredTensor(
+    #             value=nv,
+    #             filter=Filter(
+    #                 slices=self.filter.slices, mask=mask, shape=self.filter.shape
+    #             ),
+    #         )
+    #     vmask = select_fn(self.value)
+    #     mask = torch.zeros_like(self.filter.mask)
+    #     mask[self.filter.mask] = vmask
+    #     return FilteredTensor(
+    #         value=self.value[vmask],
+    #         filter=Filter(
+    #             slices=self.filter.slices, mask=mask, shape=self.filter.shape
+    #         ),
+    #     )
+
+    def indices(self):
+        return self.filter.invert_indices_slicing(
+            self.filter.invert_mask(self.value.indices())
+        )
+
+    def nonzero(self):
+        return self.filter.invert_indices_slicing(
+            self.filter.invert_mask(self.value.nonzero())
+        )
 
 
 def right_expand(t, shape):

@@ -1,20 +1,21 @@
 # %%
+from functools import wraps
 from pathlib import Path
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.storage.chunk import Chunk
-from saeco.trainer import Trainable
+
+import saeco.core as cl
+import torch
+from pydantic import BaseModel
 
 # from saeco.architectures.anth_update import cfg, anth_update_model
 from saeco.architectures.threshgate_gradjust.tg_grad_deep_model import (
     cfg,
     deep_tg_grad_sae,
 )
-from pydantic import BaseModel
+from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.chunk import Chunk
+from saeco.trainer import Trainable
 from saeco.trainer.runner import TrainingRunner
-import saeco.core as cl
-import torch
 from saeco.trainer.train_cache import TrainCache
-from functools import wraps
 
 
 def timed(func, name=""):
@@ -51,16 +52,15 @@ def load(cfg: BaseModel, model_fn, name):
 tr = load(cfg, deep_tg_grad_sae, name)
 tr.trainable.eval()
 
-# %%
-from saeco.evaluation.acts_cacher import ActsCacher, Chunk
-
-
 # path = Path.home() / "worksp    ace" / "cached_sae_acts" / "test"
 # ccfg = CachingConfig(store_dense=True)
 # acts_cacher = ActsCacher(ccfg, tr, None)
 # acts_cacher.store_acts()
 
 import time
+
+# %%
+from saeco.evaluation.acts_cacher import ActsCacher, Chunk
 
 
 @timed
@@ -137,12 +137,12 @@ tr.trainable.model.model.module.freqs.freqs
 
 sa = SavedActs(path_big)
 feature_ids = [213]
-# test_get_feature = timed(sa.active_feature_tensor)(213)
+# test_get_feature = timed(sa.features[(]13)
 
 
 @timed
 def load_feat_to_cuda():
-    t = sa.active_feature_tensor(213).cuda()
+    t = sa.features[213].cuda()
     torch.cuda.synchronize()
     # t = t + 1
     return t
@@ -150,17 +150,17 @@ def load_feat_to_cuda():
 
 @timed
 def find_overlap_cuda(features=[213, 214]):
-    t = sa.active_feature_tensor(features[0]).cuda()
+    t = sa.features[features[0]].cuda()
     for f in features[1:]:
-        t = t * sa.active_feature_tensor(f).cuda()
+        t = t * sa.features[f].cuda()
     return t.coalesce()
 
 
 @timed
 def find_overlap(features=[213, 214]):
-    t = sa.active_feature_tensor(features[0])
+    t = sa.features[features[0]]
     for f in features[1:]:
-        t = t * sa.active_feature_tensor(f)
+        t = t * sa.features[f]
     return t.coalesce()
 
 
