@@ -1,10 +1,11 @@
-from attr import define, field
 from abc import ABC, abstractmethod
-import torch
-from pydantic import BaseModel
 from pathlib import Path
+
+import torch
+from attr import define, field
+from pydantic import BaseModel
 from saeco.misc import str_to_dtype
-from safetensors.torch import save_file, load_file
+from safetensors.torch import load_file, save_file
 
 
 class DiskTensorMetadata(BaseModel):
@@ -41,7 +42,17 @@ class DiskTensor:
     path: Path
     metadata: DiskTensorMetadata
     finalized: bool = False
-    tensor: torch.Tensor = field(init=False, default=None)
+    _tensor: torch.Tensor = field(init=False, default=None)
+
+    @property
+    def tensor(self):
+        if self._tensor is None:
+            self._tensor = self._tensor_default()
+        return self._tensor
+
+    @tensor.setter
+    def tensor(self, value):
+        self._tensor = value
 
     # @tensor.default
     def _tensor_default(self):
@@ -60,8 +71,11 @@ class DiskTensor:
         )
 
     def __attrs_post_init__(self):
-        assert self.tensor is None
-        self.tensor = self._tensor_default()
+        if self.path.exists() or self.path.with_suffix(".safetensors").exists():
+            self.finalized = True
+
+    #     assert self.tensor is None
+    #     self.tensor = self._tensor_default()
 
     def create_tensor(self):
         return self.open_disk_tensor(create=True)
@@ -127,7 +141,8 @@ class DiskTensor:
         # TODO
 
         self._save_safe()
-        self.path.unlink()
+        if self.tensor.numel() > 0:
+            self.path.unlink()
         # assert False
 
         self.metadata_path.write_text(self.metadata.model_dump_json())
