@@ -2,9 +2,9 @@ import torch
 from load import ec
 from saeco.evaluation.evaluation import Evaluation
 from saeco.evaluation.filtered_evaluation import NamedFilter
-from saeco.evaluation.metadata import MetaDatas
 
-# data = ec.metadatas.create_metadata("third", torch.bool)
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+# data = ec.metadatas.create("third", torch.bool)
 
 
 # def value_from_chunk(chunk):
@@ -14,7 +14,7 @@ from saeco.evaluation.metadata import MetaDatas
 # for i, chunk in enumerate(ec.saved_acts.chunks):
 #     start = i * ec.saved_acts.cfg.docs_per_chunk
 #     end = start + ec.saved_acts.cfg.docs_per_chunk
-#     data.storage.tensor[start:end] = value_from_chunk(chunk)
+#     data.tensor[start:end] = value_from_chunk(chunk)
 # data.storage.finalize()
 metadata = ec.metadatas["third"]
 filt = NamedFilter(metadata.tensor, "test_filter")
@@ -33,9 +33,11 @@ inv_filt_eval = Evaluation(
     training_runner=ec.training_runner,
     nnsight_model=ec.nnsight_model,
 )
-if __name__ == "__main__" and False:
+if __name__ == "__main__" and True:
 
-    filt_cosims = filt_eval.activation_cosims()
+    filt_cosims = filt_eval.cached_call.activation_cosims()
+    filt_cosims2 = filt_eval.cached_call.activation_cosims()
+
     # assert (filt_cosims == filt_eval.co_occurrence()).all()
     inv_filt_cosims = inv_filt_eval.activation_cosims()
     reg_cosims = ec.activation_cosims()
@@ -78,38 +80,77 @@ t: torch.Tensor = torch.empty(0)
 # assert (feat.value.values() == feat.to_dense()[feat.indices()]).all()
 
 
-def logit_effects(f, **kwargs):
-    lres, res = filt_eval.patching_effect_on_dataset(f, batch_size=8, **kwargs)
+def logit_effects(f, filt_eval=filt_eval, **kwargs):
+    lres, res = filt_eval.average_patching_effect_on_dataset(f, batch_size=2, **kwargs)
     agg = res.mean(0)
     lagg = lres.mean(0)
-    print(filt_eval.detokenize(agg.topk(5).indices))
-    print(filt_eval.detokenize(agg.topk(5, largest=False).indices))
-    print(filt_eval.detokenize(res.max(dim=1).indices[:10]))
-    print(filt_eval.detokenize(res.min(dim=1).indices[:10]))
-    print(filt_eval.detokenize(lagg.topk(5).indices))
-    print(filt_eval.detokenize(lagg.topk(5, largest=False).indices))
-    print(filt_eval.detokenize(lres.max(dim=1).indices[:10]))
-    print(filt_eval.detokenize(lres.min(dim=1).indices[:10]))
+    agg = res[0]
+    lagg = lres[0]
+
+    if "by_fwad" in kwargs:
+        print("fwad")
+    else:
+        print("patched")
+    print("  prob")
+    print("    topmax", filt_eval.detokenize(agg.topk(5).indices))
+    print("    topmin", filt_eval.detokenize(agg.topk(5, largest=False).indices))
+    print("    seqmax", filt_eval.detokenize(res.max(dim=1).indices[:10]))
+    print("    seqmin", filt_eval.detokenize(res.min(dim=1).indices[:10]))
+    print("  log")
+    print("    topmax", filt_eval.detokenize(lagg.topk(5).indices))
+    print("    topmin", filt_eval.detokenize(lagg.topk(5, largest=False).indices))
+    print("    seqmax", filt_eval.detokenize(lres.max(dim=1).indices[:10]))
+    print("    seqmin", filt_eval.detokenize(lres.min(dim=1).indices[:10]))
+    print()
 
 
-def fwad_logit_effects(f, **kwargs):
-    res = filt_eval.avg_fwad_effect_on_dataset(f, batch_size=8, **kwargs)
+def logit_effects2(f, **kwargs):
+    logit_effects(f, filt_eval=filt_eval2, **kwargs)
+
+
+def aggregator(ec: Evaluation):
+    pos_counts = torch.zeros(ec.seq_len, ec.d_vocab).cuda()
+    # neg_counts = torch.zeros(ec.seq_len, ec.d_vocab).cuda()
+
+    def process(batch, batch_seq_positions):
+        for i in range(batch.shape[0]):
+            b, bsp = batch[i], batch_seq_positions[i]
+            pos_counts[:-bsp] += b[bsp:] > 0
+            # neg_counts[:-bsp] += b[bsp:] < 0
+
+    return pos_counts, process
+
+
+def print_effects(res):
     agg = res.mean(0)
-    print(filt_eval.detokenize(agg.topk(5).indices))
-    print(filt_eval.detokenize(agg.topk(5, largest=False).indices))
-    print(filt_eval.detokenize(res.max(dim=1).indices[:10]))
-    print(filt_eval.detokenize(res.min(dim=1).indices[:10]))
+    agg = res[0]
+
+    print("    topmax", filt_eval.detokenize(agg.topk(5).indices))
+    print("    topmin", filt_eval.detokenize(agg.topk(5, largest=False).indices))
+    print("    seqmax", filt_eval.detokenize(res.max(dim=1).indices[:10]))
+    print("    seqmin", filt_eval.detokenize(res.min(dim=1).indices[:10]))
 
 
-feat_id = 15
-fwad_logit_effects(feat_id)
+def logit_effect_count(f, filt_eval=filt_eval, **kwargs):
+    p, proc = aggregator(filt_eval)
 
-fwad_logit_effects(feat_id, scale=0.5)
-logit_effects(feat_id, scale=0.9999)
+    p2, proc2 = aggregator(filt_eval)
+    num_batches = filt_eval.custom_patching_effect_aggregation(
+        f, proc, proc2, batch_size=2, **kwargs
+    )
+    print("logitspace")
+    print_effects(p)
+    print("probspace")
+    print_effects(p2)
+    return p, p2
+
+
+feat_id = 27
 print()
 f_i = ec.features[feat_id].indices()
 f = torch.zeros_like(filt_eval.saved_acts.data_filter.filter)
-fi0 = f_i[:, 0]
+doc_num = 2
+fi0 = f_i[:, doc_num]
 f[fi0[0]] = True
 filter2 = NamedFilter(f, "first feat document")
 filt_eval2 = Evaluation(
@@ -118,37 +159,20 @@ filt_eval2 = Evaluation(
     training_runner=ec.training_runner,
     nnsight_model=ec.nnsight_model,
 )
+p, n = logit_effect_count(feat_id)
+p2, n2 = logit_effect_count(feat_id, by_fwad=True)
 
+logit_effects(feat_id, by_fwad=True)
 
-def logit_effects(f, **kwargs):
-    lres, res = filt_eval2.patching_effect_on_dataset(f, batch_size=8, **kwargs)
-    agg = res.mean(0)
-    lagg = lres.mean(0)
-    print(filt_eval2.detokenize(agg.topk(5).indices))
-    print(filt_eval2.detokenize(agg.topk(5, largest=False).indices))
-    print(filt_eval2.detokenize(res.max(dim=1).indices[:10]))
-    print(filt_eval2.detokenize(res.min(dim=1).indices[:10]))
-    # print(filt_eval2.detokenize(lagg.topk(5).indices))
-    # print(filt_eval2.detokenize(lagg.topk(5, largest=False).indices))
-    # print(filt_eval2.detokenize(lres.max(dim=1).indices[:10]))
-    # print(filt_eval2.detokenize(lres.min(dim=1).indices[:10]))
-
-
-def fwad_logit_effects(f, **kwargs):
-    res = filt_eval2.avg_fwad_effect_on_dataset(f, batch_size=8, **kwargs)
-    agg = res.mean(0)
-    print(filt_eval2.detokenize(agg.topk(5).indices))
-    print(filt_eval2.detokenize(agg.topk(5, largest=False).indices))
-    print(filt_eval2.detokenize(res.max(dim=1).indices[:10]))
-    print(filt_eval2.detokenize(res.min(dim=1).indices[:10]))
-
-
-fwad_logit_effects(feat_id)
-fwad_logit_effects(feat_id, scale=1)
+logit_effects(feat_id, scale=0.5, by_fwad=True)
 logit_effects(feat_id, scale=0)
-logit_effects(feat_id, scale=0.99)
 
-ec.detokenize(ec.saved_acts.tokens[fi0[0]])
-ec.detokenize(ec.saved_acts.tokens[fi0[0]][fi0[1] - 1 :])
+logit_effects2(feat_id, by_fwad=True)
+logit_effects2(feat_id, scale=1, by_fwad=True)
+logit_effects2(feat_id, scale=0)
+logit_effects2(feat_id, scale=0.99)
+
+print(ec.detokenize(ec.saved_acts.tokens[fi0[0]]))
+ec.detokenize(ec.saved_acts.tokens[fi0[0]][:, fi0[1] :])
 
 f_i[:, 0]

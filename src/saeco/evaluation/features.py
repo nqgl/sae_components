@@ -33,15 +33,12 @@ class Features:
     def _feature_tensors_initializer(cls, path: Path):
         feat_dir = path / "features"
         num_features = len(list(feat_dir.glob("feature*")))
-        try:
-            return tuple(
-                [
-                    SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
-                    for i in range(num_features)
-                ]
-            )
-        except Exception as e:
-            raise FileExistsError("Malformed features directory") from e
+        return tuple(
+            [
+                SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
+                for i in range(num_features)
+            ]
+        )
 
     def get_active(self, key):
         # for now does doc level filtering, in future with nested masks or indices could filter at token level

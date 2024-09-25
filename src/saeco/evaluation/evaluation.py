@@ -1,5 +1,7 @@
 from functools import cached_property
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Union
 
 import einops
 import nnsight
@@ -11,8 +13,9 @@ from torch import Tensor
 
 from saeco.trainer import RunConfig, TrainingRunner
 from .acts_cacher import ActsCacher, CachingConfig
+from .cached_artifacts import CachedCalls
 from .filtered import FilteredTensor
-from .metadata import MetaDatas
+from .metadata import Artifacts, Metadatas
 from .nnsite import getsite, setsite, tlsite_to_nnsite
 from .saved_acts import SavedActs
 
@@ -25,11 +28,19 @@ class Evaluation:
     # cache_name: str | None = None
     # cache_path: Path | None = None
     nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
+
     # metadatas: MetaDatas = field(init=False)
+    @cached_property
+    def cached_call(self) -> Union[CachedCalls, "Evaluation"]:
+        return CachedCalls(self)
 
     @cached_property
     def metadatas(self):
-        return MetaDatas(self.path, self.cache_cfg)
+        return Metadatas(self.path, self.cache_cfg)
+
+    @cached_property
+    def artifacts(self):
+        return Artifacts(self.path, self.cache_cfg)
 
     @classmethod
     def from_cache_name(cls, name: Path | str):
@@ -193,7 +204,9 @@ class Evaluation:
         )
 
     @property
-    def llm(self):
+    def llm(self) -> nnsight.LanguageModel:
+        if self.nnsight_model is not None:
+            return self.nnsight_model
         return self.training_runner.cfg.train_cfg.data_cfg.model_cfg.model
 
     @property
@@ -409,7 +422,7 @@ class Evaluation:
     def patchdiff(self, tokens, patch_fn, return_prob_diffs=False):
         normal = self.run_with_sae(tokens)
         patched = self.run_with_sae(tokens, patch_fn)
-        diff = patched.logits - normal.logits
+        diff = patched.logits.log_softmax(-1) - normal.logits.log_softmax(-1)
         if return_prob_diffs:
             return diff, (patched.logits.softmax(-1) - normal.logits.softmax(-1))
         return diff
@@ -454,7 +467,9 @@ class Evaluation:
                 lm_acts.stop()
         return acts_tangent
 
-    def patching_effect_on_dataset(self, feature_id, batch_size=32, scale=0):
+    def average_patching_effect_on_dataset(
+        self, feature_id, batch_size=8, scale=None, by_fwad=False
+    ):
         """
         this will be like,
             - on the filtered dataset,
@@ -462,17 +477,62 @@ class Evaluation:
                 - (for each position),
         what happens when we ablate the feature?
         """
+        results = torch.zeros(
+            self.seq_len,
+            self.d_vocab,
+        ).cuda()
+        p_results = torch.zeros(
+            self.seq_len,
+            self.d_vocab,
+        ).cuda()
+        num_batches = torch.zeros(self.seq_len).cuda() + 1e-6
+        for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
+            feature_id=feature_id, batch_size=batch_size, scale=scale, by_fwad=by_fwad
+        ):
+            for j in range(batch_seq_pos.shape[0]):
+                results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
+                p_results[: -batch_seq_pos[j]] += pdiff[j, batch_seq_pos[j] :]
+                num_batches[: -batch_seq_pos[j]] += 1
+        return results / num_batches.unsqueeze(-1), p_results / num_batches.unsqueeze(
+            -1
+        )
+
+    def custom_patching_effect_aggregation(
+        self, feature_id, log_call, prob_call, batch_size=8, scale=None, by_fwad=False
+    ):
+        num_batches = torch.zeros(self.seq_len) + 1e-6
+        for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
+            feature_id=feature_id, batch_size=batch_size, scale=scale, by_fwad=by_fwad
+        ):
+            if log_call is not None:
+                log_call(ldiff, batch_seq_pos)
+            if prob_call is not None:
+                prob_call(pdiff, batch_seq_pos)
+        return num_batches
+
+    def patching_effect_on_dataset(
+        self, feature_id, batch_size=8, scale=None, by_fwad=False
+    ):
+        """
+        this will be like,
+            - on the filtered dataset,
+            - where the feature occurs
+                - (for each position),
+        what happens when we ablate the feature?
+        """
+        if scale is None:
+            scale = 0.99 if by_fwad else 0
         feature = self.features[feature_id]
         feature_active = feature.indices()
         feature = feature.to_dense()
-        results = torch.zeros(128, 50257).cuda()
-        p_results = torch.zeros(128, 50257).cuda()
+
         with torch.no_grad():
             for chunk in tqdm.tqdm(self.saved_acts.chunks):
                 # print("new chunk")
                 tokens = chunk.tokens
                 docs, mask = tokens.index_where_valid(feature_active[0:1])
                 seq_pos = feature_active[1, mask]
+                assert docs.shape[0] == seq_pos.shape[0]
                 for i in range(0, docs.shape[0], batch_size):
                     # print("did batch", i)
                     batch_docs = docs[i : i + batch_size]
@@ -487,67 +547,33 @@ class Evaluation:
                         ] *= scale
                         return acts
 
-                    ldiff, pdiff = self.patchdiff(
-                        batch_docs, patch_fn, return_prob_diffs=True
-                    )
+                    if by_fwad:
 
-                    for j in range(batch_docs.shape[0]):
-                        results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
-                        p_results[: -batch_seq_pos[j]] += pdiff[j, batch_seq_pos[j] :]
-        return results, p_results
+                        def tangent_gen(acts):
+                            tangent = torch.zeros_like(acts)
+                            tangent[
+                                torch.arange(batch_seq_pos.shape[0]),
+                                batch_seq_pos,
+                                feature_id,
+                            ] = 1
+                            return acts
 
-    def avg_fwad_effect_on_dataset(self, feature_id, batch_size=32, scale=1):
-        """
-        this will be like,
-            - on the filtered dataset,
-            - where the feature occurs
-                - (for each position),
-        what happens when we ablate the feature?
-        """
-        feature = self.features[feature_id]
-        feature_active = feature.indices()
-        feature = feature.to_dense()
-        results = torch.zeros(128, 50257).cuda()
-        p_results = torch.zeros(128, 50257).cuda()
-        with torch.no_grad():
-            for chunk in tqdm.tqdm(self.saved_acts.chunks):
-                # print("new chunk")
-                tokens = chunk.tokens
-                docs, mask = tokens.index_where_valid(feature_active[0:1])
-                seq_pos = feature_active[1, mask]
-                for i in range(0, docs.shape[0], batch_size):
-                    # print("did batch", i)
-                    batch_docs = docs[i : i + batch_size]
-                    batch_seq_pos = seq_pos[i : i + batch_size]
+                        out, ldiff, pdiff = self.forward_ad_with_sae(
+                            batch_docs,
+                            tangent_gen=tangent_gen,
+                            patch_fn=patch_fn,
+                            return_prob_grads=True,
+                        )
+                    else:
+                        ldiff, pdiff = self.patchdiff(
+                            batch_docs, patch_fn, return_prob_diffs=True
+                        )
+                    yield ldiff, pdiff, batch_seq_pos
 
-                    def tangent_gen(acts):
-                        tangent = torch.zeros_like(acts)
-                        tangent[
-                            torch.arange(batch_seq_pos.shape[0]),
-                            batch_seq_pos,
-                            feature_id,
-                        ] = 1
-                        return acts
+    @property
+    def seq_len(self):
+        return self.sae_cfg.train_cfg.data_cfg.seq_len
 
-                    def patch_fn(acts):
-                        acts = acts.clone()
-                        acts[
-                            torch.arange(batch_seq_pos.shape[0]),
-                            batch_seq_pos,
-                            feature_id,
-                        ] *= scale
-                        return acts
-
-                    effect = self.forward_ad_with_sae(
-                        batch_docs,
-                        tangent_gen=tangent_gen,
-                        patch_fn=patch_fn,
-                        return_prob_grads=True,
-                    )
-                    # effect = out.logits.softmax(-1) * effect
-                    # effect.tangent?
-                    for j in range(batch_docs.shape[0]):
-                        results[: -batch_seq_pos[j]] += effect.tangent[
-                            j, batch_seq_pos[j].item() :
-                        ]
-        return results
+    @property
+    def d_vocab(self):
+        return self.nnsight_model.tokenizer.vocab_size

@@ -11,24 +11,49 @@ from .storage.growing_disk_tensor import GrowingDiskTensor
 
 
 @define
-class MetaDatas:
+class Artifacts:
     path: Path
     cached_config: CachingConfig
-
-    # @classmethod
-    # def create(cls, size, dtype, doc_seq): ...
+    artifacts_category: str = "artifacts"
 
     @property
-    def metadatas_dir(self):
-        return self.path / "metadatas"
+    def storage_dir(self):
+        return self.path / self.artifacts_category
 
-    def get_metadata_path(self, name):
-        return self.metadatas_dir / name
+    def create(self, name, dtype, shape) -> DiskTensor:
+        path = self.storage_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            raise ValueError(f"Metadata already exists at {path}")
+        return DiskTensor.create(
+            path=path,
+            shape=shape,
+            dtype=dtype,
+        )
 
-    def create_metadata(self, name, dtype, seq_level=False, item_shape=[]):
-        path = self.get_metadata_path(name)
+    def __getitem__(self, name):
+        return DiskTensor.open(self.storage_dir / name)
+
+    def __setitem__(self, name, value):
+        assert isinstance(value, torch.Tensor)
+        assert not name in self
+        disk_tensor = self.create(name, value.dtype, value.shape)
+        disk_tensor.tensor[:] = value
+        disk_tensor.finalize()
+
+    def __contains__(self, name):
+        path = self.storage_dir / name
+        return path.exists() or path.with_suffix(".safetensors").exists()
+
+
+@define
+class Metadatas(Artifacts):
+    artifacts_category: str = "metadatas"
+
+    def create(self, name, dtype, seq_level=False, item_shape=[]) -> "Metadata":
+        path = self.storage_dir / name
         if seq_level:
-            raise ValueError("seq level metadata not yet supported")
+            raise NotImplementedError("seq level metadata not yet supported")
         else:
             doc_shape = [self.cached_config.num_docs]
             shape = doc_shape + item_shape
@@ -42,8 +67,43 @@ class MetaDatas:
             seq_level,
         )
 
-    def __getitem__(self, name):
-        return Metadata.open(self.get_metadata_path(name))
+
+# @define
+# class Metadatas:
+#     path: Path
+#     cached_config: CachingConfig
+
+#     # @classmethod
+#     # def create(cls, size, dtype, doc_seq): ...
+
+#     @property
+#     def metadatas_dir(self):
+#         return self.path / "metadatas"
+
+#     def get_metadata_path(self, name):
+#         return self.metadatas_dir / name
+
+#     def create_metadata(
+#         self, name, dtype, seq_level=False, item_shape=[]
+#     ) -> "Metadata":
+#         path = self.get_metadata_path(name)
+#         if seq_level:
+#             raise NotImplementedError("seq level metadata not yet supported")
+#         else:
+#             doc_shape = [self.cached_config.num_docs]
+#             shape = doc_shape + item_shape
+#         path.parent.mkdir(parents=True, exist_ok=True)
+#         if path.exists():
+#             raise ValueError(f"Metadata already exists at {path}")
+#         return Metadata.create(
+#             path,
+#             shape,
+#             dtype,
+#             seq_level,
+#         )
+
+#     def __getitem__(self, name):
+#         return Metadata.open(self.get_metadata_path(name))
 
 
 class MetadataTensorInfo(BaseModel):  # TODO
@@ -77,8 +137,5 @@ class Metadata:  # oh this maybe should just subclass DiskTensor
             shape=dt.metadata.shape,
             dtype=dt.metadata.dtype,
             seq_level=False,
-            # MetadataTensorInfo.model_validate_json(
-            #     (path.with_suffix(".metadata")).read_text()
-            # ).seq_level,
             storage=dt,
         )

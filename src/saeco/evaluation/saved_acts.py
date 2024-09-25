@@ -9,7 +9,6 @@ from torch import Tensor
 from .features import Features
 
 from .filtered_evaluation import NamedFilter
-from .metadata import MetaDatas
 from .saved_acts_config import CachingConfig
 from .storage.chunk import Chunk
 

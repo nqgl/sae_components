@@ -108,7 +108,15 @@ class DiskTensor:
     @classmethod
     def create(cls, path, shape, dtype):
         metadata = DiskTensorMetadata(shape=shape, dtype_str=str(dtype))
-        return cls(path=path, metadata=metadata)
+
+        inst = cls(path=path, metadata=metadata)
+        if inst.path.exists():
+            raise ValueError(f"Metadata already exists at {inst.path}")
+        if inst.path.with_suffix(".safetensors").exists():
+            raise ValueError(
+                f"Metadata already exists at {inst.path.with_suffix('.safetensors')}"
+            )
+        return inst
 
     @property
     def storage_shape(self):
