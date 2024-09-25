@@ -1,6 +1,5 @@
 from functools import cached_property
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Union
 
 import einops
@@ -15,7 +14,8 @@ from saeco.trainer import RunConfig, TrainingRunner
 from .acts_cacher import ActsCacher, CachingConfig
 from .cached_artifacts import CachedCalls
 from .filtered import FilteredTensor
-from .metadata import Artifacts, Metadatas
+from .metadata import Artifacts, Filters, Metadatas
+from .named_filter import NamedFilter
 from .nnsite import getsite, setsite, tlsite_to_nnsite
 from .saved_acts import SavedActs
 
@@ -26,11 +26,11 @@ class Evaluation:
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
     nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
+    filter: NamedFilter | None = field(default=None)
 
     # cache_name: str | None = None
     # cache_path: Path | None = None
     # metadatas: MetaDatas = field(init=False)
-
     @classmethod
     def from_cache_name(cls, name: Path | str):
         if isinstance(name, str):
@@ -48,17 +48,54 @@ class Evaluation:
         inst = cls(training_runner=tr, model_name=name)
         return inst
 
+    def __attrs_post_init__(self):
+        if self.saved_acts is not None:
+            if self.saved_acts.data_filter is not self.filter:
+                raise ValueError("Filter mismatch between Evaluation and storage")
+        else:
+            assert self.filter is None
+
+    def _apply_filter(self, filter: NamedFilter | Tensor):
+        if isinstance(filter, Tensor):
+            filter = NamedFilter(filter=filter, filter_name=None)
+        if self.filter is not None:
+            raise ValueError(
+                "Filter already set, create filtered from the root Evaluation"
+            )
+        return Evaluation(
+            model_name=self.model_name,
+            training_runner=self.training_runner,
+            saved_acts=self.saved_acts.filtered(filter),
+            nnsight_model=self.nnsight_model,
+            filter=filter,
+        )
+
+    def open_filtered(self, filter_name: str):
+        return self._apply_filter(self.filters[filter_name])
+
+    @property
+    def path(self):
+        if self.saved_acts is None:
+            raise ValueError("cache_name must be set")
+        if self.filter is None:
+            return self.cache_cfg.path
+        return self.filter.filtered_dir(self.cache_cfg.path)
+
     @cached_property
     def cached_call(self) -> Union[CachedCalls, "Evaluation"]:
         return CachedCalls(self)
 
     @cached_property
-    def metadatas(self):
+    def metadatas(self) -> Metadatas:
         return Metadatas(self.path, self.cache_cfg)
 
     @cached_property
-    def artifacts(self):
+    def artifacts(self) -> Artifacts:
         return Artifacts(self.path, self.cache_cfg)
+
+    @cached_property
+    def filters(self) -> Filters:
+        return Filters(self.path, self.cache_cfg, num_docs=self.cache_cfg.num_docs)
 
     @property
     def d_dict(self):
@@ -71,12 +108,6 @@ class Evaluation:
     @property
     def cache_cfg(self) -> CachingConfig:
         return self.saved_acts.cfg
-
-    @property
-    def path(self):
-        if self.saved_acts is None:
-            raise ValueError("cache_name must be set")
-        return self.cache_cfg.path
 
     @property
     def features(self):
@@ -245,7 +276,7 @@ class Evaluation:
         assert prod < 1.001 and prod > 0.999
         return mat
 
-    def co_occurrence(self, pooling="mean"):
+    def doc_level_co_occurrence(self, pooling="mean"):
         """
         Pooling: "mean", "max" or "binary"
         this could be done at sequence level if we want
@@ -397,14 +428,6 @@ class Evaluation:
             return torch.cat([lm_acts[:, :1], reconstructed_acts[:, 1:]], dim=1)
         return reconstructed_acts
 
-    def patchdiff(self, tokens, patch_fn, return_prob_diffs=False):
-        normal = self.run_with_sae(tokens)
-        patched = self.run_with_sae(tokens, patch_fn)
-        diff = patched.logits.log_softmax(-1) - normal.logits.log_softmax(-1)
-        if return_prob_diffs:
-            return diff, (patched.logits.softmax(-1) - normal.logits.softmax(-1))
-        return diff
-
     def detokenize(self, tokens):
         if tokens.shape[0] == 1:
             tokens = tokens.squeeze(0)
@@ -412,6 +435,14 @@ class Evaluation:
             [[t] for t in tokens],
             skip_special_tokens=False,
         )
+
+    def patchdiff(self, tokens, patch_fn, return_prob_diffs=False):
+        normal = self.run_with_sae(tokens)
+        patched = self.run_with_sae(tokens, patch_fn)
+        diff = patched.logits.log_softmax(-1) - normal.logits.log_softmax(-1)
+        if return_prob_diffs:
+            return diff, (patched.logits.softmax(-1) - normal.logits.softmax(-1))
+        return diff
 
     def forward_token_attribution_to_features(self, tokens, seq_range):
         assert tokens.ndim == 1 or tokens.ndim == 2 and tokens.shape[0] == 1

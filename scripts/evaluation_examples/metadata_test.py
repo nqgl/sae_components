@@ -1,7 +1,7 @@
 import torch
 from load import ec
 from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.filtered_evaluation import NamedFilter
+from saeco.evaluation.named_filter import NamedFilter
 
 torch.backends.cuda.enable_mem_efficient_sdp(False)
 # data = ec.metadatas.create("third", torch.bool)
@@ -17,51 +17,30 @@ torch.backends.cuda.enable_mem_efficient_sdp(False)
 #     data.tensor[start:end] = value_from_chunk(chunk)
 # data.storage.finalize()
 metadata = ec.metadatas["third"]
-filt = NamedFilter(metadata.tensor, "test_filter")
-inv_filt = NamedFilter(~metadata.tensor, "test_inv_filter")
+ec.filters["test_filter"] = metadata
 
-filt_eval = Evaluation(
-    model_name=ec.model_name,
-    saved_acts=ec.saved_acts.filtered(filt),
-    training_runner=ec.training_runner,
-    nnsight_model=ec.nnsight_model,
-)
+filt_eval = ec._apply_filter(ec.filters["test_filter"])
 
-inv_filt_eval = Evaluation(
-    model_name=ec.model_name,
-    saved_acts=ec.saved_acts.filtered(inv_filt),
-    training_runner=ec.training_runner,
-    nnsight_model=ec.nnsight_model,
-)
 if __name__ == "__main__" and True:
 
     filt_cosims = filt_eval.cached_call.activation_cosims()
     filt_cosims2 = filt_eval.cached_call.activation_cosims()
-
-    # assert (filt_cosims == filt_eval.co_occurrence()).all()
-    inv_filt_cosims = inv_filt_eval.activation_cosims()
+    cosims = ec.cached_call.activation_cosims()
+    # assert (filt_cosims == filt_evalactivation_cosims.co_occurrence()).all()
+    ec.filters["inv_filt"] = ~ec.filters["test_filter"]
+    inv_filt_cosims = ec.open_filtered("inv_filt").activation_cosims()
     reg_cosims = ec.activation_cosims()
     # now use this metadata as a filter and then get correlations
-    true_filter = NamedFilter(
-        torch.ones_like(metadata.storage.tensor), "all_true_filter"
-    )
-    true_filter_eval = Evaluation(
-        model_name=ec.model_name,
-        saved_acts=ec.saved_acts.filtered(true_filter),
-        training_runner=ec.training_runner,
-        nnsight_model=ec.nnsight_model,
-    )
+    false_filter = torch.zeros_like(metadata)
+    # these next two are created as "temporary filtered evaluations"
+    # because their filters are unnamed. Thus you can't save associated data to disk
+    false_filter_eval = ec._apply_filter(false_filter)
+    true_filter_eval = ec._apply_filter(torch.ones_like(metadata))
     true_cosims = true_filter_eval.activation_cosims()
+    # eg, these would fail:
+    #    true_filter_eval.artifacts["cosims"] = true_cosims
+    #    true_filter_eval.cached_call.activation_cosims()
     assert (true_cosims == reg_cosims).all()
-    false_filter = NamedFilter(
-        torch.zeros_like(metadata.storage.tensor), "all_false_filter"
-    )
-    false_filter_eval = Evaluation(
-        model_name=ec.model_name,
-        saved_acts=ec.saved_acts.filtered(false_filter),
-        training_runner=ec.training_runner,
-        nnsight_model=ec.nnsight_model,
-    )
     false_cosims = false_filter_eval.activation_cosims()
     # false_cosims = false_filter_eval.masked_activation_cosims()
     filt_mcosims = filt_eval.masked_activation_cosims()
@@ -176,3 +155,12 @@ print(ec.detokenize(ec.saved_acts.tokens[fi0[0]]))
 ec.detokenize(ec.saved_acts.tokens[fi0[0]][:, fi0[1] :])
 
 f_i[:, 0]
+
+
+ec: Evaluation
+A = ec.open_filtered("filter A")
+B = ec.open_filtered("filter B")
+co_occurence_delta = A.doc_level_co_occurrence() - B.doc_level_co_occurrence()
+
+
+A.document_level_pooled_features - B.document_level_pooled_features

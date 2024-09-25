@@ -5,6 +5,8 @@ import torch
 from attrs import define, field
 from pydantic import BaseModel
 
+from .named_filter import NamedFilter
+
 from .saved_acts_config import CachingConfig
 from .storage.disk_tensor import DiskTensor
 from .storage.growing_disk_tensor import GrowingDiskTensor
@@ -15,6 +17,7 @@ class Artifacts:
     path: Path
     cached_config: CachingConfig
     artifacts_category: str = "artifacts"
+    return_raw: bool = False
 
     @property
     def storage_dir(self):
@@ -32,9 +35,12 @@ class Artifacts:
         )
 
     def __getitem__(self, name):
-        return DiskTensor.open(self.storage_dir / name)
+        if self.return_raw:
+            return DiskTensor.open(self.storage_dir / name)
+        return DiskTensor.open(self.storage_dir / name).tensor
 
     def __setitem__(self, name, value):
+        assert isinstance(name, str)
         assert isinstance(value, torch.Tensor)
         assert not name in self
         disk_tensor = self.create(name, value.dtype, value.shape)
@@ -42,8 +48,23 @@ class Artifacts:
         disk_tensor.finalize()
 
     def __contains__(self, name):
-        path = self.storage_dir / name
-        return path.exists() or path.with_suffix(".safetensors").exists()
+        return name in self.keys()
+
+    def keys(self):
+        return list(set([p.stem for p in self.storage_dir.glob("*")]))
+
+
+@define
+class Filters(Artifacts):
+    artifacts_category: str = "filters"
+    num_docs: int = -1
+
+    def __setitem__(self, name, value):
+        assert value.shape[0] == self.num_docs
+        return super().__setitem__(name, value)
+
+    def __getitem__(self, name) -> NamedFilter:
+        return NamedFilter(filter=super().__getitem__(name), filter_name=name)
 
 
 @define
@@ -60,7 +81,7 @@ class Metadatas(Artifacts):
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             raise ValueError(f"Metadata already exists at {path}")
-        return Metadata.create(
+        return DiskTensor.create(
             path,
             shape,
             dtype,

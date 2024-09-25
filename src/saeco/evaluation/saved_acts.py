@@ -8,7 +8,7 @@ from torch import Tensor
 
 from .features import Features
 
-from .filtered_evaluation import NamedFilter
+from .named_filter import NamedFilter
 from .saved_acts_config import CachingConfig
 from .storage.chunk import Chunk
 
@@ -50,6 +50,10 @@ class SavedActs:
         return Chunk.load_chunks_from_dir(filter=filter, path=path, lazy=True)
 
     def filtered(self, filter: NamedFilter):
+        if self.data_filter is not None:
+            raise ValueError(
+                "Tried to add a filter to already filtered dataset. Add filters to root (unfiltered) dataset instead"
+            )
         return SavedActs(
             path=self.path,
             cfg=self.cfg,
