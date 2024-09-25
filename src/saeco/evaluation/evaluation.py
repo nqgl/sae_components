@@ -25,22 +25,11 @@ class Evaluation:
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
-    # cache_name: str | None = None
-    # cache_path: Path | None = None
     nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
 
+    # cache_name: str | None = None
+    # cache_path: Path | None = None
     # metadatas: MetaDatas = field(init=False)
-    @cached_property
-    def cached_call(self) -> Union[CachedCalls, "Evaluation"]:
-        return CachedCalls(self)
-
-    @cached_property
-    def metadatas(self):
-        return Metadatas(self.path, self.cache_cfg)
-
-    @cached_property
-    def artifacts(self):
-        return Artifacts(self.path, self.cache_cfg)
 
     @classmethod
     def from_cache_name(cls, name: Path | str):
@@ -58,6 +47,64 @@ class Evaluation:
         tr = TrainingRunner.autoload(name)
         inst = cls(training_runner=tr, model_name=name)
         return inst
+
+    @cached_property
+    def cached_call(self) -> Union[CachedCalls, "Evaluation"]:
+        return CachedCalls(self)
+
+    @cached_property
+    def metadatas(self):
+        return Metadatas(self.path, self.cache_cfg)
+
+    @cached_property
+    def artifacts(self):
+        return Artifacts(self.path, self.cache_cfg)
+
+    @property
+    def d_dict(self):
+        return self.training_runner.cfg.init_cfg.d_dict
+
+    @property
+    def sae_cfg(self) -> RunConfig:
+        return self.training_runner.cfg
+
+    @property
+    def cache_cfg(self) -> CachingConfig:
+        return self.saved_acts.cfg
+
+    @property
+    def path(self):
+        if self.saved_acts is None:
+            raise ValueError("cache_name must be set")
+        return self.cache_cfg.path
+
+    @property
+    def features(self):
+        return self.saved_acts.features
+
+    @property
+    def llm(self) -> nnsight.LanguageModel:
+        if self.nnsight_model is not None:
+            return self.nnsight_model
+        return self.training_runner.cfg.train_cfg.data_cfg.model_cfg.model
+
+    @property
+    def sae(self):
+        return self.training_runner.trainable
+
+    @property
+    def nnsight_site_name(self):
+        return tlsite_to_nnsite(
+            self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
+        )
+
+    @property
+    def seq_len(self):
+        return self.sae_cfg.train_cfg.data_cfg.seq_len
+
+    @property
+    def d_vocab(self):
+        return self.nnsight_model.tokenizer.vocab_size
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:
@@ -82,55 +129,11 @@ class Evaluation:
         acts_cacher.store_acts()
         self.saved_acts = SavedActs.from_path(acts_cacher.path())
 
-    @property
-    def d_dict(self):
-        return self.training_runner.cfg.init_cfg.d_dict
-
-    @property
-    def sae_cfg(self) -> RunConfig:
-        return self.training_runner.cfg
-
-    @property
-    def cache_cfg(self) -> CachingConfig:
-        return self.saved_acts.cfg
-
-    @property
-    def path(self):
-        if self.saved_acts is None:
-            raise ValueError("cache_name must be set")
-        return self.cache_cfg.path
-
-    def get_active_documents(self, feature_ids):
-        features = self.get_features(feature_ids)
-        return self.select_active_documents(self.features_union(features))
-
     def get_features(self, feature_ids):
         return [self.features[fid] for fid in feature_ids]
 
     def get_feature(self, feature_id) -> FilteredTensor:
         return self.features[feature_id]
-
-    @staticmethod
-    def features_union(feature_tensors):
-        f = feature_tensors[0].clone()
-        for ft in feature_tensors[1:]:
-            f += ft
-        assert f.is_sparse
-        f = f.coalesce()
-        return f
-
-    @staticmethod
-    def active_document_indices(feature):
-        return feature.indices()[0][feature.values() != 0].unique()
-
-    def select_active_documents(self, feature):
-        docs, doc_ids = self._active_docs_values_and_indices(feature)
-        assert not docs.is_sparse
-        return torch.sparse_coo_tensor(
-            indices=doc_ids.unsqueeze(0),
-            values=docs,
-            size=(self.cache_cfg.num_docs, docs.shape[1]),
-        ).coalesce()
 
     def filter_docs(self, docs_filter, only_return_selected=False, seq_level=False):
         ###
@@ -177,20 +180,11 @@ class Evaluation:
             return values
         return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
-    def _active_docs_values_and_indices(self, feature):
-        active_documents_idxs = self.active_document_indices(feature)
-        active_documents = self.saved_acts.tokens[active_documents_idxs]
-        return active_documents, active_documents_idxs
-
     def top_activating_examples(self, feature_id: int, proportion=0.1):
         assert 0 < proportion and proportion < 1
         feature = self.features[feature_id]
         top = self._get_top_activating(feature.value, proportion=proportion)
         return feature.to_filtered_like_self(top)
-
-    @property
-    def features(self):
-        return self.saved_acts.features
 
     @staticmethod
     def _get_top_activating(feature: Tensor, proportion=None, percentile=None):
@@ -202,16 +196,6 @@ class Evaluation:
             topk.values,
             feature.shape,
         )
-
-    @property
-    def llm(self) -> nnsight.LanguageModel:
-        if self.nnsight_model is not None:
-            return self.nnsight_model
-        return self.training_runner.cfg.train_cfg.data_cfg.model_cfg.model
-
-    @property
-    def sae(self):
-        return self.training_runner.trainable
 
     def activation_cosims(self):
         mat = torch.zeros(self.d_dict, self.d_dict).cuda()
@@ -368,12 +352,6 @@ class Evaluation:
             setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
             out = self.nnsight_model.output.save()
         return out
-
-    @property
-    def nnsight_site_name(self):
-        return tlsite_to_nnsite(
-            self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
-        )
 
     def forward_ad_with_sae(
         self,
@@ -570,10 +548,39 @@ class Evaluation:
                         )
                     yield ldiff, pdiff, batch_seq_pos
 
-    @property
-    def seq_len(self):
-        return self.sae_cfg.train_cfg.data_cfg.seq_len
+    def get_active_documents(self, feature_ids):
+        raise DeprecationWarning("This method is outdated")
 
-    @property
-    def d_vocab(self):
-        return self.nnsight_model.tokenizer.vocab_size
+        features = self.get_features(feature_ids)
+        return self.select_active_documents(self.features_union(features))
+
+    @staticmethod
+    def features_union(feature_tensors):
+        raise DeprecationWarning("This method is outdated")
+        f = feature_tensors[0].clone()
+        for ft in feature_tensors[1:]:
+            f += ft
+        assert f.is_sparse
+        f = f.coalesce()
+        return f
+
+    @staticmethod
+    def active_document_indices(feature):
+        raise DeprecationWarning("Outdated methodology")
+        return feature.indices()[0][feature.values() != 0].unique()
+
+    def select_active_documents(self, feature):
+        raise DeprecationWarning("Outdated methodology")
+        docs, doc_ids = self._active_docs_values_and_indices(feature)
+        assert not docs.is_sparse
+        return torch.sparse_coo_tensor(
+            indices=doc_ids.unsqueeze(0),
+            values=docs,
+            size=(self.cache_cfg.num_docs, docs.shape[1]),
+        ).coalesce()
+
+    def _active_docs_values_and_indices(self, feature):
+        raise DeprecationWarning("Outdated methodology")
+        active_documents_idxs = self.active_document_indices(feature)
+        active_documents = self.saved_acts.tokens[active_documents_idxs]
+        return active_documents, active_documents_idxs
