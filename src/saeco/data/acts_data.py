@@ -51,7 +51,6 @@ class ActsData:
 
     def to_acts(self, tokens, llm_batch_size, rearrange=True, skip_exclude=False):
         acts_list = []
-        # assert tokens.shape[0] % llm_batch_size == 0
         with torch.autocast(device_type="cuda"):
             with torch.inference_mode():
 

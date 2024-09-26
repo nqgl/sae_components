@@ -4,6 +4,7 @@ from saeco.evaluation.evaluation import Evaluation
 from saeco.evaluation.named_filter import NamedFilter
 
 torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
 # data = ec.metadatas.create("third", torch.bool)
 
 
@@ -17,17 +18,17 @@ torch.backends.cuda.enable_mem_efficient_sdp(False)
 #     data.tensor[start:end] = value_from_chunk(chunk)
 # data.storage.finalize()
 metadata = ec.metadatas["third"]
-ec.filters["test_filter"] = metadata
+# ec.filters["test_filter"] = metadata
 
 filt_eval = ec._apply_filter(ec.filters["test_filter"])
 
-if __name__ == "__main__" and True:
+if __name__ == "__main__" and False:
 
     filt_cosims = filt_eval.cached_call.activation_cosims()
     filt_cosims2 = filt_eval.cached_call.activation_cosims()
     cosims = ec.cached_call.activation_cosims()
     # assert (filt_cosims == filt_evalactivation_cosims.co_occurrence()).all()
-    ec.filters["inv_filt"] = ~ec.filters["test_filter"]
+    # ec.filters["inv_filt"] = ~ec.filters["test_filter"].filter
     inv_filt_cosims = ec.open_filtered("inv_filt").activation_cosims()
     reg_cosims = ec.activation_cosims()
     # now use this metadata as a filter and then get correlations
@@ -40,7 +41,7 @@ if __name__ == "__main__" and True:
     # eg, these would fail:
     #    true_filter_eval.artifacts["cosims"] = true_cosims
     #    true_filter_eval.cached_call.activation_cosims()
-    assert (true_cosims == reg_cosims).all()
+    assert ((true_cosims == reg_cosims) | reg_cosims.isnan()).all()
     false_cosims = false_filter_eval.activation_cosims()
     # false_cosims = false_filter_eval.masked_activation_cosims()
     filt_mcosims = filt_eval.masked_activation_cosims()
@@ -49,7 +50,6 @@ if __name__ == "__main__" and True:
     assert false_cosims.isnan().all()
 # here's a possibly nice pattern:
 ex = filt_eval.top_activating_examples(5, 0.1)
-t: torch.Tensor = torch.empty(0)
 # feat = filt_eval.features[5]
 
 # v1 = ec.saved_acts.acts[feat.indices()[0]].to_dense()
@@ -124,43 +124,50 @@ def logit_effect_count(f, filt_eval=filt_eval, **kwargs):
     return p, p2
 
 
-feat_id = 27
-print()
-f_i = ec.features[feat_id].indices()
-f = torch.zeros_like(filt_eval.saved_acts.data_filter.filter)
-doc_num = 2
-fi0 = f_i[:, doc_num]
-f[fi0[0]] = True
-filter2 = NamedFilter(f, "first feat document")
-filt_eval2 = Evaluation(
-    model_name=ec.model_name,
-    saved_acts=ec.saved_acts.filtered(filter2),
-    training_runner=ec.training_runner,
-    nnsight_model=ec.nnsight_model,
-)
-p, n = logit_effect_count(feat_id)
-p2, n2 = logit_effect_count(feat_id, by_fwad=True)
+if False:
+    feat_id = 27
+    print()
+    f_i = ec.features[feat_id].indices()
+    f = torch.zeros_like(filt_eval.saved_acts.data_filter.filter)
+    doc_num = 2
+    fi0 = f_i[:, doc_num]
+    f[fi0[0]] = True
+    # filter2 = NamedFilter(f, "first feat document")
+    filt_eval2 = ec._apply_filter(f)
+    p, n = logit_effect_count(feat_id)
+    p2, n2 = logit_effect_count(feat_id, by_fwad=True)
 
-logit_effects(feat_id, by_fwad=True)
+    logit_effects(feat_id, by_fwad=True)
 
-logit_effects(feat_id, scale=0.5, by_fwad=True)
-logit_effects(feat_id, scale=0)
+    logit_effects(feat_id, scale=0.5, by_fwad=True)
+    logit_effects(feat_id, scale=0)
 
-logit_effects2(feat_id, by_fwad=True)
-logit_effects2(feat_id, scale=1, by_fwad=True)
-logit_effects2(feat_id, scale=0)
-logit_effects2(feat_id, scale=0.99)
+    logit_effects2(feat_id, by_fwad=True)
+    logit_effects2(feat_id, scale=1, by_fwad=True)
+    logit_effects2(feat_id, scale=0)
+    logit_effects2(feat_id, scale=0.99)
 
-print(ec.detokenize(ec.saved_acts.tokens[fi0[0]]))
-ec.detokenize(ec.saved_acts.tokens[fi0[0]][:, fi0[1] :])
+    print(ec.detokenize(ec.saved_acts.tokens[fi0[0]]))
+    ec.detokenize(ec.saved_acts.tokens[fi0[0]][:, fi0[1] :])
 
-f_i[:, 0]
-
+    f_i[:, 0]
 
 ec: Evaluation
+ec.detokenize([9999])
+spend = 9999
+ec.detokenize([9989])
+android = 9989
+builder = ec.metadata_builder(torch.bool, "cpu")
+for chunk in builder:
+    builder.send((chunk.tokens.value == spend).any(-1))
+ec.filters["filter A"] = builder.value
+builder = ec.metadata_builder(torch.bool, "cpu")
+for chunk in builder:
+    builder.send((chunk.tokens.value == android).any(-1))
+ec.filters["filter B"] = builder.value
 A = ec.open_filtered("filter A")
 B = ec.open_filtered("filter B")
 co_occurence_delta = A.doc_level_co_occurrence() - B.doc_level_co_occurrence()
 
 
-A.document_level_pooled_features - B.document_level_pooled_features
+diff = A.acts_avg_over_dataset("mean", "mean") - B.acts_avg_over_dataset("mean", "mean")

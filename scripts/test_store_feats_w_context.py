@@ -133,7 +133,7 @@ def select_active():
 
     feature_ids = [14, 15, 16, 17, 18, 19]
     feats = ec.get_features(feature_ids)
-    top_feats = [ec.get_top_activating(f, percentile=10) for f in feats]
+    top_feats = [ec._get_top_activating(f, percentile=10) for f in feats]
     fdocs = ec.select_active_documents(ec.features_union(top_feats))
 
     for i in fdocs.indices()[0]:

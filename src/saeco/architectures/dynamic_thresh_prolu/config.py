@@ -22,24 +22,24 @@ PROJECT = "sae sweeps"
 batch_exp = 2
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
-        # data_cfg=gemma_2_2b_openwebtext,
-        data_cfg=DataConfig(
-            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
-            # trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),
-        ),
+        data_cfg=gemma_2_2b_openwebtext,
+        # data_cfg=DataConfig(
+        #     model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
+        #     # trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),
+        # ),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=12_000,
             resample_period=9_000,
             lr_resample_warmup_length=0.1,
         ),
         #
-        batch_size=4096,
+        batch_size=4096 // 2,
         optim="Adam",
         lr=Swept(1e-3),
         betas=(0.9, 0.995),
         #
         use_autocast=True,
-        use_lars=True,
+        use_lars=False,
         #
         l0_target=50,
         l0_targeting_enabled=False,
@@ -56,7 +56,7 @@ cfg = RunConfig[Config](
         expected_biases=2,
         bias_reset_value=0,
     ),
-    init_cfg=InitConfig(d_data=768, d_dict=8),
+    init_cfg=InitConfig(d_data=2048, d_dict=8),
     #
     arch_cfg=Config(
         thresh_cfg=ThreshConfig(

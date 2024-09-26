@@ -25,9 +25,20 @@ translations = {
     "hook_resid_mid": "ln_2.input",
 }
 
+ROOT = "transformer"
+# for gemma
+# translations = {
+#     "blocks.": "layers.",
+#     "hook_resid_pre": "input",
+#     "hook_resid_post": "output.0",
+#     "hook_resid_mid": "ln_2.input",
+# }
+
+# ROOT = "model"
+
 
 def tlsite_to_nnsite(tl_name):
     while any([k in tl_name for k in translations.keys()]):
         for k, v in translations.items():
             tl_name = tl_name.replace(k, v)
-    return f"transformer.{tl_name}"
+    return f"{ROOT}.{tl_name}"

@@ -8,7 +8,7 @@ from torch import Tensor
 
 from .filtered import Filter, FilteredTensor
 
-from .filtered_evaluation import NamedFilter
+from .named_filter import NamedFilter
 from .saved_acts_config import CachingConfig
 from .storage.chunk import Chunk
 

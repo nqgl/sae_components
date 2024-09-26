@@ -74,10 +74,10 @@ class Updating:
         self.inst = inst
 
     def __enter__(self):
-        self.uii._updating.add(self.inst)
+        self.uii._updating.add(id(self.inst))
 
     def __exit__(self, *args):
-        self.uii._updating.remove(self.inst)
+        self.uii._updating.remove(id(self.inst))
 
     def __contains__(self, inst):
         return inst in self.uii._updating
@@ -92,6 +92,7 @@ class UIE:
         self._name = init_fn.__name__
         # self.fname = f"_{self._name}"
         self.ddname = f"_dd_{self._name}"
+        self._on_set = None
 
         def default_getval(inst, el):
             try:
@@ -113,7 +114,7 @@ class UIE:
         print(owner, name)
 
     def updating(self, inst):
-        assert inst not in self._updating
+        assert id(inst) not in self._updating
         return Updating(self, inst)
 
     def updater(self, fn):
@@ -121,7 +122,7 @@ class UIE:
         return self
 
     def update_el(self, inst):
-        if inst in self._updating:
+        if id(inst) in self._updating:
             return
         el = self.el(inst)
         with self.updating(inst):
@@ -154,9 +155,15 @@ class UIE:
     def el(self, inst):
         return getattr(inst, self.ddname)
 
+    def on_set(self, fn):
+        self._on_set = fn
+        return self
+
     def __set__(self, instance, value):
-        raise NotImplementedError("no set")
-        setattr(self, fname, value)
+        if self._on_set is None:
+            raise NotImplementedError("no set")
+        set_out = self._on_set(instance, self.el(instance), value)
+        assert set_out is None
 
     def _update(self, inst):
         if hasattr(inst, "update"):

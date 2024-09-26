@@ -2,16 +2,21 @@
 from functools import wraps
 from pathlib import Path
 
+import circuitsvis
+
+import circuitsvis.tokens
 import nnsight
 import saeco.core as cl
 import torch
 
 from jaxtyping import Float, Int
 from load import ec
+from nicegui import ui
 from pydantic import BaseModel
 
 from rich.highlighter import Highlighter
 
+from saeco.analysis.uiitem import UIE
 from saeco.architectures.anth_update import anth_update_model, cfg
 from saeco.evaluation.evaluation import Evaluation
 from saeco.evaluation.nnsite import getsite, setsite, tlsite_to_nnsite
@@ -32,6 +37,8 @@ import einops
 
 # %%
 import tqdm
+
+from metadata_test import filt_eval
 
 ec.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
 ec.nnsight_model = nnsight_model
@@ -55,64 +62,92 @@ cursor_color = (255, 0, 0)
 active_color = (0, 55, 255)
 white = (255, 255, 255)
 
+inactive = white
+active_0 = torch.tensor([100, 0, 180])
+active_1 = torch.tensor([255, 0, 0])
 
-def color(c):
+
+def colorstr(c):
     return f"rgb({c[0]},{c[1]},{c[2]})"
 
 
 def colorprint(s, c, end, style=""):
-    console.print(s, style=f"{color(c)} {style}", end=end, highlight=False)
+    console.print(s, style=f"{colorstr(c)} {style}", end=end, highlight=False)
 
 
-@define
+@define(slots=False)
 class Explorer:
     doc: int
     pos: int
     feat: int
     eval: Evaluation
+    filt_eval: Evaluation | None
 
-    def print_activity(self):
-        feature_activity = self.eval.saved_acts.acts[self.doc]
-        document_id = self.doc
+    def __attrs_post_init__(self):
+        self.current_document
+        self.button
+        if self.filt_eval is None:
+            self.filt_eval = self.eval
+
+    def update(self): ...
+    @UIE
+    def button(self, cb):
+        return ui.button("click me", on_click=cb)
+
+    @UIE
+    def current_document(self, cb):
+        return ui.card()
+
+    @current_document.updater
+    def current_document(self, e: ui.card):
+        e.clear()
+        feature_activity = self.eval.saved_acts.acts[self.doc].to_dense()[:, self.feat]
         tokens = self.document
         tokstrs = self.eval.detokenize(tokens)
-        console.print(
-            f"\n\n\n\nDocument {document_id}", style="underline bold", highlight=False
-        )
-        console.print("\n" + "-" * 30 + "\n", highlight=False)
-        # if feature_activity.any():
-        #     console.print(
-        #         f"Feature {self.feat} active",
-        #         [f"{i:.02}" for i in feature_activity.coalesce().values()],
-        #         style=f"{color(active_color)} bold italic",
-        #     )
-        for i, t in enumerate(tokstrs):
-            active: bool = False
-            if i == self.pos:
-                console.print(
-                    "[",
-                    style=f"{color(cursor_color)}  underline bold italic",
-                    end="",
-                    highlight=False,
-                )
-            if feature_activity[i, self.feat]:
-                active = True
-                console.print(
-                    t,
-                    style=f"{color(active_color)}  underline bold italic",
-                    end="",
-                    highlight=False,
-                )
-            if not active:
-                console.print(t, style="rgb(255,255,255)", end="", highlight=False)
-            if i == self.pos:
-                console.print(
-                    "]",
-                    style=f"{color(cursor_color)}  underline bold italic",
-                    end="",
-                    highlight=False,
-                )
-        self.show_active_at_location()
+
+        def set_pos(i):
+            def set():
+                self.pos = i
+                self.update()
+
+            return set
+
+        max_activity = feature_activity.max()
+
+        content = list(enumerate(zip(tokstrs, feature_activity)))
+        style_normal = f"border: 1px solid #f0f0f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        # e.style("gap: 0.1rem")
+        with e:
+            for j in range(0, len(content), 8):
+                rowcontent = content[j : j + 8]
+                with ui.row() as row:
+                    row.style(
+                        "margin: 1px 0; padding: 0px; border: 0px; border-radius: 0px; gap: 0.1rem"
+                    )
+                    for i, (tok, feat) in rowcontent:
+                        if " " in tok:
+                            ui.label(" ")
+                            ui.label(" ")
+                            ui.label(" ")
+                            ui.label(" ")
+                        color = (
+                            active_0 + (active_1 - active_0) * feat / max_activity
+                        ).long()
+                        if feat == 0:
+                            color = inactive
+                        btn = ui.label(tok)
+                        btn.on("click", set_pos(i))
+                        if i == self.pos:
+                            btn.style(
+                                f"margin: 0px; padding: 0px; border: 4px solid #2222aa; border-radius: 2px; background-color: {colorstr(color)};"
+                            )
+                        else:
+                            btn.style(
+                                f"margin: 0px; padding: 0px; border: 0px; border-radius: 0px; background-color: {colorstr(color)};"
+                            )
+        # e.content = h.local_src
+        # ui.add_body_html(h.local_src)
+        # self.show_active_at_location()
 
     def active_at_location(self):
         return self.eval.saved_acts.acts[self.doc][self.pos].coalesce()
@@ -260,17 +295,20 @@ class Explorer:
         self.print_activity()
 
 
-ex = Explorer(2, 15, 5, ec)
-ex.pos = 17
-ex.doc = 62
-ex.feat = 5527
-ex.tokens_to_feats()
+exp = Explorer(62, 15, 5527, ec, filt_eval)
+ui.run()
 
-ex.nf()
-ex.pf()
-while True:
-    ex.print_activity()
-    ex.show_fwad(feature_shrink=0.5, est_prob_deltas=True)
-    ex.show_patch()
-    print()
-# %%
+# ex = Explorer(2, 15, 5, ec)
+# ex.pos = 17
+# ex.doc = 62
+# ex.feat = 5527
+# ex.tokens_to_feats()
+
+# ex.nf()
+# ex.pf()
+# while True:
+#     ex.print_activity()
+#     ex.show_fwad(feature_shrink=0.5, est_prob_deltas=True)
+#     ex.show_patch()
+#     print()
+# # %%

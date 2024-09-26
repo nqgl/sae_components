@@ -1,2 +1,3 @@
-model_name = "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"
-storage_name = "stored_acts4"
+model_name = "sae sweeps/(lars)dynamic_thresh_sae0.001[50.0]-10344/50001"
+model_name = "sae sweeps/dynamic_thresh_sae0.001[50.0]-10349/12001"
+storage_name = "gemma_dyn_stored_acts"

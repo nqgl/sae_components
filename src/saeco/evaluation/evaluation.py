@@ -1,6 +1,6 @@
 from functools import cached_property
 from pathlib import Path
-from typing import Union
+from typing import Generator, Iterable, Iterator, Union
 
 import einops
 import nnsight
@@ -12,12 +12,14 @@ from torch import Tensor
 
 from saeco.trainer import RunConfig, TrainingRunner
 from .acts_cacher import ActsCacher, CachingConfig
+from .aggregation import Aggregation
 from .cached_artifacts import CachedCalls
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
 from .named_filter import NamedFilter
 from .nnsite import getsite, setsite, tlsite_to_nnsite
 from .saved_acts import SavedActs
+from .storage.chunk import Chunk
 
 
 @define
@@ -72,6 +74,28 @@ class Evaluation:
 
     def open_filtered(self, filter_name: str):
         return self._apply_filter(self.filters[filter_name])
+
+    def _make_metadata_builder_iter(
+        self, dtype, device, item_size=[]
+    ) -> Generator[Chunk, FilteredTensor, Tensor]:
+        assert self.filter is None
+        new_tensor = torch.zeros(
+            self.cache_cfg.num_docs, *item_size, dtype=dtype, device=device
+        )
+        # empty = yield
+        # assert empty is None, empty
+
+        for chunk in self.saved_acts.chunks:
+            value = yield chunk
+            yield
+            assert isinstance(value, FilteredTensor | Tensor)
+            if isinstance(value, Tensor):
+                value = chunk._to_filtered(value)
+            value.filter.writeat(new_tensor, value.value)
+        return new_tensor
+
+    def metadata_builder(self, dtype, device, item_size=[]) -> "TensorBuilder":
+        return TensorBuilder(self._make_metadata_builder_iter(dtype, device, item_size))
 
     @property
     def path(self):
@@ -429,8 +453,9 @@ class Evaluation:
         return reconstructed_acts
 
     def detokenize(self, tokens):
-        if tokens.shape[0] == 1:
-            tokens = tokens.squeeze(0)
+        if isinstance(tokens, Tensor):
+            if tokens.shape[0] == 1:
+                tokens = tokens.squeeze(0)
         return self.llm.tokenizer._tokenizer.decode_batch(
             [[t] for t in tokens],
             skip_special_tokens=False,
@@ -443,6 +468,55 @@ class Evaluation:
         if return_prob_diffs:
             return diff, (patched.logits.softmax(-1) - normal.logits.softmax(-1))
         return diff
+
+    def seq_aggregated_chunks_yielder(
+        self, seq_agg
+    ) -> Generator[FilteredTensor, None, None]:
+        """
+        seq_agg options: "mean", "max", "sum", "count", "any"
+        - count: count number of non-zero activations in each doc
+        - any: if feature has any non-zero activation in a doc
+
+        """
+        # move to saved acts?
+        for chunk in tqdm.tqdm(self.saved_acts.chunks):
+            acts = chunk.acts
+            acts_inner = acts.value.cuda().to_dense()
+            assert acts_inner.ndim == 3
+            if seq_agg == "count":
+                c_agg = (acts_inner > 0).sum(dim=1)
+            elif seq_agg == "any":
+                c_agg = (acts_inner > 0).any(dim=1)
+            elif seq_agg == "max":
+                c_agg = acts_inner.max(dim=1).values
+            else:
+                c_agg = getattr(acts_inner, seq_agg)(dim=1)
+            yield acts.to_filtered_like_self(c_agg)
+
+    @property
+    def docs_in_subset(self):
+        if self.filter:
+            return self.filter.filter.sum()
+        return self.cache_cfg.num_docs
+
+    def acts_avg_over_dataset(self, seq_agg="mean", docs_agg="mean"):
+        """
+        seq_agg options: "mean", "max", "sum", "count", "any"
+        docs_agg options: "mean", "max", "sum"
+        """
+        results = torch.zeros(self.d_dict).cuda()
+
+        for agg_chunk in self.seq_aggregated_chunks_yielder(seq_agg):
+            if docs_agg == "max":
+                results = (
+                    torch.cat([results, agg_chunk.value.max(dim=0).values])
+                    .max(dim=0)
+                    .values
+                )
+            else:
+                results += agg_chunk.value.sum(dim=0)
+        if docs_agg == "mean":
+            results /= self.docs_in_subset
 
     def forward_token_attribution_to_features(self, tokens, seq_range):
         assert tokens.ndim == 1 or tokens.ndim == 2 and tokens.shape[0] == 1
@@ -615,3 +689,22 @@ class Evaluation:
         active_documents_idxs = self.active_document_indices(feature)
         active_documents = self.saved_acts.tokens[active_documents_idxs]
         return active_documents, active_documents_idxs
+
+
+class TensorBuilder:
+    def __init__(self, gen):
+        self.gen = gen
+        self.value = ...
+        self.it = self._iter()
+
+    def _iter(self):
+        self.value = yield from self.gen
+
+    def __iter__(self) -> Iterator[Chunk]:
+        return self
+
+    def __next__(self) -> Chunk:
+        return next(self.it)
+
+    def send(self, v):
+        return self.it.send(v)
