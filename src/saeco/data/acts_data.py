@@ -1,11 +1,13 @@
-from saeco.data.tokens_data import TokensData
-from saeco.data.bufferized_iter import bufferized_iter
-from saeco.data.split_config import SplitConfig
+from typing import TYPE_CHECKING
+
 import einops
 import torch
 import tqdm
 from transformer_lens import HookedTransformer
-from typing import TYPE_CHECKING
+
+from saeco.data.bufferized_iter import bufferized_iter
+from saeco.data.split_config import SplitConfig
+from saeco.data.tokens_data import TokensData
 
 if TYPE_CHECKING:
     from saeco.data.dataset import DataConfig
@@ -68,14 +70,22 @@ class ActsData:
                         fwd_hooks=[(self.cfg.model_cfg.acts_cfg.hook_site, hook_fn)],
                     )
         acts = torch.cat(acts_list, dim=0).half()
+        toks_re = tokens
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
+            toks_re = toks_re[:, 1:]
         if rearrange:
             acts = einops.rearrange(
                 acts,
                 "batch seq d_data -> (batch seq) d_data",
             )
-        return acts
+            toks_re = einops.rearrange(
+                toks_re,
+                "batch seq -> (batch seq)",
+            )
+        if not self.cfg.model_cfg.acts_cfg.filter_pad:
+            return acts
+        return acts[tokens != self.model.tokenizer.pad_token_id]
 
     def acts_generator(
         self,

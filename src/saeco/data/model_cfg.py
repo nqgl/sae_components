@@ -1,5 +1,6 @@
-from transformer_lens import HookedTransformer, utils
 from pydantic import Field
+from transformer_lens import HookedTransformer, utils
+
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
 
@@ -9,6 +10,7 @@ class ActsDataConfig(SweepableConfig):
     site: str = "resid_pre"
     layer_num: int = 6
     excl_first: bool = True
+    filter_pad: bool = True
 
     @property
     def hook_site(self):
