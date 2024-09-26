@@ -327,8 +327,7 @@ class Trainer:
                 for k, v in get_recons_loss(
                     self.subject_model,
                     self.trainable,
-                    buffer=None,
-                    all_tokens=self.llm_val_tokens,
+                    tokens=self.llm_val_tokens,
                     cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
                     bos_processed_with_hook=proc_bos,
                     num_batches=num_batches,

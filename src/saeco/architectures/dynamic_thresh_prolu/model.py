@@ -225,6 +225,6 @@ def run(cfg):
 
 
 if __name__ == "__main__":
-    do_sweep(True)
+    do_sweep(True, "rand")
 else:
     from .config import cfg, PROJECT

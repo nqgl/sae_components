@@ -17,9 +17,9 @@ from rich.highlighter import Highlighter
 
 from saeco.architectures.anth_update import anth_update_model, cfg
 from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.nnsite import getsite, setsite, tlsite_to_nnsite
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
+from saeco.misc.nnsite import getsite, setsite, tlsite_to_nnsite
 from saeco.trainer import Trainable
 from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_cache import TrainCache
@@ -41,8 +41,6 @@ import einops
 
 # %%
 import tqdm
-
-ec.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
 
 
 tl_name = "blocks.6.hook_resid_pre"

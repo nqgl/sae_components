@@ -8,3 +8,4 @@ torchlars
 pydantic
 wandb
 schedulefree
+nnsight

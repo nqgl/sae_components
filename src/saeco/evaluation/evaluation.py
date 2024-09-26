@@ -11,13 +11,13 @@ from attr import define, field
 from torch import Tensor
 
 from saeco.trainer import RunConfig, TrainingRunner
+from ..misc.nnsite import getsite, setsite, tlsite_to_nnsite
 from .acts_cacher import ActsCacher, CachingConfig
 from .aggregation import Aggregation
 from .cached_artifacts import CachedCalls
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
 from .named_filter import NamedFilter
-from .nnsite import getsite, setsite, tlsite_to_nnsite
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
 
@@ -149,9 +149,7 @@ class Evaluation:
 
     @property
     def nnsight_site_name(self):
-        return tlsite_to_nnsite(
-            self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
-        )
+        return self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.site
 
     @property
     def seq_len(self):

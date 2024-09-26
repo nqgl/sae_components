@@ -9,7 +9,7 @@ from saeco.data import (
     ModelConfig,
     SplitConfig,
 )
-from saeco.data.data_config_definitions import gemma_2_2b_openwebtext
+from saeco.data.data_config_definitions import gemma_2_2b_openwebtext, gpt_2
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
@@ -19,10 +19,10 @@ from saeco.trainer.train_config import TrainConfig
 from .model import Config, ThreshConfig
 
 PROJECT = "sae sweeps"
-batch_exp = 2
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
-        data_cfg=gemma_2_2b_openwebtext,
+        data_cfg=gpt_2(),
+        # data_cfg=gemma_2_2b_openwebtext,
         # data_cfg=DataConfig(
         #     model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
         #     # trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),
@@ -33,7 +33,7 @@ cfg = RunConfig[Config](
             lr_resample_warmup_length=0.1,
         ),
         #
-        batch_size=4096 // 2,
+        batch_size=4096,
         optim="Adam",
         lr=Swept(1e-3),
         betas=(0.9, 0.995),
@@ -56,7 +56,7 @@ cfg = RunConfig[Config](
         expected_biases=2,
         bias_reset_value=0,
     ),
-    init_cfg=InitConfig(d_data=2048, d_dict=8),
+    init_cfg=InitConfig(d_data=768, d_dict=8),
     #
     arch_cfg=Config(
         thresh_cfg=ThreshConfig(

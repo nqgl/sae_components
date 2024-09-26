@@ -1,5 +1,7 @@
 from typing import Optional
 
+import einops
+
 import torch
 import torch.nn as nn
 
@@ -95,6 +97,11 @@ class Trainable(cl.Module):
         return loss
 
     def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+        shape = None
+        if x.ndim == 3:
+            shape = x.shape
+            x = einops.rearrange(x, "doc seq data -> (doc seq) data")
+
         made_cache = False
         if cache is None:
             cache = TrainCache()
@@ -103,6 +110,10 @@ class Trainable(cl.Module):
         if made_cache:
             cache.destruct()
             del cache
+        if shape is not None:
+            out = einops.rearrange(
+                out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
+            )
         return out
 
     def get_losses_and_metrics_names(self) -> list[str]:
