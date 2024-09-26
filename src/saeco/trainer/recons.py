@@ -1,10 +1,6 @@
 import einops
 import nnsight
 import torch
-import tqdm
-from transformer_lens import HookedTransformer
-
-from transformers import GPT2Model
 
 from saeco.data.model_cfg import ActsDataConfig
 from saeco.misc.nnsite import getsite, setsite

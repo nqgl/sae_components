@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 import einops
 import torch
 import tqdm
-from transformer_lens import HookedTransformer
+from nnsight import LanguageModel
 
 from saeco.data.split_config import SplitConfig
 from saeco.data.tabletensor import Piler
@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 
 
 class TokensData:
-    def __init__(self, cfg: "DataConfig", model: HookedTransformer, split: SplitConfig):
+    def __init__(
+        self, cfg: "DataConfig", model: LanguageModel | None, split: SplitConfig
+    ):
         self.cfg = cfg
         self.model = model
         self.split = split

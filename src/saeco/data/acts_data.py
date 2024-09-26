@@ -4,7 +4,7 @@ import einops
 import nnsight
 import torch
 import tqdm
-from transformer_lens import HookedTransformer
+from nnsight import LanguageModel
 
 from saeco.data.bufferized_iter import bufferized_iter
 from saeco.data.split_config import SplitConfig
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class ActsData:
-    def __init__(self, cfg: "DataConfig", model: HookedTransformer):
+    def __init__(self, cfg: "DataConfig", model: LanguageModel | None):
         self.cfg = cfg
         self.model = model
 

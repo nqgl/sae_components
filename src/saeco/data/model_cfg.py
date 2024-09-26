@@ -1,8 +1,6 @@
 from nnsight import LanguageModel
 from pydantic import Field
 
-# from transformer_lens import HookedTransformer, utils
-
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
 
