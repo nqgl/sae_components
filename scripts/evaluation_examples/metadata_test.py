@@ -55,7 +55,7 @@ ex = filtered_eval.top_activating_examples(5, 0.1)
 # assert (feat.value.values() == feat.to_dense()[feat.indices()]).all()
 
 
-def logit_effects(f, filt_eval=filtered_eval, **kwargs):
+def logit_effects(f, filt_eval=filtered_eval, k=5, **kwargs):
     lres, res = filt_eval.average_patching_effect_on_dataset(f, batch_size=2, **kwargs)
     agg = res.mean(0)
     lagg = lres.mean(0)
@@ -67,16 +67,43 @@ def logit_effects(f, filt_eval=filtered_eval, **kwargs):
     else:
         print("patched")
     print("  prob")
-    print("    topmax", filt_eval.detokenize(agg.topk(5).indices))
-    print("    topmin", filt_eval.detokenize(agg.topk(5, largest=False).indices))
+    print("    topmax", filt_eval.detokenize(agg.topk(k).indices))
+    print("    topmin", filt_eval.detokenize(agg.topk(k, largest=False).indices))
     print("    seqmax", filt_eval.detokenize(res.max(dim=1).indices[:10]))
     print("    seqmin", filt_eval.detokenize(res.min(dim=1).indices[:10]))
     print("  log")
-    print("    topmax", filt_eval.detokenize(lagg.topk(5).indices))
-    print("    topmin", filt_eval.detokenize(lagg.topk(5, largest=False).indices))
+    print("    topmax", filt_eval.detokenize(lagg.topk(k).indices))
+    print("    topmin", filt_eval.detokenize(lagg.topk(k, largest=False).indices))
     print("    seqmax", filt_eval.detokenize(lres.max(dim=1).indices[:10]))
     print("    seqmin", filt_eval.detokenize(lres.min(dim=1).indices[:10]))
     print()
+
+
+def compare_for_overlap(f, filt_eval=filtered_eval, k=20, **kwargs):
+    lres, res = filt_eval.average_patching_effect_on_dataset(f, batch_size=2, **kwargs)
+    lresf, resf = filt_eval.average_patching_effect_on_dataset(
+        f, batch_size=2, by_fwad=True, **kwargs
+    )
+    t = torch.tensor(
+        [
+            # res[0].topk(k).indices.tolist(),
+            # resf[0].topk(k).indices.tolist(),
+            # res[0].topk(k, largest=False).indices.tolist(),
+            # resf[0].topk(k, largest=False).indices.tolist(),
+            # lres[0].topk(k).indices.tolist(),
+            lresf[0].topk(k).indices.tolist(),
+            lres[0].topk(k).indices.tolist(),
+            # lresf[0].topk(k, largest=False).indices.tolist(),
+        ],
+        dtype=torch.long,
+    )
+    for i in range(len(t)):
+        for j in range(i):
+            for ii in t[i]:
+                if (ii == t[j]).any():
+                    print(i, j, ii, filt_eval.detokenize([ii.item()]))
+
+    return t
 
 
 def aggregator(ec: Evaluation):
@@ -121,7 +148,7 @@ if True:
     def logit_effects2(f, **kwargs):
         logit_effects(f, filt_eval=filt_eval2, **kwargs)
 
-    feat_id = 40
+    feat_id = 44
     print()
     f_i = root_eval.features[feat_id].indices()
     f = torch.zeros_like(filtered_eval.saved_acts.data_filter.filter)
@@ -132,12 +159,12 @@ if True:
     filt_eval2 = root_eval._apply_filter(f)
     p, n = logit_effect_count(feat_id, random_subset_n=10)
     p2, n2 = logit_effect_count(feat_id, by_fwad=True, random_subset_n=10)
-
     logit_effects(feat_id, by_fwad=True, random_subset_n=100)
 
-    logit_effects(feat_id, scale=0.5, random_subset_n=1)
-    logit_effects(feat_id, scale=0.5, by_fwad=True, random_subset_n=10)
+    logit_effects(feat_id, scale=0.5)
+    logit_effects(feat_id, by_fwad=True, k=20)
 
+    t = compare_for_overlap(feat_id, k=100)
     logit_effects2(feat_id, by_fwad=True)
     logit_effects2(feat_id, scale=1, by_fwad=True)
     logit_effects2(feat_id, scale=0)
@@ -147,6 +174,8 @@ if True:
     root_eval.detokenize(root_eval.saved_acts.tokens[fi0[0]][:, fi0[1] :])
 
     f_i[:, 0]
+
+filtered_eval.features[41].indices()
 
 root_eval: Evaluation
 root_eval.detokenize([9999])

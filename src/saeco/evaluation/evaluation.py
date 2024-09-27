@@ -441,9 +441,10 @@ class Evaluation:
                 patch_in = self._skip_bos_if_appropriate(lm_acts, acts_re)
                 setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
                 out = self.nnsight_model.output.save()
-                tangent = nnsight.apply(fwAD.unpack_dual, out.logits).tangent.save()
+                ls_logits = out.logits.log_softmax(dim=-1)
+                tangent = nnsight.apply(fwAD.unpack_dual, ls_logits).tangent.save()
             if return_prob_grads:
-                soft = out.logits.softmax(-1)
+                soft = out.logits.softmax(dim=-1)
                 probspace = fwAD.unpack_dual(soft).tangent
         if return_prob_grads:
             return out, tangent, probspace
@@ -463,12 +464,17 @@ class Evaluation:
             skip_special_tokens=False,
         )
 
-    def patchdiff(self, tokens, patch_fn, return_prob_diffs=False):
+    def patchdiff(self, tokens, patch_fn, return_prob_diffs=False, invert=False):
         normal = self.run_with_sae(tokens)
         patched = self.run_with_sae(tokens, patch_fn)
         diff = patched.logits.log_softmax(-1) - normal.logits.log_softmax(-1)
+        if invert:
+            diff = -diff
         if return_prob_diffs:
-            return diff, (patched.logits.softmax(-1) - normal.logits.softmax(-1))
+            probdiff = patched.logits.softmax(-1) - normal.logits.softmax(-1)
+            if invert:
+                probdiff = -probdiff
+            return diff, probdiff
         return diff
 
     def seq_aggregated_chunks_yielder(
@@ -618,11 +624,15 @@ class Evaluation:
             - on the filtered dataset,
             - where the feature occurs
                 - (for each position),
-        what happens when we ablate the feature?
+            what happens when we ablate the feature? (or do fwad)
+
+        random_subset_n selects documents, rather than positions
+            this behavior may not be ideal if it overweighs certain documents
         """
         if scale is None:
             scale = 0.99 if by_fwad else 0
-        feature = self.features[feature_id]
+        feature0 = self.features[feature_id]
+        feature = feature0.mask_inactive_docs()
         if random_subset_n:
             if (s := feature.filter.mask.sum()) > random_subset_n:
                 new_mask = torch.zeros_like(feature.filter.mask)
@@ -642,14 +652,11 @@ class Evaluation:
 
         with torch.no_grad():
             for chunk in tqdm.tqdm(self.saved_acts.chunks):
-                # print("new chunk")
                 tokens = chunk.tokens
                 docs, mask = tokens.index_where_valid(feature_active[0:1])
                 seq_pos = feature_active[1, mask]
                 assert docs.shape[0] == seq_pos.shape[0]
-                print("docs len", docs.shape[0])
                 for i in range(0, docs.shape[0], batch_size):
-                    # print("did batch", i)
                     batch_docs = docs[i : i + batch_size]
                     batch_seq_pos = seq_pos[i : i + batch_size]
 
@@ -671,6 +678,7 @@ class Evaluation:
                                 batch_seq_pos,
                                 feature_id,
                             ] = 1
+                            assert tangent.sum() == batch_seq_pos.shape[0]
                             return acts
 
                         out, ldiff, pdiff = self.forward_ad_with_sae(
@@ -679,13 +687,22 @@ class Evaluation:
                             patch_fn=patch_fn,
                             return_prob_grads=True,
                         )
+                        # ldiff = ldiff.log_softmax(-1
+                        # not clear on if these should get some sort of
+                        # normalization to prevent overweighting of
+                        # particular documents w systematically larger grads
+                        # (eg due to diff logit scales)
+                        # maybe like z-score it or something
+                        # unclear if log-softmax would be a coherent thing to do
+                        # oh i think log-softmax on the dual tensor inside forward-ad
+                        # should do what we want.
+                        # seems good, added to forward_ad_with_sae
+
                     else:
                         ldiff, pdiff = self.patchdiff(
-                            batch_docs, patch_fn, return_prob_diffs=True
+                            batch_docs, patch_fn, return_prob_diffs=True, invert=True
                         )
                     yield ldiff, pdiff, batch_seq_pos
-
-        print()
 
     def get_active_documents(self, feature_ids):
         raise DeprecationWarning("This method is outdated")
