@@ -355,13 +355,26 @@ class FilteredTensor:
         selfmask = self.filter.mask
         if selfmask.ndim < mask.ndim:
             selfmask = right_expand(selfmask, mask.shape)
+        if value_like:
+            outmask = torch.zeros_like(selfmask).masked_scatter(selfmask, mask)
+        else:
+            outmask = selfmask & mask
         return FilteredTensor(
             value=value,
             filter=Filter(
                 slices=self.filter.slices,
-                mask=selfmask & mask,
+                mask=outmask,
                 shape=self.filter.shape,
             ),
+        )
+
+    def mask_inactive_docs(self):
+        newmask = torch.zeros(
+            self.filter.mask.sum(), dtype=torch.bool, device=self.filter.mask.device
+        )
+        newmask[self.value.indices()[0]] = True
+        return self.mask_by_other(
+            newmask, return_ft=True, presliced=True, value_like=True
         )
 
     def to_dense(self) -> "FilteredTensor":
