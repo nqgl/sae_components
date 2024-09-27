@@ -1,27 +1,23 @@
-from .saved_model_source_info import ModelReloadInfo
-from .run_config import RunConfig
+from functools import cache, cached_property
+from pathlib import Path
+from typing import TypeVar
+
+from saeco.architectures.outdated.gate_hierarch import (
+    HGatesConfig,
+    hierarchical_softaux,
+    HierarchicalSoftAuxConfig,
+)
+from saeco.components.resampling.anthropic_resampling import AnthResampler
+from saeco.initializer import Initializer
 from saeco.initializer.initializer_config import InitConfig
+from saeco.misc.lazy import defer_to_and_set, lazyprop
+from saeco.trainer.normalizers import ConstL2Normalizer, GeneralizedNormalizer
+from .run_config import RunConfig
+from .saved_model_source_info import ModelReloadInfo
 from .train_config import TrainConfig
 from .trainable import Trainable
 
 from .trainer import Trainer
-from typing import TypeVar
-from saeco.architectures.outdated.gate_hierarch import (
-    hierarchical_softaux,
-    HierarchicalSoftAuxConfig,
-    HGatesConfig,
-)
-from saeco.initializer import Initializer
-from saeco.trainer.normalizers import (
-    ConstL2Normalizer,
-    GeneralizedNormalizer,
-)
-from saeco.misc.lazy import defer_to_and_set, lazyprop
-from saeco.components.resampling.anthropic_resampling import (
-    AnthResampler,
-)
-from functools import cached_property, cache
-from pathlib import Path
 
 
 class TrainingRunner:
@@ -145,7 +141,7 @@ class TrainingRunner:
         pt_path = models_dir / (name + ".pt")
         cfg_path = models_dir / (name + ".json")
         cfg = modify_cfg_fn(cfg.model_validate_json(cfg_path.read_text()))
-        state = modify_state_dict_fn(torch.load(pt_path))
+        state = modify_state_dict_fn(torch.load(pt_path, weights_only=True))
         tr = TrainingRunner(cfg, model_fn, state_dict=state)
         # tr.trainable.load_state_dict(state)
         return tr
