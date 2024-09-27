@@ -281,6 +281,13 @@ class FilteredTensor:
         init=True, repr=False, validator=validators.instance_of(Filter)
     )
 
+    @convert(value)
+    @staticmethod
+    def value_converter(value: Tensor):
+        if value.is_sparse:
+            return value.coalesce()
+        return value
+
     # @convert(filter, takes_self=True)
     # @staticmethod
     # def filter_converter(filt, inst):

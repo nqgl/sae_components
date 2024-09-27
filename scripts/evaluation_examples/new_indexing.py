@@ -1,6 +1,6 @@
 import nqgl.mlutils.profiling.time_gpu as tg
 import torch
-from load import ec
+from load import root_eval
 
 
 # ec.filter_docs()
@@ -32,15 +32,15 @@ def checker(a1, a2):
 
 
 def index_tokens_by_bool_conversion(indices):
-    mask = torch.zeros(ec.cache_cfg.num_docs, dtype=torch.bool)
+    mask = torch.zeros(root_eval.cache_cfg.num_docs, dtype=torch.bool)
     mask[indices] = True
-    return ec.filter_docs(mask, only_return_selected=True)
+    return root_eval.filter_docs(mask, only_return_selected=True)
 
 
 def index_by_bool_conversion(indices):
-    mask = torch.zeros(ec.cache_cfg.num_docs, dtype=torch.bool)
+    mask = torch.zeros(root_eval.cache_cfg.num_docs, dtype=torch.bool)
     mask[indices] = True
-    return ec.filter_acts(mask, only_return_selected=True)
+    return root_eval.filter_acts(mask, only_return_selected=True)
 
 
 # a2 = time_indexing(index_by_bool_conversion)
@@ -55,27 +55,27 @@ def index_by_bool_conversion(indices):
 
 @tg.timedfunc_wrapper()
 def index_by_feature_docs(i):
-    f = ec.get_feature(i)
+    f = root_eval.get_feature(i)
     mask = f.cuda().to_dense().value > 0
     mask = mask.any(dim=1)
     assert mask.ndim == 1
-    return ec.filter_docs(mask, only_return_selected=False)
+    return root_eval.filter_docs(mask, only_return_selected=False)
 
 
 @tg.timedfunc_wrapper()
 def index_by_feature(i):
-    f = ec.get_feature(i)
+    f = root_eval.get_feature(i)
     mask = f.cuda().to_dense().value > 0
-    return ec.filter_docs(mask, only_return_selected=False, seq_level=True)
+    return root_eval.filter_docs(mask, only_return_selected=False, seq_level=True)
 
 
 @tg.timedfunc_wrapper()
 def index_acts_by_feature_docs(i):
-    f = ec.get_feature(i)
+    f = root_eval.get_feature(i)
     mask = f.cuda().to_dense().value > 0
     mask = mask.any(dim=1)
     assert mask.ndim == 1
-    return ec.filter_acts(mask, only_return_selected=False)
+    return root_eval.filter_acts(mask, only_return_selected=False)
 
 
 f = index_by_feature_docs(5)
@@ -84,4 +84,4 @@ af = index_acts_by_feature_docs(5)
 print()
 
 
-ec.forward_ad_with_sae()
+root_eval.forward_ad_with_sae()

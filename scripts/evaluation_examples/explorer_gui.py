@@ -10,7 +10,7 @@ import saeco.core as cl
 import torch
 
 from jaxtyping import Float, Int
-from load import ec
+from load import root_eval
 from nicegui import ui
 from pydantic import BaseModel
 
@@ -38,10 +38,10 @@ import einops
 # %%
 import tqdm
 
-from metadata_test import filt_eval
+from metadata_test import filtered_eval
 
-ec.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.site
-ec.nnsight_model = nnsight_model
+# ec.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.site
+# ec.nnsight_model = nnsight_model
 
 tl_name = "blocks.6.hook_resid_pre"
 nn_name = tlsite_to_nnsite(tl_name)
@@ -49,7 +49,7 @@ nn_name = tlsite_to_nnsite(tl_name)
 
 # %%\
 def active(document, position):
-    return ec.saved_acts.acts[document][position]
+    return root_eval.saved_acts.acts[document][position]
 
 
 active(4, 5)
@@ -295,7 +295,7 @@ class Explorer:
         self.print_activity()
 
 
-exp = Explorer(62, 15, 5527, ec, filt_eval)
+exp = Explorer(62, 15, 5527, root_eval, filtered_eval)
 ui.run()
 
 # ex = Explorer(2, 15, 5, ec)

@@ -51,9 +51,16 @@ class ActsData:
             acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
 
-    def to_acts(self, tokens, llm_batch_size, rearrange=True, skip_exclude=False):
+    def to_acts(
+        self,
+        tokens,
+        llm_batch_size,
+        rearrange=True,
+        skip_exclude=False,
+        force_not_skip_padding=False,
+    ):
         acts_list = []
-        with torch.autocast(device_type="cuda"):
+        with torch.autocast(device_type="cuda", dtype=self.cfg.model_cfg.torch_dtype):
             with torch.inference_mode():
                 for i in range(
                     0,
@@ -74,15 +81,17 @@ class ActsData:
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
             toks_re = toks_re[:, 1:]
-        if rearrange:
-            acts = einops.rearrange(
-                acts,
-                "batch seq d_data -> (batch seq) d_data",
-            )
-            toks_re = einops.rearrange(
-                toks_re,
-                "batch seq -> (batch seq)",
-            )
+        if not rearrange:
+            assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
+            return acts
+        acts = einops.rearrange(
+            acts,
+            "batch seq d_data -> (batch seq) d_data",
+        )
+        toks_re = einops.rearrange(
+            toks_re,
+            "batch seq -> (batch seq)",
+        )
         if self.cfg.model_cfg.acts_cfg.filter_pad:
             mask = toks_re != self.model.tokenizer.pad_token_id
             if not mask.all():

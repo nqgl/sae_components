@@ -71,13 +71,10 @@ class Filters(Artifacts):
 class Metadatas(Artifacts):
     artifacts_category: str = "metadatas"
 
-    def create(self, name, dtype, seq_level=False, item_shape=[]) -> "Metadata":
+    def create(self, name, dtype, item_shape=[]) -> DiskTensor:
         path = self.storage_dir / name
-        if seq_level:
-            raise NotImplementedError("seq level metadata not yet supported")
-        else:
-            doc_shape = [self.cached_config.num_docs]
-            shape = doc_shape + item_shape
+        doc_shape = [self.cached_config.num_docs]
+        shape = doc_shape + list(item_shape)
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             raise ValueError(f"Metadata already exists at {path}")
@@ -85,8 +82,21 @@ class Metadatas(Artifacts):
             path,
             shape,
             dtype,
-            seq_level,
         )
+
+    def __setitem__(self, name, value):
+        assert isinstance(name, str)
+        assert isinstance(value, torch.Tensor)
+        if name in self:
+            raise ValueError(f"Metadata already exists at {name}")
+        if value.shape[0] != self.cached_config.num_docs:
+            raise ValueError(
+                f"First dimension of metadata tensor must be docs-length, got value shape {value.shape}"
+            )
+        item_shape = value.shape[1:]
+        disk_tensor = self.create(name=name, dtype=value.dtype, item_shape=item_shape)
+        disk_tensor.tensor[:] = value
+        disk_tensor.finalize()
 
 
 # @define

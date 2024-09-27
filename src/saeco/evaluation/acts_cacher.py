@@ -71,6 +71,7 @@ class ActsCacher:
             llm_batch_size=self.cfg.llm_batch_size
             or self.cfg.documents_per_micro_batch,
             rearrange=False,
+            force_not_skip_padding=True,
             skip_exclude=True,
         )
 

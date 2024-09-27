@@ -1,6 +1,6 @@
-from load import ec
-import torch
 import nqgl.mlutils.profiling.time_gpu as tg
+import torch
+from load import root_eval
 
 
 # doc_ids = torch.arange(10)
@@ -37,8 +37,8 @@ def blah():
     doc_ids2 = torch.arange(getnum)
     doc_ids2[getnum // 2 :] += 123
     doc_ids2 = doc_ids2[tg.TimedFunc(torch.randperm)(getnum)]
-    r2 = tg.TimedFunc(ec.saved_acts.acts.document_select_sparse2)(doc_ids2)
-    r = tg.TimedFunc(ec.saved_acts.acts.document_select_sparse_sorted)(doc_ids)
+    r2 = tg.TimedFunc(root_eval.saved_acts.acts.document_select_sparse2)(doc_ids2)
+    r = tg.TimedFunc(root_eval.saved_acts.acts.document_select_sparse_sorted)(doc_ids)
     # r = tg.TimedFunc(ec.saved_acts.acts.document_select_sparse2)(doc_ids)
     # r2 = tg.TimedFunc(ec.saved_acts.acts.document_select_sparse)(doc_ids2)
     # print(r.shape)

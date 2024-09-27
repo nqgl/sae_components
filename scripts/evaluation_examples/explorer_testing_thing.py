@@ -7,7 +7,7 @@ import saeco.core as cl
 import torch
 
 from jaxtyping import Float, Int
-from load import ec
+from load import root_eval
 from pydantic import BaseModel
 
 from rich.highlighter import Highlighter
@@ -33,7 +33,7 @@ import einops
 # %%
 import tqdm
 
-ec.nnsight_model = nnsight_model
+root_eval.nnsight_model = nnsight_model
 
 tl_name = "blocks.6.hook_resid_pre"
 nn_name = tlsite_to_nnsite(tl_name)
@@ -41,7 +41,7 @@ nn_name = tlsite_to_nnsite(tl_name)
 
 # %%\
 def active(document, position):
-    return ec.saved_acts.acts[document][position]
+    return root_eval.saved_acts.acts[document][position]
 
 
 active(4, 5)
@@ -259,7 +259,7 @@ class Explorer:
         self.print_activity()
 
 
-ex = Explorer(2, 15, 5, ec)
+ex = Explorer(2, 15, 5, root_eval)
 ex.pos = 17
 ex.doc = 62
 ex.feat = 5527

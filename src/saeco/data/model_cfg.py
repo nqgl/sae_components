@@ -22,7 +22,13 @@ class ModelConfig(SweepableConfig):
     model_kwargs: dict = Field(default_factory=dict)
     _device: str = "cuda"
     no_processing: bool = False
-    torch_dtype: str | None = None
+    torch_dtype_str: str | None = None
+
+    @property
+    def torch_dtype(self):
+        if self.torch_dtype_str is None:
+            return None
+        return str_to_dtype(self.torch_dtype_str)
 
     def model_post_init(self, __context) -> None:
         # super().__init__(**data)
@@ -44,7 +50,7 @@ class ModelConfig(SweepableConfig):
         def getmodel():
             nonlocal model
             if model is None:
-                if self.torch_dtype is None:
+                if self.torch_dtype_str is None:
                     model = LanguageModel(
                         self.model_name,
                         device_map=self._device,
@@ -52,7 +58,7 @@ class ModelConfig(SweepableConfig):
                 else:
                     model = LanguageModel(
                         self.model_name,
-                        torch_dtype=str_to_dtype(self.torch_dtype),
+                        torch_dtype=str_to_dtype(self.torch_dtype_str),
                         device_map=self._device,
                     )
             return model

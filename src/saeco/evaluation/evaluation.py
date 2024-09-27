@@ -27,12 +27,17 @@ class Evaluation:
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
-    nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
+    # nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
     filter: NamedFilter | None = field(default=None)
 
     # cache_name: str | None = None
     # cache_path: Path | None = None
     # metadatas: MetaDatas = field(init=False)
+
+    @property
+    def nnsight_model(self):
+        return self.sae_cfg.train_cfg.data_cfg.model_cfg.model
+
     @classmethod
     def from_cache_name(cls, name: Path | str):
         if isinstance(name, str):
@@ -68,7 +73,6 @@ class Evaluation:
             model_name=self.model_name,
             training_runner=self.training_runner,
             saved_acts=self.saved_acts.filtered(filter),
-            nnsight_model=self.nnsight_model,
             filter=filter,
         )
 
@@ -549,7 +553,7 @@ class Evaluation:
         return acts_tangent
 
     def average_patching_effect_on_dataset(
-        self, feature_id, batch_size=8, scale=None, by_fwad=False
+        self, feature_id, batch_size=8, scale=None, by_fwad=False, random_subset_n=None
     ):
         """
         this will be like,
@@ -568,7 +572,11 @@ class Evaluation:
         ).cuda()
         num_batches = torch.zeros(self.seq_len).cuda() + 1e-6
         for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
-            feature_id=feature_id, batch_size=batch_size, scale=scale, by_fwad=by_fwad
+            feature_id=feature_id,
+            batch_size=batch_size,
+            scale=scale,
+            by_fwad=by_fwad,
+            random_subset_n=random_subset_n,
         ):
             for j in range(batch_seq_pos.shape[0]):
                 results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
@@ -579,11 +587,22 @@ class Evaluation:
         )
 
     def custom_patching_effect_aggregation(
-        self, feature_id, log_call, prob_call, batch_size=8, scale=None, by_fwad=False
+        self,
+        feature_id,
+        log_call,
+        prob_call,
+        batch_size=8,
+        scale=None,
+        by_fwad=False,
+        random_subset_n=None,
     ):
         num_batches = torch.zeros(self.seq_len) + 1e-6
         for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
-            feature_id=feature_id, batch_size=batch_size, scale=scale, by_fwad=by_fwad
+            feature_id=feature_id,
+            batch_size=batch_size,
+            scale=scale,
+            by_fwad=by_fwad,
+            random_subset_n=random_subset_n,
         ):
             if log_call is not None:
                 log_call(ldiff, batch_seq_pos)
@@ -592,7 +611,7 @@ class Evaluation:
         return num_batches
 
     def patching_effect_on_dataset(
-        self, feature_id, batch_size=8, scale=None, by_fwad=False
+        self, feature_id, batch_size=8, scale=None, by_fwad=False, random_subset_n=None
     ):
         """
         this will be like,
@@ -604,6 +623,20 @@ class Evaluation:
         if scale is None:
             scale = 0.99 if by_fwad else 0
         feature = self.features[feature_id]
+        if random_subset_n:
+            if (s := feature.filter.mask.sum()) > random_subset_n:
+                new_mask = torch.zeros_like(feature.filter.mask)
+                new_mask[feature.filter.mask] = torch.randperm(s) < random_subset_n
+                assert new_mask.sum() == random_subset_n
+                new_feature = feature.mask_by_other(
+                    new_mask, return_ft=True, presliced=True, value_like=False
+                )
+                nfi = new_feature.indices()
+                fi = feature.indices().transpose(0, 1).tolist()
+                if nfi.numel() > 0:
+                    for i in nfi.transpose(0, 1).tolist():
+                        assert i in fi
+                feature = new_feature
         feature_active = feature.indices()
         feature = feature.to_dense()
 
@@ -614,6 +647,7 @@ class Evaluation:
                 docs, mask = tokens.index_where_valid(feature_active[0:1])
                 seq_pos = feature_active[1, mask]
                 assert docs.shape[0] == seq_pos.shape[0]
+                print("docs len", docs.shape[0])
                 for i in range(0, docs.shape[0], batch_size):
                     # print("did batch", i)
                     batch_docs = docs[i : i + batch_size]
@@ -650,6 +684,8 @@ class Evaluation:
                             batch_docs, patch_fn, return_prob_diffs=True
                         )
                     yield ldiff, pdiff, batch_seq_pos
+
+        print()
 
     def get_active_documents(self, feature_ids):
         raise DeprecationWarning("This method is outdated")
