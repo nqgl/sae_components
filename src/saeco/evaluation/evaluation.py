@@ -28,11 +28,18 @@ class Evaluation:
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
     # nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
-    filter: NamedFilter | None = field(default=None)
+    _filter: NamedFilter | None = field(default=None)
 
     # cache_name: str | None = None
     # cache_path: Path | None = None
     # metadatas: MetaDatas = field(init=False)
+    @property
+    def docs(self):
+        return self.saved_acts.tokens
+
+    @property
+    def acts(self):
+        return self.saved_acts.acts
 
     @property
     def nnsight_model(self):
@@ -57,15 +64,15 @@ class Evaluation:
 
     def __attrs_post_init__(self):
         if self.saved_acts is not None:
-            if self.saved_acts.data_filter is not self.filter:
+            if self.saved_acts.data_filter is not self._filter:
                 raise ValueError("Filter mismatch between Evaluation and storage")
         else:
-            assert self.filter is None
+            assert self._filter is None
 
     def _apply_filter(self, filter: NamedFilter | Tensor):
         if isinstance(filter, Tensor):
             filter = NamedFilter(filter=filter, filter_name=None)
-        if self.filter is not None:
+        if self._filter is not None:
             raise ValueError(
                 "Filter already set, create filtered from the root Evaluation"
             )
@@ -82,12 +89,10 @@ class Evaluation:
     def _make_metadata_builder_iter(
         self, dtype, device, item_size=[]
     ) -> Generator[Chunk, FilteredTensor, Tensor]:
-        assert self.filter is None
+        assert self._filter is None
         new_tensor = torch.zeros(
             self.cache_cfg.num_docs, *item_size, dtype=dtype, device=device
         )
-        # empty = yield
-        # assert empty is None, empty
 
         for chunk in self.saved_acts.chunks:
             value = yield chunk
@@ -99,15 +104,21 @@ class Evaluation:
         return new_tensor
 
     def metadata_builder(self, dtype, device, item_size=[]) -> "TensorBuilder":
+        return MetadataBuilder(
+            self.saved_acts.chunks,
+            dtype=dtype,
+            device=device,
+            shape=[self.cache_cfg.num_docs, *item_size],
+        )
         return TensorBuilder(self._make_metadata_builder_iter(dtype, device, item_size))
 
     @property
     def path(self):
         if self.saved_acts is None:
             raise ValueError("cache_name must be set")
-        if self.filter is None:
+        if self._filter is None:
             return self.cache_cfg.path
-        return self.filter.filtered_dir(self.cache_cfg.path)
+        return self._filter.filtered_dir(self.cache_cfg.path)
 
     @cached_property
     def cached_call(self) -> Union[CachedCalls, "Evaluation"]:
@@ -115,6 +126,10 @@ class Evaluation:
 
     @cached_property
     def metadatas(self) -> Metadatas:
+        if self._filter is not None:
+            raise NotImplementedError(
+                "Getting metadatas from a filtered Evaluation is TODO and pending some design choices."
+            )
         return Metadatas(self.path, self.cache_cfg)
 
     @cached_property
@@ -123,7 +138,12 @@ class Evaluation:
 
     @cached_property
     def filters(self) -> Filters:
-        return Filters(self.path, self.cache_cfg, num_docs=self.cache_cfg.num_docs)
+        if self._filter is not None:
+            raise ValueError(
+                "Cannot access filters from a filtered evaluation. If this could be useful though, let me (Glen) know."
+            )
+
+        return Filters(self.path, self.cache_cfg)
 
     @property
     def d_dict(self):
@@ -162,6 +182,10 @@ class Evaluation:
     @property
     def d_vocab(self):
         return self.nnsight_model.tokenizer.vocab_size
+
+    @property
+    def num_docs(self):
+        return self.cache_cfg.num_docs
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:
@@ -237,17 +261,15 @@ class Evaluation:
             return values
         return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
-    def top_activating_examples(self, feature_id: int, proportion=0.1):
-        assert 0 < proportion and proportion < 1
+    def top_activating_examples(self, feature_id: int, p=0.1):
+        assert 0 < p and p <= 1
         feature = self.features[feature_id]
-        top = self._get_top_activating(feature.value, proportion=proportion)
+        top = self._get_top_activating(feature.value, p=p)
         return feature.to_filtered_like_self(top)
 
     @staticmethod
-    def _get_top_activating(feature: Tensor, proportion=None, percentile=None):
-        assert proportion is None or percentile is None
-        proportion = proportion or (percentile / 100)
-        topk = feature.values().topk(int(feature.values().shape[0] * proportion))
+    def _get_top_activating(feature: Tensor, p=None):
+        topk = feature.values().topk(int(feature.values().shape[0] * p))
         return torch.sparse_coo_tensor(
             feature.indices()[:, topk.indices],
             topk.values,
@@ -503,8 +525,8 @@ class Evaluation:
 
     @property
     def docs_in_subset(self):
-        if self.filter:
-            return self.filter.filter.sum()
+        if self._filter:
+            return self._filter.filter.sum()
         return self.cache_cfg.num_docs
 
     def acts_avg_over_dataset(self, seq_agg="mean", docs_agg="mean"):
@@ -632,7 +654,7 @@ class Evaluation:
         if scale is None:
             scale = 0.99 if by_fwad else 0
         feature0 = self.features[feature_id]
-        feature = feature0.mask_inactive_docs()
+        feature = feature0.filter_inactive_docs()
         if random_subset_n:
             if (s := feature.filter.mask.sum()) > random_subset_n:
                 new_mask = torch.zeros_like(feature.filter.mask)
@@ -759,3 +781,59 @@ class TensorBuilder:
 
     def send(self, v):
         return self.it.send(v)
+
+    def __lshift__(self, v):
+        return self.send(v)
+
+
+class MetadataBuilder:
+    def __init__(self, chunks, dtype, device, shape):
+        self.it = iter(chunks)
+        self.chunks = chunks
+        self._value = torch.zeros(*shape, dtype=dtype, device=device)
+        self.done = False
+        self.chunks_done = [False] * len(chunks)
+        self.i = 0
+
+    @property
+    def value(self):
+        self.finish()
+        return self._value
+
+    def finish(self):
+        assert all(self.chunks_done)
+        self.done = True
+
+    def __iter__(self) -> Iterator[Chunk]:
+        return self
+
+    def __next__(self) -> Chunk:
+        return next(self.it)
+
+    def __lshift__(self, v):
+        return self._recv(self.chunks[self.i], v)
+
+    def _recv(self, chunk: Chunk, value: FilteredTensor | Tensor):
+        assert isinstance(chunk, Chunk)
+        assert isinstance(value, FilteredTensor | Tensor)
+        assert not self.done
+        assert not self.chunks_done[chunk.idx]
+        if isinstance(value, Tensor):
+            value = chunk._to_filtered(value)
+        value.filter.writeat(target=self._value, value=value.value)
+        self.chunks_done[chunk.idx] = True
+        self.i += 1
+
+    class mbsetter:
+        def __init__(self, mb, chunk):
+            self.mb: MetadataBuilder = mb
+            self.chunk: Chunk = chunk
+
+        def __lshift__(self, v):
+            return self.mb._recv(self.chunk, v)
+
+    def __getitem__(self, chunk):
+        return MetadataBuilder.mbsetter(self, chunk)
+
+    def __setitem__(self, chunk, value):
+        return self._recv(chunk, value)

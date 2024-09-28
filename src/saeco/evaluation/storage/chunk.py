@@ -232,8 +232,3 @@ class Chunk:
     @property
     def tokens_raw_unsafe(self):
         return self.read_tokens_raw()
-
-        # if not self.default_sparse:
-        #     if self.dense_acts is None:
-        #         return self.read_dense()
-        #     return self.dense_acts

@@ -19,8 +19,8 @@ from saeco.trainer.train_cache import TrainCache
 from torch import Tensor
 
 
-ec = Evaluation.from_model_name(model_name)
-ec.store_acts(
+root_eval = Evaluation.from_model_name(model_name)
+root_eval.store_acts(
     CachingConfig(
         dirname=storage_name,
         num_chunks=30,

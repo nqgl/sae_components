@@ -69,8 +69,10 @@ class Filter:
     def slicing_tuple(self):
         return tuple([sl if sl is not None else slice(None) for sl in self.slices])
 
-    def slice(self, other):
-        return other[self.slicing_tuple]
+    def slice(self, other, ndim=None):
+        if ndim is None:
+            return other[self.slicing_tuple]
+        return other[self.slicing_tuple[:ndim]]
 
     def apply_mask(self, tensor: Tensor) -> Tensor:
         if self._mask is None:
@@ -84,31 +86,6 @@ class Filter:
 
     def writeat(self, target: Tensor, value):
         self.slice(target)[self.mask] = value
-
-    @classmethod
-    def from_whatever(cls, value):
-        if isinstance(value, Filter):
-            return value
-        if isinstance(value, slice):
-            return cls(slices=[value], mask=None)
-        if isinstance(value, Tensor):
-            return cls([], value)
-        if isinstance(value, tuple | list):
-            if all(isinstance(v, slice | None) for v in value):
-                return cls(value, None)
-            elif len(value) == 2:
-                slices, mask = value
-                assert isinstance(mask, Tensor | None)
-                if isinstance(slices, list):
-                    return cls(slices, mask)
-                elif isinstance(slices, slice):
-                    return cls(slices=[slices], mask=mask)
-                else:
-                    raise TypeError(f"Unsupported type {type(slices)}")
-        else:
-            raise ValueError(
-                f"Unsupported type(s) for automatic conversion to Filter {value}"
-            )
 
     def slice_attr_tensor(self, attr, default, remove_ints=False, device="cpu"):
         if remove_ints:
@@ -188,7 +165,7 @@ class Filter:
             ]
         )
 
-    def invert_indices_slicing(self, inner_indices):
+    def invert_indices_slicing(self, sliced_indices):
         assert all(
             [
                 sl.step is None or sl.step == 1
@@ -197,7 +174,7 @@ class Filter:
             ]
         )
         adjustment = self.slice_starts_tensor(
-            remove_ints=True, device=inner_indices.device
+            remove_ints=True, device=sliced_indices.device
         ).unsqueeze(-1)
         assert (
             adjustment
@@ -207,11 +184,11 @@ class Filter:
                     for sl in self.slices
                     if not isinstance(sl, int)
                 ],
-                device=inner_indices.device,
+                device=sliced_indices.device,
                 dtype=torch.long,
             ).unsqueeze(-1)
         ).all()
-        indices = inner_indices + adjustment
+        indices = sliced_indices + adjustment
         if any([isinstance(sl, int) for sl in self.slices]):
             for i, sl in enumerate(self.slices):
                 if isinstance(sl, int):
@@ -248,7 +225,7 @@ class Filter:
 
     @property
     def dimmap_o2i(self):
-        return {i: o for o, i in enumerate(self.dimmap_i2o())}
+        return {i: o for o, i in enumerate(self.dimmap_i2o)}
 
     # def reduce(self, dim):
     #     slices = [sl for i, sl in enumerate(self.slices) if i != dim]
@@ -259,6 +236,9 @@ class Filter:
 
 
 def index_sparse_with_bool(value: Tensor, mask: Tensor):
+    """
+    performs value[mask] for sparse value
+    """
     assert value.shape[: mask.ndim] == mask.shape
     new_shape = [mask.count_nonzero()] + list(value.shape[mask.ndim :])
     include = mask[value.indices()[: mask.ndim].split(1)].squeeze()
@@ -288,11 +268,6 @@ class FilteredTensor:
             return value.coalesce()
         return value
 
-    # @convert(filter, takes_self=True)
-    # @staticmethod
-    # def filter_converter(filt, inst):
-    #     return Filter.from_whatever(filt)
-
     def __attrs_post_init__(self):
         if self.filter._mask is not None:
             assert tuple(self.value.shape) == self.filter._inner_shape()
@@ -316,6 +291,8 @@ class FilteredTensor:
         if presliced:
             return cls(value=filter.apply_mask(value), filter=filter)
         return cls(value=filter.apply(value), filter=filter)
+
+    ### -> FT
 
     def mask_by_other(
         self,
@@ -368,7 +345,7 @@ class FilteredTensor:
             ),
         )
 
-    def mask_inactive_docs(self):
+    def filter_inactive_docs(self) -> "FilteredTensor":
         newmask = torch.zeros(
             self.filter.mask.sum(), dtype=torch.bool, device=self.filter.mask.device
         )
@@ -377,38 +354,30 @@ class FilteredTensor:
             newmask, return_ft=True, presliced=True, value_like=True
         )
 
-    def to_dense(self) -> "FilteredTensor":
-        return FilteredTensor(value=self.value.to_dense(), filter=self.filter)
+    def to_filtered_like_self(
+        self, t: Tensor, presliced=True, premasked=True, ndim=None
+    ) -> "FilteredTensor":
+        if premasked and not presliced:
+            raise ValueError("Cannot be masked and not sliced")
+        if not presliced:
+            t = self.filter.slice(t, ndim=ndim)
+        if not premasked:
+            t = t[self.filter.mask]
+        filter = self.filter
+        if ndim:
+            filter = Filter(
+                slices=self.filter.slices[:ndim],
+                mask=self.filter.mask,
+                shape=self.filter.shape[:ndim],
+            )
+        return FilteredTensor(value=t, filter=filter)
 
-    def to_dense_unfiltered(self, default_value=0) -> Tensor:
-        z = torch.full(self.shape, default_value, dtype=self.value.dtype)
-        self.filter.slice(z)[self.filter.mask] = self.value.to_dense()
-        return z
-
-    def to_sparse_unfiltered(self, default_value=0) -> Tensor:
-        # sparse z
-        # values -> mask.nonzero() -> inverted slices
-        ...
-
-    def to_filtered_like_self(self, t: Tensor) -> "FilteredTensor":
-        return FilteredTensor(value=t, filter=self.filter)
-
-    @property
-    def shape(self) -> Tuple[int, ...]:
-        return self.filter.shape
-
-    def cuda(self) -> "FilteredTensor":
-        return self.to(torch.device("cuda"))
-
-    def to(self, *args, **kwargs) -> "FilteredTensor":
-        return FilteredTensor(
-            value=self.value.to(*args, **kwargs),
-            filter=self.filter.to(*args, **kwargs),
-        )
+    ###
 
     def __repr__(self):
         return f"FilteredTensor(value={self.value}, mask={self.filter})"
 
+    ### indexing
     def internalize_indices(self, indices: Tensor):
         assert indices.ndim == 2
         ids, mask = self.filter.slice_indices(indices, return_mask=True)
@@ -424,20 +393,57 @@ class FilteredTensor:
         return self.value[ids.unbind()], mask
 
     def __getitem__(self, i):
-        if isinstance(i, Tensor) and i.dtype == torch.bool:
-            return self.mask_by_other(i)
-        if isinstance(i, Tensor) and i.dtype == torch.int64:
+        if isinstance(i, Tensor) and i.dtype == torch.long:
             si = self.filter.slice_indices(i)
             indices = self.filter.mask_indices(si)
-            assert not (indices == -1).any()
+            if (indices == -1).any():
+                raise IndexError("Some indexed values are excluded by the mask")
             return self.value[indices.unbind()]
-        # if i need this first just implement slice inversion
-        for sl in self.filter.slices:
-            if isinstance(sl, slice) and sl.step not in (None, 1):
-                raise NotImplementedError("Step != 1 not implemented")
-        # if isinstance(i, Tensor) and i.dtype == torch.int64:
-        #     if i.ndim == 1:
-        raise NotImplementedError()
+        raise NotImplementedError(
+            "Indexing FilteredTensor is only implemented for 2D integer tensors"
+        )
+
+    ### kinda torch-like
+    def to_sparse_unfiltered(self, default_value=0) -> Tensor:
+        # sparse z
+        # values -> mask.nonzero() -> inverted slices
+        ...
+
+    def to_dense_unfiltered(self, default_value=0) -> Tensor:
+        z = torch.full(self.shape, default_value, dtype=self.value.dtype)
+        self.filter.slice(z)[self.filter.mask] = self.value.to_dense()
+        return z
+
+    ### torch-like
+
+    def to_dense(self) -> "FilteredTensor":
+        return FilteredTensor(value=self.value.to_dense(), filter=self.filter)
+
+    def indices(self):
+        return self.filter.invert_indices_slicing(
+            self.filter.invert_mask(self.value.indices())
+        )
+
+    def values(self):
+        return self.value.values()
+
+    def nonzero(self):
+        return self.filter.invert_indices_slicing(
+            self.filter.invert_mask(self.value.nonzero())
+        )
+
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return self.filter.shape
+
+    def cuda(self) -> "FilteredTensor":
+        return self.to(torch.device("cuda"))
+
+    def to(self, *args, **kwargs) -> "FilteredTensor":
+        return FilteredTensor(
+            value=self.value.to(*args, **kwargs),
+            filter=self.filter.to(*args, **kwargs),
+        )
 
     # def select(self, select_fn):
     #     if self.value.is_sparse:
@@ -465,16 +471,6 @@ class FilteredTensor:
     #             slices=self.filter.slices, mask=mask, shape=self.filter.shape
     #         ),
     #     )
-
-    def indices(self):
-        return self.filter.invert_indices_slicing(
-            self.filter.invert_mask(self.value.indices())
-        )
-
-    def nonzero(self):
-        return self.filter.invert_indices_slicing(
-            self.filter.invert_mask(self.value.nonzero())
-        )
 
 
 def right_expand(t, shape):

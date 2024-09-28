@@ -57,10 +57,14 @@ class Artifacts:
 @define
 class Filters(Artifacts):
     artifacts_category: str = "filters"
-    num_docs: int = -1
 
     def __setitem__(self, name, value):
-        assert value.shape[0] == self.num_docs
+        if value.shape[0] != self.cached_config.num_docs:
+            raise ValueError(
+                f"First dimension of filter tensor must be docs-length, got value shape {value.shape}"
+            )
+        if value.dtype != torch.bool:
+            raise ValueError(f"Filter tensor must have dtype bool, got {value.dtype}")
         return super().__setitem__(name, value)
 
     def __getitem__(self, name) -> NamedFilter:

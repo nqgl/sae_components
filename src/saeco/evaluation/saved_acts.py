@@ -427,6 +427,8 @@ class ChunksGetter:
     def __getitem__(self, sl: torch.Tensor):
         if not isinstance(sl, tuple):
             return self.document_index(sl)
+        if sl.ndim == 1:
+            return self.document_index(sl)
         return self.document_index(sl[0])[
             :, sl[1:]
         ]  # slower than needs to be but mostly slow for tokens and those are prob not bottleneck ever

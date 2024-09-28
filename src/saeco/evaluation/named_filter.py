@@ -10,7 +10,6 @@ class NamedFilter:
     filter: Tensor = field()
     filter_name: str = field()
 
-    # cfg: CachingConfig
     @filter.validator
     def _validate_filter(self, attribute, value):
         assert isinstance(value, Tensor)
@@ -36,26 +35,3 @@ class NamedFilter:
     @classmethod
     def _filtered_dir_from_root_and_name(cls, root_path, filter_name):
         return root_path / "filtered" / filter_name
-
-    # def save(self, root_path):
-    #     ptpath = self.filtered_dir(root_path) / "filter.pt"
-    #     if ptpath.exists():
-    #         raise FileExistsError(f"Filter already exists at {ptpath}")
-    #     torch.save(self.filter, ptpath)
-
-    # @classmethod
-    # def open_from_root_and_name(cls, root_path, filter_name):
-    #     return cls(
-    #         filter=torch.load(
-    #             cls._filtered_dir_from_root_and_name(root_path, filter_name)
-    #             / "filter.pt"
-    #         ),
-    #         filter_name=filter_name,
-    #     )
-
-    # def mask(self, tensor, chunk=None):
-    #     if chunk is None:
-    #         mask = self.filter
-    #     else:
-    #         mask = self.chunk_filters(chunk.cfg)[chunk.idx]
-    #     return FilteredTensor.from_unmasked_value(tensor, mask)
