@@ -141,7 +141,13 @@ class TrainingRunner:
         pt_path = models_dir / (name + ".pt")
         cfg_path = models_dir / (name + ".json")
         cfg = modify_cfg_fn(cfg.model_validate_json(cfg_path.read_text()))
-        state = modify_state_dict_fn(torch.load(pt_path, weights_only=True))
+        if torch.cuda.is_available():
+            state = modify_state_dict_fn(torch.load(pt_path, weights_only=True))
+        else:
+            state = modify_state_dict_fn(
+                torch.load(pt_path, weights_only=True, map_location="cpu")
+            )
+
         tr = TrainingRunner(cfg, model_fn, state_dict=state)
         # tr.trainable.load_state_dict(state)
         return tr

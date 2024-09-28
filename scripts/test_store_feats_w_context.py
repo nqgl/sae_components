@@ -70,7 +70,7 @@ def print_activity(
     tokens, feature_activity, document_id, feature_ids, colors=color_vecs
 ):
     # tokstrs = llm.tokenizer.convert_ids_to_tokens(tokens, skip_special_tokens=True)
-    tokstrs = ec.llm.tokenizer._tokenizer.decode_batch(
+    tokstrs = ec.tokenizer._tokenizer.decode_batch(
         [[t] for t in tokens],
         skip_special_tokens=False,
     )

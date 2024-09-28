@@ -10,6 +10,8 @@ import tqdm
 from attr import define, field
 from torch import Tensor
 
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite, tlsite_to_nnsite
 from .acts_cacher import ActsCacher, CachingConfig
@@ -29,10 +31,17 @@ class Evaluation:
     saved_acts: SavedActs | None = field(default=None, repr=False)
     # nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
+    tokenizer: PreTrainedTokenizerFast = field()
 
     # cache_name: str | None = None
     # cache_path: Path | None = None
     # metadatas: MetaDatas = field(init=False)
+    @tokenizer.default
+    def _tokenizer_default(self):
+        return AutoTokenizer.from_pretrained(
+            self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name
+        )
+
     @property
     def docs(self):
         return self.saved_acts.tokens
@@ -162,12 +171,6 @@ class Evaluation:
         return self.saved_acts.features
 
     @property
-    def llm(self) -> nnsight.LanguageModel:
-        if self.nnsight_model is not None:
-            return self.nnsight_model
-        return self.training_runner.cfg.train_cfg.data_cfg.model_cfg.model
-
-    @property
     def sae(self):
         return self.training_runner.trainable
 
@@ -181,7 +184,7 @@ class Evaluation:
 
     @property
     def d_vocab(self):
-        return self.nnsight_model.tokenizer.vocab_size
+        return self.tokenizer.vocab_size
 
     @property
     def num_docs(self):
@@ -481,7 +484,7 @@ class Evaluation:
         if isinstance(tokens, Tensor):
             if tokens.shape[0] == 1:
                 tokens = tokens.squeeze(0)
-        return self.llm.tokenizer._tokenizer.decode_batch(
+        return self.tokenizer._tokenizer.decode_batch(
             [[t] for t in tokens],
             skip_special_tokens=False,
         )
@@ -652,7 +655,7 @@ class Evaluation:
             this behavior may not be ideal if it overweighs certain documents
         """
         if scale is None:
-            scale = 0.99 if by_fwad else 0
+            scale = 1 if by_fwad else 0
         feature0 = self.features[feature_id]
         feature = feature0.filter_inactive_docs()
         if random_subset_n:
