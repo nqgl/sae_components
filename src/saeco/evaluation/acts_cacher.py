@@ -1,15 +1,17 @@
+from pathlib import Path
+from typing import Any, Callable, Iterator
+
+import einops
 import torch
-from jaxtyping import Int, Float
+from attrs import define, field
+from jaxtyping import Float, Int
+from torch import Tensor
+
 from saeco.data import DataConfig
 from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
+from saeco.evaluation.storage.chunk import Chunk
+from saeco.evaluation.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.trainer import Trainable, TrainingRunner
-from typing import Any, Callable, Iterator
-from pathlib import Path
-from attrs import define, field
-from torch import Tensor
-import einops
-from saeco.evaluation.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 # storage_dir: Path = Path.home() / "workspace/data/caching"
@@ -69,6 +71,7 @@ class ActsCacher:
             llm_batch_size=self.cfg.llm_batch_size
             or self.cfg.documents_per_micro_batch,
             rearrange=False,
+            force_not_skip_padding=True,
             skip_exclude=True,
         )
 
@@ -118,18 +121,23 @@ class Cacher:
             if n_chunks is not None and chunk_id >= n_chunks:
                 break
             chunk.save_tokens()
-            # chunk.force_dense_to_disk()
             if self.cfg.store_sparse:
                 chunk.sparsify()
                 chunk.save_sparse()
-                # if not self.cfg.store_dense:
-                # chunk.remove_dense_from_disk()
             if self.cfg.store_dense:
                 chunk.save_dense()
             if self.cfg.store_feature_tensors:
-                print("Storing feature tensors")
-                for i, feat_acts in enumerate(chunk.dense_acts.split(1, dim=2)):
-                    self.feature_tensors[i].append(feat_acts.squeeze(-1))
+                if not self.cfg.eager_sparse_generation:
+                    print("Storing feature tensors")
+                    for i, feat_acts in enumerate(chunk._dense_acts.split(1, dim=2)):
+                        self.feature_tensors[i].append(feat_acts.squeeze(-1))
+                else:
+                    print("Storing feature tensors")
+
+                    ff_sparse_acts = chunk._sparse_acts.transpose(0, 2).transpose(1, 2)
+                    for i in range(self.d_dict):
+                        self.feature_tensors[i].append(ff_sparse_acts[i])
+
             del chunk
             print(f"Stored chunk {chunk_id}")
         for ft in self.feature_tensors:
@@ -137,17 +145,28 @@ class Cacher:
 
     def chunk_generator(self):
         for tokens in self.tokens_source:
-            chunk = Chunk(
-                idx=self.chunk_counter,
-                path=self.path,
-                loaded_tokens=tokens,
-                dense_acts=self.batched_tokens_to_sae_acts(tokens),
-            )
+            if self.cfg.eager_sparse_generation:
+                chunk = Chunk(
+                    idx=self.chunk_counter,
+                    path=self.path,
+                    loaded_tokens=tokens,
+                    sparse_acts=self.batched_tokens_to_sae_acts(
+                        tokens, sparse_eager=True
+                    ),
+                )
+
+            else:
+                chunk = Chunk(
+                    idx=self.chunk_counter,
+                    path=self.path,
+                    loaded_tokens=tokens,
+                    dense_acts=self.batched_tokens_to_sae_acts(tokens),
+                )
             self.chunk_counter += 1
             yield chunk
 
     @torch.inference_mode()
-    def batched_tokens_to_sae_acts(self, tokens: Tensor):
+    def batched_tokens_to_sae_acts(self, tokens: Tensor, sparse_eager: bool = False):
         # this could be optimized more by having separate batch sizes for llm and sae
         sae_acts = []
         for i in range(0, tokens.shape[0], self.cfg.documents_per_micro_batch):
@@ -155,10 +174,19 @@ class Cacher:
             batch_subj_acts = self.get_llm_acts(batch_tokens)
             batch_sae_acts = self.get_sae_acts(batch_subj_acts)
             del batch_subj_acts
-            sae_acts.append(batch_sae_acts)
+            # if sparse_eager and self.cfg.store_feature_tensors:
+            #     for i, feat_acts in enumerate(batch_sae_acts.split(1, dim=2)):
+            #         self.feature_tensors[i].append(feat_acts.squeeze(-1))
+            if sparse_eager:
+                sae_acts.append(batch_sae_acts.to_sparse_coo())
+            else:
+                sae_acts.append(batch_sae_acts)
+
+        if sparse_eager:
+            return torch.cat(sae_acts, dim=0).coalesce()
         return torch.cat(sae_acts, dim=0)
 
-    def get_sae_acts(self, subj_acts):
+    def get_sae_acts(self, subj_acts) -> Tensor:
         ndoc, seq_len, d_dict = subj_acts.shape
         subj_acts_flat = einops.rearrange(
             subj_acts, "doc seq d_dict -> (doc seq) d_dict"

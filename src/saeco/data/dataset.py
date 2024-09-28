@@ -1,17 +1,20 @@
-from pydantic import Field
-from saeco.data.acts_data import ActsData, ActsDataset
-from saeco.data.tokens_data import TokensData
-from saeco.data.generation_config import DataGenerationProcessConfig
-from saeco.data.split_config import SplitConfig
-from saeco.data.model_cfg import ModelConfig
-from saeco.data.tabletensor import Piler
-import datasets
-import torch
-from torch.utils.data import DataLoader
-from saeco.sweeps import SweepableConfig
+from pathlib import Path
 from typing import Optional
 
+import datasets
+import torch
+from pydantic import Field
+from torch.utils.data import DataLoader
+
+from saeco.data.acts_data import ActsData, ActsDataset
+from saeco.data.generation_config import DataGenerationProcessConfig
+
 from saeco.data.locations import DATA_DIRS
+from saeco.data.model_cfg import ModelConfig
+from saeco.data.split_config import SplitConfig
+from saeco.data.tabletensor import Piler
+from saeco.data.tokens_data import TokensData
+from saeco.sweeps import SweepableConfig
 
 
 # @dataclass
@@ -69,10 +72,10 @@ class DataConfig(SweepableConfig):
             / "acts"
         )
 
-    def _tokens_piles_path(self, split: SplitConfig):
+    def _tokens_piles_path(self, split: SplitConfig) -> Path:
         return self._get_tokens_split_path(split) / "piles"
 
-    def _acts_piles_path(self, split: SplitConfig):
+    def _acts_piles_path(self, split: SplitConfig) -> Path:
         return self._get_acts_split_path(split) / "piles"
 
     def acts_piler(
@@ -88,8 +91,6 @@ class DataConfig(SweepableConfig):
             num_piles=(num_piles if write else None),
         )
 
-        # loading_data_first_time = not dataset_reshaped_path.exists()
-
     def train_data_batch_generator(self, model, batch_size, nsteps=None):
         return ActsData(self, model).acts_generator(
             self.trainsplit, batch_size=batch_size, nsteps=nsteps
@@ -99,7 +100,10 @@ class DataConfig(SweepableConfig):
         return ActsDataset(ActsData(self, model), self.trainsplit, batch_size)
 
     def get_databuffer(self, num_workers=0, batch_size=4096):
-        ds = self.train_dataset(self.model_cfg.model, batch_size=batch_size)
+        model = None
+        if not self._acts_piles_path(self.trainsplit).exists():
+            model = self.model_cfg.model
+        ds = self.train_dataset(model, batch_size=batch_size)
         dl = DataLoader(
             ds,
             num_workers=num_workers,

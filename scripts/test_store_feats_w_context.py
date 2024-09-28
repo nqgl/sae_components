@@ -1,27 +1,30 @@
 # %%
+from functools import wraps
 from pathlib import Path
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
-from saeco.trainer import Trainable
 
-from saeco.architectures.anth_update import cfg, anth_update_model
-
-from jaxtyping import Int, Float
-from torch import Tensor
-from pydantic import BaseModel
-from saeco.trainer.runner import TrainingRunner
+import nnsight
 import saeco.core as cl
 import torch
-from saeco.trainer.train_cache import TrainCache
-from functools import wraps
+
+from jaxtyping import Float, Int
+from pydantic import BaseModel
+
+from saeco.architectures.anth_update import anth_update_model, cfg
 from saeco.evaluation.evaluation import Evaluation
-import nnsight
+from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.chunk import Chunk
+from saeco.trainer import Trainable
+from saeco.trainer.runner import TrainingRunner
+from saeco.trainer.train_cache import TrainCache
+from torch import Tensor
 
 
 # ec = Evaluation.from_model_name(
 #     "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"
 # )
 ec = Evaluation.from_cache_name("dyn_thresh")
+from rich.console import Console
+
 # ec.store_acts(
 #     CachingConfig(
 #         store_dense=False,
@@ -38,9 +41,6 @@ ec = Evaluation.from_cache_name("dyn_thresh")
 # c = Chunk.load_chunks_from_dir(path, load_sparse_only=True)
 # print(len(c))
 from saeco.evaluation.saved_acts import SavedActs
-
-
-from rich.console import Console
 
 console = Console()
 console.print("Hello", style="rgb(175,0,255)")
@@ -113,17 +113,17 @@ def print_activity(
 ec = Evaluation.from_cache_name("ec_test2")
 
 
-# %%
-
-
-import tqdm
-
 # for i in tqdm.trange(6144):
 #     all_cosims.append(ec.cosims(ec.get_feature(i)))
 # print()
 
 
 import einops
+
+# %%
+
+
+import tqdm
 
 
 # s = einops.einsum(feats, feats, "f d s, f2 d s -> f f2")
@@ -133,7 +133,7 @@ def select_active():
 
     feature_ids = [14, 15, 16, 17, 18, 19]
     feats = ec.get_features(feature_ids)
-    top_feats = [ec.get_top_activating(f, percentile=10) for f in feats]
+    top_feats = [ec._get_top_activating(f, p=10) for f in feats]
     fdocs = ec.select_active_documents(ec.features_union(top_feats))
 
     for i in fdocs.indices()[0]:

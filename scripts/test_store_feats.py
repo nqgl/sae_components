@@ -1,21 +1,22 @@
 # %%
+from functools import wraps
 from pathlib import Path
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
-from saeco.trainer import Trainable
 
-from saeco.architectures.anth_update import cfg, anth_update_model
+import saeco.core as cl
+import torch
 
 # from saeco.architectures.threshgate_gradjust.tg_grad_deep_model import (
 #     cfg,
 #     deep_tg_grad_sae,
 # )
 from pydantic import BaseModel
+
+from saeco.architectures.anth_update import anth_update_model, cfg
+from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.chunk import Chunk
+from saeco.trainer import Trainable
 from saeco.trainer.runner import TrainingRunner
-import saeco.core as cl
-import torch
 from saeco.trainer.train_cache import TrainCache
-from functools import wraps
 
 
 def timed(func, name=""):
@@ -60,16 +61,15 @@ def load(cfg: BaseModel, model_fn, name):
 tr = load(cfg, anth_update_model, name)
 tr.trainable.eval()
 
-# %%
-from saeco.evaluation.acts_cacher import ActsCacher, Chunk
-
-
 # path = Path.home() / "worksp    ace" / "cached_sae_acts" / "test"
 # ccfg = CachingConfig(store_dense=True)
 # acts_cacher = ActsCacher(ccfg, tr, None)
 # acts_cacher.store_acts()
 
 import time
+
+# %%
+from saeco.evaluation.acts_cacher import ActsCacher, Chunk
 
 
 @timed
@@ -106,12 +106,12 @@ from saeco.evaluation.saved_acts import SavedActs
 
 tr.trainable.model.model.module.freqs.freqs
 
-sa = SavedActs(path)
+sa = SavedActs.from_path(path)
 
 
 @timed
 def get_features_and_active_docs(feature_ids):
-    feature_tensors = [sa.active_feature_tensor(fid) for fid in feature_ids]
+    feature_tensors = [sa.features[fid] for fid in feature_ids]
     # active_documents_l = [
     #     f.indices()[0, f.values() != 0].unique() for f in feature_tensors
     # ]

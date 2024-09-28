@@ -1,4 +1,4 @@
-from saeco.evaluation.growing_disk_tensor import GrowingDiskTensor
+from saeco.evaluation.storage.growing_disk_tensor import GrowingDiskTensor
 
 
 import torch
@@ -44,7 +44,7 @@ class SparseGrowingDiskTensor:
             return GrowingDiskTensor.open(path=self.indices_path)
         return GrowingDiskTensor.create(
             path=self.indices_path,
-            shape=[len(self.shape), None],
+            shape=[len(self.shape), 0],
             cat_axis=1,
             dtype=torch.int64,
         )
@@ -54,7 +54,7 @@ class SparseGrowingDiskTensor:
         if self.values_path.exists():
             return GrowingDiskTensor.open(path=self.values_path)
         return GrowingDiskTensor.create(
-            path=self.values_path, shape=[None], cat_axis=0, dtype=self.dtype
+            path=self.values_path, shape=[0], cat_axis=0, dtype=self.dtype
         )
 
     def append(self, tensor: torch.Tensor):
@@ -74,7 +74,10 @@ class SparseGrowingDiskTensor:
             assert indices[i].max() < idx and indices[i].min() >= 0
         self.indices.append(indices)
         self.values.append(tensor.values())
-        assert self.values.variable_axis_len == self.indices.variable_axis_len
+        assert (
+            self.values.metadata.shape[self.values.cat_axis]
+            == self.indices.metadata.shape[self.indices.cat_axis]
+        )
 
     def finalize(self):
         self.indices.finalize()

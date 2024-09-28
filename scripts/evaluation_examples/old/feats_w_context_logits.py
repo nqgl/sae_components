@@ -1,27 +1,30 @@
 # %%
+from functools import wraps
 from pathlib import Path
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
-from saeco.evaluation.nnsite import getsite, setsite, tlsite_to_nnsite
-from saeco.trainer import Trainable
 
-from saeco.architectures.anth_update import cfg, anth_update_model
-
-from jaxtyping import Int, Float
-from torch import Tensor
-from pydantic import BaseModel
-from saeco.trainer.runner import TrainingRunner
+import nnsight
 import saeco.core as cl
 import torch
-from saeco.trainer.train_cache import TrainCache
-from functools import wraps
-from saeco.evaluation.evaluation import Evaluation
-import nnsight
+
+from jaxtyping import Float, Int
+
+# from transformers import GPT2LMHeadModel
+# ec = Evaluation.from_cache_name("dyn_thresh")
+from load import root_eval
+from pydantic import BaseModel
 
 from rich.highlighter import Highlighter
 
-# from transformers import GPT2LMHeadModel
-ec = Evaluation.from_cache_name("dyn_thresh")
+from saeco.architectures.anth_update import anth_update_model, cfg
+from saeco.evaluation.evaluation import Evaluation
+from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.chunk import Chunk
+from saeco.misc.nnsite import getsite, setsite, tlsite_to_nnsite
+from saeco.trainer import Trainable
+from saeco.trainer.runner import TrainingRunner
+from saeco.trainer.train_cache import TrainCache
+from torch import Tensor
+
 # ec = Evaluation.from_model_name("sae sweeps/dyn_thresh/50001")
 # ec.store_acts(
 #     caching_cfg=CachingConfig(
@@ -34,13 +37,10 @@ ec = Evaluation.from_cache_name("dyn_thresh")
 # %%
 nnsight_model = nnsight.LanguageModel("openai-community/gpt2", device_map="cuda")
 
-# %%
-import tqdm
-
-
 import einops
 
-ec.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
+# %%
+import tqdm
 
 
 tl_name = "blocks.6.hook_resid_pre"
@@ -51,10 +51,10 @@ nn_name = tlsite_to_nnsite(tl_name)
 
 
 # %%
-cache = ec.sae.make_cache()
+cache = root_eval.sae.make_cache()
 cache.acts = ...
 
-cache = ec.sae.make_cache()
+cache = root_eval.sae.make_cache()
 cache.acts = ...
 
 
@@ -141,7 +141,7 @@ def patch_hook(acts):
 
 with nnsight_model.trace("The Eieffel Tower is in the city of") as tracer:
 
-    patched_sae = ec.sae_with_patch(patch_hook, for_nnsight=False)
+    patched_sae = root_eval.sae_with_patch(patch_hook, for_nnsight=False)
 
     lm_acts = getsite(nnsight_model, nn_name)
     orig_lm_acts = lm_acts.save()
@@ -154,7 +154,7 @@ def patch_hook(acts):
     return torch.zeros_like(acts)
 
 
-patched_sae = ec.sae_with_patch(patch_hook)
+patched_sae = root_eval.sae_with_patch(patch_hook)
 with nnsight_model.trace("The Eieffel Tower is in the city of") as tracer:
     lm_acts = getsite(nnsight_model, nn_name)
     orig_lm_acts = lm_acts.save()
@@ -172,12 +172,12 @@ import torch.autograd.forward_ad as fwAD
 
 
 def active(document, position):
-    return ec.saved_acts.acts[document][position]
+    return root_eval.saved_acts.acts[document][position]
 
 
 active(4, 5)
 
-ec.saved_acts.tokens[0:5]
+root_eval.saved_acts.tokens[0:5]
 # %%
 
 
@@ -185,9 +185,9 @@ def fwad_hook(acts):
     return fwAD.make_dual(acts, acts)
 
 
-patched_sae = ec.sae_with_patch(fwad_hook)
+patched_sae = root_eval.sae_with_patch(fwad_hook)
 with fwAD.dual_level():
-    with nnsight_model.trace(ec.saved_acts.tokens[0:5]) as tracer:
+    with nnsight_model.trace(root_eval.saved_acts.tokens[0:5]) as tracer:
 
         lm_acts = getsite(nnsight_model, nn_name)
         orig_lm_acts = lm_acts.save()
@@ -206,11 +206,11 @@ def grad_hook(acts: Tensor):
     return acts
 
 
-tokens = ec.saved_acts.tokens[0:5]
+tokens = root_eval.saved_acts.tokens[0:5]
 with nnsight_model.trace(tokens) as tracer:
     lm_acts = getsite(nnsight_model, nn_name)
     orig_lm_acts = lm_acts.save()
-    acts_re = ec.sae_with_patch(grad_hook)(orig_lm_acts).save()
+    acts_re = root_eval.sae_with_patch(grad_hook)(orig_lm_acts).save()
     setsite(nnsight_model, nn_name, acts_re)
     out = nnsight_model.output
     logits122 = out.logits[:, 122, tokens[:, 122]]
@@ -227,13 +227,13 @@ def grad_hook(acts: Tensor):
     return acts
 
 
-tokens = ec.saved_acts.tokens[0:5]
+tokens = root_eval.saved_acts.tokens[0:5]
 grads = []
-ec.sae.training = False
+root_eval.sae.training = False
 with nnsight_model.trace(tokens) as tracer:
     lm_acts = getsite(nnsight_model, nn_name)
     orig_lm_acts = lm_acts.save()
-    res = ec.sae_with_patch(grad_hook, return_sae_acts=True)(orig_lm_acts)
+    res = root_eval.sae_with_patch(grad_hook, return_sae_acts=True)(orig_lm_acts)
     setsite(nnsight_model, nn_name, res[0])
     out = nnsight_model.output.save()
     for i in range(tokens.shape[1]):

@@ -1,11 +1,12 @@
 # thanks to https://discuss.pytorch.org/t/torch-save-like-open-mode-a/137114
 # for code snippets and setting me on the right path
-import tables
 from pathlib import Path
+from typing import List, Union
+
+import tables
 import torch
-from typing import Union, List
 import tqdm
-from safetensors.torch import save_file, load_file
+from safetensors.torch import load_file, save_file
 
 # path = Path("data/table_test.h5")
 # t = torch.arange(32).reshape(2, 16)
@@ -101,6 +102,7 @@ class AppendDiskTensor:
                         else torch.device("cpu")
                     ),
                     mmap=mmap,
+                    weights_only=True,
                 )
         if ptpath.exists():
             print(f"converting .pt {ptpath} to safetensors")

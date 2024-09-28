@@ -1,18 +1,22 @@
-from saeco.data.tokens_data import TokensData
-from saeco.data.bufferized_iter import bufferized_iter
-from saeco.data.split_config import SplitConfig
+from typing import TYPE_CHECKING
+
 import einops
+import nnsight
 import torch
 import tqdm
-from transformer_lens import HookedTransformer
-from typing import TYPE_CHECKING
+from nnsight import LanguageModel
+
+from saeco.data.bufferized_iter import bufferized_iter
+from saeco.data.split_config import SplitConfig
+from saeco.data.tokens_data import TokensData
+from saeco.misc.nnsite import getsite
 
 if TYPE_CHECKING:
     from saeco.data.dataset import DataConfig
 
 
 class ActsData:
-    def __init__(self, cfg: "DataConfig", model: HookedTransformer):
+    def __init__(self, cfg: "DataConfig", model: LanguageModel | None):
         self.cfg = cfg
         self.model = model
 
@@ -47,34 +51,52 @@ class ActsData:
             acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
 
-    def to_acts(self, tokens, llm_batch_size, rearrange=True, skip_exclude=False):
+    def to_acts(
+        self,
+        tokens,
+        llm_batch_size,
+        rearrange=True,
+        skip_exclude=False,
+        force_not_skip_padding=False,
+    ):
         acts_list = []
-        # assert tokens.shape[0] % llm_batch_size == 0
-        with torch.autocast(device_type="cuda"):
+        with torch.autocast(device_type="cuda", dtype=self.cfg.model_cfg.torch_dtype):
             with torch.inference_mode():
-
-                def hook_fn(acts, hook):
-                    acts_list.append(acts)
-
                 for i in range(
                     0,
                     tokens.shape[0],
                     llm_batch_size,
                 ):
-                    self.model.run_with_hooks(
+                    model: nnsight.LanguageModel = self.model
+                    with model.trace(
                         tokens[i : i + llm_batch_size],
                         **self.cfg.model_cfg.model_kwargs,
-                        stop_at_layer=self.cfg.model_cfg.acts_cfg.layer_num + 1,
-                        fwd_hooks=[(self.cfg.model_cfg.acts_cfg.hook_site, hook_fn)],
-                    )
+                    ):
+                        acts_module = getsite(model, self.cfg.model_cfg.acts_cfg.site)
+                        acts = acts_module.save()
+                        acts_module.stop()
+                    acts_list.append(acts.value)
         acts = torch.cat(acts_list, dim=0).half()
+        toks_re = tokens
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
-        if rearrange:
-            acts = einops.rearrange(
-                acts,
-                "batch seq d_data -> (batch seq) d_data",
-            )
+            toks_re = toks_re[:, 1:]
+        if not rearrange:
+            assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
+            return acts
+        acts = einops.rearrange(
+            acts,
+            "batch seq d_data -> (batch seq) d_data",
+        )
+        toks_re = einops.rearrange(
+            toks_re,
+            "batch seq -> (batch seq)",
+        )
+        if self.cfg.model_cfg.acts_cfg.filter_pad:
+            mask = toks_re != self.model.tokenizer.pad_token_id
+            if not mask.all():
+                print(f"removing {(~mask).sum()} activations from pad token locations")
+                return acts[toks_re != self.model.tokenizer.pad_token_id]
         return acts
 
     def acts_generator(

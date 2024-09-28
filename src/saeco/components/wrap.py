@@ -1,6 +1,8 @@
 from abc import ABCMeta
+
 import torch
 import torch.nn as nn
+
 import saeco.core as cl
 
 
@@ -90,8 +92,8 @@ class Mix(nn.Module):
 
 
 def main():
-    from saeco.core.basic_ops import Add, Mul, Sub, Neg
     import saeco.core as cl
+    from saeco.core.basic_ops import Add, Mul, Neg, Sub
 
     seq = cl.Seq(
         Add(nn.Parameter(torch.tensor(1.0))),
@@ -134,9 +136,7 @@ def main():
         def post_backward_hook(self):
             print("Bwm")
 
-    from saeco.trainer.post_backward_normalization import (
-        do_post_backward,
-    )
+    from saeco.trainer.post_backward_normalization import do_post_backward
 
     a = cl.Seq(
         Add(nn.Parameter(torch.tensor(1.0))),

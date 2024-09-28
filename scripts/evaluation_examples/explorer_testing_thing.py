@@ -1,40 +1,39 @@
 # %%
+from functools import wraps
 from pathlib import Path
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.chunk import Chunk
-from saeco.evaluation.nnsite import getsite, setsite, tlsite_to_nnsite
-from saeco.trainer import Trainable
 
-from saeco.architectures.anth_update import cfg, anth_update_model
-
-from jaxtyping import Int, Float
-from torch import Tensor
-from pydantic import BaseModel
-from saeco.trainer.runner import TrainingRunner
+import nnsight
 import saeco.core as cl
 import torch
-from saeco.trainer.train_cache import TrainCache
-from functools import wraps
-from saeco.evaluation.evaluation import Evaluation
-import nnsight
+
+from jaxtyping import Float, Int
+from load import root_eval
+from pydantic import BaseModel
 
 from rich.highlighter import Highlighter
 
+from saeco.architectures.anth_update import anth_update_model, cfg
+from saeco.evaluation.evaluation import Evaluation
+from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.chunk import Chunk
+from saeco.misc.nnsite import getsite, setsite, tlsite_to_nnsite
+from saeco.trainer import Trainable
+from saeco.trainer.runner import TrainingRunner
+from saeco.trainer.train_cache import TrainCache
+from torch import Tensor
+
 # from transformers import GPT2LMHeadModel
-ec = Evaluation.from_cache_name("dyn_thresh")
 # %%
 nnsight_model = nnsight.LanguageModel("openai-community/gpt2", device_map="cuda")
+
+import einops
 
 # %%
 
 # %%
 import tqdm
 
-
-import einops
-
-ec.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.hook_site
-ec.nnsight_model = nnsight_model
+root_eval.nnsight_model = nnsight_model
 
 tl_name = "blocks.6.hook_resid_pre"
 nn_name = tlsite_to_nnsite(tl_name)
@@ -42,7 +41,7 @@ nn_name = tlsite_to_nnsite(tl_name)
 
 # %%\
 def active(document, position):
-    return ec.saved_acts.acts[document][position]
+    return root_eval.saved_acts.acts[document][position]
 
 
 active(4, 5)
@@ -172,7 +171,7 @@ class Explorer:
         out, tangent = self.eval.forward_ad_with_sae(
             tokens=self.document.unsqueeze(0),
             tangent_gen=make_tangent,
-            patch_hook=patch,
+            patch_fn=patch,
         )
         if est_prob_deltas:
             tangent = (tangent + out.logits).softmax(-1) - out.logits.softmax(-1)
@@ -260,10 +259,10 @@ class Explorer:
         self.print_activity()
 
 
-ex = Explorer(2, 15, 5, ec)
+ex = Explorer(2, 15, 5, root_eval)
 ex.pos = 17
-ex.doc = 9959
-ex.feat = 164
+ex.doc = 62
+ex.feat = 5527
 ex.tokens_to_feats()
 
 ex.nf()

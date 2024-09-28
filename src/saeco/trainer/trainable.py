@@ -1,17 +1,21 @@
+from typing import Optional
+
+import einops
+
+import torch
+import torch.nn as nn
+
 import saeco.core as cl
 from saeco.components.losses import (
-    Loss,
-    L2Loss,
-    SparsityPenaltyLoss,
     CosineSimilarityLoss,
+    L2Loss,
+    Loss,
+    SparsityPenaltyLoss,
 )
+from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
 from saeco.core import Cache
 from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
 from saeco.trainer.train_cache import TrainCache
-from saeco.components.resampling import Resampler, RandomResampler, AnthResampler
-from typing import Optional
-import torch
-import torch.nn as nn
 
 
 class Trainable(cl.Module):
@@ -93,6 +97,11 @@ class Trainable(cl.Module):
         return loss
 
     def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+        shape = None
+        if x.ndim == 3:
+            shape = x.shape
+            x = einops.rearrange(x, "doc seq data -> (doc seq) data")
+
         made_cache = False
         if cache is None:
             cache = TrainCache()
@@ -101,6 +110,10 @@ class Trainable(cl.Module):
         if made_cache:
             cache.destruct()
             del cache
+        if shape is not None:
+            out = einops.rearrange(
+                out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
+            )
         return out
 
     def get_losses_and_metrics_names(self) -> list[str]:
@@ -112,8 +125,8 @@ class Trainable(cl.Module):
 
     def param_groups(self, optim_kwargs: dict) -> list[dict]:
         from saeco.components.features.param_metadata import (
-            ParamMetadata,
             MetaDataParam,
+            ParamMetadata,
         )
 
         normal = []

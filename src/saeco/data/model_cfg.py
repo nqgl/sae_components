@@ -1,54 +1,65 @@
-from transformer_lens import HookedTransformer, utils
+from nnsight import LanguageModel
 from pydantic import Field
+
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
 
 
 class ActsDataConfig(SweepableConfig):
     d_data: int = 768
-    site: str = "resid_pre"
-    layer_num: int = 6
+    site: str = "transformer.h.6.input"
     excl_first: bool = True
-
-    @property
-    def hook_site(self):
-        return utils.get_act_name(self.site, self.layer_num)
+    filter_pad: bool = True
 
     @property
     def actstring(self):
-        return f"{self.site}_{self.layer_num}_{self.excl_first}"
+        return f"{self.site}_{self.excl_first}"
 
 
 class ModelConfig(SweepableConfig):
-    model_name: str = "gpt2-small"
+    model_name: str = "gpt2"
     acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
     model_kwargs: dict = Field(default_factory=dict)
     _device: str = "cuda"
     no_processing: bool = False
-    torch_dtype: str | None = None
+    torch_dtype_str: str | None = None
 
-    def model_post_init(self, __context: utils.Any) -> None:
+    @property
+    def torch_dtype(self):
+        if self.torch_dtype_str is None:
+            return None
+        return str_to_dtype(self.torch_dtype_str)
+
+    def model_post_init(self, __context) -> None:
         # super().__init__(**data)
         model = None
+        assert not any(
+            [
+                v in self.model_kwargs
+                for v in [
+                    "trace",
+                    "invoker_args",
+                    "backend",
+                    "remote",
+                    "blocking",
+                    "scan",
+                ]
+            ]
+        ), "config's kwargs clash with nnsight::trace kwargs"
 
         def getmodel():
             nonlocal model
             if model is None:
-                if self.no_processing:
-                    gen_fn = HookedTransformer.from_pretrained_no_processing
-                else:
-                    gen_fn = HookedTransformer.from_pretrained
-                if self.torch_dtype is None:
-                    model = gen_fn(
+                if self.torch_dtype_str is None:
+                    model = LanguageModel(
                         self.model_name,
-                        device=self._device,
+                        device_map=self._device,
                     )
                 else:
-                    model = gen_fn(
+                    model = LanguageModel(
                         self.model_name,
-                        torch_dtype=str_to_dtype(self.torch_dtype),
-                        # device_map=,
-                        device=self._device,
+                        torch_dtype=str_to_dtype(self.torch_dtype_str),
+                        device_map=self._device,
                     )
             return model
 
@@ -62,11 +73,11 @@ class ModelConfig(SweepableConfig):
         return super().model_post_init(__context)
 
     @property
-    def model(self) -> HookedTransformer:
+    def model(self) -> LanguageModel:
         return self._getmodel()
 
     @model.setter
-    def model(self, m: HookedTransformer):
+    def model(self, m: LanguageModel):
         self._setmodel(m)
 
     @property
