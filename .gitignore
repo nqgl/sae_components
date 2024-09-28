@@ -9,3 +9,5 @@ models-from-remote/
 *.bin
 *.metadata
 *.json
+checkpoints/
+scripts/checkpoints/
