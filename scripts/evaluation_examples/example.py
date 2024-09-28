@@ -92,11 +92,9 @@ if "selected token" not in root.metadatas:
 # if we wanted to create a metadata that counts the average number of active features
 
 if "average active features" not in root.metadatas:
-    builder = root.metadata_builder(torch.float, "cuda")
+    builder = root.metadata_builder(torch.float, "cpu")
     for chunk in builder:
-        builder << chunk.acts.value.cuda().to_dense().count_nonzero(-1).float().mean(
-            dim=-1
-        )
+        builder << chunk.acts.value.to_dense().count_nonzero(-1).float().mean(dim=-1)
     root.metadatas["average active features"] = builder.value
 
 
