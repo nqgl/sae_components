@@ -86,7 +86,7 @@ def torange(s: slice):
     kw = {}
 
     if s.start:
-        kw["start"] = s.start
+        kw["start"] = s.start or 0
     if s.stop:
         kw["end"] = s.stop
     if s.step:

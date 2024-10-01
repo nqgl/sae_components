@@ -13,7 +13,7 @@ docs, acts, metas, doc_ids = root_eval.top_activations_and_metadatas(
 assert root_eval.docstrs[doc_ids] == docs
 for i in range(25):
     acts2 = root_eval.acts[doc_ids[i]].to_dense()[:, :, feat]
-    print((acts2 == acts[i]).all())
+    print((acts2 == acts[i].to_sparse_coo()).all())
 sdi = doc_ids.argsort()
 acts2 = root_eval.acts[doc_ids].to_dense()[:, :, feat]
 acts3 = root_eval.acts[doc_ids[sdi]].to_dense()[:, :, feat]

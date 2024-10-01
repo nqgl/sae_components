@@ -19,6 +19,7 @@ from .cached_artifacts import CachedCalls
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
 from .named_filter import NamedFilter
+from .return_types import MetadataEnrichmentResults, MetadataLabelEnrichment
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
 
@@ -790,39 +791,61 @@ class Evaluation:
 
     def top_activations_and_metadatas(
         self,
-        feature_id: int,
+        feature: int | FilteredTensor,
         p: float = None,
         k: int = None,
         metadata_keys: list[str] = [],
         return_str_docs: bool = False,
         return_acts_sparse: bool = False,
-        return_top_indices: bool = True,
+        return_doc_indices: bool = True,
     ):
-        feature = self.features[feature_id]
+        if isinstance(feature, int):
+            feature = self.features[feature]
         doc_acts = self.seq_agg_feat(feature=feature)
         k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
         topk = doc_acts.value.topk(k, sorted=True)
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
-        # topk = doc_acts.values().topk(k, sorted=True)
-        # top_outer_indices = doc_acts.indices()[:, topk.indices]
-        # top_docs = doc_acts.to_filtered_like_self(
-        #     torch.sparse_coo_tensor(
-        #         doc_acts.value.indices(), topk.values, doc_acts.shape
-        #     )
-        # )
-        # top_docs_active = top_docs.filter_inactive_docs()
-
-        acts = feature.to_dense()[top_outer_indices]
+        # acts = feature.to_dense()[top_outer_indices]
+        acts = feature.index_select(top_outer_indices[0], dim=0)
+        assert (acts.to_dense() == feature.to_dense()[top_outer_indices]).all()
         if return_acts_sparse:
             acts = acts.to_sparse_coo()
-        # feature_filtered = feature.mask_by_other(top_docs_active, return_ft=True)
-        # assert (acts == feature_filtered[doc_indices]).all()
         doc_indices = top_outer_indices[0]
         docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
         metadatas = [self._root_metadatas[key][doc_indices] for key in metadata_keys]
-        if return_top_indices:
+        if return_doc_indices:
             return docs, acts, metadatas, doc_indices
         return docs, acts, metadatas
+
+    def top_activations_enrichments(
+        self,
+        *,
+        metadata_keys,
+        feature: int | FilteredTensor,
+        p: float = None,
+        k: int = None,
+        normalize: bool = False,
+        str_label: bool = False,
+        return_act_sum: bool = False,
+    ):
+        docs, acts, metadatas = self.top_activations_and_metadatas(
+            feature=feature, p=p, k=k, metadata_keys=metadata_keys
+        )
+        r = {}
+        for mdname, md in zip(metadata_keys, metadatas):
+            assert md.ndim == 1
+            labels, counts = md.unique(return_counts=True)
+            if str_label:
+                raise NotImplementedError()
+            r[mdname] = [
+                MetadataLabelEnrichment(
+                    label=label,
+                    count=count,
+                    **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
+                )
+                for label, count in zip(labels, counts)
+            ]
+        return MetadataEnrichmentResults(r)
 
     def get_active_documents(self, feature_ids):
         raise DeprecationWarning("This method is outdated")
