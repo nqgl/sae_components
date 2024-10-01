@@ -1,7 +1,6 @@
-transformer-lens
+torch
 unpythonic
 triton
-opt-einsum
 pytest
 tables
 torchlars
@@ -9,3 +8,4 @@ pydantic
 wandb
 schedulefree
 nnsight
+attrs

@@ -1,6 +1,6 @@
 from functools import cached_property
 from pathlib import Path
-from typing import Generator, Iterable, Iterator, Union
+from typing import Generator, Iterable, Iterator, Tuple, Union
 
 import einops
 import nnsight
@@ -13,9 +13,8 @@ from torch import Tensor
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from saeco.trainer import RunConfig, TrainingRunner
-from ..misc.nnsite import getsite, setsite, tlsite_to_nnsite
+from ..misc.nnsite import getsite, setsite
 from .acts_cacher import ActsCacher, CachingConfig
-from .aggregation import Aggregation
 from .cached_artifacts import CachedCalls
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
@@ -32,6 +31,7 @@ class Evaluation:
     # nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
+    root: Union["Evaluation", None] = field(default=None, repr=False)
 
     # cache_name: str | None = None
     # cache_path: Path | None = None
@@ -45,6 +45,10 @@ class Evaluation:
     @property
     def docs(self):
         return self.saved_acts.tokens
+
+    @property
+    def docstrs(self) -> "StrDocs":
+        return StrDocs(self)
 
     @property
     def acts(self):
@@ -90,6 +94,7 @@ class Evaluation:
             training_runner=self.training_runner,
             saved_acts=self.saved_acts.filtered(filter),
             filter=filter,
+            root=self,
         )
 
     def open_filtered(self, filter_name: str):
@@ -140,6 +145,12 @@ class Evaluation:
                 "Getting metadatas from a filtered Evaluation is TODO and pending some design choices."
             )
         return Metadatas(self.path, self.cache_cfg)
+
+    @property
+    def _root_metadatas(self):
+        if self.root is None:
+            return self.metadatas
+        return self.root.metadatas
 
     @cached_property
     def artifacts(self) -> Artifacts:
@@ -263,21 +274,6 @@ class Evaluation:
         if only_return_selected:
             return values
         return FilteredTensor.from_value_and_mask(value=values, mask=mask)
-
-    def top_activating_examples(self, feature_id: int, p=0.1):
-        assert 0 < p and p <= 1
-        feature = self.features[feature_id]
-        top = self._get_top_activating(feature.value, p=p)
-        return feature.to_filtered_like_self(top)
-
-    @staticmethod
-    def _get_top_activating(feature: Tensor, p=None):
-        topk = feature.values().topk(int(feature.values().shape[0] * p))
-        return torch.sparse_coo_tensor(
-            feature.indices()[:, topk.indices],
-            topk.values,
-            feature.shape,
-        )
 
     def activation_cosims(self):
         mat = torch.zeros(self.d_dict, self.d_dict).cuda()
@@ -480,14 +476,22 @@ class Evaluation:
             return torch.cat([lm_acts[:, :1], reconstructed_acts[:, 1:]], dim=1)
         return reconstructed_acts
 
-    def detokenize(self, tokens):
-        if isinstance(tokens, Tensor):
-            if tokens.shape[0] == 1:
-                tokens = tokens.squeeze(0)
-        return self.tokenizer._tokenizer.decode_batch(
-            [[t] for t in tokens],
-            skip_special_tokens=False,
-        )
+    def detokenize(self, tokens) -> list[str] | list[list[str]] | str:
+        assert isinstance(
+            tokens, Tensor
+        ), "hmu if this assumption is wrong somewhere, easy fix"
+        if tokens.ndim == 0:
+            return self.tokenizer._tokenizer.decode([tokens])
+        if tokens.ndim == 1:
+            return self.tokenizer._tokenizer.decode_batch(
+                [[t] for t in tokens],
+                skip_special_tokens=False,
+            )
+
+        lens = tokens.shape[1]
+        flat = einops.rearrange(tokens, "doc seq -> (doc seq)").unsqueeze(-1).tolist()
+        flatl = self.tokenizer._tokenizer.decode_batch(flat, skip_special_tokens=False)
+        return [flatl[i : i + lens] for i in range(0, len(flatl), lens)]
 
     def patchdiff(self, tokens, patch_fn, return_prob_diffs=False, invert=False):
         normal = self.run_with_sae(tokens)
@@ -729,6 +733,97 @@ class Evaluation:
                         )
                     yield ldiff, pdiff, batch_seq_pos
 
+    @property
+    def token_occurrence_count(self):
+        return self.cached_call._get_token_occurrences()
+
+    def _get_token_occurrences(self):
+        counts = torch.zeros(self.d_vocab, dtype=torch.long).cuda()
+        for chunk in tqdm.tqdm(self.saved_acts.chunks):
+            tokens = chunk.tokens.value
+            t, c_counts = tokens.unique(return_counts=True)
+            counts[t] += c_counts
+        return counts
+
+    def top_activating_examples(self, feature_id: int, p=None, k=None):
+        feature = self.features[feature_id]
+        top = self._get_top_activating(feature.value, p=p, k=k)
+        return feature.to_filtered_like_self(top)
+
+    @staticmethod
+    def _pk_to_k(p, k, quantity):
+        if (p is None) == (k is None):
+            raise ValueError("Exactly one of p and k must be set")
+        if p is not None and not (0 < p < 1):
+            raise ValueError("p must be in (0, 1)")
+        if k is None:
+            k = int(quantity * p)
+        if k <= 0:
+            raise ValueError("k must be positive")
+        return k
+
+    @staticmethod
+    def _get_top_activating(feature: Tensor, p=None, k=None):
+        k = Evaluation._pk_to_k(p, k, feature.shape[0])
+        values = feature.values()
+        if k >= values.shape[0]:
+            k = values.shape[0]
+        topk = values.topk(k)
+
+        return torch.sparse_coo_tensor(
+            feature.indices()[:, topk.indices],
+            topk.values,
+            feature.shape,
+        )
+
+    def seq_agg_feat(self, feature_id=None, feature=None, agg="max", docs_filter=True):
+        assert agg == "max", "Only max implemented currently"
+        if (feature_id is None) == (feature is None):
+            raise ValueError("Exactly one of feat_id and feature must be set")
+        if feature is None:
+            feature = self.features[feature_id]
+        if docs_filter:
+            feature = feature.filter_inactive_docs()
+        return feature.to_filtered_like_self(
+            feature.value.to_dense().max(dim=1).values, ndim=1
+        )
+
+    def top_activations_and_metadatas(
+        self,
+        feature_id: int,
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_top_indices: bool = True,
+    ):
+        feature = self.features[feature_id]
+        doc_acts = self.seq_agg_feat(feature=feature)
+        k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
+        topk = doc_acts.value.topk(k, sorted=True)
+        top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
+        # topk = doc_acts.values().topk(k, sorted=True)
+        # top_outer_indices = doc_acts.indices()[:, topk.indices]
+        # top_docs = doc_acts.to_filtered_like_self(
+        #     torch.sparse_coo_tensor(
+        #         doc_acts.value.indices(), topk.values, doc_acts.shape
+        #     )
+        # )
+        # top_docs_active = top_docs.filter_inactive_docs()
+
+        acts = feature.to_dense()[top_outer_indices]
+        if return_acts_sparse:
+            acts = acts.to_sparse_coo()
+        # feature_filtered = feature.mask_by_other(top_docs_active, return_ft=True)
+        # assert (acts == feature_filtered[doc_indices]).all()
+        doc_indices = top_outer_indices[0]
+        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+        metadatas = [self._root_metadatas[key][doc_indices] for key in metadata_keys]
+        if return_top_indices:
+            return docs, acts, metadatas, doc_indices
+        return docs, acts, metadatas
+
     def get_active_documents(self, feature_ids):
         raise DeprecationWarning("This method is outdated")
 
@@ -840,3 +935,14 @@ class MetadataBuilder:
 
     def __setitem__(self, chunk, value):
         return self._recv(chunk, value)
+
+
+@define
+class StrDocs:
+    eval: Evaluation
+
+    def __getitem__(self, idx):
+        tokens = self.eval.docs[idx]
+        strs = self.eval.detokenize(tokens)
+        assert len(strs) == tokens.shape[0] and len(strs[0]) == tokens.shape[1]
+        return strs

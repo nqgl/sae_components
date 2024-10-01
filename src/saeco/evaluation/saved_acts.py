@@ -65,10 +65,12 @@ class SavedActs:
 
     @property
     def tokens(self):
+        return ChunksGetter(self, "tokens", dense_target=True, ft=True)
         return ChunksGetter(self, "tokens_raw", dense_target=True)
 
     @property
     def acts(self):
+        return ChunksGetter(self, "acts", dense_target=False, ft=True)
         return ChunksGetter(self, "acts_raw", dense_target=False)
 
     @property
@@ -97,6 +99,7 @@ class ChunksGetter:
     saved_acts: SavedActs
     target_attr: str
     dense_target: bool
+    ft: bool = False
 
     def get_chunk(self, i) -> Tensor:
         return getattr(self.saved_acts.chunks[i], self.target_attr)
@@ -105,7 +108,10 @@ class ChunksGetter:
         assert doc_ids.ndim == 1
         sdi = doc_ids.argsort(descending=False)
         doc_ids = doc_ids[sdi]
-        cdoc_idx = doc_ids % self.saved_acts.cfg.docs_per_chunk
+        if self.ft:
+            cdoc_idx = doc_ids
+        else:
+            cdoc_idx = doc_ids % self.saved_acts.cfg.docs_per_chunk
         chunk_ids = doc_ids // self.saved_acts.cfg.docs_per_chunk
         chunks = chunk_ids.unique()
 

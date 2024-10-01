@@ -130,11 +130,11 @@ class Filter:
         )
         adjustment = self.slice_starts_tensor(
             remove_ints=False, device=outer_indices.device
-        ).unsqueeze(-1)
+        ).unsqueeze(-1)[: outer_indices.shape[0]]
         indices = outer_indices - adjustment
         mask = torch.ones_like(outer_indices[0], dtype=torch.bool)
         for i, sl in enumerate(self.slices):
-            if isinstance(sl, int):
+            if isinstance(sl, int) and i < outer_indices.shape[0]:
                 mask &= outer_indices[i] == sl
         mask &= (indices >= 0).all(dim=0)
         mask &= (indices % self.slice_steps_tensor().unsqueeze(-1) == 0).all(dim=0)
@@ -211,6 +211,9 @@ class Filter:
             ],
             dim=0,
         )
+
+    def invert_filter(self, inner_indices):
+        return self.invert_indices_slicing(self.invert_mask(inner_indices))
 
     def to(self, *args, **kwargs) -> "Filter":
         return Filter(
@@ -388,26 +391,54 @@ class FilteredTensor:
         ids = ids[:, (ids >= 0).all(dim=0)]
         return ids, new_mask
 
+    def externalize_indices(self, indices: Tensor):
+        if indices.ndim != 2:
+            raise ValueError("Indices must be 2D")
+        return self.filter.invert_filter(indices)
+
     def index_where_valid(self, indices: Tensor):
         ids, mask = self.internalize_indices(indices)
         return self.value[ids.unbind()], mask
 
     def __getitem__(self, i):
-        if isinstance(i, Tensor) and i.dtype == torch.long:
+        if isinstance(i, Tensor) and i.dtype == torch.long and i.ndim == 2:
             si = self.filter.slice_indices(i)
             indices = self.filter.mask_indices(si)
             if (indices == -1).any():
                 raise IndexError("Some indexed values are excluded by the mask")
+            if self.is_sparse:
+                if i.shape[0] != 1:
+                    raise ValueError(
+                        "Sparse tensors can only be indexed with 1D tensors"
+                    )
+                return self.value.index_select(0, indices)
             return self.value[indices.unbind()]
+
         raise NotImplementedError(
             "Indexing FilteredTensor is only implemented for 2D integer tensors"
         )
 
+    def index_select(self, index, dim):
+        if dim != 0:
+            raise NotImplementedError("Only dim=0 is implemented")
+        assert index.ndim == 1
+        index = index.unsqueeze(0)
+        si = self.filter.slice_indices(index)
+        inner_index = self.filter.mask_indices(si)
+        if (inner_index == -1).any():
+            raise IndexError("Some indexed values are excluded by the filter")
+
+        return self.value.index_select(dim, inner_index.squeeze(0))
+
     ### kinda torch-like
-    def to_sparse_unfiltered(self, default_value=0) -> Tensor:
-        # sparse z
-        # values -> mask.nonzero() -> inverted slices
-        ...
+    def to_sparse_unfiltered(self) -> Tensor:
+        return torch.sparse_coo_tensor(
+            indices=self.indices(),
+            values=self.values(),
+            size=self.shape,
+            dtype=self.value.dtype,
+            device=self.value.device,
+        )
 
     def to_dense_unfiltered(self, default_value=0) -> Tensor:
         z = torch.full(self.shape, default_value, dtype=self.value.dtype)
@@ -416,21 +447,35 @@ class FilteredTensor:
 
     ### torch-like
 
+    def to_sparse(self) -> "FilteredTensor":
+        if self.is_sparse:
+            return self
+        return FilteredTensor(
+            value=torch.sparse_coo_tensor(
+                indices=self.value.indices(),
+                values=self.value.values(),
+                size=self.value.shape,
+            ),
+            filter=self.filter,
+        )
+
     def to_dense(self) -> "FilteredTensor":
+        if not self.is_sparse:
+            return self
         return FilteredTensor(value=self.value.to_dense(), filter=self.filter)
 
     def indices(self):
-        return self.filter.invert_indices_slicing(
-            self.filter.invert_mask(self.value.indices())
-        )
+        return self.filter.invert_filter(self.value.indices())
 
     def values(self):
         return self.value.values()
 
     def nonzero(self):
-        return self.filter.invert_indices_slicing(
-            self.filter.invert_mask(self.value.nonzero())
-        )
+        return self.filter.invert_filter(self.value.nonzero())
+
+    @property
+    def is_sparse(self):
+        return self.value.is_sparse
 
     @property
     def shape(self) -> Tuple[int, ...]:
