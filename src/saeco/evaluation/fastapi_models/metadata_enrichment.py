@@ -1,20 +1,22 @@
 from pydantic import BaseModel, Field
 
+from .FilterableQuery import FilterableQuery
 
-class MetadataEnrichmentRequest(BaseModel):
+
+class MetadataEnrichmentRequest(FilterableQuery):
     feature: int
     metadata_keys: list[str] = Field
     p: float | None = None
     k: int | None = None
     str_label: bool = False
-    normalize_metadata_frequencies: bool = ...
 
 
 class MetadataEnrichmentLabelResult(BaseModel):
     label: str | int
-    count: int | float | None
+    count: int
+    proportion: float
+    normalized_count: float
     score: float | None
-    act_sum: float | None = None
 
 
 class MetadataEnrichmentResponse(BaseModel):

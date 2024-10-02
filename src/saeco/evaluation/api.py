@@ -2,62 +2,93 @@ from fastapi import FastAPI
 
 from .evaluation import Evaluation
 from .fastapi_models import (
+    FeatureActiveDocsRequest,
+    FeatureActiveDocsResponse,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
     TopActivatingExamplesQuery,
     TopActivatingExamplesResult,
+    TopActivationResultEntry,
 )
 
 
 def create_app(root: Evaluation):
     app = FastAPI()
 
-    def get_eval(filter_id):
-        if filter_id is None:
-            print("filter_id is None")
-            return root
-        if filter_id == "root":
-            return root
-        return root.open_filtered(filter_id)
-
-    @app.put("/{filter_id}/top_activating_examples")
+    @app.put("/top_activating_examples")
     def get_top_activating_examples(
-        filter_id: str | None,
         query: TopActivatingExamplesQuery,
     ) -> TopActivatingExamplesResult:
-        evaluation = get_eval(filter_id=filter_id)
+        evaluation = query.filter(root)
         docs, acts, metadatas, doc_indices = evaluation.top_activations_and_metadatas(
             query.feature,
             p=query.p,
             k=query.k,
             metadata_keys=query.metadata_keys,
             return_str_docs=query.return_str_docs,
-            # return_acts_sparse=query.return_acts_sparse,
         )
         if not query.return_str_docs:
             docs = docs.tolist()
         acts = acts.to_dense()
         acts = acts.tolist()
-        return TopActivatingExamplesResult(
-            docs=docs,
-            acts=acts,
-            metadatas=[m.tolist() for m in metadatas],
-            doc_indices=doc_indices.tolist(),
+        metadatas = [m.tolist() for m in metadatas]
+        if len(metadatas) == 0:
+            metadatas = [[] for _ in range(len(docs))]
+        else:
+            metadatas = [
+                [metadatas[i][j] for i in range(len(metadatas))]
+                for j in range(len(metadatas[0]))
+            ]
+        assert len(docs) == len(acts) == len(metadatas) == len(doc_indices), (
+            len(docs),
+            len(acts),
+            len(metadatas),
+            len(doc_indices),
         )
 
-    @app.put("/{filter_id}/metadata_enrichment")
+        return TopActivatingExamplesResult(
+            entries=[
+                TopActivationResultEntry(
+                    doc=doc,
+                    metadatas=md,
+                    acts=act,
+                    doc_index=doc_id,
+                )
+                for doc, act, md, doc_id in zip(
+                    docs, acts, metadatas, doc_indices.tolist()
+                )
+            ]
+        )
+        # return TopActivatingExamplesResult(
+        #     docs=docs,
+        #     acts=acts,
+        #     metadatas=[m.tolist() for m in metadatas],
+        #     doc_indices=doc_indices.tolist(),
+        # )
+
+    @app.put("/metadata_enrichment")
     def get_metadata_enrichment(
-        filter_id: str | None,
         query: MetadataEnrichmentRequest,
     ) -> MetadataEnrichmentResponse:
-        evaluation = get_eval(filter_id=filter_id)
-        return evaluation.top_activations_enrichments(
+        ev = query.filter(root)
+        return ev.top_activations_metadata_enrichments(
             feature=query.feature,
             metadata_keys=query.metadata_keys,
             p=query.p,
             k=query.k,
             str_label=query.str_label,
-            normalize_metadata_frequencies=query.normalize_metadata_frequencies,
+        )
+
+    @app.put("/feature_active_docs_count")
+    def get_feature_active_docs_count(
+        query: FeatureActiveDocsRequest,
+    ) -> FeatureActiveDocsResponse:
+        ev = query.filter(root)
+        return FeatureActiveDocsResponse(
+            num_active_docs=ev.features[query.feature]
+            .filter_inactive_docs()
+            .filter.mask.sum()
+            .item()
         )
 
     return app

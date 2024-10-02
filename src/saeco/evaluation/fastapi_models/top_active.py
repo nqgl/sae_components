@@ -1,25 +1,20 @@
 from pydantic import BaseModel, Field
 
-
-class TopActivatingExamplesResult(BaseModel):
-    docs: list[list[str]] | list[list[int]]
-    metadatas: list[list[int]]
-    acts: list[list[float]] | None = None
-    doc_indices: list[int] | None = None
+from .FilterableQuery import FilterableQuery
 
 
 class TopActivationResultEntry(BaseModel):
-    docs: list[str] | list[int]
+    doc: list[str] | list[int]
     metadatas: list[int]
     acts: list[float] | None = None
-    doc_indices: int | None = None
+    doc_index: int | None = None
 
 
 class TopActivatingExamplesResult(BaseModel):
     entries: list[TopActivationResultEntry]
 
 
-class TopActivatingExamplesQuery(BaseModel):
+class TopActivatingExamplesQuery(FilterableQuery):
     feature: int
     p: float | None = None
     k: int | None = None

@@ -760,8 +760,8 @@ class Evaluation:
     def _pk_to_k(p, k, quantity):
         if (p is None) == (k is None):
             raise ValueError("Exactly one of p and k must be set")
-        if p is not None and not (0 < p < 1):
-            raise ValueError("p must be in (0, 1)")
+        if p is not None and not (0 < p <= 1):
+            raise ValueError("p must be in (0, 1]")
         if k is None:
             k = int(quantity * p)
         if k <= 0:
@@ -828,14 +828,13 @@ class Evaluation:
         labels, counts = meta.unique(return_counts=True)
         return torch.stack([labels, counts], dim=0)
 
-    def top_activations_enrichments(
+    def top_activations_metadata_enrichments(
         self,
         *,
         feature: int | FilteredTensor,
         metadata_keys: list[str],
         p: float = None,
         k: int = None,
-        normalize_metadata_frequencies: bool = True,
         str_label: bool = False,
     ):
         docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
@@ -844,34 +843,33 @@ class Evaluation:
         r = {}
         for mdname, md in zip(metadata_keys, metadatas):
             assert md.ndim == 1
-            if normalize_metadata_frequencies:
-                full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(
-                    mdname
-                )
-                labels, mdcat_counts = torch.cat([md, full_lc[0]]).unique(
-                    return_counts=True
-                )
-                counts = mdcat_counts - 1
-                assert (labels == full_lc[0]).all()
-                assert counts.shape == labels.shape == full_lc[1].shape
-                counts = counts / full_lc[1]
-                labels = labels[counts > 0]
-                counts = counts[counts > 0]
-            else:
-                labels, counts = md.unique(return_counts=True)
-            if str_label:
-                raise NotImplementedError()
+            full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
+            labels, mdcat_counts = torch.cat([md, full_lc[0]]).unique(
+                return_counts=True
+            )
+            counts = mdcat_counts - 1
+            assert (labels == full_lc[0]).all()
+            assert counts.shape == labels.shape == full_lc[1].shape
+            proportions = counts / full_lc[1]
+            labels = labels[counts > 0]
+            proportions = proportions[counts > 0]
+            counts = counts[counts > 0]
+            normalized_counts = proportions * self.docs_in_subset / doc_ids.shape[0]
 
             r[mdname] = [
                 MetadataEnrichmentLabelResult(
-                    label=label,
+                    label=f"mock placeholder {label}" if str_label else label,
                     count=count,
+                    proportion=proportion,
+                    normalized_count=normalized_count,
                     score=-1,
                     # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
                 )
-                for label, count in zip(
+                for label, count, proportion, normalized_count in zip(
                     labels.tolist(),
                     counts.tolist(),
+                    proportions.tolist(),
+                    normalized_counts.tolist(),
                 )
             ]
         return MetadataEnrichmentResponse(results=r)
@@ -888,6 +886,36 @@ class Evaluation:
                 ),
             )
         return counts
+
+    def count_filtered_token_occurrence(self, filter):
+        counts = torch.zeros(self.d_vocab, dtype=torch.long).cuda()
+        for chunk in self.saved_acts.chunks:
+            toks = chunk.tokens.mask_by_other(filter).value.cuda().flatten()
+
+            # .value.cuda().flatten()
+            counts.scatter_add_(
+                0,
+                toks,
+                torch.ones(1, device=toks.device, dtype=torch.long).expand(
+                    toks.shape[0]
+                ),
+            )
+        return counts
+
+    # def top_activations_token_enrichments(
+    #     self,
+    #     *,
+    #     feature: int | FilteredTensor,
+    #     metadata_keys: list[str],
+    #     p: float = None,
+    #     k: int = None,
+    #     str_label: bool = False,
+    # ):
+    #     docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
+    #         feature=feature, p=p, k=k, metadata_keys=metadata_keys
+    #     )
+    #     r = {}
+    #     for mdname, md in zip(metadata_keys, metadatas):
 
     def get_active_documents(self, feature_ids):
         raise DeprecationWarning("This method is outdated")
