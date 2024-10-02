@@ -22,9 +22,9 @@ from torch import Tensor
 root_eval = Evaluation.from_model_name(model_name)
 root_eval.store_acts(
     CachingConfig(
-        dirname=storage_name,
+        dirname="abc",
         num_chunks=100,
-        docs_per_chunk=1000,
+        docs_per_chunk=100,
         documents_per_micro_batch=16,
         # exclude_bos_from_storage=True,
         eager_sparse_generation=True,

@@ -9,10 +9,10 @@ root_eval.tokenizer.encode(".")
 root_eval.detokenize([13])
 
 if "period_count" not in root_eval.metadatas:
-    b = root_eval.metadata_builder(dtype=torch.bool, device="cpu")
+    b = root_eval.metadata_builder(dtype=torch.long, device="cpu")
     for chunk in b:
         b << (chunk.tokens.value == 13).sum(-1)
-    root_eval.metadatas[".count"] = b.value
+    root_eval.metadatas["period_count"] = b.value
 
 if "third" not in root_eval.metadatas:
     data = torch.zeros(root_eval.saved_acts.cfg.num_docs, dtype=torch.bool)

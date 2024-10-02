@@ -12,7 +12,7 @@ class MetadataEnrichmentRequest(BaseModel):
 
 class MetadataEnrichmentLabelResult(BaseModel):
     label: str | int
-    count: int | None
+    count: int | float | None
     score: float | None
     act_sum: float | None = None
 

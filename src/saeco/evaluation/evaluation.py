@@ -866,9 +866,13 @@ class Evaluation:
                 MetadataEnrichmentLabelResult(
                     label=label,
                     count=count,
+                    score=-1,
                     # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
                 )
-                for label, count in zip(labels, counts)
+                for label, count in zip(
+                    labels.tolist(),
+                    counts.tolist(),
+                )
             ]
         return MetadataEnrichmentResponse(results=r)
 
