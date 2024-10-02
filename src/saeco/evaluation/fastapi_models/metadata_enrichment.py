@@ -1,6 +1,14 @@
+from enum import Enum
+
 from pydantic import BaseModel, Field
 
 from .FilterableQuery import FilterableQuery
+
+
+class MetadataEnrichmentSortBy(str, Enum):
+    count = "count"
+    normalized_count = "normalized_count"
+    score = "score"
 
 
 class MetadataEnrichmentRequest(FilterableQuery):
@@ -9,6 +17,7 @@ class MetadataEnrichmentRequest(FilterableQuery):
     p: float | None = None
     k: int | None = None
     str_label: bool = False
+    sort_by: MetadataEnrichmentSortBy = MetadataEnrichmentSortBy.count
 
 
 class MetadataEnrichmentLabelResult(BaseModel):

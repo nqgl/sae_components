@@ -6,6 +6,7 @@ from .metadata_enrichment import (
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
+    MetadataEnrichmentSortBy,
 )
 
 from .token_enrichment import (

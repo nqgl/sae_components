@@ -19,6 +19,7 @@ from .cached_artifacts import CachedCalls
 from .fastapi_models import (
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentResponse,
+    MetadataEnrichmentSortBy,
     TokenEnrichmentMode,
     TokenEnrichmentSortBy,
 )
@@ -848,6 +849,7 @@ class Evaluation:
         p: float = None,
         k: int = None,
         str_label: bool = False,
+        sort_by: MetadataEnrichmentSortBy = MetadataEnrichmentSortBy.count,
     ):
         docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
             feature=feature, p=p, k=k, metadata_keys=metadata_keys
@@ -867,21 +869,35 @@ class Evaluation:
             proportions = proportions[counts > 0]
             counts = counts[counts > 0]
             normalized_counts = proportions * self.docs_in_subset / doc_ids.shape[0]
-
+            scores = torch.zeros_like(counts).float() - 0.99  # TODO
+            if sort_by == TokenEnrichmentSortBy.count:
+                i = counts.argsort(descending=True)
+            elif sort_by == TokenEnrichmentSortBy.normalized_count:
+                i = normalized_counts.argsort(descending=True)
+            elif sort_by == TokenEnrichmentSortBy.score:
+                i = scores.argsort(descending=True)
+            else:
+                raise ValueError(f"Unknown sort_by {sort_by}")
+            labels = labels[i]
+            counts = counts[i]
+            proportions = proportions[i]
+            normalized_counts = normalized_counts[i]
+            scores = scores[i]
             r[mdname] = [
                 MetadataEnrichmentLabelResult(
                     label=f"mock placeholder {label}" if str_label else label,
                     count=count,
                     proportion=proportion,
                     normalized_count=normalized_count,
-                    score=-1,
+                    score=score,
                     # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
                 )
-                for label, count, proportion, normalized_count in zip(
+                for label, count, proportion, normalized_count, score in zip(
                     labels.tolist(),
                     counts.tolist(),
                     proportions.tolist(),
                     normalized_counts.tolist(),
+                    scores.tolist(),
                 )
             ]
         return MetadataEnrichmentResponse(results=r)
@@ -927,22 +943,18 @@ class Evaluation:
             feature=feature, p=p, k=k, metadata_keys=[]
         )
         if mode == TokenEnrichmentMode.doc:
-            # tokens, counts = docs.unique(return_counts=True)
             seltoks = docs
         elif mode == TokenEnrichmentMode.max:
             max_pos = acts.argmax(dim=1)
             max_top = docs[torch.arange(max_pos.shape[0]), max_pos]
-            # tokens, counts = max_top.unique(return_counts=True)
             seltoks = max_top
         elif mode == TokenEnrichmentMode.active:
             active_top = docs[acts > 0]
-            # tokens, counts = active_top.unique(return_counts=True)
             seltoks = active_top
         elif mode == TokenEnrichmentMode.top:
             top_threshold = docs[
                 acts > acts.max(dim=-1).values.min(dim=0).values.item()
             ]
-            # tokens, counts = top_threshold.unique(return_counts=True)
             seltoks = top_threshold
         else:
             raise ValueError(f"Unknown mode {mode}")
