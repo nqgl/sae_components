@@ -946,22 +946,23 @@ class Evaluation:
             seltoks = top_threshold
         else:
             raise ValueError(f"Unknown mode {mode}")
-        tokens, counts = seltoks.unique(return_counts=True)
+        tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
         normalized_counts = (counts / seltoks.numel()) / (
             self.token_occurrence_count[tokens] / (self.docs_in_subset * self.seq_len)
         )
         scores = torch.zeros_like(counts).float() - 0.99  # TODO
-        if sort_by != TokenEnrichmentSortBy.count:
-            if sort_by == TokenEnrichmentSortBy.normalized_count:
-                i = normalized_counts.argsort(descending=True)
-            elif sort_by == TokenEnrichmentSortBy.score:
-                i = scores.argsort(descending=True)
-            else:
-                raise ValueError(f"Unknown sort_by {sort_by}")
-            tokens = tokens[i]
-            counts = counts[i]
-            normalized_counts = normalized_counts[i]
-            scores = scores[i]
+        if sort_by == TokenEnrichmentSortBy.count:
+            i = counts.argsort(descending=True)
+        elif sort_by == TokenEnrichmentSortBy.normalized_count:
+            i = normalized_counts.argsort(descending=True)
+        elif sort_by == TokenEnrichmentSortBy.score:
+            i = scores.argsort(descending=True)
+        else:
+            raise ValueError(f"Unknown sort_by {sort_by}")
+        tokens = tokens[i]
+        counts = counts[i]
+        normalized_counts = normalized_counts[i]
+        scores = scores[i]
 
         return tokens, counts, normalized_counts, scores
 
