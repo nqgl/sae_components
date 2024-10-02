@@ -16,7 +16,12 @@ from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .acts_cacher import ActsCacher, CachingConfig
 from .cached_artifacts import CachedCalls
-from .fastapi_models import MetadataEnrichmentLabelResult, MetadataEnrichmentResponse
+from .fastapi_models import (
+    MetadataEnrichmentLabelResult,
+    MetadataEnrichmentResponse,
+    TokenEnrichmentMode,
+    TokenEnrichmentSortBy,
+)
 
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
@@ -42,6 +47,12 @@ class Evaluation:
     def _tokenizer_default(self):
         return AutoTokenizer.from_pretrained(
             self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name
+        )
+
+    @property
+    def cuda(self):
+        return (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         )
 
     @property
@@ -278,12 +289,12 @@ class Evaluation:
         return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
     def activation_cosims(self):
-        mat = torch.zeros(self.d_dict, self.d_dict).cuda()
-        f2sum = torch.zeros(self.d_dict).cuda()
+        mat = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+        f2sum = torch.zeros(self.d_dict).to(self.cuda)
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
-            acts = chunk.acts.value.cuda().to_dense()
+            acts = chunk.acts.value.to(self.cuda).to_dense()
             assert acts.ndim == 3
             feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
             f2s = feats_mat.pow(2).sum(-1)
@@ -303,13 +314,13 @@ class Evaluation:
         Indexes are like: [masking feature, masked feature]
         """
         threshold = 0
-        mat = torch.zeros(self.d_dict, self.d_dict).cuda()
-        f2sum = torch.zeros(self.d_dict).cuda()
-        maskedf2sum = torch.zeros(self.d_dict, self.d_dict).cuda()
+        mat = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+        f2sum = torch.zeros(self.d_dict).to(self.cuda)
+        maskedf2sum = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
-            acts = chunk.acts.value.cuda().to_dense()
+            acts = chunk.acts.value.to(self.cuda).to_dense()
             feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
             feats_mask = feats_mat > threshold
 
@@ -331,12 +342,12 @@ class Evaluation:
         this could be done at sequence level if we want
         """
         threshold = 0
-        mat = torch.zeros(self.d_dict, self.d_dict).cuda()
-        f2sum = torch.zeros(self.d_dict).cuda()
+        mat = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+        f2sum = torch.zeros(self.d_dict).to(self.cuda)
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
-            acts = chunk.acts.value.cuda().to_dense()
+            acts = chunk.acts.value.to(self.cuda).to_dense()
             assert acts.ndim == 3
             if pooling == "mean":
                 acts_pooled = acts.mean(1)
@@ -524,7 +535,7 @@ class Evaluation:
         # move to saved acts?
         for chunk in tqdm.tqdm(self.saved_acts.chunks):
             acts = chunk.acts
-            acts_inner = acts.value.cuda().to_dense()
+            acts_inner = acts.value.to(self.cuda).to_dense()
             assert acts_inner.ndim == 3
             if seq_agg == "count":
                 c_agg = (acts_inner > 0).sum(dim=1)
@@ -547,7 +558,7 @@ class Evaluation:
         seq_agg options: "mean", "max", "sum", "count", "any"
         docs_agg options: "mean", "max", "sum"
         """
-        results = torch.zeros(self.d_dict).cuda()
+        results = torch.zeros(self.d_dict).to(self.cuda)
 
         for agg_chunk in self.seq_aggregated_chunks_yielder(seq_agg):
             if docs_agg == "max":
@@ -606,12 +617,12 @@ class Evaluation:
         results = torch.zeros(
             self.seq_len,
             self.d_vocab,
-        ).cuda()
+        ).to(self.cuda)
         p_results = torch.zeros(
             self.seq_len,
             self.d_vocab,
-        ).cuda()
-        num_batches = torch.zeros(self.seq_len).cuda() + 1e-6
+        ).to(self.cuda)
+        num_batches = torch.zeros(self.seq_len).to(self.cuda) + 1e-6
         for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
             feature_id=feature_id,
             batch_size=batch_size,
@@ -744,7 +755,7 @@ class Evaluation:
         return self.cached_call._get_token_occurrences()
 
     def _get_token_occurrences(self):
-        counts = torch.zeros(self.d_vocab, dtype=torch.long).cuda()
+        counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in tqdm.tqdm(self.saved_acts.chunks):
             tokens = chunk.tokens.value
             t, c_counts = tokens.unique(return_counts=True)
@@ -810,7 +821,6 @@ class Evaluation:
         k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
         topk = doc_acts.value.topk(k, sorted=True)
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
-        # acts = feature.to_dense()[top_outer_indices]
         acts = feature.index_select(top_outer_indices[0], dim=0)
         assert (acts.to_dense() == feature.to_dense()[top_outer_indices]).all()
         if return_acts_sparse:
@@ -823,7 +833,9 @@ class Evaluation:
         return docs, acts, metadatas
 
     def _metadata_unique_labels_and_counts_tensor(self, key):
-        meta = self.metadatas[key]
+        meta = self._root_metadatas[key]
+        if self._filter is not None:
+            meta = meta[self._filter.filter]
         assert meta.ndim == 1 and meta.dtype == torch.long
         labels, counts = meta.unique(return_counts=True)
         return torch.stack([labels, counts], dim=0)
@@ -875,9 +887,9 @@ class Evaluation:
         return MetadataEnrichmentResponse(results=r)
 
     def count_token_occurrence(self):
-        counts = torch.zeros(self.d_vocab, dtype=torch.long).cuda()
+        counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
-            toks = chunk.tokens.value.cuda().flatten()
+            toks = chunk.tokens.value.to(self.cuda).flatten()
             counts.scatter_add_(
                 0,
                 toks,
@@ -888,11 +900,11 @@ class Evaluation:
         return counts
 
     def count_filtered_token_occurrence(self, filter):
-        counts = torch.zeros(self.d_vocab, dtype=torch.long).cuda()
+        counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
-            toks = chunk.tokens.mask_by_other(filter).value.cuda().flatten()
+            toks = chunk.tokens.mask_by_other(filter).value.to(self.cuda).flatten()
 
-            # .value.cuda().flatten()
+            # .value.to(self.cuda).flatten()
             counts.scatter_add_(
                 0,
                 toks,
@@ -902,20 +914,56 @@ class Evaluation:
             )
         return counts
 
-    # def top_activations_token_enrichments(
-    #     self,
-    #     *,
-    #     feature: int | FilteredTensor,
-    #     metadata_keys: list[str],
-    #     p: float = None,
-    #     k: int = None,
-    #     str_label: bool = False,
-    # ):
-    #     docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
-    #         feature=feature, p=p, k=k, metadata_keys=metadata_keys
-    #     )
-    #     r = {}
-    #     for mdname, md in zip(metadata_keys, metadatas):
+    def top_activations_token_enrichments(
+        self,
+        *,
+        feature: int | FilteredTensor,
+        p: float = None,
+        k: int = None,
+        mode: TokenEnrichmentMode = "doc",
+        sort_by: TokenEnrichmentSortBy = "count",
+    ):
+        docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
+            feature=feature, p=p, k=k, metadata_keys=[]
+        )
+        if mode == TokenEnrichmentMode.doc:
+            # tokens, counts = docs.unique(return_counts=True)
+            seltoks = docs
+        elif mode == TokenEnrichmentMode.max:
+            max_pos = acts.argmax(dim=1)
+            max_top = docs[torch.arange(max_pos.shape[0]), max_pos]
+            # tokens, counts = max_top.unique(return_counts=True)
+            seltoks = max_top
+        elif mode == TokenEnrichmentMode.active:
+            active_top = docs[acts > 0]
+            # tokens, counts = active_top.unique(return_counts=True)
+            seltoks = active_top
+        elif mode == TokenEnrichmentMode.top:
+            top_threshold = docs[
+                acts > acts.max(dim=-1).values.min(dim=0).values.item()
+            ]
+            # tokens, counts = top_threshold.unique(return_counts=True)
+            seltoks = top_threshold
+        else:
+            raise ValueError(f"Unknown mode {mode}")
+        tokens, counts = seltoks.unique(return_counts=True)
+        normalized_counts = (counts / seltoks.numel()) / (
+            self.token_occurrence_count[tokens] / (self.docs_in_subset * self.seq_len)
+        )
+        scores = torch.zeros_like(counts).float() - 0.99  # TODO
+        if sort_by != TokenEnrichmentSortBy.count:
+            if sort_by == TokenEnrichmentSortBy.normalized_count:
+                i = normalized_counts.argsort(descending=True)
+            elif sort_by == TokenEnrichmentSortBy.score:
+                i = scores.argsort(descending=True)
+            else:
+                raise ValueError(f"Unknown sort_by {sort_by}")
+            tokens = tokens[i]
+            counts = counts[i]
+            normalized_counts = normalized_counts[i]
+            scores = scores[i]
+
+        return tokens, counts, normalized_counts, scores
 
     def get_active_documents(self, feature_ids):
         raise DeprecationWarning("This method is outdated")

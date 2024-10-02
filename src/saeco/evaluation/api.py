@@ -6,6 +6,10 @@ from .fastapi_models import (
     FeatureActiveDocsResponse,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
+    TokenEnrichmentMode,
+    TokenEnrichmentRequest,
+    TokenEnrichmentResponse,
+    TokenEnrichmentResponseItem,
     TopActivatingExamplesQuery,
     TopActivatingExamplesResult,
     TopActivationResultEntry,
@@ -77,6 +81,51 @@ def create_app(root: Evaluation):
             p=query.p,
             k=query.k,
             str_label=query.str_label,
+        )
+
+    @app.put("/token_enrichment")
+    def get_token_enrichment(query: TokenEnrichmentRequest) -> TokenEnrichmentResponse:
+        ev = query.filter(root)
+        tokens, counts, normalized_counts, scores = (
+            ev.top_activations_token_enrichments(
+                feature=query.feature,
+                mode=query.mode,
+                p=query.p,
+                k=query.k,
+                sort_by=query.sort_by,
+            )
+        )
+        tokstrs = ev.detokenize(tokens)
+        assert (
+            len(tokens)
+            == len(counts)
+            == len(normalized_counts)
+            == len(scores)
+            == len(tokstrs)
+        ), (len(tokens), len(counts), len(normalized_counts), len(scores), tokstrs)
+        if query.num_top_tokens:
+            tokens = tokens[: query.num_top_tokens]
+            counts = counts[: query.num_top_tokens]
+            normalized_counts = normalized_counts[: query.num_top_tokens]
+            scores = scores[: query.num_top_tokens]
+            tokstrs = tokstrs[: query.num_top_tokens]
+        return TokenEnrichmentResponse(
+            results=[
+                TokenEnrichmentResponseItem(
+                    tokstr=tokstr,
+                    token=token,
+                    count=count,
+                    normalized_count=normalized_count,
+                    score=score,
+                )
+                for tokstr, token, count, normalized_count, score in zip(
+                    tokstrs,
+                    tokens.tolist(),
+                    counts.tolist(),
+                    normalized_counts.tolist(),
+                    scores.tolist(),
+                )
+            ]
         )
 
     @app.put("/feature_active_docs_count")

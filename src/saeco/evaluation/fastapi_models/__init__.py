@@ -7,6 +7,14 @@ from .metadata_enrichment import (
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
 )
+
+from .token_enrichment import (
+    TokenEnrichmentMode,
+    TokenEnrichmentRequest,
+    TokenEnrichmentResponse,
+    TokenEnrichmentResponseItem,
+    TokenEnrichmentSortBy,
+)
 from .top_active import (
     TopActivatingExamplesQuery,
     TopActivatingExamplesResult,
