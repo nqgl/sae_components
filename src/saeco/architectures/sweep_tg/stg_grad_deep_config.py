@@ -10,7 +10,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 
-from .tg_grad_deep_model import DeepConfig
+from .stg_grad_deep_model import DeepConfig
 
 PROJECT = "binarize"
 
@@ -31,9 +31,9 @@ cfg = RunConfig[DeepConfig](
         use_autocast=False,
         use_lars=True,
         #
-        l0_target=512,
+        l0_target=50,
         l0_target_adjustment_size=0.0003,
-        l0_targeting_enabled=False,
+        l0_targeting_enabled=True,
         l0_targeter_type="pid",
         use_averaged_model=False,
         coeffs={
@@ -51,13 +51,13 @@ cfg = RunConfig[DeepConfig](
         expected_decs=None,
     ),
     #
-    init_cfg=InitConfig(dict_mult=2),
+    init_cfg=InitConfig(dict_mult=8),
     arch_cfg=DeepConfig(
         uniform_noise=True,
         noise_mult=0.3,
         # uniform_noise=Swept(True, False),
         # noise_mult=Swept(0.3, 1.0),
-        decay_l1_to=0,
+        decay_l1_to=1,
         decay_l1_end=40_000,
         mag_weights=False,
         leniency=1,

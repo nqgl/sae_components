@@ -1,16 +1,17 @@
-import saeco.core.module
-from saeco.core.cache import Cache
-import saeco.core as cl
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, List, Optional, Tuple, Union
+
+import einops
 
 import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
-from dataclasses import dataclass
-from typing import Tuple, Any, Union, Optional, List
-import einops
-from unpythonic import box
-from abc import abstractmethod, ABC
+
+import saeco.core as cl
+import saeco.core.module
+from saeco.core.cache import Cache
 
 
 class FromDims:  # could add some init logic here or make a generalized "parameter initialization" class

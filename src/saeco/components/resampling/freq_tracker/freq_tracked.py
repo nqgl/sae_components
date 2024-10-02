@@ -1,17 +1,15 @@
 import saeco.core as cl
-
-from saeco.components.resampling.freq_tracker.freq_tracker import (
-    FreqTracker,
-)
+import saeco.core.module
 
 from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
-import saeco.core.module
+
+from saeco.components.resampling.freq_tracker.freq_tracker import FreqTracker
 
 
 class FreqTracked(saeco.core.module.Module):
     def __init__(
         self,
-        module: cl.CacheLayer,
+        module: cl.Module,
         freq_tracker: saeco.core.module.Module = None,
     ):
         super().__init__()

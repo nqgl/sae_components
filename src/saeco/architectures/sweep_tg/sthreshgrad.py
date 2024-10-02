@@ -49,7 +49,7 @@ def GT2(grad_window=sig_grad):
             noise = ctx.noise
 
             offgrad_mask = (~gate) & (grad_output != 0) & (noise > 0)
-            # grad_output = torch.where(mag != 0, grad_output / mag, 0)
+            grad_output = torch.where(mag != 0, grad_output / mag, 0)
             dd = ctx.dd
             b = gate_pre.shape[0]
             off_adjustment = shrinkgrad_adjustment(
@@ -70,7 +70,8 @@ def GT2(grad_window=sig_grad):
             #     grad_output + adjustment
             # )  # TODO should +adj be moved to the .where below?
             #    #  seems like clear yes, so trying that
-            # return (
+            # return ( this is interesting kinda works actually so should try it out more
+            # or like, it but better
             #     (grad_output + adjustment) * grad_window(gate_pre),
             #     None,
             #     None,

@@ -1,21 +1,20 @@
-from saeco.core.cache_layer import ActsCache, CacheProcLayer, CacheLayer
-from saeco.core.component_layer import (
-    ComponentLayer,
-)
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import List, Type, TypeVar
+
+import torch
+
+from saeco.core.cache_layer import ActsCache, CacheProcLayer
 
 from saeco.core.component_layer.layercomponent import LayerComponent
 from saeco.core.config import WandbDynamicConfig
-import torch
-from abc import ABC, abstractmethod
-from typing import List, Type, TypeVar
-from dataclasses import dataclass
 
 
 class FreqTracker(LayerComponent):
     _default_component_name = "activations"
 
     @abstractmethod
-    def __init__(self, parent: CacheProcLayer = None): ...
+    def __init__(self, parent=None): ...
 
     @abstractmethod
     def reset_freqs(self, mask=None, initial_activation=0, initial_count=0): ...

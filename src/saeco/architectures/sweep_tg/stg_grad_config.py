@@ -9,7 +9,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 
-from .tg_grad_model import Config
+from .stg_grad_model import Config
 
 PROJECT = "sae sweeps"
 
