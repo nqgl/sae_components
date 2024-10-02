@@ -1,12 +1,9 @@
-from saeco.evaluation.storage.growing_disk_tensor import GrowingDiskTensor
-
+from pathlib import Path
 
 import torch
 from attr import define, field
-
-
-from pathlib import Path
 from pydantic import BaseModel
+from saeco.evaluation.storage.growing_disk_tensor import GrowingDiskTensor
 
 
 class SparseGrowingDiskTensorMetadata(BaseModel):

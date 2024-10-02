@@ -3,6 +3,8 @@ from typing import Any, Callable, Iterator
 
 import einops
 import torch
+
+import tqdm
 from attrs import define, field
 from jaxtyping import Float, Int
 from torch import Tensor
@@ -106,7 +108,10 @@ class Cacher:
 
     @feature_tensors.default
     def _feature_tensors_initializer(self):
-        if self.cfg.store_feature_tensors:
+        if (
+            self.cfg.store_feature_tensors
+            or self.cfg.deferred_blocked_store_feats_block_size
+        ):
             return [
                 SparseGrowingDiskTensor.create(
                     self.path / "features" / f"feature{i}", shape=[None, self.seq_len]
@@ -140,6 +145,58 @@ class Cacher:
 
             del chunk
             print(f"Stored chunk {chunk_id}")
+        if self.cfg.deferred_blocked_store_feats_block_size:
+            B = 10
+            K = 1
+            features_batch_size = (
+                self.d_dict // self.cfg.deferred_blocked_store_feats_block_size
+            )
+            prog = tqdm.tqdm(total=self.cfg.num_chunks)
+            for i in range(0, self.d_dict, features_batch_size):
+                batch = self.feature_tensors[i : i + features_batch_size]
+                chunks = Chunk.load_chunks_from_dir(self.path, lazy=True)
+                for j in range(0, len(chunks), B):
+                    acts = None
+                    for ci, chunk in enumerate(chunks[j : j + B]):
+                        spacts = chunk.read_sparse_raw().cuda()
+                        if acts is None:
+                            acts = torch.zeros(
+                                self.cfg.docs_per_chunk * B,
+                                self.seq_len,
+                                features_batch_size,
+                                device="cuda",
+                                dtype=spacts.dtype,
+                            )
+                        mask = (spacts.indices()[2] >= i) & (
+                            spacts.indices()[2] < i + features_batch_size
+                        )
+                        ids = spacts.indices()[:, mask].clone()
+                        ids[2] -= i
+                        vals = spacts.values()[mask]
+                        acts[
+                            ci
+                            * self.cfg.docs_per_chunk : (chunk.idx + 1)
+                            * self.cfg.docs_per_chunk
+                        ][ids.unbind()] = vals
+                    for k, feat_acts in enumerate(batch):
+                        feat_acts.append(acts[:, :, k])
+                        # spa = acts.index_select(
+                        #     dim=2,
+                        #     index=torch.tensor(
+                        #         [i + k], dtype=torch.long, device=acts.device
+                        #     ),
+                        # ).coalesce()
+                        # spa = torch.sparse_coo_tensor(
+                        #     indices=spa.indices()[:2],
+                        #     values=spa.values(),
+                        #     size=spa.shape[:2],
+                        # )
+                        # feat_acts.append(spa)
+
+                    prog.update()
+
+                print(f"Stored features {i} to {i + features_batch_size}")
+            prog.close()
         for ft in self.feature_tensors:
             ft.finalize()
 

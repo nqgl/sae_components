@@ -23,10 +23,13 @@ root_eval = Evaluation.from_model_name(model_name)
 root_eval.store_acts(
     CachingConfig(
         dirname=storage_name,
-        num_chunks=30,
-        docs_per_chunk=300,
+        num_chunks=100,
+        docs_per_chunk=1000,
         documents_per_micro_batch=16,
         # exclude_bos_from_storage=True,
+        eager_sparse_generation=True,
+        store_feature_tensors=False,
+        deferred_blocked_store_feats_block_size=True,
     ),
     displace_existing=True,
 )

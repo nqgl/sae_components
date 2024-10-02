@@ -16,10 +16,11 @@ from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .acts_cacher import ActsCacher, CachingConfig
 from .cached_artifacts import CachedCalls
+from .fastapi_models import MetadataEnrichmentLabelResult, MetadataEnrichmentResponse
+
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
 from .named_filter import NamedFilter
-from .return_types import MetadataEnrichmentResults, MetadataLabelEnrichment
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
 
@@ -478,6 +479,10 @@ class Evaluation:
         return reconstructed_acts
 
     def detokenize(self, tokens) -> list[str] | list[list[str]] | str:
+        if isinstance(tokens, int):
+            tokens = [tokens]
+        if isinstance(tokens, list):
+            tokens = torch.tensor(tokens, dtype=torch.long)
         assert isinstance(
             tokens, Tensor
         ), "hmu if this assumption is wrong somewhere, easy fix"
@@ -817,35 +822,68 @@ class Evaluation:
             return docs, acts, metadatas, doc_indices
         return docs, acts, metadatas
 
+    def _metadata_unique_labels_and_counts_tensor(self, key):
+        meta = self.metadatas[key]
+        assert meta.ndim == 1 and meta.dtype == torch.long
+        labels, counts = meta.unique(return_counts=True)
+        return torch.stack([labels, counts], dim=0)
+
     def top_activations_enrichments(
         self,
         *,
-        metadata_keys,
         feature: int | FilteredTensor,
+        metadata_keys: list[str],
         p: float = None,
         k: int = None,
-        normalize: bool = False,
+        normalize_metadata_frequencies: bool = True,
         str_label: bool = False,
-        return_act_sum: bool = False,
     ):
-        docs, acts, metadatas = self.top_activations_and_metadatas(
+        docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
             feature=feature, p=p, k=k, metadata_keys=metadata_keys
         )
         r = {}
         for mdname, md in zip(metadata_keys, metadatas):
             assert md.ndim == 1
-            labels, counts = md.unique(return_counts=True)
+            if normalize_metadata_frequencies:
+                full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(
+                    mdname
+                )
+                labels, mdcat_counts = torch.cat([md, full_lc[0]]).unique(
+                    return_counts=True
+                )
+                counts = mdcat_counts - 1
+                assert (labels == full_lc[0]).all()
+                assert counts.shape == labels.shape == full_lc[1].shape
+                counts = counts / full_lc[1]
+                labels = labels[counts > 0]
+                counts = counts[counts > 0]
+            else:
+                labels, counts = md.unique(return_counts=True)
             if str_label:
                 raise NotImplementedError()
+
             r[mdname] = [
-                MetadataLabelEnrichment(
+                MetadataEnrichmentLabelResult(
                     label=label,
                     count=count,
-                    **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
+                    # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
                 )
                 for label, count in zip(labels, counts)
             ]
-        return MetadataEnrichmentResults(r)
+        return MetadataEnrichmentResponse(results=r)
+
+    def count_token_occurrence(self):
+        counts = torch.zeros(self.d_vocab, dtype=torch.long).cuda()
+        for chunk in self.saved_acts.chunks:
+            toks = chunk.tokens.value.cuda().flatten()
+            counts.scatter_add_(
+                0,
+                toks,
+                torch.ones(1, device=toks.device, dtype=torch.long).expand(
+                    toks.shape[0]
+                ),
+            )
+        return counts
 
     def get_active_documents(self, feature_ids):
         raise DeprecationWarning("This method is outdated")

@@ -1,6 +1,6 @@
 import torch
-from safetensors.torch import save_file, load_file, safe_open
 from pydantic import BaseModel
+from safetensors.torch import load_file, safe_open, save_file
 
 
 class TensorShape(BaseModel):
@@ -33,6 +33,7 @@ def load_sparse_tensor(filename):
     values = loaded_data["values"]
     # Create a sparse COO  tensor from the loaded data
     sparse_tensor = torch.sparse_coo_tensor(indices, values, shape)
+    # nnz = sparse_tensor._nnz()
     return sparse_tensor.coalesce()
 
 

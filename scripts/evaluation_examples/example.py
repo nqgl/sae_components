@@ -47,7 +47,7 @@ top_docs = root.docs[top_indices[0]]
 
 i = 0
 print(root.detokenize(top_docs[i]))
-print("active on:", root.detokenize([top_docs[i][top_indices[1][i].item()]]))
+print("active on:", root.detokenize(top_docs[i][top_indices[1][i].item()]))
 
 # if there are specific use cases you have let me know and I can add support for them
 # eg if it would be good to have an iterator that iterates over active docs and gives the

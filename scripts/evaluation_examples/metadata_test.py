@@ -4,6 +4,16 @@ from saeco.evaluation.evaluation import Evaluation
 
 torch.backends.cuda.enable_mem_efficient_sdp(False)
 torch.backends.cuda.enable_flash_sdp(False)
+
+root_eval.tokenizer.encode(".")
+root_eval.detokenize([13])
+
+if "period_count" not in root_eval.metadatas:
+    b = root_eval.metadata_builder(dtype=torch.bool, device="cpu")
+    for chunk in b:
+        b << (chunk.tokens.value == 13).sum(-1)
+    root_eval.metadatas[".count"] = b.value
+
 if "third" not in root_eval.metadatas:
     data = torch.zeros(root_eval.saved_acts.cfg.num_docs, dtype=torch.bool)
 
@@ -181,14 +191,14 @@ root_eval.detokenize([9999])
 spend = 9999
 root_eval.detokenize([9989])
 android = 9989
-# builder = ec.metadata_builder(torch.bool, "cpu")
-# for chunk in builder:
-#     builder.send((chunk.tokens.value == spend).any(-1))
-# ec.filters["filter A"] = builder.value
-# builder = ec.metadata_builder(torch.bool, "cpu")
-# for chunk in builder:
-#     builder.send((chunk.tokens.value == android).any(-1))
-# ec.filters["filter B"] = builder.value
+builder = root_eval.metadata_builder(torch.bool, "cpu")
+for chunk in builder:
+    builder << (chunk.tokens.value == spend).any(-1)
+root_eval.filters["filter A"] = builder.value
+builder = root_eval.metadata_builder(torch.bool, "cpu")
+for chunk in builder:
+    builder << (chunk.tokens.value == android).any(-1)
+root_eval.filters["filter B"] = builder.value
 A = root_eval.open_filtered("filter A")
 B = root_eval.open_filtered("filter B")
 co_occurence_delta = A.doc_level_co_occurrence() - B.doc_level_co_occurrence()
