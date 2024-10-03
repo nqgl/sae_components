@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from .evaluation import Evaluation
 from .fastapi_models import (
     FeatureActiveDocsRequest,
@@ -18,6 +20,14 @@ from .fastapi_models import (
 
 def create_app(root: Evaluation):
     app = FastAPI()
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allows all origins
+        allow_credentials=True,
+        allow_methods=["*"],  # Allows all methods
+        allow_headers=["*"],  # Allows all headers
+    )
 
     @app.put("/top_activating_examples")
     def get_top_activating_examples(
