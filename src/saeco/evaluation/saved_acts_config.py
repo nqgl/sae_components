@@ -14,8 +14,9 @@ class CachingConfig(BaseModel):
     llm_batch_size: int | None = None
     dirname: str = "test"
     store_feature_tensors: bool = True
-    eager_sparse_generation: bool = False
+    eager_sparse_generation: bool = True
     exclude_bos_from_storage: bool | None = None
+    deferred_blocked_store_feats_block_size: int = 10
     STANDARD_FILE_NAME: ClassVar = "cache_config.json"
 
     @property

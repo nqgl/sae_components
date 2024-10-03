@@ -5,8 +5,8 @@ import torch
 
 import torch.nn as nn
 
-from saeco.architectures.threshgate_gradjust.other_lin import OtherLinear
-from saeco.architectures.threshgate_gradjust.threshgrad import BinaryEncoder, GTTest
+from saeco.architectures.sweep_tg.other_lin import OtherLinear
+from saeco.architectures.sweep_tg.sthreshgrad import BinaryEncoder, GTTest
 from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
 
 from saeco.components.hooks.clipgrad import ClipGrad
@@ -256,4 +256,4 @@ def run(cfg):
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    from .tg_grad_deep_config import cfg, PROJECT
+    from .stg_grad_deep_config import cfg, PROJECT

@@ -206,11 +206,11 @@ class Chunk:
         )
 
     @property
-    def acts(self):
+    def acts(self) -> FilteredTensor:
         return self.read_sparse()
 
     @property
-    def tokens(self):
+    def tokens(self) -> FilteredTensor:
         return self.read_tokens()
 
     @property
