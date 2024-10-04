@@ -59,8 +59,6 @@ class ActsData:
         skip_exclude=False,
         force_not_skip_padding=False,
     ):
-        print("WARNING SUPER WRONG THING")
-        tokens = tokens % 50000
         acts_list = []
         with torch.autocast(device_type="cuda", dtype=self.cfg.model_cfg.torch_dtype):
             with torch.inference_mode():
