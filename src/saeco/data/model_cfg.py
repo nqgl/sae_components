@@ -1,8 +1,10 @@
-from nnsight import LanguageModel
+from nnsight import LanguageModel, NNsight
 from pydantic import Field
 
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
+
+MODEL_FN_CALLABLE_OVERRIDE = None
 
 
 class ActsDataConfig(SweepableConfig):
@@ -50,17 +52,21 @@ class ModelConfig(SweepableConfig):
         def getmodel():
             nonlocal model
             if model is None:
+                get_model_fn = MODEL_FN_CALLABLE_OVERRIDE or LanguageModel
                 if self.torch_dtype_str is None:
-                    model = LanguageModel(
+                    model = get_model_fn(
                         self.model_name,
                         device_map=self._device,
                     )
                 else:
-                    model = LanguageModel(
+                    model = get_model_fn(
                         self.model_name,
                         torch_dtype=str_to_dtype(self.torch_dtype_str),
                         device_map=self._device,
                     )
+                if MODEL_FN_CALLABLE_OVERRIDE is not None:
+                    model = NNsight(model)
+
             return model
 
         def setmodel(m):
