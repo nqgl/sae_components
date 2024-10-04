@@ -13,7 +13,7 @@ class TokenEnrichmentMode(str, Enum):
 
 
 class TokenEnrichmentSortBy(str, Enum):
-    count = "count"
+    counts = "count"
     normalized_count = "normalized_count"
     score = "score"
 
@@ -23,7 +23,7 @@ class TokenEnrichmentRequest(FilterableQuery):
     p: float | None = None
     k: int | None = None
     mode: TokenEnrichmentMode
-    sort_by: TokenEnrichmentSortBy = TokenEnrichmentSortBy.count
+    sort_by: TokenEnrichmentSortBy = TokenEnrichmentSortBy.counts
     num_top_tokens: int | None = 100
 
 

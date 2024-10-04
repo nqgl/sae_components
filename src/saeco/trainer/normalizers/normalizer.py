@@ -1,10 +1,11 @@
+from abc import ABC, abstractmethod
+from typing import Protocol
+
 import torch
 import torch.nn as nn
-from torch import Tensor
 from jaxtyping import Float
-from abc import ABC, abstractmethod
+from torch import Tensor
 from unpythonic import box
-from typing import Protocol
 
 import saeco.core as cl
 
@@ -180,8 +181,7 @@ class BatchNormalizer(AffineNormalizer):
         return x.std(dim=0, keepdim=True, unbiased=False) + self.eps
 
 
-from saeco.sweeps import SweepableConfig
-
+from enum import IntEnum
 
 # class Aggregation(SweepableConfig):
 #     primed: bool
@@ -191,7 +191,7 @@ from saeco.sweeps import SweepableConfig
 
 from jaxtyping import Float
 
-from enum import IntEnum
+from saeco.sweeps import SweepableConfig
 
 
 class GNConfig(SweepableConfig):
@@ -230,14 +230,20 @@ class GeneralizedNormalizer(Normalizer):
             self.register_buffer(
                 "_mu_e",
                 torch.full(
-                    (init.d_data,),
+                    (
+                        1,
+                        init.d_data,
+                    ),
                     torch.nan,
                 ),
             )
         elif cfg.mu_e == Aggregation.LEARNED:
             self._mu_e = nn.Parameter(
                 torch.full(
-                    (init.d_data,),
+                    (
+                        1,
+                        init.d_data,
+                    ),
                     torch.nan,
                 )
             )
@@ -245,14 +251,20 @@ class GeneralizedNormalizer(Normalizer):
             self.register_buffer(
                 "_std_e",
                 torch.full(
-                    (init.d_data,),
+                    (
+                        1,
+                        init.d_data,
+                    ),
                     torch.nan,
                 ),
             )
         elif cfg.std_e == Aggregation.LEARNED:
             self._std_e = nn.Parameter(
                 torch.full(
-                    (init.d_data,),
+                    (
+                        1,
+                        init.d_data,
+                    ),
                     torch.nan,
                 )
             )
@@ -261,7 +273,7 @@ class GeneralizedNormalizer(Normalizer):
             self.register_buffer(
                 "_mu_s",
                 torch.full(
-                    (1,),
+                    (),
                     torch.nan,
                 ),
             )
@@ -269,7 +281,7 @@ class GeneralizedNormalizer(Normalizer):
             self.register_buffer(
                 "_std_s",
                 torch.full(
-                    (1,),
+                    (),
                     torch.nan,
                 ),
             )

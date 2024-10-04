@@ -47,7 +47,7 @@ class GrowingDiskTensor(DiskTensor):
     def open(cls, path: Path):
         inst = cls(
             path=path,
-            metadata=cls._open_metdata(path),
+            metadata=cls._open_metadata(path),
             storage_len=None,
         )
         assert inst.finalized

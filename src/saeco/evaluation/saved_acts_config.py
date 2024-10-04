@@ -18,6 +18,7 @@ class CachingConfig(BaseModel):
     exclude_bos_from_storage: bool | None = None
     deferred_blocked_store_feats_block_size: int = 10
     STANDARD_FILE_NAME: ClassVar = "cache_config.json"
+    metadatas_from_src_column_names: list[str] = []
 
     @property
     def num_docs(self):

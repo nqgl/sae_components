@@ -14,8 +14,8 @@ from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
-from .acts_cacher import ActsCacher, CachingConfig
 from .cached_artifacts import CachedCalls
+from .cacher2 import ActsCacher, CachingConfig
 from .fastapi_models import (
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentResponse,
@@ -131,7 +131,7 @@ class Evaluation:
             value.filter.writeat(new_tensor, value.value)
         return new_tensor
 
-    def metadata_builder(self, dtype, device, item_size=[]) -> "TensorBuilder":
+    def metadata_builder(self, dtype, device, item_size=[]) -> "MetadataBuilder":
         return MetadataBuilder(
             self.saved_acts.chunks,
             dtype=dtype,
@@ -219,24 +219,35 @@ class Evaluation:
         if caching_cfg.model_name is None:
             caching_cfg.model_name = self.model_name
         assert caching_cfg.model_name == self.model_name
-        acts_cacher = ActsCacher(
+        acts_cacher = ActsCacher.from_cache_and_runner(
             caching_config=caching_cfg, model_context=self.training_runner
         )
-        if acts_cacher.path().exists():
+        if acts_cacher.path.exists():
             if displace_existing:
                 import time
 
-                old = acts_cacher.path().parent / "old"
+                old = acts_cacher.path.parent / "old"
                 old.mkdir(exist_ok=True, parents=True)
-                acts_cacher.path().rename(
-                    old / f"old_{time.time()}{acts_cacher.path().name}"
+                acts_cacher.path.rename(
+                    old / f"old_{time.time()}{acts_cacher.path.name}"
                 )
             else:
                 raise FileExistsError(
-                    f"{acts_cacher.path()} already exists. Set displace_existing=True to move existing files."
+                    f"{acts_cacher.path} already exists. Set displace_existing=True to move existing files."
                 )
-        acts_cacher.store_acts()
-        self.saved_acts = SavedActs.from_path(acts_cacher.path())
+
+        metadata_chunks = acts_cacher.store_acts()
+        self.saved_acts = SavedActs.from_path(acts_cacher.path)
+        metadata_builders = {
+            name: self.metadata_builder(torch.long, "cpu")
+            for name in self.cache_cfg.metadatas_from_src_column_names
+        }
+        for mchunk in metadata_chunks:
+            for name in mchunk:
+                metadata_builders[name].takestrl(mchunk[name])
+        for name, builder in metadata_builders.items():
+            self.metadatas[name] = builder.value
+            self.metadatas.set_str_translator(name, builder.unique_labels)
 
     def get_features(self, feature_ids):
         return [self.features[fid] for fid in feature_ids]
@@ -367,6 +378,27 @@ class Evaluation:
         prod = mat.diag()[~mat.diag().isnan()].prod()
         assert prod < 1.001 and prod > 0.999
         return mat
+
+    def top_coactivating_features(self, feature_id, top_n=10, mode="seq"):
+        """
+        mode: "seq" or "doc"
+        """
+        if mode == "seq":
+            mat = self.activation_cosims()
+        elif mode == "doc":
+            mat = self.doc_level_co_occurrence()
+        else:
+            raise ValueError("mode must be 'seq' or 'doc'")
+        vals = mat[feature_id]
+        vals[feature_id] = -torch.inf
+        vals[vals.isnan()] = -torch.inf
+        top = vals.topk(top_n + 1)
+
+        v = top.values
+        i = top.indices
+        v = v[i != feature_id][:top_n]
+        i = i[i != feature_id][:top_n]
+        return i, v
 
     def sae_with_patch(
         self,
@@ -815,6 +847,7 @@ class Evaluation:
         return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
+        str_metadatas: bool = False,
     ):
         if isinstance(feature, int):
             feature = self.features[feature]
@@ -828,7 +861,11 @@ class Evaluation:
             acts = acts.to_sparse_coo()
         doc_indices = top_outer_indices[0]
         docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
-        metadatas = [self._root_metadatas[key][doc_indices] for key in metadata_keys]
+        metadatas = {
+            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+        }
+        if str_metadatas:
+            metadatas = self._root_metadatas.translate(metadatas)
         if return_doc_indices:
             return docs, acts, metadatas, doc_indices
         return docs, acts, metadatas
@@ -849,13 +886,13 @@ class Evaluation:
         p: float = None,
         k: int = None,
         str_label: bool = False,
-        sort_by: MetadataEnrichmentSortBy = MetadataEnrichmentSortBy.count,
+        sort_by: MetadataEnrichmentSortBy = MetadataEnrichmentSortBy.counts,
     ):
         docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
             feature=feature, p=p, k=k, metadata_keys=metadata_keys
         )
         r = {}
-        for mdname, md in zip(metadata_keys, metadatas):
+        for mdname, md in metadatas.items():
             assert md.ndim == 1
             full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
             labels, mdcat_counts = torch.cat([md, full_lc[0]]).unique(
@@ -869,8 +906,8 @@ class Evaluation:
             proportions = proportions[counts > 0]
             counts = counts[counts > 0]
             normalized_counts = proportions * self.docs_in_subset / doc_ids.shape[0]
-            scores = torch.zeros_like(counts).float() - 0.99  # TODO
-            if sort_by == TokenEnrichmentSortBy.count:
+            scores = normalized_counts.log()
+            if sort_by == TokenEnrichmentSortBy.counts:
                 i = counts.argsort(descending=True)
             elif sort_by == TokenEnrichmentSortBy.normalized_count:
                 i = normalized_counts.argsort(descending=True)
@@ -885,7 +922,7 @@ class Evaluation:
             scores = scores[i]
             r[mdname] = [
                 MetadataEnrichmentLabelResult(
-                    label=f"mock placeholder {label}" if str_label else label,
+                    label=label,
                     count=count,
                     proportion=proportion,
                     normalized_count=normalized_count,
@@ -893,7 +930,11 @@ class Evaluation:
                     # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
                 )
                 for label, count, proportion, normalized_count, score in zip(
-                    labels.tolist(),
+                    (
+                        self.metadatas.get(mdname).strlist(labels)
+                        if str_label
+                        else labels.tolist()
+                    ),
                     counts.tolist(),
                     proportions.tolist(),
                     normalized_counts.tolist(),
@@ -906,21 +947,6 @@ class Evaluation:
         counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
             toks = chunk.tokens.value.to(self.cuda).flatten()
-            counts.scatter_add_(
-                0,
-                toks,
-                torch.ones(1, device=toks.device, dtype=torch.long).expand(
-                    toks.shape[0]
-                ),
-            )
-        return counts
-
-    def count_filtered_token_occurrence(self, filter):
-        counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
-        for chunk in self.saved_acts.chunks:
-            toks = chunk.tokens.mask_by_other(filter).value.to(self.cuda).flatten()
-
-            # .value.to(self.cuda).flatten()
             counts.scatter_add_(
                 0,
                 toks,
@@ -962,8 +988,8 @@ class Evaluation:
         normalized_counts = (counts / seltoks.numel()) / (
             self.token_occurrence_count[tokens] / (self.docs_in_subset * self.seq_len)
         )
-        scores = torch.zeros_like(counts).float() - 0.99  # TODO
-        if sort_by == TokenEnrichmentSortBy.count:
+        scores = normalized_counts.log()
+        if sort_by == TokenEnrichmentSortBy.counts:
             i = counts.argsort(descending=True)
         elif sort_by == TokenEnrichmentSortBy.normalized_count:
             i = normalized_counts.argsort(descending=True)
@@ -978,42 +1004,15 @@ class Evaluation:
 
         return tokens, counts, normalized_counts, scores
 
-    def get_active_documents(self, feature_ids):
-        raise DeprecationWarning("This method is outdated")
+    def num_active_docs_for_feature(self, feature_id):
+        return self.cached_call.feature_num_active_docs()[feature_id].item()
 
-        features = self.get_features(feature_ids)
-        return self.select_active_documents(self.features_union(features))
-
-    @staticmethod
-    def features_union(feature_tensors):
-        raise DeprecationWarning("This method is outdated")
-        f = feature_tensors[0].clone()
-        for ft in feature_tensors[1:]:
-            f += ft
-        assert f.is_sparse
-        f = f.coalesce()
-        return f
-
-    @staticmethod
-    def active_document_indices(feature):
-        raise DeprecationWarning("Outdated methodology")
-        return feature.indices()[0][feature.values() != 0].unique()
-
-    def select_active_documents(self, feature):
-        raise DeprecationWarning("Outdated methodology")
-        docs, doc_ids = self._active_docs_values_and_indices(feature)
-        assert not docs.is_sparse
-        return torch.sparse_coo_tensor(
-            indices=doc_ids.unsqueeze(0),
-            values=docs,
-            size=(self.cache_cfg.num_docs, docs.shape[1]),
-        ).coalesce()
-
-    def _active_docs_values_and_indices(self, feature):
-        raise DeprecationWarning("Outdated methodology")
-        active_documents_idxs = self.active_document_indices(feature)
-        active_documents = self.saved_acts.tokens[active_documents_idxs]
-        return active_documents, active_documents_idxs
+    def feature_num_active_docs(self):
+        activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
+        for chunk in self.saved_acts.chunks:
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            activity += (acts > 0).any(dim=1).sum(dim=0)
+        return activity
 
 
 class TensorBuilder:
@@ -1046,6 +1045,7 @@ class MetadataBuilder:
         self.done = False
         self.chunks_done = [False] * len(chunks)
         self.i = 0
+        self.unique_labels = {}  # for strings only
 
     @property
     def value(self):
@@ -1075,6 +1075,19 @@ class MetadataBuilder:
         value.filter.writeat(target=self._value, value=value.value)
         self.chunks_done[chunk.idx] = True
         self.i += 1
+
+    def takestrl(self, v):
+        assert isinstance(v, list) and self._value.dtype == torch.long
+        o = [self.getlabel(s) for s in v]
+        t = torch.tensor(o, dtype=torch.long, device=self._value.device)
+        self << t
+
+    def getlabel(self, s: str):
+        assert isinstance(s, str)
+        if s in self.unique_labels:
+            return self.unique_labels[s]
+        self.unique_labels[s] = len(self.unique_labels)
+        return self.unique_labels[s]
 
     class mbsetter:
         def __init__(self, mb, chunk):

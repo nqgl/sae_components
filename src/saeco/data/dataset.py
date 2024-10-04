@@ -75,6 +75,9 @@ class DataConfig(SweepableConfig):
     def _tokens_piles_path(self, split: SplitConfig) -> Path:
         return self._get_tokens_split_path(split) / "piles"
 
+    def _tokens_perm_path(self, split: SplitConfig) -> Path:
+        return self._get_tokens_split_path(split) / "perm.safetensors"
+
     def _acts_piles_path(self, split: SplitConfig) -> Path:
         return self._get_acts_split_path(split) / "piles"
 
@@ -117,7 +120,7 @@ class DataConfig(SweepableConfig):
 
         return squeezeyielder()
 
-    def get_split_tokens(self, split, num_tokens=None):
+    def get_split_tokens(self, split, num_tokens=None):  ###
         return TokensData(
             self,
             self.model_cfg.model,
@@ -129,6 +132,9 @@ class DataConfig(SweepableConfig):
         ).get_tokens(
             num_tokens=num_tokens,
         )
+
+    def getsplit(self, split: str):
+        return getattr(self, f"{split}split")
 
     def load_dataset_from_split(self, split: SplitConfig, to_torch=True):
         if self.load_from_disk:
@@ -143,7 +149,9 @@ class DataConfig(SweepableConfig):
             )
 
         if to_torch:
-            dataset.set_format(type="torch", columns=[self.tokens_column_name])
+            dataset.set_format(
+                type="torch", columns=[self.tokens_column_name], output_all_columns=True
+            )
         return dataset
 
     def acts_data(self) -> "ActsData":

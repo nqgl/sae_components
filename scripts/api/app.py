@@ -2,7 +2,7 @@ import uvicorn
 from saeco.evaluation import Evaluation
 from saeco.evaluation.api import create_app
 
-STORAGE_NAME = "larger_store"
+STORAGE_NAME = "test_meta"
 root = Evaluation.from_cache_name(STORAGE_NAME)
 app = create_app(root)
 

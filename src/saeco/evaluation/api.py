@@ -4,6 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .evaluation import Evaluation
 from .fastapi_models import (
+    CoActivatingFeature,
+    CoActivationRequest,
+    CoActivationResponse,
+    Feature,
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
     MetadataEnrichmentRequest,
@@ -20,7 +24,6 @@ from .fastapi_models import (
 
 def create_app(root: Evaluation):
     app = FastAPI()
-    # Add CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # Allows all origins
@@ -40,12 +43,14 @@ def create_app(root: Evaluation):
             k=query.k,
             metadata_keys=query.metadata_keys,
             return_str_docs=query.return_str_docs,
+            str_metadatas=query.return_str_metadatas,
         )
         if not query.return_str_docs:
             docs = docs.tolist()
         acts = acts.to_dense()
         acts = acts.tolist()
-        metadatas = [m.tolist() for m in metadatas]
+        metadatas = [metadatas[k] for k in query.metadata_keys]
+        metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
         if len(metadatas) == 0:
             metadatas = [[] for _ in range(len(docs))]
         else:
@@ -144,10 +149,23 @@ def create_app(root: Evaluation):
     ) -> FeatureActiveDocsResponse:
         ev = query.filter(root)
         return FeatureActiveDocsResponse(
-            num_active_docs=ev.features[query.feature]
-            .filter_inactive_docs()
-            .filter.mask.sum()
-            .item()
+            num_active_docs=ev.num_active_docs_for_feature(query.feature)
         )
+
+    @app.put("/top_coactivating_features")
+    def get_top_coactive_features(query: CoActivationRequest):
+        ev = query.filter(root)
+        ids, values = ev.top_coactivating_features(
+            feature_id=query.feature_id,
+            top_n=query.n,
+            mode=query.mode,
+        )
+        l = []
+        for i, v in zip(ids, values):
+            l.append(
+                CoActivatingFeature(feature_id=i.item(), coactivation_level=v.item())
+            )
+        print(l)
+        return CoActivationResponse(results=l)
 
     return app

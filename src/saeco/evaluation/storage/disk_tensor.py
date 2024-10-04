@@ -65,7 +65,7 @@ class DiskTensor:
         return self.open_disk_tensor(create=not self.finalized)
 
     @classmethod
-    def _open_metdata(cls, path: Path):
+    def _open_metadata(cls, path: Path):
         return DiskTensorMetadata.model_validate_json(
             (path.with_suffix(".metadata")).read_text()
         )
@@ -102,7 +102,7 @@ class DiskTensor:
     def open(cls, path):
         return cls(
             path=path,
-            metadata=cls._open_metdata(path),
+            metadata=cls._open_metadata(path),
         )
 
     @classmethod
