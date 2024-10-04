@@ -384,9 +384,9 @@ class Evaluation:
         mode: "seq" or "doc"
         """
         if mode == "seq":
-            mat = self.activation_cosims()
+            mat = self.cached_call.activation_cosims()
         elif mode == "doc":
-            mat = self.doc_level_co_occurrence()
+            mat = self.cached_call.doc_level_co_occurrence()
         else:
             raise ValueError("mode must be 'seq' or 'doc'")
         vals = mat[feature_id]
