@@ -790,7 +790,7 @@ class Evaluation:
     def _get_token_occurrences(self):
         counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in tqdm.tqdm(self.saved_acts.chunks):
-            tokens = chunk.tokens.value
+            tokens = chunk.tokens.value.to(self.cuda)
             t, c_counts = tokens.unique(return_counts=True)
             counts[t] += c_counts
         return counts
@@ -968,6 +968,7 @@ class Evaluation:
         docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
             feature=feature, p=p, k=k, metadata_keys=[]
         )
+        docs = docs.to(self.cuda)
         if mode == TokenEnrichmentMode.doc:
             seltoks = docs
         elif mode == TokenEnrichmentMode.max:
@@ -986,7 +987,8 @@ class Evaluation:
             raise ValueError(f"Unknown mode {mode}")
         tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
         normalized_counts = (counts / seltoks.numel()) / (
-            self.token_occurrence_count[tokens] / (self.docs_in_subset * self.seq_len)
+            self.token_occurrence_count.to(self.cuda)[tokens]
+            / (self.docs_in_subset * self.seq_len)
         )
         scores = normalized_counts.log()
         if sort_by == TokenEnrichmentSortBy.counts:

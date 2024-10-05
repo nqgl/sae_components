@@ -1,3 +1,7 @@
+import json
+
+from pathlib import Path
+
 from fastapi import FastAPI
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +14,7 @@ from .fastapi_models import (
     Feature,
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
+    GeneInfo,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
     TokenEnrichmentMode,
@@ -20,6 +25,15 @@ from .fastapi_models import (
     TopActivatingExamplesResult,
     TopActivationResultEntry,
 )
+
+gene_conversions_path = (
+    Path.home() / "workspace" / "cached_sae_acts" / "class_conversion.json"
+)
+
+gene_conversions = {
+    k: GeneInfo.model_validate(v)
+    for k, v in json.loads(gene_conversions_path.read_text()).items()
+}
 
 
 def create_app(root: Evaluation):
@@ -124,14 +138,15 @@ def create_app(root: Evaluation):
             normalized_counts = normalized_counts[: query.num_top_tokens]
             scores = scores[: query.num_top_tokens]
             tokstrs = tokstrs[: query.num_top_tokens]
-        return TokenEnrichmentResponse(
+        return TokenEnrichmentResponse[GeneInfo](
             results=[
-                TokenEnrichmentResponseItem(
+                TokenEnrichmentResponseItem[GeneInfo](
                     tokstr=tokstr,
                     token=token,
                     count=count,
                     normalized_count=normalized_count,
                     score=score,
+                    info=gene_conversions[tokstr],
                 )
                 for tokstr, token, count, normalized_count, score in zip(
                     tokstrs,

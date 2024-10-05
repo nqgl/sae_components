@@ -16,6 +16,7 @@ from .metadata_enrichment import (
 )
 
 from .token_enrichment import (
+    GeneInfo,
     TokenEnrichmentMode,
     TokenEnrichmentRequest,
     TokenEnrichmentResponse,
