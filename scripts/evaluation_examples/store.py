@@ -16,14 +16,14 @@ root_eval = Evaluation.from_model_name(model_name)
 root_eval.store_acts(
     CachingConfig(
         dirname=storage_name,
-        num_chunks=10,
+        num_chunks=100,
         docs_per_chunk=100,
-        documents_per_micro_batch=16,
+        documents_per_micro_batch=32,
         # exclude_bos_from_storage=True,
         eager_sparse_generation=True,
         store_feature_tensors=False,
-        deferred_blocked_store_feats_block_size=True,
-        metadatas_from_src_column_names=["tissue", "cell_type"],
+        deferred_blocked_store_feats_block_size=False,
+        # metadatas_from_src_column_names=["tissue", "cell_type"],
     ),
     displace_existing=True,
 )

@@ -2,8 +2,8 @@ from .co_activation import (
     CoActivatingFeature,
     CoActivationRequest,
     CoActivationResponse,
-    Feature,
 )
+from .Feature import Feature
 from .feature_active_docs_count import (
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,

@@ -114,7 +114,9 @@ class ActsCacher:
         metadata_chunks = []
         self.feature_tensors = self._feature_tensors_initializer()
         assert self.cfg.store_dense or self.cfg.store_sparse
-        for chunk_id, (chunk, metadata_columns) in enumerate(self.chunk_generator()):
+        for chunk_id, (chunk, metadata_columns) in tqdm.tqdm(
+            enumerate(self.chunk_generator()), total=self.cfg.num_chunks
+        ):
             if n_chunks is not None and chunk_id >= n_chunks:
                 break
             chunk.save_tokens()
@@ -191,8 +193,9 @@ class ActsCacher:
 
                 print(f"Stored features {i} to {i + features_batch_size}")
             prog.close()
-        for ft in self.feature_tensors:
-            ft.finalize()
+        if self.feature_tensors:
+            for ft in self.feature_tensors:
+                ft.finalize()
         return metadata_chunks
 
     def chunk_generator(self):

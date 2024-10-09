@@ -12,6 +12,7 @@ from torch import Tensor
 
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
+from saeco.evaluation.MetadataBuilder import MetadataBuilder
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .cached_artifacts import CachedCalls
@@ -36,14 +37,10 @@ class Evaluation:
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
-    # nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
     root: Union["Evaluation", None] = field(default=None, repr=False)
 
-    # cache_name: str | None = None
-    # cache_path: Path | None = None
-    # metadatas: MetaDatas = field(init=False)
     @tokenizer.default
     def _tokenizer_default(self):
         return AutoTokenizer.from_pretrained(
@@ -378,6 +375,119 @@ class Evaluation:
         prod = mat.diag()[~mat.diag().isnan()].prod()
         assert prod < 1.001 and prod > 0.999
         return mat
+
+    def sequelize(
+        self,
+        acts: Tensor,
+        doc_agg: float | int | str | None = None,
+    ):
+        assert acts.ndim == 3
+        if doc_agg:
+            if isinstance(doc_agg, float | int):
+                acts = acts.pow(doc_agg).sum(dim=1).pow(1 / doc_agg)
+            elif doc_agg == "count":
+                acts = (acts > 0).sum(dim=1).float()
+            elif doc_agg == "max":
+                acts = acts.max(dim=1).values
+            else:
+                raise ValueError("Invalid doc_agg")
+            return einops.rearrange(acts, "doc feat -> feat doc")
+        else:
+            return einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+
+    def coactivations(self, doc_agg=None):
+        sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+        coact_counts = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+        fa_sq_sum = torch.zeros(self.d_dict).to(self.cuda)
+        for chunk in tqdm.tqdm(
+            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
+        ):
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            assert acts.ndim == 3
+            feature_activity = self.sequelize(
+                acts, doc_agg=doc_agg
+            )  # feat, (doc [seq])
+            feature_bin = (feature_activity > 0).float()
+            fa_sq_sum += feature_activity.pow(2).sum(-1)
+            sims += feature_activity @ feature_activity.transpose(-2, -1)
+            coact_counts += feature_bin @ feature_bin.transpose(-2, -1)
+        norms = fa_sq_sum.sqrt()
+        sims /= norms.unsqueeze(0)
+        sims /= norms.unsqueeze(1)
+        prod = sims.diag()[~sims.diag().isnan()].prod()
+        assert prod < 1.001 and prod > 0.999
+        return coact_counts, sims
+
+    def cosims(self, doc_agg=None):
+        return self.coactivations(doc_agg=doc_agg)[1]
+
+    def coactivity(self, doc_agg=None):
+        res = self.coactivations(doc_agg=doc_agg)
+        self.artifacts[f"cosims({(doc_agg,)}, {{}})"] = res[1]
+        return res[0]
+
+    def generate_feature_families(self, doc_agg=None, threshold=0.1, n=3, use_D=False):
+        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
+        if use_D:
+            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+        else:
+            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+        # D = D.cpu()
+        C = unnormalized / (
+            (
+                feat_counts := (
+                    self.doc_activation_counts
+                    if doc_agg
+                    else self.seq_activation_counts
+                )
+            )
+            .cpu()
+            .unsqueeze(-1)
+            + 1e-6
+        )
+        C[C.isnan()] = 0
+        C[C < threshold] = 0
+        import scipy.sparse as ssp
+
+        from .mst import Families, FamilyTreeNode, mst, my_mst
+
+        levels = []
+        feat_counts = feat_counts.to(self.cuda)
+        for _ in range(n):
+            print("my tree tree")
+            # i, v = my_mst(C.cuda())
+            # tree = (
+            #     torch.sparse_coo_tensor(indices=i, values=v, size=C.shape)
+            #     .to_dense()
+            #     .cpu()
+            #     .transpose(0, 1)
+            # )
+            print("make tree")
+            tree = mst(C).transpose(0, 1)
+            print("done")
+            # tree2.shape == tc.shape
+            # (tree2.cpu() - tc.cpu().transpose(0,1)<0.1).all()
+            # tc = tree.cuda()
+            # tc.transpose(0, 1)[i.unbind(0)] == v
+            nz = tree.nonzero()
+            # for i in range(nz.shape[0]):
+            #     c = nz[i]
+            #     assert feat_counts[c[0]] >= feat_counts[c[1]]
+            families = Families.from_tree(tree)
+            levels.append(families)
+            C[families.root_ids] = 0
+            C[:, families.root_ids] = 0
+
+        (
+            feat_counts[levels[0].roots[0].feature_id],
+            feat_counts[levels[1].roots[0].feature_id],
+            feat_counts[levels[2].roots[0].feature_id],
+        )
+        (len(levels[0].roots[0]), len(levels[1].roots[0]), len(levels[2].roots[0]))
+
+        (len(levels[0]), len(levels[1]), len(levels[2]))
+
+        return levels
 
     def top_coactivating_features(self, feature_id, top_n=10, mode="seq"):
         """
@@ -1007,103 +1117,36 @@ class Evaluation:
         return tokens, counts, normalized_counts, scores
 
     def num_active_docs_for_feature(self, feature_id):
-        return self.cached_call.feature_num_active_docs()[feature_id].item()
+        return self.cached_call._feature_num_active_docs()[feature_id].item()
 
-    def feature_num_active_docs(self):
+    @property
+    def seq_activation_counts(self):
+        return self.cached_call._feature_num_active_tokens()
+
+    @property
+    def doc_activation_counts(self):
+        return self.cached_call._feature_num_active_docs()
+
+    # @property
+    # def mean_feature_activations(self)
+
+    # def _feature_mean_activations(self):
+
+    # def feature_activation_proportion_thresholds(self, p):
+
+    def _feature_num_active_docs(self):
         activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
             acts = chunk.acts.value.to(self.cuda).to_dense()
             activity += (acts > 0).any(dim=1).sum(dim=0)
         return activity
 
-
-class TensorBuilder:
-    def __init__(self, gen):
-        self.gen = gen
-        self.value = ...
-        self.it = self._iter()
-
-    def _iter(self):
-        self.value = yield from self.gen
-
-    def __iter__(self) -> Iterator[Chunk]:
-        return self
-
-    def __next__(self) -> Chunk:
-        return next(self.it)
-
-    def send(self, v):
-        return self.it.send(v)
-
-    def __lshift__(self, v):
-        return self.send(v)
-
-
-class MetadataBuilder:
-    def __init__(self, chunks, dtype, device, shape):
-        self.it = iter(chunks)
-        self.chunks = chunks
-        self._value = torch.zeros(*shape, dtype=dtype, device=device)
-        self.done = False
-        self.chunks_done = [False] * len(chunks)
-        self.i = 0
-        self.unique_labels = {}  # for strings only
-
-    @property
-    def value(self):
-        self.finish()
-        return self._value
-
-    def finish(self):
-        assert all(self.chunks_done)
-        self.done = True
-
-    def __iter__(self) -> Iterator[Chunk]:
-        return self
-
-    def __next__(self) -> Chunk:
-        return next(self.it)
-
-    def __lshift__(self, v):
-        return self._recv(self.chunks[self.i], v)
-
-    def _recv(self, chunk: Chunk, value: FilteredTensor | Tensor):
-        assert isinstance(chunk, Chunk)
-        assert isinstance(value, FilteredTensor | Tensor)
-        assert not self.done
-        assert not self.chunks_done[chunk.idx]
-        if isinstance(value, Tensor):
-            value = chunk._to_filtered(value)
-        value.filter.writeat(target=self._value, value=value.value)
-        self.chunks_done[chunk.idx] = True
-        self.i += 1
-
-    def takestrl(self, v):
-        assert isinstance(v, list) and self._value.dtype == torch.long
-        o = [self.getlabel(s) for s in v]
-        t = torch.tensor(o, dtype=torch.long, device=self._value.device)
-        self << t
-
-    def getlabel(self, s: str):
-        assert isinstance(s, str)
-        if s in self.unique_labels:
-            return self.unique_labels[s]
-        self.unique_labels[s] = len(self.unique_labels)
-        return self.unique_labels[s]
-
-    class mbsetter:
-        def __init__(self, mb, chunk):
-            self.mb: MetadataBuilder = mb
-            self.chunk: Chunk = chunk
-
-        def __lshift__(self, v):
-            return self.mb._recv(self.chunk, v)
-
-    def __getitem__(self, chunk):
-        return MetadataBuilder.mbsetter(self, chunk)
-
-    def __setitem__(self, chunk, value):
-        return self._recv(chunk, value)
+    def _feature_num_active_tokens(self):
+        activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
+        for chunk in self.saved_acts.chunks:
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            activity += (acts > 0).sum(dim=1).sum(dim=0)
+        return activity
 
 
 @define

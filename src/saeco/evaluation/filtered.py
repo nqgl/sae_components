@@ -80,7 +80,7 @@ class Filter:
         if tensor.is_sparse:
             if not tensor.is_coalesced():
                 tensor = tensor.coalesce()
-
+            tensor._nnz()
             return index_sparse_with_bool(tensor, self.mask).coalesce()
         return tensor[self.mask]
 

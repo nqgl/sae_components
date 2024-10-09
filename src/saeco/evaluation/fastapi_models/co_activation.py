@@ -3,11 +3,6 @@ from pydantic import BaseModel, Field
 from .FilterableQuery import FilterableQuery
 
 
-class Feature(BaseModel):
-    feature_id: int
-    feature_name: str | None = None
-
-
 class CoActivatingFeature(BaseModel):
     feature_id: int
     coactivation_level: float  # cosine similarity value or count or whatever

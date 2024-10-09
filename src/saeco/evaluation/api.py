@@ -11,7 +11,6 @@ from .fastapi_models import (
     CoActivatingFeature,
     CoActivationRequest,
     CoActivationResponse,
-    Feature,
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
     GeneInfo,
@@ -25,6 +24,8 @@ from .fastapi_models import (
     TopActivatingExamplesResult,
     TopActivationResultEntry,
 )
+
+from .fastapi_models.Feature import Feature
 
 gene_conversions_path = (
     Path.home() / "workspace" / "cached_sae_acts" / "class_conversion.json"
