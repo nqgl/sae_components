@@ -34,6 +34,8 @@ def dist_counter(ls):
 
 
 root_eval.artifacts.keys()
+ff = root_eval.get_feature_families()
+ff.levels[0].families[4].subfamilies
 fff = [
     root_eval.cached_call._get_feature_family_trees(
         doc_agg="count", freq_bounds=(0, 0.5)

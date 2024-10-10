@@ -19,16 +19,20 @@ class GetFamiliesResponse(BaseModel):
     levels: list[FamilyLevel]
 
 
+class FamilyRef(BaseModel):
+    level: int
+    family_id: int
+    similarity: float
+
+
 class Family(BaseModel):
     level: int
     family_id: int
     label: str | None
-    subfamilies: list[
-        tuple[int, float]
-    ]  # list of tuples of (family id, similarity score)
+    subfamilies: list[FamilyRef]  # list of tuples of (family id, similarity score)
     # subfeatures: list[Feature]
     # or like this if the features have some sort of membership score:
-    subfeatures: list[Feature, float]
+    subfeatures: list[tuple[Feature, float]]
 
 
 # class Family:

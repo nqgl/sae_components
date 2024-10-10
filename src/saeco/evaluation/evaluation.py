@@ -29,7 +29,12 @@ from .fastapi_models import (
     TokenEnrichmentMode,
     TokenEnrichmentSortBy,
 )
-from .fastapi_models.families_draft import Family, FamilyLevel, GetFamiliesResponse
+from .fastapi_models.families_draft import (
+    Family,
+    FamilyLevel,
+    FamilyRef,
+    GetFamiliesResponse,
+)
 
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
@@ -711,7 +716,7 @@ class Evaluation:
         from .mst import Families, FamilyTreeNode
 
         levels = self.cached_call._get_feature_family_trees()
-        famlevels = [[Families.from_tree(f) for f in fam] for fam in levels]
+        famlevels = [Families.from_tree(f) for f in levels]
 
         niceroots: list[list[FamilyTreeNode]] = [
             [r for r in f.roots if len(r) > 10] for f in famlevels
@@ -721,7 +726,7 @@ class Evaluation:
             fl = FamilyLevel(
                 level=levelnum,
                 families={
-                    root.feature_id: Family(
+                    fam_id: Family(
                         level=levelnum,
                         family_id=fam_id,
                         label=None,
@@ -736,16 +741,38 @@ class Evaluation:
             )
             levels.append(fl)
         level_lens = [len(l.families) for l in levels]
-        maxl = sum(level_lens)
-        csll = torch.tensor(level_lens).cumsum(0).tolist()
+        # csll = torch.tensor([0] + level_lens).cumsum(0).tolist()[:-1]
         level_tensors = []
         t0 = torch.zeros(
-            len(levels), maxl, self.d_dict, dtype=torch.bool, device=self.cuda
+            len(levels),
+            max(level_lens),
+            self.d_dict,
+            dtype=torch.float,
+            device=self.cuda,
         )
         for i, level in enumerate(levels):
             for j, family in level.families.items():
-                for feat in family.subfeatures:
-                    t0[csll[i] + j, feat.feature_id] = True
+                for feat, _ in family.subfeatures:
+                    t0[i, j, feat.feature_id] = 1
+        ns = t0.sum(-1)
+        t0 /= ns.unsqueeze(-1)
+        sims = einops.einsum(t0, t0, "l1 f1 d, l2 f2 d -> l1 f1 l2 f2")
+        threshold = 0.0001
+        for i, level in enumerate(levels[:-1]):
+            for j, family in level.families.items():
+                sim = sims[i, j, i + 1 :, :]
+                st = sim > threshold
+                if st.sum() < 3:
+                    print("very few at threshold", threshold)
+                    st = sim > threshold / 2
+
+                for l, f in st.nonzero().tolist():
+                    family.subfamilies.append(
+                        FamilyRef(
+                            level=int(i + l), family_id=int(f), similarity=sim[l, f]
+                        )
+                    )
+        return GetFamiliesResponse(levels=levels)
 
     def top_coactivating_features(self, feature_id, top_n=10, mode="seq"):
         """
