@@ -34,6 +34,7 @@ from .fastapi_models.families_draft import (
     FamilyLevel,
     FamilyRef,
     GetFamiliesResponse,
+    ScoredFeature,
 )
 
 from .filtered import FilteredTensor
@@ -733,7 +734,10 @@ class Evaluation:
                         label=None,
                         subfamilies=[],
                         subfeatures=[
-                            (Feature(feature_id=int(feat_id), label=None), 0.9)
+                            ScoredFeature(
+                                feature=Feature(feature_id=int(feat_id), label=None),
+                                score=0.9,
+                            )
                             for feat_id in root.family
                         ],
                     )
@@ -743,7 +747,6 @@ class Evaluation:
             levels.append(fl)
         level_lens = [len(l.families) for l in levels]
         # csll = torch.tensor([0] + level_lens).cumsum(0).tolist()[:-1]
-        level_tensors = []
         t0 = torch.zeros(
             len(levels),
             max(level_lens),
@@ -761,7 +764,8 @@ class Evaluation:
         threshold = 0.0001
         for i, level in enumerate(levels[:-1]):
             for j, family in level.families.items():
-                sim = sims[i, j, i + 1, :]
+                next_level = i + 1
+                sim = sims[i, j, next_level, :]
                 st = sim > threshold
                 if st.sum() < 3:
                     print("very few at threshold", threshold)
@@ -770,7 +774,7 @@ class Evaluation:
                 for f in st.nonzero():
                     family.subfamilies.append(
                         FamilyRef(
-                            level=int(1 + i),
+                            level=int(next_level),
                             family_id=int(f.item()),
                             similarity=sim[f.item()],
                         )

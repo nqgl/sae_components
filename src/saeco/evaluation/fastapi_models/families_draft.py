@@ -25,6 +25,11 @@ class FamilyRef(BaseModel):
     similarity: float
 
 
+class ScoredFeature(BaseModel):
+    feature: Feature
+    score: float
+
+
 class Family(BaseModel):
     level: int
     family_id: int
@@ -32,7 +37,7 @@ class Family(BaseModel):
     subfamilies: list[FamilyRef]  # list of tuples of (family id, similarity score)
     # subfeatures: list[Feature]
     # or like this if the features have some sort of membership score:
-    subfeatures: list[tuple[Feature, float]]
+    subfeatures: list[ScoredFeature]
 
 
 # class Family:
