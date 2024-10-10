@@ -713,7 +713,7 @@ class Evaluation:
             )
         )
 
-    @cache_version(1)
+    @cache_version(2)
     def get_feature_families(self) -> GetFamiliesResponse:
         from .mst import Families, FamilyTreeNode
 
