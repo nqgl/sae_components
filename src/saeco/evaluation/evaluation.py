@@ -1,4 +1,5 @@
-from functools import cached_property
+import shelve
+from functools import cached_property, wraps
 from pathlib import Path
 from typing import Generator, Iterable, Iterator, Tuple, Union
 
@@ -8,6 +9,8 @@ import torch
 import torch.autograd.forward_ad as fwAD
 import tqdm
 from attr import define, field
+
+from pydantic import BaseModel
 from torch import Tensor
 
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
@@ -17,13 +20,16 @@ from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .cached_artifacts import CachedCalls
 from .cacher2 import ActsCacher, CachingConfig
+
 from .fastapi_models import (
+    Feature,
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentResponse,
     MetadataEnrichmentSortBy,
     TokenEnrichmentMode,
     TokenEnrichmentSortBy,
 )
+from .fastapi_models.families_draft import Family, FamilyLevel, GetFamiliesResponse
 
 from .filtered import FilteredTensor
 from .metadata import Artifacts, Filters, Metadatas
@@ -33,19 +39,82 @@ from .storage.chunk import Chunk
 
 
 @define
+class BMStorShelf:
+    path: Path
+    shelf: shelve.Shelf
+
+    @classmethod
+    def from_path(cls, path: Path):
+        return cls(
+            path=path,
+            shelf=shelve.open(str(path / "shelf")),
+        )
+
+    def fnkey(self, func, args, kwargs):
+        key = f"{func.__name__}__{args}__{kwargs}"
+        vkey = f"{key}__version"
+        return key, vkey
+
+    def version(self, func):
+        return getattr(func, "_version", None)
+
+    def has(self, func, args, kwargs):
+        key, vkey = self.fnkey(func, args, kwargs)
+        version = self.version(func)
+        return vkey in self.shelf and self.shelf[vkey] == version and key in self.shelf
+
+    def get(self, func, args, kwargs):
+        key, vkey = self.fnkey(func, args, kwargs)
+        return self.shelf[key]
+
+    def set(self, func, args, kwargs, value):
+        key, vkey = self.fnkey(func, args, kwargs)
+        self.shelf[key] = value
+        self.shelf[vkey] = self.version(func)
+        self.shelf.sync()
+
+
+def cache_version(v):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            return f(*args, **kwargs)
+
+        setattr(wrapper, "_version", v)
+        return wrapper
+
+    return decorator
+
+
+class Test(BaseModel):
+    a: int
+    b: int
+
+
+@define
 class Evaluation:
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
-    root: Union["Evaluation", None] = field(default=None, repr=False)
+    _root: Union["Evaluation", None] = field(default=None, repr=False)
 
     @tokenizer.default
     def _tokenizer_default(self):
         return AutoTokenizer.from_pretrained(
             self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name
         )
+
+    @cached_property
+    def bmstore(self):
+        return BMStorShelf.from_path(self.path)
+
+    @property
+    def root(self):
+        if self._root is None:
+            return self
+        return self._root
 
     @property
     def cuda(self):
@@ -105,7 +174,7 @@ class Evaluation:
             training_runner=self.training_runner,
             saved_acts=self.saved_acts.filtered(filter),
             filter=filter,
-            root=self,
+            _root=self,
         )
 
     def open_filtered(self, filter_name: str):
@@ -159,9 +228,9 @@ class Evaluation:
 
     @property
     def _root_metadatas(self):
-        if self.root is None:
+        if self._root is None:
             return self.metadatas
-        return self.root.metadatas
+        return self._root.metadatas
 
     @cached_property
     def artifacts(self) -> Artifacts:
@@ -207,10 +276,6 @@ class Evaluation:
     @property
     def d_vocab(self):
         return self.tokenizer.vocab_size
-
-    @property
-    def num_docs(self):
-        return self.cache_cfg.num_docs
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:
@@ -426,7 +491,9 @@ class Evaluation:
         self.artifacts[f"cosims({(doc_agg,)}, {{}})"] = res[1]
         return res[0]
 
-    def generate_feature_families(self, doc_agg=None, threshold=0.1, n=3, use_D=False):
+    def generate_feature_families1(
+        self, doc_agg=None, threshold=0.1, n=3, use_D=False, freq_bounds=None
+    ):
         # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
         if use_D:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
@@ -445,49 +512,240 @@ class Evaluation:
             .unsqueeze(-1)
             + 1e-6
         )
+        threshold = threshold or C[C > 0].median()
+
         C[C.isnan()] = 0
         C[C < threshold] = 0
+        if freq_bounds is not None:
+            fmin, fmax = freq_bounds
+            feat_probs = (
+                self.doc_activation_probs if doc_agg else self.seq_activation_probs
+            )
+            bound = (feat_probs >= fmin) & (feat_probs <= fmax)
+            C[~bound] = 0
+            C[:, ~bound] = 0
         import scipy.sparse as ssp
 
         from .mst import Families, FamilyTreeNode, mst, my_mst
 
         levels = []
         feat_counts = feat_counts.to(self.cuda)
-        for _ in range(n):
-            print("my tree tree")
-            # i, v = my_mst(C.cuda())
-            # tree = (
-            #     torch.sparse_coo_tensor(indices=i, values=v, size=C.shape)
-            #     .to_dense()
-            #     .cpu()
-            #     .transpose(0, 1)
-            # )
-            print("make tree")
+        for _ in tqdm.trange(n):
             tree = mst(C).transpose(0, 1)
-            print("done")
-            # tree2.shape == tc.shape
-            # (tree2.cpu() - tc.cpu().transpose(0,1)<0.1).all()
-            # tc = tree.cuda()
-            # tc.transpose(0, 1)[i.unbind(0)] == v
-            nz = tree.nonzero()
+            roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
             # for i in range(nz.shape[0]):
             #     c = nz[i]
             #     assert feat_counts[c[0]] >= feat_counts[c[1]]
-            families = Families.from_tree(tree)
-            levels.append(families)
-            C[families.root_ids] = 0
-            C[:, families.root_ids] = 0
-
-        (
-            feat_counts[levels[0].roots[0].feature_id],
-            feat_counts[levels[1].roots[0].feature_id],
-            feat_counts[levels[2].roots[0].feature_id],
-        )
-        (len(levels[0].roots[0]), len(levels[1].roots[0]), len(levels[2].roots[0]))
-
-        (len(levels[0]), len(levels[1]), len(levels[2]))
+            # families = Families.from_tree(tree)
+            levels.append(tree)
+            C[roots] = 0
+            C[:, roots] = 0
+        # roots = [((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0) for tree in levels]
 
         return levels
+
+    @torch.no_grad()
+    def generate_feature_families(self, doc_agg=None, threshold=None, n=3, use_D=False):
+        if use_D:
+            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+        else:
+            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+        unnormalized[unnormalized.isnan()] = 0
+        feat_counts = (
+            self.doc_activation_counts if doc_agg else self.seq_activation_counts
+        )
+        # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
+
+        def denan(x):
+            return torch.where(x.isnan() | x.isinf(), torch.zeros_like(x), x)
+
+        def zdiag(x):
+            return torch.where(
+                torch.eye(x.shape[0], device=x.device, dtype=torch.bool), 0, x
+            )
+
+        def isprob(P):
+            assert (P >= 0).all() and (P <= 1).all()
+            return P
+
+        def probmat(P):
+            return isprob(zdiag(denan(P)))
+
+        def ent(P):
+            P = isprob(denan(P))
+            return torch.where(
+                (P > 0) & (P < 1),
+                -P * torch.log(P + 1e-6) - (1 - P) * torch.log(1 - P + 1e-6),
+                0,
+            )
+
+        def nicemat(M):
+            return zdiag(denan(M))
+
+        def nent(Q, R):
+            Q, R = nicemat(Q), nicemat(R)
+            P = nicemat(Q / R)
+            isprob(P)
+            return torch.where(
+                (P > 0) & (P < 1),
+                -Q * torch.log(P) - (R - Q) * torch.log(1 - P),
+                0,
+            )
+
+        N = self.num_docs if doc_agg else self.seq_len * self.num_docs
+        A = feat_counts.unsqueeze(1).expand(-1, feat_counts.shape[0])
+        B = feat_counts.unsqueeze(0).expand(feat_counts.shape[0], -1)
+        V = unnormalized
+
+        P_A = probmat(A / N)
+        P_B = probmat(B / N)
+        # P_AB = probmat(V / N)
+        P_B_given_A = probmat((V + P_B * P_A) / (A + 1))  # +
+        P_B_given_not_A = probmat((B - V + (1 - P_B) * (1 - P_A)) / (N - A + 1))
+        # C = P_A * torch.log()
+        # info = A * ent(P_B_given_A) + (N - A) * ent(P_B_given_not_A)
+        # info = P_A * nent(V, A) + (1 - P_A) * nent((B - V), (N - A)) - nent(B, N)
+        # info = (c := ent(P_B)) - (
+        #     (a := P_A * ent(P_B_given_A)) + (b := (1 - P_A) * ent(P_B_given_not_A))
+        # )
+        # info = torch.where((P_B_given_A > P_B), info + 1e-6, 0)
+        # (info[P_B_given_A > P_B]).sum()
+        # (P_B_given_A > P_B).sum() / (P_B_given_A < P_B).sum()
+        # r = P_A * torch.log(P_B_given_A / P_B)
+        r = torch.log(P_B_given_A / P_B)
+        r = ent(P_B) - ent(P_B_given_A)
+
+        t = (1 - P_A) * torch.log(P_B_given_not_A / P_B)
+        # other = P_A * torch.log(P_B_given_A / P_B) + (1 - P_A) * torch.log(
+        #     P_B_given_not_A / P_B
+        # )
+
+        r = denan(r)
+        t = denan(t)
+        # r[P_B_given_A > P_B].sum()
+        # r[P_B_given_A < P_B].sum()
+        # t[P_B_given_A > P_B].sum()
+        # t[P_B_given_A < P_B].sum()
+        info = r
+
+        # a.max(dim=0, keepdim=True)
+        # b.max(dim=0, keepdim=True)
+        # c.max(dim=0, keepdim=True)
+        # a.max(dim=1, keepdim=True)
+        # b.max(dim=1, keepdim=True)
+        # c.max(dim=1, keepdim=True)
+        # P_B.max()
+        # v = B.to(torch.float64) / N
+        # v.max()
+
+        info = torch.where((V > 0) & (info > 0), info, 0)
+
+        info = zdiag(denan(info))
+        assert (info >= 0).all()
+        # learned =
+        # C = info.clone()
+        C = info
+        threshold = threshold or C[C > 0].median()
+        # C = unnormalized / (().cpu().unsqueeze(-1) + 1e-6)
+
+        C.max(dim=0, keepdim=True)
+        C.max(dim=1, keepdim=True)
+
+        # C[C.isnan()] = 0
+        C[C < threshold] = 0
+        import scipy.sparse as ssp
+
+        from .mst import Families, FamilyTreeNode, mst, my_mst, prim_max
+
+        levels = []
+        feat_counts = feat_counts.to(self.cuda)
+        for _ in range(n):
+            # tree = mst(C)
+            i, v = my_mst(C.cuda())
+            tree = (
+                torch.sparse_coo_tensor(indices=i, values=v, size=C.shape)
+                .to_dense()
+                .cpu()
+                .transpose(0, 1)
+            )
+            nz = tree.nonzero()
+            print(
+                "proportion:",
+                (feat_counts[nz[:, 0]] >= feat_counts[nz[:, 1]]).float().mean(),
+            )
+
+            # families = Families.from_tree(tree)
+            roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
+            print("num_roots", roots.sum())
+            levels.append(tree)
+            C[roots] = 0
+            C[:, roots] = 0
+        # roots.sum()
+
+        # (
+        #     feat_counts[levels[0].roots[0].feature_id],
+        #     feat_counts[levels[1].roots[0].feature_id],
+        #     feat_counts[levels[2].roots[0].feature_id],
+        # )
+        # (len(levels[0].roots[0]), len(levels[1].roots[0]), len(levels[2].roots[0]))
+
+        # (len(levels[0]), len(levels[1]), len(levels[2]))
+
+        return levels
+
+    @torch.no_grad()
+    def _get_feature_family_trees(
+        self, doc_agg=None, threshold=None, n=3, use_D=False, freq_bounds=None
+    ):
+        return torch.stack(
+            self.generate_feature_families1(
+                doc_agg=doc_agg,
+                threshold=threshold,
+                n=n,
+                use_D=use_D,
+                freq_bounds=freq_bounds,
+            )
+        )
+
+    def get_feature_families(self) -> GetFamiliesResponse:
+        from .mst import Families, FamilyTreeNode
+
+        levels = self.cached_call._get_feature_family_trees()
+        famlevels = [[Families.from_tree(f) for f in fam] for fam in levels]
+
+        niceroots: list[list[FamilyTreeNode]] = [
+            [r for r in f.roots if len(r) > 10] for f in famlevels
+        ]
+        levels = []
+        for levelnum, level in enumerate(niceroots):
+            fl = FamilyLevel(
+                level=levelnum,
+                families={
+                    root.feature_id: Family(
+                        level=levelnum,
+                        family_id=fam_id,
+                        label=None,
+                        subfamilies=[],
+                        subfeatures=[
+                            (Feature(feature_id=int(feat_id), label=None), 0.9)
+                            for feat_id in root.family
+                        ],
+                    )
+                    for fam_id, root in enumerate(level)
+                },
+            )
+            levels.append(fl)
+        level_lens = [len(l.families) for l in levels]
+        maxl = sum(level_lens)
+        csll = torch.tensor(level_lens).cumsum(0).tolist()
+        level_tensors = []
+        t0 = torch.zeros(
+            len(levels), maxl, self.d_dict, dtype=torch.bool, device=self.cuda
+        )
+        for i, level in enumerate(levels):
+            for j, family in level.families.items():
+                for feat in family.subfeatures:
+                    t0[csll[i] + j, feat.feature_id] = True
 
     def top_coactivating_features(self, feature_id, top_n=10, mode="seq"):
         """
@@ -691,7 +949,7 @@ class Evaluation:
             yield acts.to_filtered_like_self(c_agg)
 
     @property
-    def docs_in_subset(self):
+    def num_docs(self):
         if self._filter:
             return self._filter.filter.sum()
         return self.cache_cfg.num_docs
@@ -713,7 +971,7 @@ class Evaluation:
             else:
                 results += agg_chunk.value.sum(dim=0)
         if docs_agg == "mean":
-            results /= self.docs_in_subset
+            results /= self.num_docs
 
     def forward_token_attribution_to_features(self, tokens, seq_range):
         assert tokens.ndim == 1 or tokens.ndim == 2 and tokens.shape[0] == 1
@@ -1015,7 +1273,7 @@ class Evaluation:
             labels = labels[counts > 0]
             proportions = proportions[counts > 0]
             counts = counts[counts > 0]
-            normalized_counts = proportions * self.docs_in_subset / doc_ids.shape[0]
+            normalized_counts = proportions * self.num_docs / doc_ids.shape[0]
             scores = normalized_counts.log()
             if sort_by == TokenEnrichmentSortBy.counts:
                 i = counts.argsort(descending=True)
@@ -1098,7 +1356,7 @@ class Evaluation:
         tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
         normalized_counts = (counts / seltoks.numel()) / (
             self.token_occurrence_count.to(self.cuda)[tokens]
-            / (self.docs_in_subset * self.seq_len)
+            / (self.num_docs * self.seq_len)
         )
         scores = normalized_counts.log()
         if sort_by == TokenEnrichmentSortBy.counts:
@@ -1124,8 +1382,16 @@ class Evaluation:
         return self.cached_call._feature_num_active_tokens()
 
     @property
+    def seq_activation_probs(self):
+        return self.seq_activation_counts / (self.num_docs * self.seq_len)
+
+    @property
     def doc_activation_counts(self):
         return self.cached_call._feature_num_active_docs()
+
+    @property
+    def doc_activation_probs(self):
+        return self.doc_activation_counts / self.num_docs
 
     # @property
     # def mean_feature_activations(self)

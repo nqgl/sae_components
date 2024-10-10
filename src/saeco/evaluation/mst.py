@@ -95,7 +95,8 @@ def mst(C: Tensor):
     ivc = torch.where(C > 0, adj - C, 0)
     # ivc[C == 0] = 0
     tree = torch.tensor(
-        ssp.csgraph.minimum_spanning_tree(ssp.coo_matrix(ivc)).toarray()
+        ssp.csgraph.minimum_spanning_tree(ssp.coo_matrix(ivc)).toarray(),
+        dtype=torch.float32,
     )
     return torch.where(tree > 0, adj - tree, 0)
     # return tree_re
@@ -240,3 +241,42 @@ class Families:
 
 #     def __len__(self):
 #         return len(self.roots)
+
+
+def prim_max(C: Tensor):
+    # include = torch.zeros_like(C)
+    roots = torch.zeros(C.shape[0], dtype=torch.bool, device=C.device)
+    edges = torch.zeros_like(C)
+
+    def i():
+        return (edges > 0).any(dim=0) | (edges > 0).any(dim=1) | roots
+
+    def o():
+        return ~i()
+
+    def io():
+        ii = i()
+        # oo = o()
+        return ii.unsqueeze(0) ^ ii.unsqueeze(1)
+
+    available = C > 0
+
+    def edge_mask():
+        return available & io()
+
+    for _ in tqdm.trange(C.shape[0] - 1):
+        mask = edge_mask()
+        if i().all():
+            break
+        if not mask.any():
+            newroot = o().nonzero()[0].item()
+            roots[newroot] = True
+            print("newroot", roots.sum())
+            continue
+        idx = C[mask].argmax()  # time this?
+        # tk = C[mask].topk(20)
+        # ids = mask.nonzero()[tk.indices]
+        idx = mask.nonzero()[idx]
+        edges[idx[0], idx[1]] = C[idx[0], idx[1]]
+
+    return edges

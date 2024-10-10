@@ -3,7 +3,17 @@ import sys
 import torch
 from load import root_eval
 
-sys.setrecursionlimit(100_000)
+
+# t = root_eval.cached_call.test()
+# t2 = root_eval.cached_call.test()
+# t3 = root_eval.test()
+# print(t, t2, t3)
+
+
+def f(): ...
+
+
+setattr(f, "_version", 1)
 
 
 def dists(ls):
@@ -23,7 +33,45 @@ def dist_counter(ls):
         print([len(root) for root in level.roots[:50]])
 
 
-levels2 = root_eval.generate_feature_families(threshold=0.1)
+root_eval.artifacts.keys()
+fff = [
+    root_eval.cached_call._get_feature_family_trees(
+        doc_agg="count", freq_bounds=(0, 0.5)
+    ),
+    root_eval.cached_call._get_feature_family_trees(doc_agg="count"),
+    root_eval.cached_call._get_feature_family_trees(),
+    root_eval.cached_call._get_feature_family_trees(freq_bounds=(0, 0.1)),
+]
+from saeco.evaluation.mst import Families
+
+famss = [[Families.from_tree(f) for f in fam] for fam in fff]
+[[len([r for r in f.roots if len(r) > 10]) for f in fam if len(f) > 5] for fam in famss]
+dist_counter(fams)
+print([len(f) for f in fams])
+elevels2 = root_eval.generate_feature_families(threshold=0)
+
+f = Families.from_tree(levels2[0])
+len(f.roots[1])
+f2 = Families.from_tree(levels2[1])
+len(f2.roots[4])
+f3 = Families.from_tree(levels2[2])
+
+910
+
+len(f3.roots[0])
+fams = [f, f2, f3]
+dist_counter(fams)
+f.roots[0].feature_id
+root_eval.seq_activation_probs.topk(100)
+[f.roots[0].feature_id]
+
+r00 = f.roots[0]
+len(r00)
+for r in f2.roots:
+    print((len(r) - 1) / len(r.children))
+print()
+
+
 print(len(levels2[0].roots[0]), len(levels2[1].roots[0]), len(levels2[2].roots[0]))
 print(len(levels2[0]), len(levels2[1]), len(levels2[2]))
 nabove(levels2, 4)
@@ -33,7 +81,14 @@ root_eval.num_docs * 128
 root_eval.num_docs * 128 / 3
 
 seq_hyper = (root_eval.seq_activation_counts).topk(5)
+doc_hyper = (root_eval.doc_activation_counts).topk(5)
 doc_hyper
+seq_hyper
+
+out = root_eval.top_activations_token_enrichments(
+    feature=seq_hyper.indices[0].item(), k=100
+)
+out[3]
 
 
 def family_active(family, threshold=0.1):
@@ -47,7 +102,7 @@ def family_active(family, threshold=0.1):
             v = v | t
 
 
-levels4
+# levels4
 
 levels4 = root_eval.generate_feature_families(doc_agg="count", threshold=0.0)
 print(len(levels4[0].roots[0]), len(levels4[1].roots[0]), len(levels4[2].roots[0]))

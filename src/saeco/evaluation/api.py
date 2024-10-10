@@ -25,6 +25,13 @@ from .fastapi_models import (
     TopActivationResultEntry,
 )
 
+from .fastapi_models.families_draft import (
+    Family,
+    FamilyLevel,
+    Feature,
+    GetFamiliesRequest,
+    GetFamiliesResponse,
+)
 from .fastapi_models.Feature import Feature
 
 gene_conversions_path = (
@@ -181,7 +188,26 @@ def create_app(root: Evaluation):
             l.append(
                 CoActivatingFeature(feature_id=i.item(), coactivation_level=v.item())
             )
-        print(l)
         return CoActivationResponse(results=l)
+
+    @app.put("/get_families")
+    def get_families(query: GetFamiliesRequest) -> GetFamiliesResponse:
+        ev = query.filter(root)
+        levels = ev.generate_feature_families(
+            doc_agg=query.doc_agg, threshold=query.threshold
+        )
+        family_levels = []
+        for i, level in enumerate(levels):
+            families = {}
+            for root in level.roots:
+                families[root.feature_id] = Family(
+                    level=i,
+                    family_id=root.feature_id,
+                    label=None,
+                    subfamilies=None,
+                    subfeatures=[Feature(feature_id=i, value=0.0) for i in root.family],
+                )
+            family_levels.append(FamilyLevel(level=i, families=families))
+        return GetFamiliesResponse(levels=family_levels)
 
     return app
