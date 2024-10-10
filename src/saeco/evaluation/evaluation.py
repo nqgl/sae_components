@@ -767,9 +767,13 @@ class Evaluation:
                     print("very few at threshold", threshold)
                     st = sim > threshold / 2
 
-                for f in st.nonzero().tolist():
+                for f in st.nonzero():
                     family.subfamilies.append(
-                        FamilyRef(level=int(1 + i), family_id=int(f), similarity=sim[f])
+                        FamilyRef(
+                            level=int(1 + i),
+                            family_id=int(f.item()),
+                            similarity=sim[f.item()],
+                        )
                     )
         return GetFamiliesResponse(levels=levels)
 
