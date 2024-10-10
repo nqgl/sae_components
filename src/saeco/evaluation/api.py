@@ -193,21 +193,6 @@ def create_app(root: Evaluation):
     @app.put("/get_families")
     def get_families(query: GetFamiliesRequest) -> GetFamiliesResponse:
         ev = query.filter(root)
-        levels = ev.generate_feature_families(
-            doc_agg=query.doc_agg, threshold=query.threshold
-        )
-        family_levels = []
-        for i, level in enumerate(levels):
-            families = {}
-            for root in level.roots:
-                families[root.feature_id] = Family(
-                    level=i,
-                    family_id=root.feature_id,
-                    label=None,
-                    subfamilies=None,
-                    subfeatures=[Feature(feature_id=i, value=0.0) for i in root.family],
-                )
-            family_levels.append(FamilyLevel(level=i, families=families))
-        return GetFamiliesResponse(levels=family_levels)
+        return ev.cached_call.get_feature_families()
 
     return app
