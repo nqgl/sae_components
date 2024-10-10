@@ -760,17 +760,15 @@ class Evaluation:
         threshold = 0.0001
         for i, level in enumerate(levels[:-1]):
             for j, family in level.families.items():
-                sim = sims[i, j, i + 1 :, :]
+                sim = sims[i, j, i + 1, :]
                 st = sim > threshold
                 if st.sum() < 3:
                     print("very few at threshold", threshold)
                     st = sim > threshold / 2
 
-                for l, f in st.nonzero().tolist():
+                for f in st.nonzero().tolist():
                     family.subfamilies.append(
-                        FamilyRef(
-                            level=int(i + l), family_id=int(f), similarity=sim[l, f]
-                        )
+                        FamilyRef(level=int(1 + i), family_id=int(f), similarity=sim[f])
                     )
         return GetFamiliesResponse(levels=levels)
 
