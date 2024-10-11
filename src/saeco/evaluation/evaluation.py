@@ -756,7 +756,7 @@ class Evaluation:
         )
         for i, level in enumerate(levels):
             for j, family in level.families.items():
-                for feat in family.subfeatures[2]:
+                for feat in family.subfeatures:
                     feat: ScoredFeature
                     t0[i, j, feat.feature.feature_id] = 1
         ns = t0.sum(-1)
