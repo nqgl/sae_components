@@ -714,7 +714,7 @@ class Evaluation:
             )
         )
 
-    @cache_version(3)
+    @cache_version(4)
     def get_feature_families(self) -> GetFamiliesResponse:
         from .mst import Families, FamilyTreeNode
 
@@ -1308,9 +1308,18 @@ class Evaluation:
         if artifact_name in self.artifacts:
             feature_value = self.artifacts[artifact_name]
         else:
-            feature_value = 0
-            for feat in family.subfeatures:
-                feature_value += self.features[feat.feature.feature_id].value.to_dense()
+            mb = self.metadata_builder(
+                dtype=torch.float, device=self.cuda, item_size=(self.seq_len,)
+            )
+            for chunk in mb:
+                a = chunk.acts.to(self.cuda).to_dense()
+                t = torch.tensor(
+                    [f.feature.feature_id for f in family.subfeatures],
+                    dtype=torch.long,
+                    device=self.cuda,
+                )
+                mb << a.value[:, :, t].sum(dim=-1)
+            feature_value = mb.value
             self.artifacts[artifact_name] = feature_value
         feature = FilteredTensor.from_value_and_mask(feature_value, self._filter)
         return self.top_activations_and_metadatas(
