@@ -1310,7 +1310,7 @@ class Evaluation:
         else:
             feature_value = 0
             for feat in family.subfeatures:
-                feature_value += self.features[feat.feature.feature_id].value
+                feature_value += self.features[feat.feature.feature_id].value.to_dense()
             self.artifacts[artifact_name] = feature_value
         feature = FilteredTensor(feature_value, self._filter)
         return self.top_activations_and_metadatas(
