@@ -1276,6 +1276,31 @@ class Evaluation:
             return docs, acts, metadatas, doc_indices
         return docs, acts, metadatas
 
+    def batched_top_activations_and_metadatas(
+        self,
+        features: list[int | FilteredTensor],
+        p=None,
+        k=None,
+        metadata_keys=[],
+        return_str_docs=False,
+        return_acts_sparse=False,
+        return_doc_indices=True,
+        str_metadatas=False,
+    ):
+        return [
+            self.top_activations_and_metadatas(
+                feature,
+                p,
+                k,
+                metadata_keys,
+                return_str_docs,
+                return_acts_sparse,
+                return_doc_indices,
+                str_metadatas,
+            )
+            for feature in features
+        ]
+
     # top_indices
 
     # def top_acts_and_docs_from_doc_activations(self, doc_acts:FilteredTensor, k):
@@ -1324,6 +1349,71 @@ class Evaluation:
         feature = FilteredTensor.from_value_and_mask(feature_value, self._filter)
         return self.top_activations_and_metadatas(
             feature=feature,
+            p=p,
+            k=k,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_acts_sparse=return_acts_sparse,
+            return_doc_indices=return_doc_indices,
+            str_metadatas=str_metadatas,
+        )
+
+    def batched_top_activations_and_metadatas_for_family(
+        self,
+        families: list[Family],
+        aggregation_method: str = "sum",
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+        artifact_names = [
+            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
+            for family in families
+        ]
+        precached = [
+            artifact_name in self.artifacts for artifact_name in artifact_names
+        ]
+
+        if not all(precached):
+            indices = [
+                torch.tensor(
+                    [f.feature.feature_id for f in family.subfeatures],
+                    dtype=torch.long,
+                    device=self.cuda,
+                )
+                for family, prec in zip(families, precached)
+                if not prec
+            ]
+            new_artifact_names = [
+                artifact_name
+                for artifact_name, prec in zip(artifact_names, precached)
+                if not prec
+            ]
+            builders = [
+                self.metadata_builder(
+                    dtype=torch.float, device=self.cuda, item_size=(self.seq_len,)
+                )
+                for _ in new_artifact_names
+            ]
+            for chunk in builders[0]:
+                a = chunk.acts.to(self.cuda).to_dense()
+                for mb, i in zip(builders, indices):
+                    mb << a.value[:, :, i].sum(dim=-1)
+            for artifact_name, mb in zip(new_artifact_names, builders):
+                feature_value = mb.value
+                self.artifacts[artifact_name] = feature_value
+        features = [
+            FilteredTensor.from_value_and_mask(
+                self.artifacts[artifact_name], self._filter
+            )
+            for artifact_name in artifact_names
+        ]
+        return self.batched_top_activations_and_metadatas(
+            features=features,
             p=p,
             k=k,
             metadata_keys=metadata_keys,

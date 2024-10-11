@@ -82,7 +82,7 @@ class GetFamilyDocumentActivityRequest(FilterableQuery):
 
 
 class FamilyTopActivatingExamplesQuery(FilterableQuery):
-    family: FamilyRef
+    families: list[FamilyRef]
     p: float | None = None
     k: int | None = None
     metadata_keys: list[str] = []
