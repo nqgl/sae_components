@@ -756,8 +756,9 @@ class Evaluation:
         )
         for i, level in enumerate(levels):
             for j, family in level.families.items():
-                for feat, _ in family.subfeatures:
-                    t0[i, j, feat.feature_id] = 1
+                for feat in family.subfeatures[2]:
+                    feat: ScoredFeature
+                    t0[i, j, feat.feature.feature_id] = 1
         ns = t0.sum(-1)
         t0 /= ns.unsqueeze(-1)
         sims = einops.einsum(t0, t0, "l1 f1 d, l2 f2 d -> l1 f1 l2 f2")
