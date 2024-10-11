@@ -28,6 +28,7 @@ from .fastapi_models import (
 from .fastapi_models.families_draft import (
     Family,
     FamilyLevel,
+    FamilyTopActivatingExamplesQuery,
     Feature,
     GetFamiliesRequest,
     GetFamiliesResponse,
@@ -194,5 +195,56 @@ def create_app(root: Evaluation):
     def get_families(query: GetFamiliesRequest) -> GetFamiliesResponse:
         ev = query.filter(root)
         return ev.cached_call.get_feature_families()
+
+    @app.put("/family_top_activating_examples")
+    def get_family_top_activating_examples(
+        query: FamilyTopActivatingExamplesQuery,
+    ) -> TopActivatingExamplesResult:
+        ev = query.filter(root)
+        families = ev.cached_call.get_feature_families()
+        family = families.levels[query.family.level].families[query.family.family_id]
+        docs, acts, metadatas, doc_indices = (
+            ev.top_activations_and_metadatas_for_family(
+                family=family,
+                p=query.p,
+                k=query.k,
+                metadata_keys=query.metadata_keys,
+                return_str_docs=query.return_str_docs,
+                str_metadatas=query.return_str_metadatas,
+            )
+        )
+        if not query.return_str_docs:
+            docs = docs.tolist()
+        acts = acts.to_dense()
+        acts = acts.tolist()
+        metadatas = [metadatas[k] for k in query.metadata_keys]
+        metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
+        if len(metadatas) == 0:
+            metadatas = [[] for _ in range(len(docs))]
+        else:
+            metadatas = [
+                [metadatas[i][j] for i in range(len(metadatas))]
+                for j in range(len(metadatas[0]))
+            ]
+        assert len(docs) == len(acts) == len(metadatas) == len(doc_indices), (
+            len(docs),
+            len(acts),
+            len(metadatas),
+            len(doc_indices),
+        )
+
+        return TopActivatingExamplesResult(
+            entries=[
+                TopActivationResultEntry(
+                    doc=doc,
+                    metadatas=md,
+                    acts=act,
+                    doc_index=doc_id,
+                )
+                for doc, act, md, doc_id in zip(
+                    docs, acts, metadatas, doc_indices.tolist()
+                )
+            ]
+        )
 
     return app

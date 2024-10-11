@@ -34,6 +34,7 @@ from .fastapi_models.families_draft import (
     FamilyLevel,
     FamilyRef,
     GetFamiliesResponse,
+    ScoredFamilyRef,
     ScoredFeature,
 )
 
@@ -713,7 +714,7 @@ class Evaluation:
             )
         )
 
-    @cache_version(2)
+    @cache_version(3)
     def get_feature_families(self) -> GetFamiliesResponse:
         from .mst import Families, FamilyTreeNode
 
@@ -774,10 +775,12 @@ class Evaluation:
 
                 for f in st.nonzero():
                     family.subfamilies.append(
-                        FamilyRef(
-                            level=int(next_level),
-                            family_id=int(f.item()),
-                            similarity=sim[f.item()],
+                        ScoredFamilyRef(
+                            family=FamilyRef(
+                                level=int(next_level),
+                                family_id=int(f.item()),
+                            ),
+                            score=sim[f.item()],
                         )
                     )
         return GetFamiliesResponse(levels=levels)
@@ -1254,8 +1257,8 @@ class Evaluation:
     ):
         if isinstance(feature, int):
             feature = self.features[feature]
-        doc_acts = self.seq_agg_feat(feature=feature)
         k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
+        doc_acts = self.seq_agg_feat(feature=feature)
         topk = doc_acts.value.topk(k, sorted=True)
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
         acts = feature.index_select(top_outer_indices[0], dim=0)
@@ -1272,6 +1275,54 @@ class Evaluation:
         if return_doc_indices:
             return docs, acts, metadatas, doc_indices
         return docs, acts, metadatas
+
+    # top_indices
+
+    # def top_acts_and_docs_from_doc_activations(self, doc_acts:FilteredTensor, k):
+    #     topk = doc_acts.value.topk(k, sorted=True)
+    #     top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
+    #     doc_indices = top_outer_indices[0]
+    #     docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+    #     metadatas = {
+    #         key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+    #     }
+    #     if str_metadatas:
+    #         metadatas = self._root_metadatas.translate(metadatas)
+    #     if return_doc_indices:
+    #         return docs, acts, metadatas, doc_indices
+    #     return docs, acts, metadatas
+
+    def top_activations_and_metadatas_for_family(
+        self,
+        family: Family,
+        aggregation_method: str = "sum",
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+        artifact_name = f"family-feature-tensor-{aggregation_method}_{self._filter.filter_name if self._filter is not None else None}level{family.level}_family{family.family_id}"
+        if artifact_name in self.artifacts:
+            feature_value = self.artifacts[artifact_name]
+        else:
+            feature_value = 0
+            for feat in family.subfeatures:
+                feature_value += self.features[feat.feature.feature_id].value
+            self.artifacts[artifact_name] = feature_value
+        feature = FilteredTensor(feature_value, self._filter)
+        return self.top_activations_and_metadatas(
+            feature=feature,
+            p=p,
+            k=k,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_acts_sparse=return_acts_sparse,
+            return_doc_indices=return_doc_indices,
+            str_metadatas=str_metadatas,
+        )
 
     def _metadata_unique_labels_and_counts_tensor(self, key):
         meta = self._root_metadatas[key]

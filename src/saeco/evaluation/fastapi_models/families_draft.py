@@ -22,7 +22,11 @@ class GetFamiliesResponse(BaseModel):
 class FamilyRef(BaseModel):
     level: int
     family_id: int
-    similarity: float
+
+
+class ScoredFamilyRef(BaseModel):
+    family: FamilyRef
+    score: float
 
 
 class ScoredFeature(BaseModel):
@@ -34,7 +38,9 @@ class Family(BaseModel):
     level: int
     family_id: int
     label: str | None
-    subfamilies: list[FamilyRef]  # list of tuples of (family id, similarity score)
+    subfamilies: list[
+        ScoredFamilyRef
+    ]  # list of tuples of (family id, similarity score)
     # subfeatures: list[Feature]
     # or like this if the features have some sort of membership score:
     subfeatures: list[ScoredFeature]
@@ -69,3 +75,16 @@ class Family(BaseModel):
 #     # oh maybe we want to return the top n features,
 #     # not all of them in case there's lots.
 #     # what order do we want to return them in?
+
+
+class GetFamilyDocumentActivityRequest(FilterableQuery):
+    family_id: int
+
+
+class FamilyTopActivatingExamplesQuery(FilterableQuery):
+    family: FamilyRef
+    p: float | None = None
+    k: int | None = None
+    metadata_keys: list[str] = []
+    return_str_docs: bool = False
+    return_str_metadatas: bool = True
