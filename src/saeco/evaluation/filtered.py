@@ -178,6 +178,18 @@ class Filter:
         adjustment = self.slice_starts_tensor(
             remove_ints=True, device=sliced_indices.device
         ).unsqueeze(-1)
+        if adjustment.shape[0] < sliced_indices.shape[0]:
+            adjustment = torch.cat(
+                [
+                    adjustment,
+                    torch.zeros(
+                        sliced_indices.shape[0] - adjustment.shape[0],
+                        1,
+                        dtype=torch.long,
+                        device=adjustment.device,
+                    ),
+                ]
+            )
         assert (
             adjustment
             == torch.tensor(
@@ -290,12 +302,14 @@ class FilteredTensor:
         if mask is None:
             return cls(
                 value=value,
-                filter=Filter(slices=[], mask=value.device, shape=value.shape),
+                filter=Filter(
+                    slices=[None] * value.ndim, mask=value.device, shape=value.shape
+                ),
             )
         shape = list(mask.shape) + list(value.shape[1:])
         return cls(
             value=value,
-            filter=Filter(slices=[], mask=mask, shape=shape),
+            filter=Filter(slices=[None] * len(shape), mask=mask, shape=shape),
         )
 
     @classmethod
@@ -358,10 +372,16 @@ class FilteredTensor:
         )
 
     def filter_inactive_docs(self) -> "FilteredTensor":
-        newmask = torch.zeros(
-            self.filter.mask.sum(), dtype=torch.bool, device=self.filter.mask.device
-        )
-        newmask[self.value.indices()[0]] = True
+        if self.value.is_sparse:
+            newmask = torch.zeros(
+                self.filter.mask.sum(), dtype=torch.bool, device=self.filter.mask.device
+            )
+            newmask[self.value.indices()[0]] = True
+        else:
+            newmask = self.value > 0
+            while newmask.ndim > 1:
+                newmask = newmask.any(dim=-1)
+            assert newmask.shape[0] == self.filter.mask.sum().item()
         return self.mask_by_other(
             newmask, return_ft=True, presliced=True, value_like=True
         )
