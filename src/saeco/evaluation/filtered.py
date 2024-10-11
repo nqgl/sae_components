@@ -4,6 +4,8 @@ import torch
 from attrs import Converter, define, field, validators
 from torch import Tensor
 
+from .named_filter import NamedFilter
+
 
 def convert(fld, takes_self=False, takes_field=False):
     def converter_wrapper(fn):
@@ -282,7 +284,9 @@ class FilteredTensor:
             # self.value.shape[0] == self.filter
 
     @classmethod
-    def from_value_and_mask(cls, value: Tensor, mask: Tensor):
+    def from_value_and_mask(cls, value: Tensor, mask: Tensor | NamedFilter | None):
+        if isinstance(mask, NamedFilter):
+            mask = mask.filter
         if mask is None:
             return cls(
                 value=value,
