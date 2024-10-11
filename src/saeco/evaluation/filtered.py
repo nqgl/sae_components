@@ -283,6 +283,11 @@ class FilteredTensor:
 
     @classmethod
     def from_value_and_mask(cls, value: Tensor, mask: Tensor):
+        if mask is None:
+            return cls(
+                value=value,
+                filter=Filter(slices=[], mask=value.device, shape=value.shape),
+            )
         shape = list(mask.shape) + list(value.shape[1:])
         return cls(
             value=value,

@@ -1312,7 +1312,7 @@ class Evaluation:
             for feat in family.subfeatures:
                 feature_value += self.features[feat.feature.feature_id].value.to_dense()
             self.artifacts[artifact_name] = feature_value
-        feature = FilteredTensor(feature_value, self._filter)
+        feature = FilteredTensor.from_value_and_mask(feature_value, self._filter.filter)
         return self.top_activations_and_metadatas(
             feature=feature,
             p=p,
