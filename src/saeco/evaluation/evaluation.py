@@ -1257,8 +1257,8 @@ class Evaluation:
     ):
         if isinstance(feature, int):
             feature = self.features[feature]
-        k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
         doc_acts = self.seq_agg_feat(feature=feature)
+        k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
         topk = doc_acts.value.topk(k, sorted=True)
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
         acts = feature.index_select(top_outer_indices[0], dim=0)
