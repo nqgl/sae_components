@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 from .Feature import Feature
 
-from .FilterableQuery import FilterableQuery
+from .filtered_query import FilterableQuery
 
 
 class GetFamiliesRequest(FilterableQuery):

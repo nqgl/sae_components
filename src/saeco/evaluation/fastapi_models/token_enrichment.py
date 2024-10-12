@@ -4,7 +4,7 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
-from .FilterableQuery import FilterableQuery
+from .filtered_query import FilterableQuery
 
 
 class GeneInfo(BaseModel):
