@@ -304,8 +304,13 @@ def create_app(root: Evaluation):
         query: ActivationsOnDocsRequest,
     ) -> list[ActivationsOnDoc]:
         ev = query.filter(root)
+        all_families = ev.cached_call.get_feature_families()
+
         docs, fam_acts, metadatas, feat_acts = ev.get_families_activations_on_docs(
-            families=query.families,
+            families=[
+                all_families.levels[family.level].families[family.family_id]
+                for family in query.families
+            ],
             doc_indices=query.document_ids,
             features=query.feature_ids,
             metadata_keys=query.metadata_keys,
