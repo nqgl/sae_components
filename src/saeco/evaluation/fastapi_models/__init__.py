@@ -8,6 +8,7 @@ from .feature_active_docs_count import (
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
 )
+from .filtered_query import FilterableQuery
 from .metadata_enrichment import (
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentRequest,

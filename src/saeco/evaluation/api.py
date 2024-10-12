@@ -13,6 +13,7 @@ from .fastapi_models import (
     CoActivationResponse,
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
+    FilterableQuery,
     GeneInfo,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
@@ -330,6 +331,13 @@ def create_app(root: Evaluation):
             )
             for i, (doc, md) in enumerate(zip(docs, metadatas))
         ]
+
+    @app.put("/init_all_families")
+    def init_all_families(query: FilterableQuery, batches=None) -> None:
+        ev = query.filter(root)
+        all_families = ev.cached_call.get_feature_families()
+        families = [f for level in all_families.levels for f in level.families]
+        ev.get_family_psuedofeature_tensors(families)
 
     return app
 
