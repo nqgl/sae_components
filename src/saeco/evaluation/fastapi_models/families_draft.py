@@ -88,3 +88,10 @@ class FamilyTopActivatingExamplesQuery(FilterableQuery):
     metadata_keys: list[str] = []
     return_str_docs: bool = False
     return_str_metadatas: bool = True
+
+
+class TopFamilyOverlappingExamplesResponseDoc(BaseModel):
+    doc: list[str] | list[int]
+    metadatas: list[int | str]
+    acts: list[list[float]] | None = None
+    doc_index: int | None = None

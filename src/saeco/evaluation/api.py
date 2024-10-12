@@ -32,6 +32,7 @@ from .fastapi_models.families_draft import (
     Feature,
     GetFamiliesRequest,
     GetFamiliesResponse,
+    TopFamilyOverlappingExamplesResponseDoc,
 )
 from .fastapi_models.Feature import Feature
 
@@ -255,5 +256,53 @@ def create_app(root: Evaluation):
                 )
             )
         return out
+
+    @app.put("/family_top_overlapping_examples")
+    def get_family_top_activating_examples(
+        query: FamilyTopActivatingExamplesQuery,
+    ) -> list[TopFamilyOverlappingExamplesResponseDoc]:
+        ev = query.filter(root)
+        all_families = ev.cached_call.get_feature_families()
+
+        families = [
+            all_families.levels[family.level].families[family.family_id]
+            for family in query.families
+        ]
+
+        docs, fam_acts, metadatas, doc_indices = (
+            ev.top_overlapped_feature_family_documents(
+                families=families,
+                p=query.p,
+                k=query.k,
+                metadata_keys=query.metadata_keys,
+                return_str_docs=query.return_str_docs,
+                str_metadatas=query.return_str_metadatas,
+            )
+        )
+        metadatas = [metadatas[k] for k in query.metadata_keys]
+        metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
+        if len(metadatas) == 0:
+            metadatas = [[] for _ in range(len(docs))]
+        else:
+            metadatas = [
+                [metadatas[i][j] for i in range(len(metadatas))]
+                for j in range(len(metadatas[0]))
+            ]
+        fam_acts = [a.to_dense() for a in fam_acts]
+        fam_acts = [a.tolist() for a in fam_acts]
+        if not query.return_str_docs:
+            docs = docs.tolist()
+
+        return [
+            TopFamilyOverlappingExamplesResponseDoc(
+                doc=doc,
+                metadatas=md,
+                acts=[acts[i] for acts in fam_acts],
+                doc_index=doc_id,
+            )
+            for i, (doc, md, doc_id) in enumerate(
+                zip(docs, metadatas, doc_indices.tolist())
+            )
+        ]
 
     return app

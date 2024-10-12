@@ -89,7 +89,9 @@ class Filter:
     def writeat(self, target: Tensor, value):
         self.slice(target)[self.mask] = value
 
-    def slice_attr_tensor(self, attr, default, remove_ints=False, device="cpu"):
+    def slice_attr_tensor(self, attr, default, remove_ints=False, device=None):
+        if device is None:
+            device = self.mask.device
         if remove_ints:
             return torch.tensor(
                 [
@@ -113,13 +115,13 @@ class Filter:
             device=device,
         )
 
-    def slice_starts_tensor(self, remove_ints=False, device="cpu") -> Tensor:
+    def slice_starts_tensor(self, remove_ints=False, device=None) -> Tensor:
         return self.slice_attr_tensor("start", 0, remove_ints, device)
 
-    def slice_stops_tensor(self, remove_ints=False, device="cpu") -> Tensor:
+    def slice_stops_tensor(self, remove_ints=False, device=None) -> Tensor:
         return self.slice_attr_tensor("stop", torch.inf, remove_ints, device)
 
-    def slice_steps_tensor(self, remove_ints=False, device="cpu") -> Tensor:
+    def slice_steps_tensor(self, remove_ints=False, device=None) -> Tensor:
         return self.slice_attr_tensor("step", 1, remove_ints, device)
 
     def slice_indices(self, outer_indices: Tensor, return_mask=False):
@@ -148,7 +150,9 @@ class Filter:
         )
         mask &= (
             indices[: self.mask.shape[0]]
-            < torch.tensor(self.mask.shape[: indices.shape[0]]).unsqueeze(-1)
+            < torch.tensor(
+                self.mask.shape[: indices.shape[0]], device=indices.device
+            ).unsqueeze(-1)
         ).all(dim=0)
         if return_mask:
             return indices, mask
@@ -157,7 +161,7 @@ class Filter:
         return indices
 
     def mask_indices(self, sliced_indices):
-        maskrange = torch.arange(self.mask.sum())
+        maskrange = torch.arange(self.mask.sum(), device=self.mask.device)
         n = torch.ones_like(self.mask, dtype=torch.long) * (-1)
         n[self.mask] = maskrange
         return torch.cat(
@@ -307,6 +311,7 @@ class FilteredTensor:
                 ),
             )
         shape = list(mask.shape) + list(value.shape[1:])
+        mask = mask.to(value.device)
         return cls(
             value=value,
             filter=Filter(slices=[None] * len(shape), mask=mask, shape=shape),

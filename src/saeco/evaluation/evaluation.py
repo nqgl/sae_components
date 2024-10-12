@@ -1232,17 +1232,24 @@ class Evaluation:
             feature.shape,
         )
 
-    def seq_agg_feat(self, feature_id=None, feature=None, agg="max", docs_filter=True):
-        assert agg == "max", "Only max implemented currently"
+    def seq_agg_feat(
+        self, feature_id=None, feature=None, agg="max", docs_filter=True
+    ) -> FilteredTensor:
+        assert agg in ("max", "sum"), "Only max implemented currently"
         if (feature_id is None) == (feature is None):
             raise ValueError("Exactly one of feat_id and feature must be set")
         if feature is None:
             feature = self.features[feature_id]
         if docs_filter:
             feature = feature.filter_inactive_docs()
-        return feature.to_filtered_like_self(
-            feature.value.to_dense().max(dim=1).values, ndim=1
-        )
+        if agg == "max":
+            return feature.to_filtered_like_self(
+                feature.value.to_dense().max(dim=1).values, ndim=1
+            )
+        elif agg == "sum":
+            return feature.to_filtered_like_self(
+                feature.value.to_dense().sum(dim=1), ndim=1
+            )
 
     def top_activations_and_metadatas(
         self,
@@ -1261,11 +1268,11 @@ class Evaluation:
         k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
         topk = doc_acts.value.topk(k, sorted=True)
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
-        acts = feature.index_select(top_outer_indices[0], dim=0)
+        doc_indices = top_outer_indices[0]
+        acts = feature.index_select(doc_indices, dim=0)
         assert (acts.to_dense() == feature.to_dense()[top_outer_indices]).all()
         if return_acts_sparse:
             acts = acts.to_sparse_coo()
-        doc_indices = top_outer_indices[0]
         docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
         metadatas = {
             key: self._root_metadatas[key][doc_indices] for key in metadata_keys
@@ -1329,24 +1336,7 @@ class Evaluation:
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
     ):
-        artifact_name = f"family-feature-tensor-{aggregation_method}_{self._filter.filter_name if self._filter is not None else None}level{family.level}_family{family.family_id}"
-        if artifact_name in self.artifacts:
-            feature_value = self.artifacts[artifact_name]
-        else:
-            mb = self.metadata_builder(
-                dtype=torch.float, device=self.cuda, item_size=(self.seq_len,)
-            )
-            for chunk in mb:
-                a = chunk.acts.to(self.cuda).to_dense()
-                t = torch.tensor(
-                    [f.feature.feature_id for f in family.subfeatures],
-                    dtype=torch.long,
-                    device=self.cuda,
-                )
-                mb << a.value[:, :, t].sum(dim=-1)
-            feature_value = mb.value
-            self.artifacts[artifact_name] = feature_value
-        feature = FilteredTensor.from_value_and_mask(feature_value, self._filter)
+        feature = self.get_family_psuedofeature_tensors([family], aggregation_method)[0]
         return self.top_activations_and_metadatas(
             feature=feature,
             p=p,
@@ -1358,18 +1348,9 @@ class Evaluation:
             str_metadatas=str_metadatas,
         )
 
-    def batched_top_activations_and_metadatas_for_family(
-        self,
-        families: list[Family],
-        aggregation_method: str = "sum",
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
-        return_str_docs: bool = False,
-        return_acts_sparse: bool = False,
-        return_doc_indices: bool = True,
-        str_metadatas: bool = False,
-    ):
+    def get_family_psuedofeature_tensors(
+        self, families: list[Family], aggregation_method="sum", cuda=True
+    ) -> list[FilteredTensor]:
         artifact_names = [
             f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
             for family in families
@@ -1406,14 +1387,35 @@ class Evaluation:
             for artifact_name, mb in zip(new_artifact_names, builders):
                 feature_value = mb.value
                 self.artifacts[artifact_name] = feature_value
-        features = [
+        return [
             FilteredTensor.from_value_and_mask(
-                self.artifacts[artifact_name], self._filter
+                (
+                    self.artifacts[artifact_name].to(self.cuda)
+                    if cuda
+                    else self.artifacts[artifact_name]
+                ),
+                self._filter,
             )
             for artifact_name in artifact_names
         ]
+
+    def batched_top_activations_and_metadatas_for_family(
+        self,
+        families: list[Family],
+        aggregation_method: str = "sum",
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+
         return self.batched_top_activations_and_metadatas(
-            features=features,
+            features=self.get_family_psuedofeature_tensors(
+                families=families, aggregation_method=aggregation_method
+            ),
             p=p,
             k=k,
             metadata_keys=metadata_keys,
@@ -1422,6 +1424,63 @@ class Evaluation:
             return_doc_indices=return_doc_indices,
             str_metadatas=str_metadatas,
         )
+
+    def top_overlapped_feature_family_documents(
+        self,
+        families: list[Family],
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        str_metadatas: bool = False,
+    ):
+        famfeats = self.get_family_psuedofeature_tensors(families=families)
+        doc_acts = [self.seq_agg_feat(feature=f, agg="sum") for f in famfeats]
+        agg_mask = doc_acts[0].filter.mask.clone()
+        for da in doc_acts[1:]:
+            agg_mask &= da.filter.mask
+        filt_da = [da.mask_by_other(agg_mask, presliced=True) for da in doc_acts]
+        agg_doc_score = filt_da[0].to(self.cuda).clone().to_dense()
+        for da in filt_da[1:]:
+            agg_doc_score *= da.to(self.cuda)
+        assert agg_doc_score.ndim == 1
+        if agg_doc_score.sum() == 0:
+            agg_doc_score = filt_da[0].to(self.cuda).clone().to_dense()
+            for da in filt_da[1:]:
+                agg_doc_score += da.to(self.cuda)
+        agg_doc = FilteredTensor.from_value_and_mask(value=agg_doc_score, mask=agg_mask)
+
+        k = Evaluation._pk_to_k(p, k, agg_doc_score.shape[0])
+        topk = agg_doc.value.topk(k, sorted=True)
+        top_outer_indices = agg_doc.externalize_indices(topk.indices.unsqueeze(0))
+        doc_indices = top_outer_indices[0].to(self.cuda)
+
+        acts = [f.index_select(doc_indices, dim=0) for f in famfeats]
+        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+
+        docs, metadatas = self.get_docs_and_metadatas(
+            doc_indices,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_str_metadatas=str_metadatas,
+        )
+
+        return docs, acts, metadatas, doc_indices
+
+    def get_docs_and_metadatas(
+        self,
+        doc_indices: Tensor,
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        return_str_metadatas: bool,
+    ):
+        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+        metadatas = {
+            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+        }
+        if return_str_metadatas:
+            metadatas = self._root_metadatas.translate(metadatas)
+        return docs, metadatas
 
     def _metadata_unique_labels_and_counts_tensor(self, key):
         meta = self._root_metadatas[key]
@@ -1605,7 +1664,7 @@ class StrDocs:
     eval: Evaluation
 
     def __getitem__(self, idx):
-        tokens = self.eval.docs[idx]
+        tokens = self.eval.docs[idx.cpu()]
         strs = self.eval.detokenize(tokens)
         assert len(strs) == tokens.shape[0] and len(strs[0]) == tokens.shape[1]
         return strs

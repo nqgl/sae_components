@@ -34,14 +34,14 @@ def dist_counter(ls):
 
 
 root_eval.artifacts.keys()
-ff = root_eval.get_feature_families()
+ff = root_eval.cached_call.get_feature_families()
 ff.levels[0].families[4].subfamilies
 from saeco.evaluation.fastapi_models.families_draft import FamilyRef
 
 ff.levels[0].families[4]
 
 res = root_eval.top_activations_and_metadatas_for_family(
-    ff.levels[0].families[4], k=100, return_str_docs=True
+    ff.levels[0].families[0], k=100, return_str_docs=True
 )
 
 for d in res[0]:
