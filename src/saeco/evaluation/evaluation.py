@@ -1380,7 +1380,7 @@ class Evaluation:
                 )
                 for _ in new_artifact_names
             ]
-            for chunk in builders[0]:
+            for chunk in tqdm.tqdm(builders[0], total=self.cache_cfg.num_chunks):
                 a = chunk.acts.to(self.cuda).to_dense()
                 for mb, i in zip(builders, indices):
                     mb << a.value[:, :, i].sum(dim=-1)
@@ -1497,6 +1497,8 @@ class Evaluation:
         str_metadatas: bool = False,
     ):
         doc_indices = torch.tensor(doc_indices, dtype=torch.long, device=self.cuda)
+        print("getting families")
+        print(self.cuda)
         docs, acts, metadatas = self.getDAM(
             doc_indices,
             features=self.get_family_psuedofeature_tensors(families=families)
