@@ -26,6 +26,8 @@ from .fastapi_models import (
 )
 
 from .fastapi_models.families_draft import (
+    ActivationsOnDoc,
+    ActivationsOnDocsRequest,
     Family,
     FamilyLevel,
     FamilyTopActivatingExamplesQuery,
@@ -258,7 +260,7 @@ def create_app(root: Evaluation):
         return out
 
     @app.put("/family_top_overlapping_examples")
-    def get_family_top_activating_examples(
+    def get_family_top_overlapping_examples(
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopFamilyOverlappingExamplesResponseDoc]:
         ev = query.filter(root)
@@ -279,15 +281,7 @@ def create_app(root: Evaluation):
                 str_metadatas=query.return_str_metadatas,
             )
         )
-        metadatas = [metadatas[k] for k in query.metadata_keys]
-        metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
-        if len(metadatas) == 0:
-            metadatas = [[] for _ in range(len(docs))]
-        else:
-            metadatas = [
-                [metadatas[i][j] for i in range(len(metadatas))]
-                for j in range(len(metadatas[0]))
-            ]
+        metadatas = transform_metadatas(metadatas, query.metadata_keys, docs)
         fam_acts = [a.to_dense() for a in fam_acts]
         fam_acts = [a.tolist() for a in fam_acts]
         if not query.return_str_docs:
@@ -305,4 +299,44 @@ def create_app(root: Evaluation):
             )
         ]
 
+    @app.put("/get_families_activations_on_docs")
+    def get_families_activations_on_docs(
+        query: ActivationsOnDocsRequest,
+    ) -> list[ActivationsOnDoc]:
+        ev = query.filter(root)
+        docs, fam_acts, metadatas, feat_acts = ev.get_families_activations_on_docs(
+            families=query.families,
+            doc_indices=query.document_ids,
+            features=query.feature_ids,
+            metadata_keys=query.metadata_keys,
+            return_str_docs=query.return_str_docs,
+            str_metadatas=query.return_str_docs,
+        )
+        fam_acts = [a.to_dense().tolist() for a in fam_acts]
+        feat_acts = [a.to_dense().tolist() for a in feat_acts]
+
+        metadatas = transform_metadatas(metadatas, query.metadata_keys, docs)
+        return [
+            ActivationsOnDoc(
+                document=doc,
+                metadatas=md,
+                family_acts=[acts[i] for acts in fam_acts],
+                feature_acts=[acts[i] for acts in feat_acts],
+            )
+            for i, (doc, md) in enumerate(zip(docs, metadatas))
+        ]
+
     return app
+
+
+def transform_metadatas(metadatas, metadata_keys, docs):
+    metadatas = [metadatas[k] for k in metadata_keys]
+    metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
+    if len(metadatas) == 0:
+        metadatas = [[] for _ in range(len(docs))]
+    else:
+        metadatas = [
+            [metadatas[i][j] for i in range(len(metadatas))]
+            for j in range(len(metadatas[0]))
+        ]
+    return metadatas

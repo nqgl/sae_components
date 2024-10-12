@@ -95,3 +95,19 @@ class TopFamilyOverlappingExamplesResponseDoc(BaseModel):
     metadatas: list[int | str]
     acts: list[list[float]] | None = None
     doc_index: int | None = None
+
+
+class ActivationsOnDoc(BaseModel):
+    document: list[str | int]
+    metadatas: list[int | str]
+    family_acts: list[list[float]]
+    feature_acts: list[list[float]]
+
+
+class ActivationsOnDocsRequest(FilterableQuery):
+    document_ids: list[int]
+    families: list[FamilyRef]
+    feature_ids: list[int] = []
+    return_str_docs: bool = True
+    return_str_metadatas: bool = True
+    metadata_keys: list[str] = []

@@ -1434,6 +1434,8 @@ class Evaluation:
         return_str_docs: bool = False,
         str_metadatas: bool = False,
     ):
+        if len(families) == 0:
+            return [], [], [], []
         famfeats = self.get_family_psuedofeature_tensors(families=families)
         doc_acts = [self.seq_agg_feat(feature=f, agg="sum") for f in famfeats]
         agg_mask = doc_acts[0].filter.mask.clone()
@@ -1451,11 +1453,29 @@ class Evaluation:
         agg_doc = FilteredTensor.from_value_and_mask(value=agg_doc_score, mask=agg_mask)
 
         k = Evaluation._pk_to_k(p, k, agg_doc_score.shape[0])
+        if k == 0:
+            return [], [[] for _ in range(len(families))], [], []
         topk = agg_doc.value.topk(k, sorted=True)
         top_outer_indices = agg_doc.externalize_indices(topk.indices.unsqueeze(0))
         doc_indices = top_outer_indices[0].to(self.cuda)
+        docs, acts, metadatas = self.getDAM(
+            doc_indices,
+            features=famfeats,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            str_metadatas=str_metadatas,
+        )
+        return docs, acts, metadatas, doc_indices
 
-        acts = [f.index_select(doc_indices, dim=0) for f in famfeats]
+    def getDAM(
+        self,
+        doc_indices,
+        features: list[FilteredTensor],
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        str_metadatas: bool,
+    ):
+        acts = [f.index_select(doc_indices, dim=0) for f in features]
         docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
 
         docs, metadatas = self.get_docs_and_metadatas(
@@ -1465,7 +1485,27 @@ class Evaluation:
             return_str_metadatas=str_metadatas,
         )
 
-        return docs, acts, metadatas, doc_indices
+        return docs, acts, metadatas
+
+    def get_families_activations_on_docs(
+        self,
+        families: list[Family],
+        doc_indices: list[int],
+        features: list[int] = [],
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        str_metadatas: bool = False,
+    ):
+        doc_indices = torch.tensor(doc_indices, dtype=torch.long, device=self.cuda)
+        docs, acts, metadatas = self.getDAM(
+            doc_indices,
+            features=self.get_family_psuedofeature_tensors(families=families)
+            + [self.features[f].to(self.cuda) for f in features],
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            str_metadatas=str_metadatas,
+        )
+        return docs, acts[: len(families)], metadatas, acts[len(families) :]
 
     def get_docs_and_metadatas(
         self,
