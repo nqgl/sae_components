@@ -15,6 +15,8 @@ from torch import Tensor
 
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
+from saeco.data.locations import DATA_DIRS
+
 from saeco.evaluation.MetadataBuilder import MetadataBuilder
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
@@ -110,7 +112,8 @@ class Evaluation:
     @tokenizer.default
     def _tokenizer_default(self):
         return AutoTokenizer.from_pretrained(
-            self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name
+            self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name,
+            cache_dir=DATA_DIRS.CACHE_DIR,
         )
 
     @cached_property
