@@ -25,7 +25,6 @@ from .fastapi_models import (
     TopActivatingExamplesResult,
     TopActivationResultEntry,
 )
-
 from .fastapi_models.families_draft import (
     ActivationsOnDoc,
     ActivationsOnDocsRequest,
@@ -38,6 +37,7 @@ from .fastapi_models.families_draft import (
     TopFamilyOverlappingExamplesResponseDoc,
 )
 from .fastapi_models.Feature import Feature
+from .fastapi_models.intersection_filter import GetIntersectionFilterKey
 
 gene_conversions_path = (
     Path.home() / "workspace" / "cached_sae_acts" / "class_conversion.json"
@@ -340,6 +340,14 @@ def create_app(root: Evaluation):
             v for level in all_families.levels for k, v in level.families.items()
         ]
         ev.get_family_psuedofeature_tensors(families)
+
+    @app.put("/get_intersection_filter_key")
+    def get_intersection_filter_key(query: GetIntersectionFilterKey) -> str:
+        key = root.get_metadata_intersection_filter_key()
+
+        if query.initialzie_families:
+            init_all_families(FilterableQuery(FilterableQuery(filter_id=key)))
+        return key
 
     return app
 

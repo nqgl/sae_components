@@ -990,9 +990,9 @@ class Evaluation:
             yield acts.to_filtered_like_self(c_agg)
 
     @property
-    def num_docs(self):
+    def num_docs(self) -> int:
         if self._filter:
-            return self._filter.filter.sum()
+            return self._filter.filter.sum().item()
         return self.cache_cfg.num_docs
 
     def acts_avg_over_dataset(self, seq_agg="mean", docs_agg="mean"):
@@ -1702,6 +1702,36 @@ class Evaluation:
             acts = chunk.acts.value.to(self.cuda).to_dense()
             activity += (acts > 0).sum(dim=1).sum(dim=0)
         return activity
+
+    def get_metadata_intersection_filter_key(
+        self, values: dict[str, str | list[str] | int | list[int]]
+    ):
+        val_list = list(values.items())
+        val_list.sort()
+        d = {}
+        for k, v in val_list:
+            if isinstance(v, int | str):
+                v = [v]
+            if isinstance(v, list) and isinstance(v[0], str):
+                meta = self.metadatas.get(k)
+                v = [meta.info.fromstr(x) for x in v]
+            v = sorted(v)
+            d[k] = tuple(v)
+        key = str(d).replace(" ", "")
+
+        if key not in self.filters:
+            self.filters[key] = self._get_metadata_intersection_filter(d)
+        return key
+
+    def _get_metadata_intersection_filter(self, map: dict[str, list[int]]):
+        filter = torch.ones(self.num_docs, dtype=torch.bool).to(self.cuda)
+        for mdname, values in map.items():
+            mdmask = torch.zeros(self.num_docs, dtype=torch.bool).to(self.cuda)
+            meta = self.metadatas[mdname]
+            for value in values:
+                mdmask |= meta == value
+            filter &= mdmask
+        return filter
 
 
 @define
