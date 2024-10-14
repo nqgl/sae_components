@@ -343,7 +343,7 @@ def create_app(root: Evaluation):
 
     @app.put("/get_intersection_filter_key")
     def get_intersection_filter_key(query: GetIntersectionFilterKey) -> str:
-        key = root.get_metadata_intersection_filter_key()
+        key = root.get_metadata_intersection_filter_key(query.metadatas_values)
 
         if query.initialzie_families:
             init_all_families(FilterableQuery(FilterableQuery(filter_id=key)))

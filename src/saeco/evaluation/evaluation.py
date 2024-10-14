@@ -1714,7 +1714,7 @@ class Evaluation:
                 v = [v]
             if isinstance(v, list) and isinstance(v[0], str):
                 meta = self.metadatas.get(k)
-                v = [meta.info.fromstr(x) for x in v]
+                v = [meta.info.fromstr[x] for x in v]
             v = sorted(v)
             d[k] = tuple(v)
         key = str(d).replace(" ", "")
