@@ -1717,7 +1717,7 @@ class Evaluation:
                 v = [meta.info.fromstr[x] for x in v]
             v = sorted(v)
             d[k] = tuple(v)
-        key = str(d).replace(" ", "")
+        key = str(d)
 
         if key not in self.filters:
             self.filters[key] = self._get_metadata_intersection_filter(d)
@@ -1727,7 +1727,7 @@ class Evaluation:
         filter = torch.ones(self.num_docs, dtype=torch.bool).to(self.cuda)
         for mdname, values in map.items():
             mdmask = torch.zeros(self.num_docs, dtype=torch.bool).to(self.cuda)
-            meta = self.metadatas[mdname]
+            meta = self.metadatas[mdname].to(self.cuda)
             for value in values:
                 mdmask |= meta == value
             filter &= mdmask
