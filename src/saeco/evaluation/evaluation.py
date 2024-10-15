@@ -739,6 +739,12 @@ class Evaluation:
                 famlevels,
             )
         ]
+        [
+            len([r for r in f.roots if len(r) > 20 - i * 8])
+            for i, f in enumerate(
+                famlevels,
+            )
+        ]
         levels = []
         for levelnum, level in enumerate(niceroots):
             fl = FamilyLevel(
@@ -792,7 +798,7 @@ class Evaluation:
             next_level = i + 1
             nl_sims = sims[i, :, next_level, :]
             z = torch.zeros_like(nl_sims)
-            nlmax = nl_sims.max(dim=-1)
+            nlmax = nl_sims.max(dim=0)
             z[nlmax.indices, torch.arange(nlmax.indices.shape[0])] = nlmax.values
             z[z < threshold] = 0
             for j, family in level.families.items():
