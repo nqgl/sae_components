@@ -1385,6 +1385,26 @@ class Evaluation:
             f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
             for family in families
         ]
+        self.init_family_psuedofeature_tensors(families, aggregation_method)
+        return [
+            FilteredTensor.from_value_and_mask(
+                (
+                    self.artifacts[artifact_name].to(self.cuda)
+                    if cuda
+                    else self.artifacts[artifact_name]
+                ),
+                self._filter,
+            )
+            for artifact_name in artifact_names
+        ]
+
+    def init_family_psuedofeature_tensors(
+        self, families: list[Family], aggregation_method="sum"
+    ) -> list[FilteredTensor]:
+        artifact_names = [
+            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
+            for family in families
+        ]
         precached = [
             artifact_name in self.artifacts for artifact_name in artifact_names
         ]
@@ -1417,17 +1437,6 @@ class Evaluation:
             for artifact_name, mb in zip(new_artifact_names, builders):
                 feature_value = mb.value
                 self.artifacts[artifact_name] = feature_value.value
-        return [
-            FilteredTensor.from_value_and_mask(
-                (
-                    self.artifacts[artifact_name].to(self.cuda)
-                    if cuda
-                    else self.artifacts[artifact_name]
-                ),
-                self._filter,
-            )
-            for artifact_name in artifact_names
-        ]
 
     def batched_top_activations_and_metadatas_for_family(
         self,

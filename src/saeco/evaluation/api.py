@@ -337,7 +337,7 @@ def create_app(app, root: Evaluation):
         families = [
             v for level in all_families.levels for k, v in level.families.items()
         ]
-        ev.get_family_psuedofeature_tensors(families)
+        ev.init_family_psuedofeature_tensors(families)
 
     @app.put("/get_intersection_filter_key")
     def get_intersection_filter_key(query: GetIntersectionFilterKey) -> str:
