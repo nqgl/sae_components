@@ -103,7 +103,7 @@ class Chunk:
     def save_tokens(self):
         assert self.loaded_tokens is not None
         assert not self.tokens_path.exists()
-        save_file({"tokens": self.loaded_tokens}, self.tokens_path)
+        save_file({"tokens": self.loaded_tokens.contiguous()}, self.tokens_path)
 
     def load_sparse(self):
         self._sparse_acts = self.read_sparse_raw()

@@ -1,14 +1,7 @@
-from functools import wraps
-
 import nnsight
 import saeco.core as cl
 import torch
 from context import model_name, storage_name
-
-from jaxtyping import Float, Int
-from pydantic import BaseModel
-
-from rich.highlighter import Highlighter
 
 from saeco.architectures.anth_update import anth_update_model, cfg
 from saeco.evaluation.evaluation import Evaluation
@@ -22,14 +15,15 @@ from torch import Tensor
 root_eval = Evaluation.from_model_name(model_name)
 root_eval.store_acts(
     CachingConfig(
-        dirname="abc",
+        dirname=storage_name,
         num_chunks=100,
         docs_per_chunk=100,
-        documents_per_micro_batch=16,
+        documents_per_micro_batch=32,
         # exclude_bos_from_storage=True,
         eager_sparse_generation=True,
         store_feature_tensors=False,
-        deferred_blocked_store_feats_block_size=True,
+        deferred_blocked_store_feats_block_size=False,
+        # metadatas_from_src_column_names=["tissue", "cell_type"],
     ),
     displace_existing=True,
 )

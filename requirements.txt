@@ -9,3 +9,6 @@ wandb
 schedulefree
 nnsight
 attrs
+jaxtyping
+datasets
+transformers

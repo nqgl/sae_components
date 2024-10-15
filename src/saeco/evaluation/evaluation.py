@@ -1,4 +1,5 @@
-from functools import cached_property
+import shelve
+from functools import cached_property, wraps
 from pathlib import Path
 from typing import Generator, Iterable, Iterator, Tuple, Union
 
@@ -8,20 +9,35 @@ import torch
 import torch.autograd.forward_ad as fwAD
 import tqdm
 from attr import define, field
+
+from pydantic import BaseModel
 from torch import Tensor
 
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
+from saeco.data.locations import DATA_DIRS
+
+from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
-from .acts_cacher import ActsCacher, CachingConfig
 from .cached_artifacts import CachedCalls
+from .cacher2 import ActsCacher, CachingConfig
+
 from .fastapi_models import (
+    Feature,
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentResponse,
     MetadataEnrichmentSortBy,
     TokenEnrichmentMode,
     TokenEnrichmentSortBy,
+)
+from .fastapi_models.families_draft import (
+    Family,
+    FamilyLevel,
+    FamilyRef,
+    GetFamiliesResponse,
+    ScoredFamilyRef,
+    ScoredFeature,
 )
 
 from .filtered import FilteredTensor
@@ -32,23 +48,83 @@ from .storage.chunk import Chunk
 
 
 @define
+class BMStorShelf:
+    path: Path
+    shelf: shelve.Shelf
+
+    @classmethod
+    def from_path(cls, path: Path):
+        return cls(
+            path=path,
+            shelf=shelve.open(str(path / "shelf")),
+        )
+
+    def fnkey(self, func, args, kwargs):
+        key = f"{func.__name__}__{args}__{kwargs}"
+        vkey = f"{key}__version"
+        return key, vkey
+
+    def version(self, func):
+        return getattr(func, "_version", None)
+
+    def has(self, func, args, kwargs):
+        key, vkey = self.fnkey(func, args, kwargs)
+        version = self.version(func)
+        return vkey in self.shelf and self.shelf[vkey] == version and key in self.shelf
+
+    def get(self, func, args, kwargs):
+        key, vkey = self.fnkey(func, args, kwargs)
+        return self.shelf[key]
+
+    def set(self, func, args, kwargs, value):
+        key, vkey = self.fnkey(func, args, kwargs)
+        self.shelf[key] = value
+        self.shelf[vkey] = self.version(func)
+        self.shelf.sync()
+
+
+def cache_version(v):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            return f(*args, **kwargs)
+
+        setattr(wrapper, "_version", v)
+        return wrapper
+
+    return decorator
+
+
+class Test(BaseModel):
+    a: int
+    b: int
+
+
+@define
 class Evaluation:
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
-    # nnsight_model: nnsight.LanguageModel | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
-    root: Union["Evaluation", None] = field(default=None, repr=False)
+    _root: Union["Evaluation", None] = field(default=None, repr=False)
 
-    # cache_name: str | None = None
-    # cache_path: Path | None = None
-    # metadatas: MetaDatas = field(init=False)
     @tokenizer.default
     def _tokenizer_default(self):
         return AutoTokenizer.from_pretrained(
-            self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name
+            self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name,
+            cache_dir=DATA_DIRS.CACHE_DIR,
         )
+
+    @cached_property
+    def bmstore(self):
+        return BMStorShelf.from_path(self.path)
+
+    @property
+    def root(self):
+        if self._root is None:
+            return self
+        return self._root
 
     @property
     def cuda(self):
@@ -109,6 +185,7 @@ class Evaluation:
             saved_acts=self.saved_acts.filtered(filter),
             filter=filter,
             root=self,
+            tokenizer=self.tokenizer,
         )
 
     def open_filtered(self, filter_name: str):
@@ -131,14 +208,22 @@ class Evaluation:
             value.filter.writeat(new_tensor, value.value)
         return new_tensor
 
-    def metadata_builder(self, dtype, device, item_size=[]) -> "TensorBuilder":
+    def metadata_builder(self, dtype, device, item_size=[]) -> "MetadataBuilder":
         return MetadataBuilder(
             self.saved_acts.chunks,
             dtype=dtype,
             device=device,
             shape=[self.cache_cfg.num_docs, *item_size],
         )
-        return TensorBuilder(self._make_metadata_builder_iter(dtype, device, item_size))
+
+    def filtered_builder(self, dtype, device, item_size=[]) -> "FilteredBuilder":
+        return FilteredBuilder(
+            self.saved_acts.chunks,
+            dtype=dtype,
+            device=device,
+            shape=[self.cache_cfg.num_docs, *item_size],
+            filter=self._filter,
+        )
 
     @property
     def path(self):
@@ -162,9 +247,9 @@ class Evaluation:
 
     @property
     def _root_metadatas(self):
-        if self.root is None:
+        if self._root is None:
             return self.metadatas
-        return self.root.metadatas
+        return self._root.metadatas
 
     @cached_property
     def artifacts(self) -> Artifacts:
@@ -211,32 +296,39 @@ class Evaluation:
     def d_vocab(self):
         return self.tokenizer.vocab_size
 
-    @property
-    def num_docs(self):
-        return self.cache_cfg.num_docs
-
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:
             caching_cfg.model_name = self.model_name
         assert caching_cfg.model_name == self.model_name
-        acts_cacher = ActsCacher(
+        acts_cacher = ActsCacher.from_cache_and_runner(
             caching_config=caching_cfg, model_context=self.training_runner
         )
-        if acts_cacher.path().exists():
+        if acts_cacher.path.exists():
             if displace_existing:
                 import time
 
-                old = acts_cacher.path().parent / "old"
+                old = acts_cacher.path.parent / "old"
                 old.mkdir(exist_ok=True, parents=True)
-                acts_cacher.path().rename(
-                    old / f"old_{time.time()}{acts_cacher.path().name}"
+                acts_cacher.path.rename(
+                    old / f"old_{time.time()}{acts_cacher.path.name}"
                 )
             else:
                 raise FileExistsError(
-                    f"{acts_cacher.path()} already exists. Set displace_existing=True to move existing files."
+                    f"{acts_cacher.path} already exists. Set displace_existing=True to move existing files."
                 )
-        acts_cacher.store_acts()
-        self.saved_acts = SavedActs.from_path(acts_cacher.path())
+
+        metadata_chunks = acts_cacher.store_acts()
+        self.saved_acts = SavedActs.from_path(acts_cacher.path)
+        metadata_builders = {
+            name: self.metadata_builder(torch.long, "cpu")
+            for name in self.cache_cfg.metadatas_from_src_column_names
+        }
+        for mchunk in metadata_chunks:
+            for name in mchunk:
+                metadata_builders[name].takestrl(mchunk[name])
+        for name, builder in metadata_builders.items():
+            self.metadatas[name] = builder.value
+            self.metadatas.set_str_translator(name, builder.unique_labels)
 
     def get_features(self, feature_ids):
         return [self.features[fid] for fid in feature_ids]
@@ -367,6 +459,388 @@ class Evaluation:
         prod = mat.diag()[~mat.diag().isnan()].prod()
         assert prod < 1.001 and prod > 0.999
         return mat
+
+    def sequelize(
+        self,
+        acts: Tensor,
+        doc_agg: float | int | str | None = None,
+    ):
+        assert acts.ndim == 3
+        if doc_agg:
+            if isinstance(doc_agg, float | int):
+                acts = acts.pow(doc_agg).sum(dim=1).pow(1 / doc_agg)
+            elif doc_agg == "count":
+                acts = (acts > 0).sum(dim=1).float()
+            elif doc_agg == "max":
+                acts = acts.max(dim=1).values
+            else:
+                raise ValueError("Invalid doc_agg")
+            return einops.rearrange(acts, "doc feat -> feat doc")
+        else:
+            return einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+
+    def coactivations(self, doc_agg=None):
+        sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+        coact_counts = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+        fa_sq_sum = torch.zeros(self.d_dict).to(self.cuda)
+        for chunk in tqdm.tqdm(
+            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
+        ):
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            assert acts.ndim == 3
+            feature_activity = self.sequelize(
+                acts, doc_agg=doc_agg
+            )  # feat, (doc [seq])
+            feature_bin = (feature_activity > 0).float()
+            fa_sq_sum += feature_activity.pow(2).sum(-1)
+            sims += feature_activity @ feature_activity.transpose(-2, -1)
+            coact_counts += feature_bin @ feature_bin.transpose(-2, -1)
+        norms = fa_sq_sum.sqrt()
+        sims /= norms.unsqueeze(0)
+        sims /= norms.unsqueeze(1)
+        prod = sims.diag()[~sims.diag().isnan()].prod()
+        assert prod < 1.001 and prod > 0.999
+        return coact_counts, sims
+
+    def cosims(self, doc_agg=None):
+        return self.coactivations(doc_agg=doc_agg)[1]
+
+    def coactivity(self, doc_agg=None):
+        res = self.coactivations(doc_agg=doc_agg)
+        self.artifacts[f"cosims({(doc_agg,)}, {{}})"] = res[1]
+        return res[0]
+
+    def generate_feature_families1(
+        self, doc_agg=None, threshold=0.1, n=3, use_D=False, freq_bounds=None
+    ):
+        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
+        if use_D:
+            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+        else:
+            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+        # D = D.cpu()
+        C = unnormalized / (
+            (
+                feat_counts := (
+                    self.doc_activation_counts
+                    if doc_agg
+                    else self.seq_activation_counts
+                )
+            )
+            .cpu()
+            .unsqueeze(-1)
+            + 1e-6
+        )
+        threshold = threshold or C[C > 0].median()
+
+        C[C.isnan()] = 0
+        C[C < threshold] = 0
+        if freq_bounds is not None:
+            fmin, fmax = freq_bounds
+            feat_probs = (
+                self.doc_activation_probs if doc_agg else self.seq_activation_probs
+            )
+            bound = (feat_probs >= fmin) & (feat_probs <= fmax)
+            C[~bound] = 0
+            C[:, ~bound] = 0
+        import scipy.sparse as ssp
+
+        from .mst import Families, FamilyTreeNode, mst, my_mst
+
+        levels = []
+        feat_counts = feat_counts.to(self.cuda)
+        for _ in tqdm.trange(n):
+            tree = mst(C).transpose(0, 1)
+            roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
+            # for i in range(nz.shape[0]):
+            #     c = nz[i]
+            #     assert feat_counts[c[0]] >= feat_counts[c[1]]
+            # families = Families.from_tree(tree)
+            levels.append(tree)
+            C[roots] = 0
+            C[:, roots] = 0
+        # roots = [((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0) for tree in levels]
+
+        return levels
+
+    @torch.no_grad()
+    def generate_feature_families(self, doc_agg=None, threshold=None, n=3, use_D=False):
+        if use_D:
+            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+        else:
+            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+        unnormalized[unnormalized.isnan()] = 0
+        feat_counts = (
+            self.doc_activation_counts if doc_agg else self.seq_activation_counts
+        )
+        # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
+
+        def denan(x):
+            return torch.where(x.isnan() | x.isinf(), torch.zeros_like(x), x)
+
+        def zdiag(x):
+            return torch.where(
+                torch.eye(x.shape[0], device=x.device, dtype=torch.bool), 0, x
+            )
+
+        def isprob(P):
+            assert (P >= 0).all() and (P <= 1).all()
+            return P
+
+        def probmat(P):
+            return isprob(zdiag(denan(P)))
+
+        def ent(P):
+            P = isprob(denan(P))
+            return torch.where(
+                (P > 0) & (P < 1),
+                -P * torch.log(P + 1e-6) - (1 - P) * torch.log(1 - P + 1e-6),
+                0,
+            )
+
+        def nicemat(M):
+            return zdiag(denan(M))
+
+        def nent(Q, R):
+            Q, R = nicemat(Q), nicemat(R)
+            P = nicemat(Q / R)
+            isprob(P)
+            return torch.where(
+                (P > 0) & (P < 1),
+                -Q * torch.log(P) - (R - Q) * torch.log(1 - P),
+                0,
+            )
+
+        N = self.num_docs if doc_agg else self.seq_len * self.num_docs
+        A = feat_counts.unsqueeze(1).expand(-1, feat_counts.shape[0])
+        B = feat_counts.unsqueeze(0).expand(feat_counts.shape[0], -1)
+        V = unnormalized
+
+        P_A = probmat(A / N)
+        P_B = probmat(B / N)
+        # P_AB = probmat(V / N)
+        P_B_given_A = probmat((V + P_B * P_A) / (A + 1))  # +
+        P_B_given_not_A = probmat((B - V + (1 - P_B) * (1 - P_A)) / (N - A + 1))
+        # C = P_A * torch.log()
+        # info = A * ent(P_B_given_A) + (N - A) * ent(P_B_given_not_A)
+        # info = P_A * nent(V, A) + (1 - P_A) * nent((B - V), (N - A)) - nent(B, N)
+        # info = (c := ent(P_B)) - (
+        #     (a := P_A * ent(P_B_given_A)) + (b := (1 - P_A) * ent(P_B_given_not_A))
+        # )
+        # info = torch.where((P_B_given_A > P_B), info + 1e-6, 0)
+        # (info[P_B_given_A > P_B]).sum()
+        # (P_B_given_A > P_B).sum() / (P_B_given_A < P_B).sum()
+        # r = P_A * torch.log(P_B_given_A / P_B)
+        r = torch.log(P_B_given_A / P_B)
+        r = ent(P_B) - ent(P_B_given_A)
+
+        t = (1 - P_A) * torch.log(P_B_given_not_A / P_B)
+        # other = P_A * torch.log(P_B_given_A / P_B) + (1 - P_A) * torch.log(
+        #     P_B_given_not_A / P_B
+        # )
+
+        r = denan(r)
+        t = denan(t)
+        # r[P_B_given_A > P_B].sum()
+        # r[P_B_given_A < P_B].sum()
+        # t[P_B_given_A > P_B].sum()
+        # t[P_B_given_A < P_B].sum()
+        info = r
+
+        # a.max(dim=0, keepdim=True)
+        # b.max(dim=0, keepdim=True)
+        # c.max(dim=0, keepdim=True)
+        # a.max(dim=1, keepdim=True)
+        # b.max(dim=1, keepdim=True)
+        # c.max(dim=1, keepdim=True)
+        # P_B.max()
+        # v = B.to(torch.float64) / N
+        # v.max()
+
+        info = torch.where((V > 0) & (info > 0), info, 0)
+
+        info = zdiag(denan(info))
+        assert (info >= 0).all()
+        # learned =
+        # C = info.clone()
+        C = info
+        threshold = threshold or C[C > 0].median()
+        # C = unnormalized / (().cpu().unsqueeze(-1) + 1e-6)
+
+        C.max(dim=0, keepdim=True)
+        C.max(dim=1, keepdim=True)
+
+        # C[C.isnan()] = 0
+        C[C < threshold] = 0
+        import scipy.sparse as ssp
+
+        from .mst import Families, FamilyTreeNode, mst, my_mst, prim_max
+
+        levels = []
+        feat_counts = feat_counts.to(self.cuda)
+        for _ in range(n):
+            # tree = mst(C)
+            i, v = my_mst(C.cuda())
+            tree = (
+                torch.sparse_coo_tensor(indices=i, values=v, size=C.shape)
+                .to_dense()
+                .cpu()
+                .transpose(0, 1)
+            )
+            nz = tree.nonzero()
+            print(
+                "proportion:",
+                (feat_counts[nz[:, 0]] >= feat_counts[nz[:, 1]]).float().mean(),
+            )
+
+            # families = Families.from_tree(tree)
+            roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
+            print("num_roots", roots.sum())
+            levels.append(tree)
+            C[roots] = 0
+            C[:, roots] = 0
+        # roots.sum()
+
+        # (
+        #     feat_counts[levels[0].roots[0].feature_id],
+        #     feat_counts[levels[1].roots[0].feature_id],
+        #     feat_counts[levels[2].roots[0].feature_id],
+        # )
+        # (len(levels[0].roots[0]), len(levels[1].roots[0]), len(levels[2].roots[0]))
+
+        # (len(levels[0]), len(levels[1]), len(levels[2]))
+
+        return levels
+
+    @torch.no_grad()
+    def _get_feature_family_trees(
+        self, doc_agg=None, threshold=None, n=3, use_D=False, freq_bounds=None
+    ):
+        return torch.stack(
+            self.generate_feature_families1(
+                doc_agg=doc_agg,
+                threshold=threshold,
+                n=n,
+                use_D=use_D,
+                freq_bounds=freq_bounds,
+            )
+        )
+
+    @cache_version(6)
+    def get_feature_families(self) -> GetFamiliesResponse:
+        from .mst import Families, FamilyTreeNode
+
+        levels = self.cached_call._get_feature_family_trees()
+        famlevels = [Families.from_tree(f) for f in levels]
+
+        niceroots: list[list[FamilyTreeNode]] = [
+            [r for r in f.roots if len(r) > 10]
+            for i, f in enumerate(
+                famlevels,
+            )
+        ]
+        [
+            len([r for r in f.roots if len(r) > 20 - i * 8])
+            for i, f in enumerate(
+                famlevels,
+            )
+        ]
+        levels = []
+        for levelnum, level in enumerate(niceroots):
+            fl = FamilyLevel(
+                level=levelnum,
+                families={
+                    fam_id: Family(
+                        level=levelnum,
+                        family_id=fam_id,
+                        label=None,
+                        subfamilies=[],
+                        subfeatures=[
+                            ScoredFeature(
+                                feature=Feature(feature_id=int(feat_id), label=None),
+                                score=0.9,
+                            )
+                            for feat_id in root.family
+                        ],
+                    )
+                    for fam_id, root in enumerate(level)
+                },
+            )
+            levels.append(fl)
+        level_lens = [len(l.families) for l in levels]
+        # csll = torch.tensor([0] + level_lens).cumsum(0).tolist()[:-1]
+        t0 = torch.zeros(
+            len(levels),
+            max(level_lens),
+            self.d_dict,
+            dtype=torch.float,
+            device=self.cuda,
+        )
+        for i, level in enumerate(levels):
+            for j, family in level.families.items():
+                for feat in family.subfeatures:
+                    feat: ScoredFeature
+                    t0[i, j, feat.feature.feature_id] = 1
+        ns = t0.sum(-1)
+
+        t0 /= ns.unsqueeze(-1) + 1e-8
+        sims = einops.einsum(t0, t0, "l1 f1 d, l2 f2 d -> l1 f1 l2 f2")
+        # sims_f = einops.rearrange(sims, "l1 f1 l2 f2 -> l1 f1 (l2 f2)")
+        # m = sims_f.max(dim=-1)
+
+        # sml = sims.max(dim=-1)
+        # smf = sml.values.max(dim=-1)
+        # fi = smf.indices
+        # li = sml.indices[fi]
+
+        threshold = 0
+        for i, level in enumerate(levels[:-1]):
+            next_level = i + 1
+            nl_sims = sims[i, :, next_level, :]
+            z = torch.zeros_like(nl_sims)
+            nlmax = nl_sims.max(dim=0)
+            z[nlmax.indices, torch.arange(nlmax.indices.shape[0])] = nlmax.values
+            z[z < threshold] = 0
+            for j, family in level.families.items():
+                # sim = sims[i, j, next_level, :]
+                # st = sim > threshold
+                st = z[j]
+                # if st.sum() < 3:
+                #     print("very few at threshold", threshold)
+                #     st = sim > threshold / 2
+
+                for f in st.nonzero():
+                    family.subfamilies.append(
+                        ScoredFamilyRef(
+                            family=FamilyRef(
+                                level=int(next_level),
+                                family_id=int(f.item()),
+                            ),
+                            score=st[f.item()],
+                        )
+                    )
+        return GetFamiliesResponse(levels=levels)
+
+    def top_coactivating_features(self, feature_id, top_n=10, mode="seq"):
+        """
+        mode: "seq" or "doc"
+        """
+        if mode == "seq":
+            mat = self.cached_call.activation_cosims()
+        elif mode == "doc":
+            mat = self.cached_call.doc_level_co_occurrence()
+        else:
+            raise ValueError("mode must be 'seq' or 'doc'")
+        vals = mat[feature_id]
+        vals[feature_id] = -torch.inf
+        vals[vals.isnan()] = -torch.inf
+        top = vals.topk(top_n + 1)
+
+        v = top.values
+        i = top.indices
+        v = v[i != feature_id][:top_n]
+        i = i[i != feature_id][:top_n]
+        return i, v
 
     def sae_with_patch(
         self,
@@ -549,9 +1023,9 @@ class Evaluation:
             yield acts.to_filtered_like_self(c_agg)
 
     @property
-    def docs_in_subset(self):
+    def num_docs(self) -> int:
         if self._filter:
-            return self._filter.filter.sum()
+            return self._filter.filter.sum().item()
         return self.cache_cfg.num_docs
 
     def acts_avg_over_dataset(self, seq_agg="mean", docs_agg="mean"):
@@ -571,7 +1045,7 @@ class Evaluation:
             else:
                 results += agg_chunk.value.sum(dim=0)
         if docs_agg == "mean":
-            results /= self.docs_in_subset
+            results /= self.num_docs
 
     def forward_token_attribution_to_features(self, tokens, seq_range):
         assert tokens.ndim == 1 or tokens.ndim == 2 and tokens.shape[0] == 1
@@ -758,7 +1232,7 @@ class Evaluation:
     def _get_token_occurrences(self):
         counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in tqdm.tqdm(self.saved_acts.chunks):
-            tokens = chunk.tokens.value
+            tokens = chunk.tokens.value.to(self.cuda)
             t, c_counts = tokens.unique(return_counts=True)
             counts[t] += c_counts
         return counts
@@ -778,7 +1252,7 @@ class Evaluation:
             k = int(quantity * p)
         if k <= 0:
             raise ValueError("k must be positive")
-        return k
+        return min(k, quantity)
 
     @staticmethod
     def _get_top_activating(feature: Tensor, p=None, k=None):
@@ -794,17 +1268,24 @@ class Evaluation:
             feature.shape,
         )
 
-    def seq_agg_feat(self, feature_id=None, feature=None, agg="max", docs_filter=True):
-        assert agg == "max", "Only max implemented currently"
+    def seq_agg_feat(
+        self, feature_id=None, feature=None, agg="max", docs_filter=True
+    ) -> FilteredTensor:
+        assert agg in ("max", "sum"), "Only max implemented currently"
         if (feature_id is None) == (feature is None):
             raise ValueError("Exactly one of feat_id and feature must be set")
         if feature is None:
             feature = self.features[feature_id]
         if docs_filter:
             feature = feature.filter_inactive_docs()
-        return feature.to_filtered_like_self(
-            feature.value.to_dense().max(dim=1).values, ndim=1
-        )
+        if agg == "max":
+            return feature.to_filtered_like_self(
+                feature.value.to_dense().max(dim=1).values, ndim=1
+            )
+        elif agg == "sum":
+            return feature.to_filtered_like_self(
+                feature.value.to_dense().sum(dim=1), ndim=1
+            )
 
     def top_activations_and_metadatas(
         self,
@@ -815,6 +1296,7 @@ class Evaluation:
         return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
+        str_metadatas: bool = False,
     ):
         if isinstance(feature, int):
             feature = self.features[feature]
@@ -822,16 +1304,270 @@ class Evaluation:
         k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
         topk = doc_acts.value.topk(k, sorted=True)
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
-        acts = feature.index_select(top_outer_indices[0], dim=0)
+        doc_indices = top_outer_indices[0]
+        acts = feature.index_select(doc_indices, dim=0)
         assert (acts.to_dense() == feature.to_dense()[top_outer_indices]).all()
         if return_acts_sparse:
             acts = acts.to_sparse_coo()
-        doc_indices = top_outer_indices[0]
         docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
-        metadatas = [self._root_metadatas[key][doc_indices] for key in metadata_keys]
+        metadatas = {
+            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+        }
+        if str_metadatas:
+            metadatas = self._root_metadatas.translate(metadatas)
         if return_doc_indices:
             return docs, acts, metadatas, doc_indices
         return docs, acts, metadatas
+
+    def batched_top_activations_and_metadatas(
+        self,
+        features: list[int | FilteredTensor],
+        p=None,
+        k=None,
+        metadata_keys=[],
+        return_str_docs=False,
+        return_acts_sparse=False,
+        return_doc_indices=True,
+        str_metadatas=False,
+    ):
+        return [
+            self.top_activations_and_metadatas(
+                feature,
+                p,
+                k,
+                metadata_keys,
+                return_str_docs,
+                return_acts_sparse,
+                return_doc_indices,
+                str_metadatas,
+            )
+            for feature in features
+        ]
+
+    # top_indices
+
+    # def top_acts_and_docs_from_doc_activations(self, doc_acts:FilteredTensor, k):
+    #     topk = doc_acts.value.topk(k, sorted=True)
+    #     top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
+    #     doc_indices = top_outer_indices[0]
+    #     docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+    #     metadatas = {
+    #         key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+    #     }
+    #     if str_metadatas:
+    #         metadatas = self._root_metadatas.translate(metadatas)
+    #     if return_doc_indices:
+    #         return docs, acts, metadatas, doc_indices
+    #     return docs, acts, metadatas
+
+    def top_activations_and_metadatas_for_family(
+        self,
+        family: Family,
+        aggregation_method: str = "sum",
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+        feature = self.get_family_psuedofeature_tensors([family], aggregation_method)[0]
+        return self.top_activations_and_metadatas(
+            feature=feature,
+            p=p,
+            k=k,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_acts_sparse=return_acts_sparse,
+            return_doc_indices=return_doc_indices,
+            str_metadatas=str_metadatas,
+        )
+
+    def get_family_psuedofeature_tensors(
+        self, families: list[Family], aggregation_method="sum", cuda=True
+    ) -> list[FilteredTensor]:
+        artifact_names = [
+            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
+            for family in families
+        ]
+        self.init_family_psuedofeature_tensors(families, aggregation_method)
+        return [
+            FilteredTensor.from_value_and_mask(
+                (
+                    self.artifacts[artifact_name].to(self.cuda)
+                    if cuda
+                    else self.artifacts[artifact_name]
+                ),
+                self._filter,
+            )
+            for artifact_name in artifact_names
+        ]
+
+    def init_family_psuedofeature_tensors(
+        self, families: list[Family], aggregation_method="sum"
+    ) -> list[FilteredTensor]:
+        artifact_names = [
+            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
+            for family in families
+        ]
+        precached = [
+            artifact_name in self.artifacts for artifact_name in artifact_names
+        ]
+
+        if not all(precached):
+            indices = [
+                torch.tensor(
+                    [f.feature.feature_id for f in family.subfeatures],
+                    dtype=torch.long,
+                    device=self.cuda,
+                )
+                for family, prec in zip(families, precached)
+                if not prec
+            ]
+            new_artifact_names = [
+                artifact_name
+                for artifact_name, prec in zip(artifact_names, precached)
+                if not prec
+            ]
+            builders = [
+                self.filtered_builder(
+                    dtype=torch.float, device=self.cuda, item_size=(self.seq_len,)
+                )
+                for _ in new_artifact_names
+            ]
+            for chunk in tqdm.tqdm(builders[0], total=self.cache_cfg.num_chunks):
+                a = chunk.acts.to(self.cuda).to_dense()
+                for mb, i in zip(builders, indices):
+                    mb << a.to_filtered_like_self(a.value[:, :, i].sum(dim=-1), ndim=2)
+            for artifact_name, mb in zip(new_artifact_names, builders):
+                feature_value = mb.value
+                self.artifacts[artifact_name] = feature_value.value
+
+    def batched_top_activations_and_metadatas_for_family(
+        self,
+        families: list[Family],
+        aggregation_method: str = "sum",
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+
+        return self.batched_top_activations_and_metadatas(
+            features=self.get_family_psuedofeature_tensors(
+                families=families, aggregation_method=aggregation_method
+            ),
+            p=p,
+            k=k,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_acts_sparse=return_acts_sparse,
+            return_doc_indices=return_doc_indices,
+            str_metadatas=str_metadatas,
+        )
+
+    def top_overlapped_feature_family_documents(
+        self,
+        families: list[Family],
+        p: float = None,
+        k: int = None,
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        str_metadatas: bool = False,
+    ):
+        if len(families) == 0:
+            return [], [], [], []
+        famfeats = self.get_family_psuedofeature_tensors(families=families)
+        doc_acts = [self.seq_agg_feat(feature=f, agg="sum") for f in famfeats]
+        agg_mask = doc_acts[0].filter.mask.clone()
+        for da in doc_acts[1:]:
+            agg_mask &= da.filter.mask
+        filt_da = [da.mask_by_other(agg_mask, presliced=True) for da in doc_acts]
+        agg_doc_score = filt_da[0].to(self.cuda).clone().to_dense()
+        for da in filt_da[1:]:
+            agg_doc_score *= da.to(self.cuda)
+        assert agg_doc_score.ndim == 1
+        if agg_doc_score.sum() == 0:
+            agg_doc_score = filt_da[0].to(self.cuda).clone().to_dense()
+            for da in filt_da[1:]:
+                agg_doc_score += da.to(self.cuda)
+        agg_doc = FilteredTensor.from_value_and_mask(value=agg_doc_score, mask=agg_mask)
+
+        k = Evaluation._pk_to_k(p, k, agg_doc_score.shape[0])
+        if k == 0:
+            return [], [[] for _ in range(len(families))], [], []
+        topk = agg_doc.value.topk(k, sorted=True)
+        top_outer_indices = agg_doc.externalize_indices(topk.indices.unsqueeze(0))
+        doc_indices = top_outer_indices[0].to(self.cuda)
+        docs, acts, metadatas = self.getDAM(
+            doc_indices,
+            features=famfeats,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            str_metadatas=str_metadatas,
+        )
+        return docs, acts, metadatas, doc_indices
+
+    def getDAM(
+        self,
+        doc_indices,
+        features: list[FilteredTensor],
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        str_metadatas: bool,
+    ):
+        acts = [f.index_select(doc_indices, dim=0) for f in features]
+        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+
+        docs, metadatas = self.get_docs_and_metadatas(
+            doc_indices,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_str_metadatas=str_metadatas,
+        )
+
+        return docs, acts, metadatas
+
+    def get_families_activations_on_docs(
+        self,
+        families: list[Family],
+        doc_indices: list[int],
+        features: list[int] = [],
+        metadata_keys: list[str] = [],
+        return_str_docs: bool = False,
+        str_metadatas: bool = False,
+    ):
+        doc_indices = torch.tensor(doc_indices, dtype=torch.long, device=self.cuda)
+        print("getting families")
+        print(self.cuda)
+        docs, acts, metadatas = self.getDAM(
+            doc_indices,
+            features=self.get_family_psuedofeature_tensors(families=families)
+            + [self.features[f].to(self.cuda) for f in features],
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            str_metadatas=str_metadatas,
+        )
+        return docs, acts[: len(families)], metadatas, acts[len(families) :]
+
+    def get_docs_and_metadatas(
+        self,
+        doc_indices: Tensor,
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        return_str_metadatas: bool,
+    ):
+        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+        metadatas = {
+            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+        }
+        if return_str_metadatas:
+            metadatas = self._root_metadatas.translate(metadatas)
+        return docs, metadatas
 
     def _metadata_unique_labels_and_counts_tensor(self, key):
         meta = self._root_metadatas[key]
@@ -849,13 +1585,13 @@ class Evaluation:
         p: float = None,
         k: int = None,
         str_label: bool = False,
-        sort_by: MetadataEnrichmentSortBy = MetadataEnrichmentSortBy.count,
+        sort_by: MetadataEnrichmentSortBy = MetadataEnrichmentSortBy.counts,
     ):
         docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
             feature=feature, p=p, k=k, metadata_keys=metadata_keys
         )
         r = {}
-        for mdname, md in zip(metadata_keys, metadatas):
+        for mdname, md in metadatas.items():
             assert md.ndim == 1
             full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
             labels, mdcat_counts = torch.cat([md, full_lc[0]]).unique(
@@ -868,9 +1604,9 @@ class Evaluation:
             labels = labels[counts > 0]
             proportions = proportions[counts > 0]
             counts = counts[counts > 0]
-            normalized_counts = proportions * self.docs_in_subset / doc_ids.shape[0]
-            scores = torch.zeros_like(counts).float() - 0.99  # TODO
-            if sort_by == TokenEnrichmentSortBy.count:
+            normalized_counts = proportions * self.num_docs / doc_ids.shape[0]
+            scores = normalized_counts.log()
+            if sort_by == TokenEnrichmentSortBy.counts:
                 i = counts.argsort(descending=True)
             elif sort_by == TokenEnrichmentSortBy.normalized_count:
                 i = normalized_counts.argsort(descending=True)
@@ -885,7 +1621,7 @@ class Evaluation:
             scores = scores[i]
             r[mdname] = [
                 MetadataEnrichmentLabelResult(
-                    label=f"mock placeholder {label}" if str_label else label,
+                    label=label,
                     count=count,
                     proportion=proportion,
                     normalized_count=normalized_count,
@@ -893,7 +1629,11 @@ class Evaluation:
                     # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
                 )
                 for label, count, proportion, normalized_count, score in zip(
-                    labels.tolist(),
+                    (
+                        self.metadatas.get(mdname).strlist(labels)
+                        if str_label
+                        else labels.tolist()
+                    ),
                     counts.tolist(),
                     proportions.tolist(),
                     normalized_counts.tolist(),
@@ -915,21 +1655,6 @@ class Evaluation:
             )
         return counts
 
-    def count_filtered_token_occurrence(self, filter):
-        counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
-        for chunk in self.saved_acts.chunks:
-            toks = chunk.tokens.mask_by_other(filter).value.to(self.cuda).flatten()
-
-            # .value.to(self.cuda).flatten()
-            counts.scatter_add_(
-                0,
-                toks,
-                torch.ones(1, device=toks.device, dtype=torch.long).expand(
-                    toks.shape[0]
-                ),
-            )
-        return counts
-
     def top_activations_token_enrichments(
         self,
         *,
@@ -942,6 +1667,7 @@ class Evaluation:
         docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
             feature=feature, p=p, k=k, metadata_keys=[]
         )
+        docs = docs.to(self.cuda)
         if mode == TokenEnrichmentMode.doc:
             seltoks = docs
         elif mode == TokenEnrichmentMode.max:
@@ -960,10 +1686,11 @@ class Evaluation:
             raise ValueError(f"Unknown mode {mode}")
         tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
         normalized_counts = (counts / seltoks.numel()) / (
-            self.token_occurrence_count[tokens] / (self.docs_in_subset * self.seq_len)
+            self.token_occurrence_count.to(self.cuda)[tokens]
+            / (self.num_docs * self.seq_len)
         )
-        scores = torch.zeros_like(counts).float() - 0.99  # TODO
-        if sort_by == TokenEnrichmentSortBy.count:
+        scores = normalized_counts.log()
+        if sort_by == TokenEnrichmentSortBy.counts:
             i = counts.argsort(descending=True)
         elif sort_by == TokenEnrichmentSortBy.normalized_count:
             i = normalized_counts.argsort(descending=True)
@@ -978,117 +1705,75 @@ class Evaluation:
 
         return tokens, counts, normalized_counts, scores
 
-    def get_active_documents(self, feature_ids):
-        raise DeprecationWarning("This method is outdated")
-
-        features = self.get_features(feature_ids)
-        return self.select_active_documents(self.features_union(features))
-
-    @staticmethod
-    def features_union(feature_tensors):
-        raise DeprecationWarning("This method is outdated")
-        f = feature_tensors[0].clone()
-        for ft in feature_tensors[1:]:
-            f += ft
-        assert f.is_sparse
-        f = f.coalesce()
-        return f
-
-    @staticmethod
-    def active_document_indices(feature):
-        raise DeprecationWarning("Outdated methodology")
-        return feature.indices()[0][feature.values() != 0].unique()
-
-    def select_active_documents(self, feature):
-        raise DeprecationWarning("Outdated methodology")
-        docs, doc_ids = self._active_docs_values_and_indices(feature)
-        assert not docs.is_sparse
-        return torch.sparse_coo_tensor(
-            indices=doc_ids.unsqueeze(0),
-            values=docs,
-            size=(self.cache_cfg.num_docs, docs.shape[1]),
-        ).coalesce()
-
-    def _active_docs_values_and_indices(self, feature):
-        raise DeprecationWarning("Outdated methodology")
-        active_documents_idxs = self.active_document_indices(feature)
-        active_documents = self.saved_acts.tokens[active_documents_idxs]
-        return active_documents, active_documents_idxs
-
-
-class TensorBuilder:
-    def __init__(self, gen):
-        self.gen = gen
-        self.value = ...
-        self.it = self._iter()
-
-    def _iter(self):
-        self.value = yield from self.gen
-
-    def __iter__(self) -> Iterator[Chunk]:
-        return self
-
-    def __next__(self) -> Chunk:
-        return next(self.it)
-
-    def send(self, v):
-        return self.it.send(v)
-
-    def __lshift__(self, v):
-        return self.send(v)
-
-
-class MetadataBuilder:
-    def __init__(self, chunks, dtype, device, shape):
-        self.it = iter(chunks)
-        self.chunks = chunks
-        self._value = torch.zeros(*shape, dtype=dtype, device=device)
-        self.done = False
-        self.chunks_done = [False] * len(chunks)
-        self.i = 0
+    def num_active_docs_for_feature(self, feature_id):
+        return self.cached_call._feature_num_active_docs()[feature_id].item()
 
     @property
-    def value(self):
-        self.finish()
-        return self._value
+    def seq_activation_counts(self):
+        return self.cached_call._feature_num_active_tokens()
 
-    def finish(self):
-        assert all(self.chunks_done)
-        self.done = True
+    @property
+    def seq_activation_probs(self):
+        return self.seq_activation_counts / (self.num_docs * self.seq_len)
 
-    def __iter__(self) -> Iterator[Chunk]:
-        return self
+    @property
+    def doc_activation_counts(self):
+        return self.cached_call._feature_num_active_docs()
 
-    def __next__(self) -> Chunk:
-        return next(self.it)
+    @property
+    def doc_activation_probs(self):
+        return self.doc_activation_counts / self.num_docs
 
-    def __lshift__(self, v):
-        return self._recv(self.chunks[self.i], v)
+    # @property
+    # def mean_feature_activations(self)
 
-    def _recv(self, chunk: Chunk, value: FilteredTensor | Tensor):
-        assert isinstance(chunk, Chunk)
-        assert isinstance(value, FilteredTensor | Tensor)
-        assert not self.done
-        assert not self.chunks_done[chunk.idx]
-        if isinstance(value, Tensor):
-            value = chunk._to_filtered(value)
-        value.filter.writeat(target=self._value, value=value.value)
-        self.chunks_done[chunk.idx] = True
-        self.i += 1
+    # def _feature_mean_activations(self):
 
-    class mbsetter:
-        def __init__(self, mb, chunk):
-            self.mb: MetadataBuilder = mb
-            self.chunk: Chunk = chunk
+    # def feature_activation_proportion_thresholds(self, p):
 
-        def __lshift__(self, v):
-            return self.mb._recv(self.chunk, v)
+    def _feature_num_active_docs(self):
+        activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
+        for chunk in self.saved_acts.chunks:
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            activity += (acts > 0).any(dim=1).sum(dim=0)
+        return activity
 
-    def __getitem__(self, chunk):
-        return MetadataBuilder.mbsetter(self, chunk)
+    def _feature_num_active_tokens(self):
+        activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
+        for chunk in self.saved_acts.chunks:
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            activity += (acts > 0).sum(dim=1).sum(dim=0)
+        return activity
 
-    def __setitem__(self, chunk, value):
-        return self._recv(chunk, value)
+    def get_metadata_intersection_filter_key(
+        self, values: dict[str, str | list[str] | int | list[int]]
+    ):
+        val_list = list(values.items())
+        val_list.sort()
+        d = {}
+        for k, v in val_list:
+            if isinstance(v, int | str):
+                v = [v]
+            if isinstance(v, list) and isinstance(v[0], str):
+                meta = self.metadatas.get(k)
+                v = [meta.info.fromstr[x] for x in v]
+            v = sorted(v)
+            d[k] = tuple(v)
+        key = str(d)
+
+        if key not in self.filters:
+            self.filters[key] = self._get_metadata_intersection_filter(d)
+        return key
+
+    def _get_metadata_intersection_filter(self, map: dict[str, list[int]]):
+        filter = torch.ones(self.num_docs, dtype=torch.bool).to(self.cuda)
+        for mdname, values in map.items():
+            mdmask = torch.zeros(self.num_docs, dtype=torch.bool).to(self.cuda)
+            meta = self.metadatas[mdname].to(self.cuda)
+            for value in values:
+                mdmask |= meta == value
+            filter &= mdmask
+        return filter
 
 
 @define
@@ -1096,7 +1781,7 @@ class StrDocs:
     eval: Evaluation
 
     def __getitem__(self, idx):
-        tokens = self.eval.docs[idx]
+        tokens = self.eval.docs[idx.cpu()]
         strs = self.eval.detokenize(tokens)
         assert len(strs) == tokens.shape[0] and len(strs[0]) == tokens.shape[1]
         return strs

@@ -1,11 +1,11 @@
 from pydantic import BaseModel, Field
 
-from .FilterableQuery import FilterableQuery
+from .filtered_query import FilterableQuery
 
 
 class TopActivationResultEntry(BaseModel):
     doc: list[str] | list[int]
-    metadatas: list[int]
+    metadatas: list[int | str]
     acts: list[float] | None = None
     doc_index: int | None = None
 
@@ -20,3 +20,4 @@ class TopActivatingExamplesQuery(FilterableQuery):
     k: int | None = None
     metadata_keys: list[str] = []
     return_str_docs: bool = False
+    return_str_metadatas: bool = True

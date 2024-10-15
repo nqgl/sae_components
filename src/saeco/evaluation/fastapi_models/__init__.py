@@ -1,7 +1,14 @@
+from .co_activation import (
+    CoActivatingFeature,
+    CoActivationRequest,
+    CoActivationResponse,
+)
+from .Feature import Feature
 from .feature_active_docs_count import (
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
 )
+from .filtered_query import FilterableQuery
 from .metadata_enrichment import (
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentRequest,
@@ -10,6 +17,7 @@ from .metadata_enrichment import (
 )
 
 from .token_enrichment import (
+    GeneInfo,
     TokenEnrichmentMode,
     TokenEnrichmentRequest,
     TokenEnrichmentResponse,

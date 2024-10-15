@@ -146,6 +146,7 @@ class ChunksGetter:
             sl = torange(sl)
         if sl.ndim == 0:
             sl = sl.unsqueeze(0)
+        sl = sl.cpu()
         if sl.ndim == 1:
             return self.docsel(sl, dense=self.dense_target)
         print(

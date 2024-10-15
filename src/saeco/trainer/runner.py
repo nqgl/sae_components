@@ -105,8 +105,8 @@ class TrainingRunner:
         normalizer = GeneralizedNormalizer(
             init=self.initializer, cfg=self.cfg.normalizer_cfg
         )
-
-        normalizer.prime_normalizer(self.data)
+        if self.state_dict is None:
+            normalizer.prime_normalizer(self.data)
         return normalizer
 
     @normalizer.setter

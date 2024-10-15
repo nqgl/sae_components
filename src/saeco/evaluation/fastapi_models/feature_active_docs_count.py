@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from .FilterableQuery import FilterableQuery
+from .filtered_query import FilterableQuery
 
 
 class FeatureActiveDocsRequest(FilterableQuery):

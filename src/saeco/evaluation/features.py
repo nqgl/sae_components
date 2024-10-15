@@ -31,14 +31,23 @@ class Features:
 
     @classmethod
     def _feature_tensors_initializer(cls, path: Path):
-        feat_dir = path / "features"
-        num_features = len(list(feat_dir.glob("feature*")))
-        return tuple(
-            [
-                SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
-                for i in range(num_features)
-            ]
-        )
+        import time
+
+        for i in range(10):
+            try:
+                feat_dir = path / "features"
+                num_features = len(list(feat_dir.glob("feature*")))
+                return tuple(
+                    [
+                        SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
+                        for i in range(num_features)
+                    ]
+                )
+            except FileNotFoundError:
+                print(
+                    "opening features failed, waiting 1 second and retrying up to 10 times"
+                )
+                time.sleep(1)
 
     def get_active(self, key):
         # for now does doc level filtering, in future with nested masks or indices could filter at token level

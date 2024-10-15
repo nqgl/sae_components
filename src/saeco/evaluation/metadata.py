@@ -4,6 +4,7 @@ from pathlib import Path
 import torch
 from attrs import define, field
 from pydantic import BaseModel
+from torch import Tensor
 
 from .named_filter import NamedFilter
 
@@ -33,6 +34,9 @@ class Artifacts:
             shape=shape,
             dtype=dtype,
         )
+
+    def get(self, name):
+        return DiskTensor.open(self.storage_dir / name)
 
     def __getitem__(self, name):
         if self.return_raw:
@@ -88,6 +92,9 @@ class Metadatas(Artifacts):
             dtype,
         )
 
+    def get(self, name):
+        return Metadata.open(self.storage_dir / name)
+
     def __setitem__(self, name, value):
         assert isinstance(name, str)
         assert isinstance(value, torch.Tensor)
@@ -101,6 +108,19 @@ class Metadatas(Artifacts):
         disk_tensor = self.create(name=name, dtype=value.dtype, item_shape=item_shape)
         disk_tensor.tensor[:] = value
         disk_tensor.finalize()
+
+    def set_str_translator(self, name, d):
+        disk_tensor = self.get(name)
+        disk_tensor.set_str_translator(d)
+
+    def translate(self, d: dict[str, Tensor]) -> dict[str, list[str] | Tensor]:
+        print(d)
+        o = {
+            k: m.strlist(v) if (m := self.get(k)).info.tostr is not None else v
+            for k, v in d.items()
+        }
+        print("done")
+        return o
 
 
 # @define
@@ -142,35 +162,76 @@ class Metadatas(Artifacts):
 
 
 class MetadataTensorInfo(BaseModel):  # TODO
-    seq_level: bool = False
+    tostr: dict[int, str] | None
+    fromstr: dict[str, int] | None
+
+    @classmethod
+    def open(cls, path: Path):
+        path = path.with_suffix(".metadatainfo")
+        if path.exists():
+            return cls.model_validate_json(path.read_text())
+        return cls(tostr=None, fromstr=None)
+
+    def save(self, path: Path):
+        path.with_suffix(".metadatainfo").write_text(self.model_dump_json())
+
+    def populate(self, d):
+        assert self.tostr is None and self.fromstr is None
+        self.fromstr = d
+        self.tostr = {v: k for k, v in d.items()}
 
 
 @define
-class Metadata:  # oh this maybe should just subclass DiskTensor
-    storage: DiskTensor
-    seq_level: bool = False
-    shape: list[int] = []
-    dtype: torch.dtype = torch.float32
-
-    @property
-    def tensor(self):
-        return self.storage.tensor
-
-    @classmethod
-    def create(cls, path, shape, dtype, seq_level):
-        return cls(
-            shape=shape,
-            dtype=dtype,
-            seq_level=seq_level,
-            storage=DiskTensor.create(path=path, shape=shape, dtype=dtype),
-        )
+class Metadata(DiskTensor):
+    info: MetadataTensorInfo | None = field(default=None)
 
     @classmethod
     def open(cls, path):
-        dt = DiskTensor.open(path=path)
         return cls(
-            shape=dt.metadata.shape,
-            dtype=dt.metadata.dtype,
-            seq_level=False,
-            storage=dt,
+            path=path,
+            metadata=cls._open_metadata(path),
+            info=MetadataTensorInfo.open(path),
         )
+
+    def finalize(self):
+        self.info.save(self.path)
+        return super().finalize()
+
+    def strlist(self, tensor=None):
+        tensor = tensor if tensor is not None else self.tensor
+        return [self.info.tostr[i] for i in tensor.tolist()]
+
+    def set_str_translator(self, d):
+        self.info.populate(d)
+        self.info.save(self.path)
+
+
+# @define
+# class Metadata:  # oh this maybe should just subclass DiskTensor
+#     storage: DiskTensor
+#     seq_level: bool = False
+#     shape: list[int] = []
+#     dtype: torch.dtype = torch.float32
+
+#     @property
+#     def tensor(self):
+#         return self.storage.tensor
+
+#     @classmethod
+#     def create(cls, path, shape, dtype, seq_level):
+#         return cls(
+#             shape=shape,
+#             dtype=dtype,
+#             seq_level=seq_level,
+#             storage=DiskTensor.create(path=path, shape=shape, dtype=dtype),
+#         )
+
+#     @classmethod
+#     def open(cls, path):
+#         dt = DiskTensor.open(path=path)
+#         return cls(
+#             shape=dt.metadata.shape,
+#             dtype=dt.metadata.dtype,
+#             seq_level=False,
+#             storage=dt,
+#         )

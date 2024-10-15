@@ -1,7 +1,12 @@
 import functools
+import inspect
+
+import shelve
+from pathlib import Path
 from typing import Any
 
 from attrs import define, field
+from pydantic import BaseModel
 from torch import Tensor
 
 from .filtered import FilteredTensor
@@ -30,7 +35,16 @@ class CachedCalls:
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            stringified_call = f"{name}({args}, {kwargs})"
+            stringified_call = f"{name}({args}, {kwargs})".replace(".", "-")
+            if inspect.signature(func).return_annotation is not None and issubclass(
+                inspect.signature(func).return_annotation, BaseModel
+            ):
+                if self.raw.bmstore.has(func, args, kwargs):
+                    return self.raw.bmstore.get(func, args, kwargs)
+                value = func(*args, **kwargs)
+                self.raw.bmstore.set(func, args, kwargs, value)
+                return value
+
             if stringified_call in self.raw.artifacts:
                 return self.raw.artifacts[stringified_call]
             result = func(*args, **kwargs)

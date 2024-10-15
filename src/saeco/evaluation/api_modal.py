@@ -2,6 +2,8 @@ import json
 
 from pathlib import Path
 
+import modal
+
 from fastapi import FastAPI
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +15,6 @@ from .fastapi_models import (
     CoActivationResponse,
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
-    FilterableQuery,
     GeneInfo,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
@@ -25,6 +26,7 @@ from .fastapi_models import (
     TopActivatingExamplesResult,
     TopActivationResultEntry,
 )
+
 from .fastapi_models.families_draft import (
     ActivationsOnDoc,
     ActivationsOnDocsRequest,
@@ -36,11 +38,12 @@ from .fastapi_models.families_draft import (
     GetFamiliesResponse,
     TopFamilyOverlappingExamplesResponseDoc,
 )
+
 from .fastapi_models.Feature import Feature
-from .fastapi_models.intersection_filter import GetIntersectionFilterKey
 
 
-def create_app(app, root: Evaluation):
+def create_app(app: modal.App, root: Evaluation):
+
     gene_conversions_path = (
         Path.home() / "workspace" / "cached_sae_acts" / "class_conversion.json"
     )
@@ -49,16 +52,18 @@ def create_app(app, root: Evaluation):
         k: GeneInfo.model_validate(v)
         for k, v in json.loads(gene_conversions_path.read_text()).items()
     }
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # Allows all origins
-        allow_credentials=True,
-        allow_methods=["*"],  # Allows all methods
-        allow_headers=["*"],  # Allows all headers
-    )
 
-    @app.put("/top_activating_examples")
-    def get_top_activating_examples(
+    # app.add_middleware(
+    #     CORSMiddleware,
+    #     allow_origins=["*"],  # Allows all origins
+    #     allow_credentials=True,
+    #     allow_methods=["*"],  # Allows all methods
+    #     allow_headers=["*"],  # Allows all headers
+    # )
+
+    @app.function()
+    @modal.web_endpoint(method="PUT")
+    def top_activating_examples(
         query: TopActivatingExamplesQuery,
     ) -> TopActivatingExamplesResult:
         evaluation = query.filter(root)
@@ -110,8 +115,9 @@ def create_app(app, root: Evaluation):
         #     doc_indices=doc_indices.tolist(),
         # )
 
-    @app.put("/metadata_enrichment")
-    def get_metadata_enrichment(
+    @app.function()
+    @modal.web_endpoint(method="PUT")
+    def metadata_enrichment(
         query: MetadataEnrichmentRequest,
     ) -> MetadataEnrichmentResponse:
         ev = query.filter(root)
@@ -123,8 +129,9 @@ def create_app(app, root: Evaluation):
             str_label=query.str_label,
         )
 
-    @app.put("/token_enrichment")
-    def get_token_enrichment(query: TokenEnrichmentRequest) -> TokenEnrichmentResponse:
+    @app.function()
+    @modal.web_endpoint(method="PUT")
+    def token_enrichment(query: TokenEnrichmentRequest) -> TokenEnrichmentResponse:
         ev = query.filter(root)
         tokens, counts, normalized_counts, scores = (
             ev.top_activations_token_enrichments(
@@ -169,8 +176,9 @@ def create_app(app, root: Evaluation):
             ]
         )
 
-    @app.put("/feature_active_docs_count")
-    def get_feature_active_docs_count(
+    @app.function()
+    @modal.web_endpoint(method="PUT")
+    def feature_active_docs_count(
         query: FeatureActiveDocsRequest,
     ) -> FeatureActiveDocsResponse:
         ev = query.filter(root)
@@ -178,8 +186,9 @@ def create_app(app, root: Evaluation):
             num_active_docs=ev.num_active_docs_for_feature(query.feature)
         )
 
-    @app.put("/top_coactivating_features")
-    def get_top_coactive_features(query: CoActivationRequest):
+    @app.function()
+    @modal.web_endpoint(method="PUT")
+    def top_coactivating_features(query: CoActivationRequest):
         ev = query.filter(root)
         ids, values = ev.top_coactivating_features(
             feature_id=query.feature_id,
@@ -193,13 +202,15 @@ def create_app(app, root: Evaluation):
             )
         return CoActivationResponse(results=l)
 
-    @app.put("/get_families")
+    @app.function()
+    @modal.web_endpoint(method="PUT")
     def get_families(query: GetFamiliesRequest) -> GetFamiliesResponse:
         ev = query.filter(root)
         return ev.cached_call.get_feature_families()
 
-    @app.put("/family_top_activating_examples")
-    def get_family_top_activating_examples(
+    @app.function()
+    @modal.web_endpoint(method="PUT")
+    def family_top_activating_examples(
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopActivatingExamplesResult]:
         ev = query.filter(root)
@@ -258,8 +269,9 @@ def create_app(app, root: Evaluation):
             )
         return out
 
-    @app.put("/family_top_overlapping_examples")
-    def get_family_top_overlapping_examples(
+    @app.function()
+    @modal.web_endpoint(method="PUT")
+    def family_top_overlapping_examples(
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopFamilyOverlappingExamplesResponseDoc]:
         ev = query.filter(root)
@@ -298,18 +310,14 @@ def create_app(app, root: Evaluation):
             )
         ]
 
-    @app.put("/get_families_activations_on_docs")
+    @app.function(gpu="h100")
+    @modal.web_endpoint(method="PUT")
     def get_families_activations_on_docs(
         query: ActivationsOnDocsRequest,
     ) -> list[ActivationsOnDoc]:
         ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
-
         docs, fam_acts, metadatas, feat_acts = ev.get_families_activations_on_docs(
-            families=[
-                all_families.levels[family.level].families[family.family_id]
-                for family in query.families
-            ],
+            families=query.families,
             doc_indices=query.document_ids,
             features=query.feature_ids,
             metadata_keys=query.metadata_keys,
@@ -329,34 +337,6 @@ def create_app(app, root: Evaluation):
             )
             for i, (doc, md) in enumerate(zip(docs, metadatas))
         ]
-
-    @app.put("/init_all_families")
-    def init_all_families(query: FilterableQuery, batches=None) -> None:
-        ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
-        families = [
-            v for level in all_families.levels for k, v in level.families.items()
-        ]
-        ev.init_family_psuedofeature_tensors(families)
-
-    @app.put("/get_intersection_filter_key")
-    def get_intersection_filter_key(query: GetIntersectionFilterKey) -> str:
-        key = root.get_metadata_intersection_filter_key(query.metadatas_values)
-
-        if query.initialzie_families:
-            init_all_families(FilterableQuery(filter_id=key))
-        return key
-
-    @app.put("/get_metadata_names")
-    def get_metadata_names() -> list[str]:
-        return root.metadatas.keys()
-
-    @app.put("/get_metadata_key_names")
-    def get_metadata_key_names(metadata: str) -> list[str] | None:
-        md = root.metadatas.get(metadata)
-        if md.info.tostr is None:
-            return None
-        return list(md.info.tostr.values())
 
     return app
 

@@ -4,6 +4,7 @@ import einops
 import torch
 import tqdm
 from nnsight import LanguageModel
+from torch import Tensor
 
 from saeco.data.split_config import SplitConfig
 from saeco.data.tabletensor import Piler
@@ -153,3 +154,57 @@ class TokensData:
             pile = piler[p]
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                 yield pile[i : i + batch_size]
+
+
+import datasets
+from attrs import define, field
+
+
+@define
+class PermutedDocs:
+    cfg: "DataConfig"
+    split: SplitConfig
+    dataset: datasets.Dataset | datasets.DatasetDict = field(init=False)
+    perm: Tensor = field(init=False)
+
+    @dataset.default
+    def _dataset_default_value(self):
+        dataset = self.cfg.load_dataset_from_split(self.split)
+        seq_len = dataset[0][self.cfg.tokens_column_name].shape[0]
+        if self.cfg.seq_len:
+            if seq_len < self.cfg.seq_len:
+                raise ValueError(
+                    f"Document length {seq_len} is less than the requested sequence length {self.cfg.seq_len}"
+                )
+            elif seq_len != self.cfg.seq_len:
+                input(
+                    f"Warning: document lengths {seq_len} is longer than seq_len, so documents will be truncated. Press enter to continue"
+                )
+        return dataset
+
+    @perm.default
+    def _perm_default_value(self):
+        return torch.randperm(self.dataset.num_rows)
+
+    @property
+    def dataset_document_length(self):
+        return self.src_dataset_data.shape[1]
+
+    def get_docs(self, num_docs=None):
+        i = self.perm[:num_docs] if num_docs is not None else self.perm
+        return self.dataset[i][self.cfg.tokens_column_name][:, : self.cfg.seq_len]
+
+    def get_docs_and_columns(self, num_docs=None, columns=[]):
+        i = self.perm[:num_docs] if num_docs is not None else self.perm
+        ds = self.dataset[i]
+        return ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len], {
+            col: ds[col] for col in columns
+        }
+
+    def iter_docs_and_columns(self, batch_size, columns=[]):
+        # cols =
+        for i in range(0, len(self.perm) // batch_size * batch_size, batch_size):
+            ds = self.dataset[self.perm[i : i + batch_size]]
+            yield ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len], {
+                col: ds[col] for col in columns
+            }

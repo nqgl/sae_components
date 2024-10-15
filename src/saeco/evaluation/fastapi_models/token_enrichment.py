@@ -1,8 +1,17 @@
 from enum import Enum
 
+from typing import Generic, TypeVar
+
 from pydantic import BaseModel, Field
 
-from .FilterableQuery import FilterableQuery
+from .filtered_query import FilterableQuery
+
+
+class GeneInfo(BaseModel):
+    category: str
+    geneClass: str
+    geneName: str
+    displayBoth: bool
 
 
 class TokenEnrichmentMode(str, Enum):
@@ -13,7 +22,7 @@ class TokenEnrichmentMode(str, Enum):
 
 
 class TokenEnrichmentSortBy(str, Enum):
-    count = "count"
+    counts = "count"
     normalized_count = "normalized_count"
     score = "score"
 
@@ -23,17 +32,21 @@ class TokenEnrichmentRequest(FilterableQuery):
     p: float | None = None
     k: int | None = None
     mode: TokenEnrichmentMode
-    sort_by: TokenEnrichmentSortBy = TokenEnrichmentSortBy.count
+    sort_by: TokenEnrichmentSortBy = TokenEnrichmentSortBy.counts
     num_top_tokens: int | None = 100
 
 
-class TokenEnrichmentResponseItem(BaseModel):
+T = TypeVar("T")
+
+
+class TokenEnrichmentResponseItem(BaseModel, Generic[T]):
     tokstr: str
+    info: T
     token: int
     count: int
     normalized_count: float
     score: float
 
 
-class TokenEnrichmentResponse(BaseModel):
-    results: list[TokenEnrichmentResponseItem]
+class TokenEnrichmentResponse(BaseModel, Generic[T]):
+    results: list[TokenEnrichmentResponseItem[T]]
