@@ -726,7 +726,7 @@ class Evaluation:
             )
         )
 
-    @cache_version(5)
+    @cache_version(6)
     def get_feature_families(self) -> GetFamiliesResponse:
         from .mst import Families, FamilyTreeNode
 
@@ -734,7 +734,10 @@ class Evaluation:
         famlevels = [Families.from_tree(f) for f in levels]
 
         niceroots: list[list[FamilyTreeNode]] = [
-            [r for r in f.roots if len(r) > 10] for f in famlevels
+            [r for r in f.roots if len(r) > 17 - i * 4]
+            for i, f in enumerate(
+                famlevels,
+            )
         ]
         levels = []
         for levelnum, level in enumerate(niceroots):
@@ -773,17 +776,32 @@ class Evaluation:
                     feat: ScoredFeature
                     t0[i, j, feat.feature.feature_id] = 1
         ns = t0.sum(-1)
-        t0 /= ns.unsqueeze(-1)
+
+        t0 /= ns.unsqueeze(-1) + 1e-8
         sims = einops.einsum(t0, t0, "l1 f1 d, l2 f2 d -> l1 f1 l2 f2")
+        # sims_f = einops.rearrange(sims, "l1 f1 l2 f2 -> l1 f1 (l2 f2)")
+        # m = sims_f.max(dim=-1)
+
+        # sml = sims.max(dim=-1)
+        # smf = sml.values.max(dim=-1)
+        # fi = smf.indices
+        # li = sml.indices[fi]
+
         threshold = 0.0001
         for i, level in enumerate(levels[:-1]):
+            next_level = i + 1
+            nl_sims = sims[i, :, next_level, :]
+            z = torch.zeros_like(nl_sims)
+            nlmax = nl_sims.max(dim=-1)
+            z[nlmax.indices, torch.arange(nlmax.indices.shape[0])] = nlmax.values
+            z[z < threshold] = 0
             for j, family in level.families.items():
-                next_level = i + 1
-                sim = sims[i, j, next_level, :]
-                st = sim > threshold
-                if st.sum() < 3:
-                    print("very few at threshold", threshold)
-                    st = sim > threshold / 2
+                # sim = sims[i, j, next_level, :]
+                # st = sim > threshold
+                st = z[j]
+                # if st.sum() < 3:
+                #     print("very few at threshold", threshold)
+                #     st = sim > threshold / 2
 
                 for f in st.nonzero():
                     family.subfamilies.append(
@@ -792,7 +810,7 @@ class Evaluation:
                                 level=int(next_level),
                                 family_id=int(f.item()),
                             ),
-                            score=sim[f.item()],
+                            score=st[f.item()],
                         )
                     )
         return GetFamiliesResponse(levels=levels)
