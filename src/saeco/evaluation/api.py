@@ -39,18 +39,16 @@ from .fastapi_models.families_draft import (
 from .fastapi_models.Feature import Feature
 from .fastapi_models.intersection_filter import GetIntersectionFilterKey
 
-gene_conversions_path = (
-    Path.home() / "workspace" / "cached_sae_acts" / "class_conversion.json"
-)
 
-gene_conversions = {
-    k: GeneInfo.model_validate(v)
-    for k, v in json.loads(gene_conversions_path.read_text()).items()
-}
+def create_app(app, root: Evaluation):
+    gene_conversions_path = (
+        Path.home() / "workspace" / "cached_sae_acts" / "class_conversion.json"
+    )
 
-
-def create_app(root: Evaluation):
-    app = FastAPI()
+    gene_conversions = {
+        k: GeneInfo.model_validate(v)
+        for k, v in json.loads(gene_conversions_path.read_text()).items()
+    }
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # Allows all origins
@@ -346,7 +344,7 @@ def create_app(root: Evaluation):
         key = root.get_metadata_intersection_filter_key(query.metadatas_values)
 
         if query.initialzie_families:
-            init_all_families(FilterableQuery(FilterableQuery(filter_id=key)))
+            init_all_families(FilterableQuery(filter_id=key))
         return key
 
     return app

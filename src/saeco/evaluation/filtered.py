@@ -56,7 +56,7 @@ class Filter:
     def _inner_shape(self):
         sliced = slice_shape(self.shape, self.slices)
         assert tuple(self.mask.shape) == sliced[: len(self.mask.shape)]
-        return (self.mask.sum(),) + sliced[len(self.mask.shape) :]
+        return (self.mask.sum(),) + tuple(sliced[len(self.mask.shape) :])
 
     def apply(self, tensor: Tensor) -> Tensor:
         self.slice(tensor)
@@ -319,6 +319,14 @@ class FilteredTensor:
 
     @classmethod
     def from_unmasked_value(cls, value: Tensor, filter: Filter, presliced=False):
+
+        if filter is None:
+            return cls.from_value_and_mask(value, filter)
+        if isinstance(filter, NamedFilter):
+            filter = filter.filter
+        if isinstance(filter, Tensor):
+            shape = list(filter.shape) + list(value.shape[1:])
+            filter = Filter(slices=[None] * len(shape), mask=filter, shape=shape)
         if presliced:
             return cls(value=filter.apply_mask(value), filter=filter)
         return cls(value=filter.apply(value), filter=filter)

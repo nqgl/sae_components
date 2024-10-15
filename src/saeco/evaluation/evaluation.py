@@ -17,7 +17,7 @@ from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from saeco.data.locations import DATA_DIRS
 
-from saeco.evaluation.MetadataBuilder import MetadataBuilder
+from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .cached_artifacts import CachedCalls
@@ -184,7 +184,8 @@ class Evaluation:
             training_runner=self.training_runner,
             saved_acts=self.saved_acts.filtered(filter),
             filter=filter,
-            _root=self,
+            root=self,
+            tokenizer=self.tokenizer,
         )
 
     def open_filtered(self, filter_name: str):
@@ -214,7 +215,15 @@ class Evaluation:
             device=device,
             shape=[self.cache_cfg.num_docs, *item_size],
         )
-        return TensorBuilder(self._make_metadata_builder_iter(dtype, device, item_size))
+
+    def filtered_builder(self, dtype, device, item_size=[]) -> "FilteredBuilder":
+        return FilteredBuilder(
+            self.saved_acts.chunks,
+            dtype=dtype,
+            device=device,
+            shape=[self.cache_cfg.num_docs, *item_size],
+            filter=self._filter,
+        )
 
     @property
     def path(self):
@@ -1219,7 +1228,7 @@ class Evaluation:
             k = int(quantity * p)
         if k <= 0:
             raise ValueError("k must be positive")
-        return k
+        return min(k, quantity)
 
     @staticmethod
     def _get_top_activating(feature: Tensor, p=None, k=None):
@@ -1378,7 +1387,7 @@ class Evaluation:
                 if not prec
             ]
             builders = [
-                self.metadata_builder(
+                self.filtered_builder(
                     dtype=torch.float, device=self.cuda, item_size=(self.seq_len,)
                 )
                 for _ in new_artifact_names
@@ -1386,10 +1395,10 @@ class Evaluation:
             for chunk in tqdm.tqdm(builders[0], total=self.cache_cfg.num_chunks):
                 a = chunk.acts.to(self.cuda).to_dense()
                 for mb, i in zip(builders, indices):
-                    mb << a.value[:, :, i].sum(dim=-1)
+                    mb << a.to_filtered_like_self(a.value[:, :, i].sum(dim=-1), ndim=2)
             for artifact_name, mb in zip(new_artifact_names, builders):
                 feature_value = mb.value
-                self.artifacts[artifact_name] = feature_value
+                self.artifacts[artifact_name] = feature_value.value
         return [
             FilteredTensor.from_value_and_mask(
                 (
