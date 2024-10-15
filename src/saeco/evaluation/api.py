@@ -347,6 +347,17 @@ def create_app(app, root: Evaluation):
             init_all_families(FilterableQuery(filter_id=key))
         return key
 
+    @app.put("/get_metadata_names")
+    def get_metadata_names() -> list[str]:
+        return root.metadatas.keys()
+
+    @app.put("/get_metadata_key_names")
+    def get_metadata_key_names(metadata: str) -> list[str] | None:
+        md = root.metadatas.get(metadata)
+        if md.info.tostr is None:
+            return None
+        return list(md.info.tostr.values())
+
     return app
 
 
