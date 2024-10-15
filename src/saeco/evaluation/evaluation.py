@@ -734,7 +734,7 @@ class Evaluation:
         famlevels = [Families.from_tree(f) for f in levels]
 
         niceroots: list[list[FamilyTreeNode]] = [
-            [r for r in f.roots if len(r) > 17 - i * 4]
+            [r for r in f.roots if len(r) > 10]
             for i, f in enumerate(
                 famlevels,
             )
@@ -787,7 +787,7 @@ class Evaluation:
         # fi = smf.indices
         # li = sml.indices[fi]
 
-        threshold = 0.0001
+        threshold = 0
         for i, level in enumerate(levels[:-1]):
             next_level = i + 1
             nl_sims = sims[i, :, next_level, :]
