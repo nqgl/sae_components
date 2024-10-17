@@ -4,7 +4,7 @@ import torch
 import tqdm
 from load import root_eval
 from saeco.evaluation.fastapi_models.feature_effects import (
-    FeatureLogitEffectsRequest,
+    LogitEffectsRequest,
     TopKFeatureEffects,
 )
 from saeco.misc.nnsite import getsite, setsite
@@ -311,7 +311,7 @@ def procedure2(tokens, feat_id, offset=1, set_to=0, ln=False, lerp=0.5, scale=1.
 # %%
 
 
-query = FeatureLogitEffectsRequest(
+query = LogitEffectsRequest(
     feature=605,
 )
 

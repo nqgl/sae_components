@@ -572,6 +572,59 @@ class Evaluation:
 
         return levels
 
+    def generate_feature_families2(
+        self, doc_agg=None, threshold=0.1, n=3, use_D=False, freq_bounds=None
+    ):
+        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
+        if use_D:
+            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+        else:
+            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+        # D = D.cpu()
+        C = unnormalized / (
+            (
+                feat_counts := (
+                    self.doc_activation_counts
+                    if doc_agg
+                    else self.seq_activation_counts
+                )
+            )
+            .cpu()
+            .unsqueeze(-1)
+            + 1e-6
+        )
+        threshold = threshold or C[C > 0].median()
+
+        C[C.isnan()] = 0
+        C[C < threshold] = 0
+        if freq_bounds is not None:
+            fmin, fmax = freq_bounds
+            feat_probs = (
+                self.doc_activation_probs if doc_agg else self.seq_activation_probs
+            )
+            bound = (feat_probs >= fmin) & (feat_probs <= fmax)
+            C[~bound] = 0
+            C[:, ~bound] = 0
+        import scipy.sparse as ssp
+
+        from .mst import Families, FamilyTreeNode, mst, my_mst
+
+        levels = []
+        feat_counts = feat_counts.to(self.cuda)
+        for _ in tqdm.trange(n):
+            tree = mst(C).transpose(0, 1)
+            roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
+            # for i in range(nz.shape[0]):
+            #     c = nz[i]
+            #     assert feat_counts[c[0]] >= feat_counts[c[1]]
+            # families = Families.from_tree(tree)
+            levels.append(tree)
+            C[roots] = 0
+            C[:, roots] = 0
+        # roots = [((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0) for tree in levels]
+
+        return levels
+
     @torch.no_grad()
     def generate_feature_families(self, doc_agg=None, threshold=None, n=3, use_D=False):
         if use_D:
@@ -1398,7 +1451,7 @@ class Evaluation:
             acts = acts.to_sparse_coo()
         docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
         metadatas = {
-            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+            key: self._root_metadatas[key][doc_indices.cpu()] for key in metadata_keys
         }
         if str_metadatas:
             metadatas = self._root_metadatas.translate(metadatas)

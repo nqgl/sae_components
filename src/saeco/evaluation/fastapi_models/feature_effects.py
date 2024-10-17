@@ -1,9 +1,11 @@
 from pydantic import BaseModel, Field
 
+from .families_draft import FamilyRef
+
 from .filtered_query import FilterableQuery
 
 
-class FeatureLogitEffectsRequest(FilterableQuery):
+class LogitEffectsRequest(FilterableQuery):
     feature: int
     by_fwad: bool = True
     k: int = 100
@@ -11,5 +13,7 @@ class FeatureLogitEffectsRequest(FilterableQuery):
 
 
 class TopKFeatureEffects(BaseModel):
-    tokens: list[str]
-    values: list[float]
+    pos_tokens: list[str]
+    pos_values: list[float]
+    neg_tokens: list[str]
+    neg_values: list[float]

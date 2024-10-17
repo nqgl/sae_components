@@ -8,7 +8,7 @@ from .feature_active_docs_count import (
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
 )
-from .feature_effects import FeatureLogitEffectsRequest, TopKFeatureEffects
+from .feature_effects import LogitEffectsRequest, TopKFeatureEffects
 from .filtered_query import FilterableQuery
 from .metadata_enrichment import (
     MetadataEnrichmentLabelResult,

@@ -13,9 +13,9 @@ from .fastapi_models import (
     CoActivationResponse,
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
-    FeatureLogitEffectsRequest,
     FilterableQuery,
     GeneInfo,
+    LogitEffectsRequest,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
     TokenEnrichmentMode,
@@ -371,7 +371,7 @@ def create_app(app, root: Evaluation):
         root.set_feature_label(feat_id, label)
 
     @app.put("/patching_logit_effects")
-    def patching_logit_effects(query: FeatureLogitEffectsRequest) -> TopKFeatureEffects:
+    def patching_logit_effects(query: LogitEffectsRequest) -> TopKFeatureEffects:
         ev = query.filter(root)
         effects = ev.average_aggregated_patching_effect_on_dataset(
             feature_id=query.feature,
@@ -379,9 +379,12 @@ def create_app(app, root: Evaluation):
             random_subset_n=query.random_subset_n,
         )
         topk = effects.topk(query.k)
+        neg_topk = effects.topk(query.k, largest=False)
         return TopKFeatureEffects(
-            tokens=ev.detokenize(topk.indices),
-            values=topk.values,
+            pos_tokens=ev.detokenize(topk.indices),
+            pos_values=topk.values,
+            neg_tokens=ev.detokenize(neg_topk.indices),
+            neg_values=neg_topk.values,
         )
 
     return app
