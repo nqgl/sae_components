@@ -3,7 +3,7 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.data.data_config_definitions import gpt_2
+from saeco.data.data_config_definitions import gpt_2_block
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
@@ -16,7 +16,7 @@ PROJECT = "binarize"
 
 cfg = RunConfig[DeepConfig](
     train_cfg=TrainConfig(
-        data_cfg=gpt_2(),
+        data_cfg=gpt_2_block(),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=100_000,
             resample_period=4_000,

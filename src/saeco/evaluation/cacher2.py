@@ -142,7 +142,7 @@ class ActsCacher:
             metadata_chunks.append(metadata_columns)
 
         if self.cfg.deferred_blocked_store_feats_block_size:
-            B = 10
+            B = self.cfg.deferred_blocked_store_feats_block_size
             K = 1
             features_batch_size = (
                 self.d_dict // self.cfg.deferred_blocked_store_feats_block_size

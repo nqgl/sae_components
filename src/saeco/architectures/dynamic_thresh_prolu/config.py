@@ -9,7 +9,7 @@ from saeco.data import (
     ModelConfig,
     SplitConfig,
 )
-from saeco.data.data_config_definitions import gemma_2_2b_openwebtext, gpt_2
+from saeco.data.data_config_definitions import gemma_2_2b_openwebtext, gpt_2_block
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig
@@ -21,8 +21,8 @@ from .model import Config, ThreshConfig
 PROJECT = "sae sweeps"
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
+        # data_cfg=gpt_2_block(7, "input"),
         data_cfg=gemma_2_2b_openwebtext,
-        # data_cfg=gemma_2_2b_openwebtext,
         # data_cfg=DataConfig(
         #     model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
         #     # trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),

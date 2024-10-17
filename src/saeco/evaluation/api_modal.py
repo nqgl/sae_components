@@ -206,7 +206,7 @@ def create_app(app: modal.App, root: Evaluation):
     @modal.web_endpoint(method="PUT")
     def get_families(query: GetFamiliesRequest) -> GetFamiliesResponse:
         ev = query.filter(root)
-        return ev.cached_call.get_feature_families()
+        return ev.get_feature_families()
 
     @app.function()
     @modal.web_endpoint(method="PUT")
@@ -214,7 +214,7 @@ def create_app(app: modal.App, root: Evaluation):
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopActivatingExamplesResult]:
         ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
+        all_families = ev.get_feature_families()
 
         families = [
             all_families.levels[family.level].families[family.family_id]
@@ -275,7 +275,7 @@ def create_app(app: modal.App, root: Evaluation):
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopFamilyOverlappingExamplesResponseDoc]:
         ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
+        all_families = ev.get_feature_families()
 
         families = [
             all_families.levels[family.level].families[family.family_id]

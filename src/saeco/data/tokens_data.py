@@ -97,12 +97,10 @@ class TokensData:
             self.documents.shape[0]
             // self.cfg.generation_config.num_document_distribution_batches
         )
-        for i in tqdm.tqdm(
-            range(
-                0,
-                self.documents.shape[0] // doc_dist_batch_size * doc_dist_batch_size,
-                doc_dist_batch_size,
-            )
+        for i in tqdm.trange(
+            0,
+            self.documents.shape[0] // doc_dist_batch_size * doc_dist_batch_size,
+            doc_dist_batch_size,
         ):
             piler.distribute(self.documents[i : i + doc_dist_batch_size])
         piler.shuffle_piles()

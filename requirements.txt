@@ -3,7 +3,6 @@ unpythonic
 triton
 pytest
 tables
-torchlars
 pydantic
 wandb
 schedulefree
@@ -12,3 +11,4 @@ attrs
 jaxtyping
 datasets
 transformers
+# torchlars

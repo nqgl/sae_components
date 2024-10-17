@@ -45,6 +45,7 @@ from .metadata import Artifacts, Filters, Metadatas
 from .named_filter import NamedFilter
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
+from .utils import fwad_safe_sdp
 
 
 @define
@@ -115,6 +116,14 @@ class Evaluation:
             self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name,
             cache_dir=DATA_DIRS.CACHE_DIR,
         )
+
+    @cached_property
+    def feature_labels(self):
+        return shelve.open(str(self.root.path / "feature_labels"))
+
+    @cached_property
+    def family_labels(self):
+        return shelve.open(str(self.path / "family_labels"))
 
     @cached_property
     def bmstore(self):
@@ -726,8 +735,27 @@ class Evaluation:
             )
         )
 
+    def get_feature_families(self):
+        ffs = self.cached_call._get_feature_families_unlabeled()
+        for level in ffs.levels:
+            for family in level.families.values():
+                family.label = self.get_family_label(family)
+        return ffs
+
+    def get_feature_label(self, feature_id):
+        return self.feature_labels.get(str(int(feature_id)))
+
+    def set_feature_label(self, feature_id, label):
+        self.feature_labels[str(int(feature_id))] = label
+
+    def get_family_label(self, family):
+        return self.family_labels.get(str((int(family.level), int(family.family_id))))
+
+    def set_family_label(self, family: FamilyRef, label: str):
+        self.family_labels[str((int(family.level), int(family.family_id)))] = label
+
     @cache_version(6)
-    def get_feature_families(self) -> GetFamiliesResponse:
+    def _get_feature_families_unlabeled(self) -> GetFamiliesResponse:
         from .mst import Families, FamilyTreeNode
 
         levels = self.cached_call._get_feature_family_trees()
@@ -757,7 +785,10 @@ class Evaluation:
                         subfamilies=[],
                         subfeatures=[
                             ScoredFeature(
-                                feature=Feature(feature_id=int(feat_id), label=None),
+                                feature=Feature(
+                                    feature_id=int(feat_id),
+                                    label=self.get_feature_label(feat_id),
+                                ),
                                 score=0.9,
                             )
                             for feat_id in root.family
@@ -927,37 +958,38 @@ class Evaluation:
         patch_fn=lambda x: x,
         return_prob_grads=False,
     ):
-        assert tokens.ndim == 2
-        assert tangent or tangent_gen
-        if tangent:
+        with fwad_safe_sdp():
+            assert tokens.ndim == 2
+            assert tangent or tangent_gen
+            if tangent:
 
-            def fwad_hook(acts):
-                acts = patch_fn(acts)
-                return fwAD.make_dual(acts, tangent)
+                def fwad_hook(acts):
+                    acts = patch_fn(acts)
+                    return fwAD.make_dual(acts, tangent)
 
-        else:
+            else:
 
-            def fwad_hook(acts):
-                acts = patch_fn(acts)
-                return fwAD.make_dual(acts, tangent_gen(acts))
+                def fwad_hook(acts):
+                    acts = patch_fn(acts)
+                    return fwAD.make_dual(acts, tangent_gen(acts))
 
-        patched_sae = self.sae_with_patch(fwad_hook)
-        with fwAD.dual_level():
-            with self.nnsight_model.trace(tokens) as tracer:
-                lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
-                orig_lm_acts = lm_acts.save()
-                acts_re = patched_sae(orig_lm_acts).save()
-                patch_in = self._skip_bos_if_appropriate(lm_acts, acts_re)
-                setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
-                out = self.nnsight_model.output.save()
-                ls_logits = out.logits.log_softmax(dim=-1)
-                tangent = nnsight.apply(fwAD.unpack_dual, ls_logits).tangent.save()
+            patched_sae = self.sae_with_patch(fwad_hook)
+            with fwAD.dual_level():
+                with self.nnsight_model.trace(tokens) as tracer:
+                    lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+                    orig_lm_acts = lm_acts.save()
+                    acts_re = patched_sae(orig_lm_acts).save()
+                    patch_in = self._skip_bos_if_appropriate(lm_acts, acts_re)
+                    setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
+                    out = self.nnsight_model.output.save()
+                    ls_logits = out.logits.log_softmax(dim=-1)
+                    tangent = nnsight.apply(fwAD.unpack_dual, ls_logits).tangent.save()
+                if return_prob_grads:
+                    soft = out.logits.softmax(dim=-1)
+                    probspace = fwAD.unpack_dual(soft).tangent
             if return_prob_grads:
-                soft = out.logits.softmax(dim=-1)
-                probspace = fwAD.unpack_dual(soft).tangent
-        if return_prob_grads:
-            return out, tangent, probspace
-        return out, tangent
+                return out, tangent, probspace
+            return out, tangent
 
     def _skip_bos_if_appropriate(self, lm_acts, reconstructed_acts):
         if self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first:
@@ -1065,18 +1097,23 @@ class Evaluation:
                 * embedding
             )
 
-        with fwAD.dual_level():
-            with self.nnsight_model.trace(tokens) as tracer:
-                embed = self.nnsight_model.transformer.wte.output
-                self.nnsight_model.transformer.wte.output = nnsight.apply(
-                    tangentize_embedding, embed
-                )
-                lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
-                res = self.sae_with_patch(lambda x: x, return_sae_acts=True)(lm_acts)
-                sae_acts = res[1]
+        with fwad_safe_sdp():
+            with fwAD.dual_level():
+                with self.nnsight_model.trace(tokens) as tracer:
+                    embed = self.nnsight_model.transformer.wte.output
+                    self.nnsight_model.transformer.wte.output = nnsight.apply(
+                        tangentize_embedding, embed
+                    )
+                    lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+                    res = self.sae_with_patch(lambda x: x, return_sae_acts=True)(
+                        lm_acts
+                    )
+                    sae_acts = res[1]
 
-                acts_tangent = nnsight.apply(fwAD.unpack_dual, sae_acts).tangent.save()
-                lm_acts.stop()
+                    acts_tangent = nnsight.apply(
+                        fwAD.unpack_dual, sae_acts
+                    ).tangent.save()
+                    lm_acts.stop()
         return acts_tangent
 
     def average_patching_effect_on_dataset(
@@ -1093,12 +1130,8 @@ class Evaluation:
             self.seq_len,
             self.d_vocab,
         ).to(self.cuda)
-        p_results = torch.zeros(
-            self.seq_len,
-            self.d_vocab,
-        ).to(self.cuda)
         num_batches = torch.zeros(self.seq_len).to(self.cuda) + 1e-6
-        for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
+        for ldiff, batch_seq_pos in self.patching_effect_on_dataset(
             feature_id=feature_id,
             batch_size=batch_size,
             scale=scale,
@@ -1107,34 +1140,55 @@ class Evaluation:
         ):
             for j in range(batch_seq_pos.shape[0]):
                 results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
-                p_results[: -batch_seq_pos[j]] += pdiff[j, batch_seq_pos[j] :]
                 num_batches[: -batch_seq_pos[j]] += 1
-        return results / num_batches.unsqueeze(-1), p_results / num_batches.unsqueeze(
-            -1
-        )
+        return results / num_batches.unsqueeze(-1)
 
-    def custom_patching_effect_aggregation(
-        self,
-        feature_id,
-        log_call,
-        prob_call,
-        batch_size=8,
-        scale=None,
-        by_fwad=False,
-        random_subset_n=None,
+    def average_aggregated_patching_effect_on_dataset(
+        self, feature_id, batch_size=8, scale=None, by_fwad=False, random_subset_n=None
     ):
-        num_batches = torch.zeros(self.seq_len) + 1e-6
-        for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
+        """
+        this will be like,
+            - on the filtered dataset,
+            - where the feature occurs
+                - (for each position),
+        what happens when we ablate the feature?
+        """
+        results = torch.zeros(
+            self.seq_len,
+            self.d_vocab,
+        ).to(self.cuda)
+        num_batches = torch.zeros(self.seq_len).to(self.cuda) + 1e-6
+        for ldiff, batch_seq_pos in self.patching_effect_on_dataset(
             feature_id=feature_id,
             batch_size=batch_size,
             scale=scale,
             by_fwad=by_fwad,
             random_subset_n=random_subset_n,
         ):
-            if log_call is not None:
-                log_call(ldiff, batch_seq_pos)
-            if prob_call is not None:
-                prob_call(pdiff, batch_seq_pos)
+            for j in range(batch_seq_pos.shape[0]):
+                results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
+                num_batches[: -batch_seq_pos[j]] += 1
+        return results / num_batches.unsqueeze(-1)
+
+    def custom_patching_effect_aggregation(
+        self,
+        feature_id,
+        logits_call,
+        batch_size=8,
+        scale=None,
+        by_fwad=False,
+        random_subset_n=None,
+    ):
+        num_batches = torch.zeros(self.seq_len) + 1e-6
+        for ldiff, batch_seq_pos in self.patching_effect_on_dataset(
+            feature_id=feature_id,
+            batch_size=batch_size,
+            scale=scale,
+            by_fwad=by_fwad,
+            random_subset_n=random_subset_n,
+        ):
+            if logits_call is not None:
+                logits_call(ldiff, batch_seq_pos)
         return num_batches
 
     def patching_effect_on_dataset(
@@ -1200,30 +1254,51 @@ class Evaluation:
                                 feature_id,
                             ] = 1
                             assert tangent.sum() == batch_seq_pos.shape[0]
-                            return acts
+                            return tangent
 
-                        out, ldiff, pdiff = self.forward_ad_with_sae(
+                        def tangent_gen2(acts):
+                            tangent = torch.zeros_like(acts)
+                            tangent[
+                                torch.arange(batch_seq_pos.shape[0]),
+                                batch_seq_pos,
+                                feature_id,
+                            ] = 1
+                            assert tangent.sum() == batch_seq_pos.shape[0]
+                            tangent = tangent - tangent.mean(dim=-1, keepdim=True)
+                            return tangent
+
+                        def tangent_gen3(acts: Tensor):
+                            tangent = torch.zeros_like(acts)
+                            tangent[
+                                torch.arange(batch_seq_pos.shape[0]),
+                                batch_seq_pos,
+                                feature_id,
+                            ] = 1
+                            assert tangent.sum() == batch_seq_pos.shape[0]
+                            adj = tangent.sum(dim=-1, keepdim=True) / (
+                                acts.count_nonzero(dim=-1)
+                                .unsqueeze(-1)
+                                .expand(-1, -1, acts.shape[-1])
+                                + 1e-6
+                            )
+                            mask = acts > 0
+                            tangent[mask] = tangent[mask] - adj[mask]
+                            return tangent
+
+                        if by_fwad == 2:
+                            tangent_gen = tangent_gen2
+                        if by_fwad == 3:
+                            tangent_gen = tangent_gen3
+
+                        out, ldiff = self.forward_ad_with_sae(
                             batch_docs,
                             tangent_gen=tangent_gen,
                             patch_fn=patch_fn,
-                            return_prob_grads=True,
                         )
-                        # ldiff = ldiff.log_softmax(-1
-                        # not clear on if these should get some sort of
-                        # normalization to prevent overweighting of
-                        # particular documents w systematically larger grads
-                        # (eg due to diff logit scales)
-                        # maybe like z-score it or something
-                        # unclear if log-softmax would be a coherent thing to do
-                        # oh i think log-softmax on the dual tensor inside forward-ad
-                        # should do what we want.
-                        # seems good, added to forward_ad_with_sae
 
                     else:
-                        ldiff, pdiff = self.patchdiff(
-                            batch_docs, patch_fn, return_prob_diffs=True, invert=True
-                        )
-                    yield ldiff, pdiff, batch_seq_pos
+                        ldiff = self.patchdiff(batch_docs, patch_fn, invert=True)
+                    yield ldiff, batch_seq_pos
 
     @property
     def token_occurrence_count(self):
@@ -1343,22 +1418,6 @@ class Evaluation:
             )
             for feature in features
         ]
-
-    # top_indices
-
-    # def top_acts_and_docs_from_doc_activations(self, doc_acts:FilteredTensor, k):
-    #     topk = doc_acts.value.topk(k, sorted=True)
-    #     top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
-    #     doc_indices = top_outer_indices[0]
-    #     docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
-    #     metadatas = {
-    #         key: self._root_metadatas[key][doc_indices] for key in metadata_keys
-    #     }
-    #     if str_metadatas:
-    #         metadatas = self._root_metadatas.translate(metadatas)
-    #     if return_doc_indices:
-    #         return docs, acts, metadatas, doc_indices
-    #     return docs, acts, metadatas
 
     def top_activations_and_metadatas_for_family(
         self,

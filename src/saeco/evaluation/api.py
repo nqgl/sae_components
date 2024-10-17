@@ -34,6 +34,7 @@ from .fastapi_models.families_draft import (
     Feature,
     GetFamiliesRequest,
     GetFamiliesResponse,
+    SetFamilyLabelRequest,
     TopFamilyOverlappingExamplesResponseDoc,
 )
 from .fastapi_models.Feature import Feature
@@ -196,14 +197,14 @@ def create_app(app, root: Evaluation):
     @app.put("/get_families")
     def get_families(query: GetFamiliesRequest) -> GetFamiliesResponse:
         ev = query.filter(root)
-        return ev.cached_call.get_feature_families()
+        return ev.get_feature_families()
 
     @app.put("/family_top_activating_examples")
     def get_family_top_activating_examples(
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopActivatingExamplesResult]:
         ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
+        all_families = ev.get_feature_families()
 
         families = [
             all_families.levels[family.level].families[family.family_id]
@@ -263,7 +264,7 @@ def create_app(app, root: Evaluation):
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopFamilyOverlappingExamplesResponseDoc]:
         ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
+        all_families = ev.get_feature_families()
 
         families = [
             all_families.levels[family.level].families[family.family_id]
@@ -303,7 +304,7 @@ def create_app(app, root: Evaluation):
         query: ActivationsOnDocsRequest,
     ) -> list[ActivationsOnDoc]:
         ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
+        all_families = ev.get_feature_families()
 
         docs, fam_acts, metadatas, feat_acts = ev.get_families_activations_on_docs(
             families=[
@@ -333,7 +334,7 @@ def create_app(app, root: Evaluation):
     @app.put("/init_all_families")
     def init_all_families(query: FilterableQuery, batches=None) -> None:
         ev = query.filter(root)
-        all_families = ev.cached_call.get_feature_families()
+        all_families = ev.get_feature_families()
         families = [
             v for level in all_families.levels for k, v in level.families.items()
         ]
@@ -357,6 +358,18 @@ def create_app(app, root: Evaluation):
         if md.info.tostr is None:
             return None
         return list(md.info.tostr.values())
+
+    @app.put("/set_family_label")
+    def set_family_label(query: SetFamilyLabelRequest) -> None:
+        ev = query.filter(root)
+        ev.set_family_label(query.family, query.label)
+
+    @app.put("/set_feature_label")
+    def set_feature_label(feat_id: int, label: str) -> None:
+        root.set_feature_label(feat_id, label)
+
+    # @app.put("/caching_logit_effects")
+    # def caching_logit_effects(query: ...): ...
 
     return app
 
