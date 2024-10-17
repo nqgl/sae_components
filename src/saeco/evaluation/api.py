@@ -13,6 +13,7 @@ from .fastapi_models import (
     CoActivationResponse,
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
+    FeatureLogitEffectsRequest,
     FilterableQuery,
     GeneInfo,
     MetadataEnrichmentRequest,
@@ -24,6 +25,7 @@ from .fastapi_models import (
     TopActivatingExamplesQuery,
     TopActivatingExamplesResult,
     TopActivationResultEntry,
+    TopKFeatureEffects,
 )
 from .fastapi_models.families_draft import (
     ActivationsOnDoc,
@@ -368,8 +370,19 @@ def create_app(app, root: Evaluation):
     def set_feature_label(feat_id: int, label: str) -> None:
         root.set_feature_label(feat_id, label)
 
-    # @app.put("/caching_logit_effects")
-    # def caching_logit_effects(query: ...): ...
+    @app.put("/patching_logit_effects")
+    def patching_logit_effects(query: FeatureLogitEffectsRequest) -> TopKFeatureEffects:
+        ev = query.filter(root)
+        effects = ev.average_aggregated_patching_effect_on_dataset(
+            feature_id=query.feature,
+            by_fwad=query.by_fwad,
+            random_subset_n=query.random_subset_n,
+        )
+        topk = effects.topk(query.k)
+        return TopKFeatureEffects(
+            tokens=ev.detokenize(topk.indices),
+            values=topk.values,
+        )
 
     return app
 

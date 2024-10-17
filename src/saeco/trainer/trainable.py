@@ -154,15 +154,21 @@ class Trainable(cl.Module):
     def make_cache(self) -> TrainCache:
         return TrainCache()
 
-    def get_acts(self, x, cache: TrainCache = None):
+    def get_acts(self, x, cache: TrainCache = None, pre_acts=False):
         made_cache = False
         if cache is None:
             cache = self.make_cache()
             made_cache = True
         cache.acts = ...
+        if pre_acts:
+            cache.pre_acts = ...
         cache(self)(x)
         acts = cache.acts
+        if pre_acts:
+            preacts = cache.pre_acts
         if made_cache:
             cache.destruct()
             del cache
+        if pre_acts:
+            return acts, preacts
         return acts

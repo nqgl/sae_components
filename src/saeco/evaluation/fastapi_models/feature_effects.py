@@ -7,7 +7,7 @@ class FeatureLogitEffectsRequest(FilterableQuery):
     feature: int
     by_fwad: bool = True
     k: int = 100
-    random_subset_n: int = None
+    random_subset_n: int | None = None
 
 
 class TopKFeatureEffects(BaseModel):

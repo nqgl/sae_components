@@ -852,6 +852,12 @@ class Evaluation:
                     )
         return GetFamiliesResponse(levels=levels)
 
+    def get_feature(self, feat_id) -> Feature:
+        return Feature(
+            feature_id=int(feat_id),
+            label=self.get_feature_label(feat_id),
+        )
+
     def top_coactivating_features(self, feature_id, top_n=10, mode="seq"):
         """
         mode: "seq" or "doc"
@@ -942,7 +948,9 @@ class Evaluation:
         return apply_nnsight
 
     def run_with_sae(self, tokens, patch=lambda x: x):
-        with self.nnsight_model.trace(tokens) as tracer:
+        with self.nnsight_model.trace(
+            tokens, **self.sae_cfg.train_cfg.data_cfg.model_cfg.model_kwargs
+        ) as tracer:
             lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
             res = self.sae_with_patch(patch, return_sae_acts=True)(lm_acts)
             patch_in = self._skip_bos_if_appropriate(lm_acts, res[0])
@@ -975,7 +983,9 @@ class Evaluation:
 
             patched_sae = self.sae_with_patch(fwad_hook)
             with fwAD.dual_level():
-                with self.nnsight_model.trace(tokens) as tracer:
+                with self.nnsight_model.trace(
+                    tokens, **self.sae_cfg.train_cfg.data_cfg.model_cfg.model_kwargs
+                ) as tracer:
                     lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
                     orig_lm_acts = lm_acts.save()
                     acts_re = patched_sae(orig_lm_acts).save()
@@ -1099,7 +1109,9 @@ class Evaluation:
 
         with fwad_safe_sdp():
             with fwAD.dual_level():
-                with self.nnsight_model.trace(tokens) as tracer:
+                with self.nnsight_model.trace(
+                    tokens, **self.sae_cfg.train_cfg.data_cfg.model_cfg.model_kwargs
+                ) as tracer:
                     embed = self.nnsight_model.transformer.wte.output
                     self.nnsight_model.transformer.wte.output = nnsight.apply(
                         tangentize_embedding, embed
@@ -1154,10 +1166,9 @@ class Evaluation:
         what happens when we ablate the feature?
         """
         results = torch.zeros(
-            self.seq_len,
             self.d_vocab,
         ).to(self.cuda)
-        num_batches = torch.zeros(self.seq_len).to(self.cuda) + 1e-6
+        num_batches = 0
         for ldiff, batch_seq_pos in self.patching_effect_on_dataset(
             feature_id=feature_id,
             batch_size=batch_size,
@@ -1165,10 +1176,9 @@ class Evaluation:
             by_fwad=by_fwad,
             random_subset_n=random_subset_n,
         ):
-            for j in range(batch_seq_pos.shape[0]):
-                results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
-                num_batches[: -batch_seq_pos[j]] += 1
-        return results / num_batches.unsqueeze(-1)
+            results += ldiff.sum(dim=0).mean(dim=0)
+            num_batches += ldiff.shape[0]
+        return results / num_batches
 
     def custom_patching_effect_aggregation(
         self,
@@ -1206,28 +1216,30 @@ class Evaluation:
         """
         if scale is None:
             scale = 1 if by_fwad else 0
-        feature0 = self.features[feature_id]
+        feature0 = self.features[feature_id].to(self.cuda)
         feature = feature0.filter_inactive_docs()
         if random_subset_n:
             if (s := feature.filter.mask.sum()) > random_subset_n:
-                new_mask = torch.zeros_like(feature.filter.mask)
-                new_mask[feature.filter.mask] = torch.randperm(s) < random_subset_n
+                new_mask = torch.zeros_like(feature.filter.mask, device=self.cuda)
+                new_mask[feature.filter.mask] = (
+                    torch.randperm(s, device=self.cuda) < random_subset_n
+                )
                 assert new_mask.sum() == random_subset_n
                 new_feature = feature.mask_by_other(
                     new_mask, return_ft=True, presliced=True, value_like=False
                 )
-                nfi = new_feature.indices()
-                fi = feature.indices().transpose(0, 1).tolist()
-                if nfi.numel() > 0:
-                    for i in nfi.transpose(0, 1).tolist():
-                        assert i in fi
+                # nfi = new_feature.indices()
+                # fi = feature.indices().transpose(0, 1).tolist()
+                # if nfi.numel() > 0:
+                #     for i in nfi.transpose(0, 1).tolist():
+                #         assert i in fi
                 feature = new_feature
         feature_active = feature.indices()
         feature = feature.to_dense()
 
         with torch.no_grad():
             for chunk in tqdm.tqdm(self.saved_acts.chunks):
-                tokens = chunk.tokens
+                tokens = chunk.tokens.to(self.cuda)
                 docs, mask = tokens.index_where_valid(feature_active[0:1])
                 seq_pos = feature_active[1, mask]
                 assert docs.shape[0] == seq_pos.shape[0]

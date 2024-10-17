@@ -16,12 +16,14 @@ from saeco.components import (
 
 from saeco.components.hooks.clipgrad import ClipGrad
 from saeco.components.losses.losses import TruncatedL2Loss
+from saeco.components.metrics.metrics import PreActs
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.core import Seq
 from saeco.initializer import Initializer
 
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig, Swept
+
 
 # torch.backends.cudnn.benchmark = True
 
@@ -160,6 +162,7 @@ def dynamic_thresh_sae(
             Seq(
                 **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
                 lin=init.encoder,
+                pre_acts=PreActs(),
                 nonlinearity=thrlu,
                 freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
             )

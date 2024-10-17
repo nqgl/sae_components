@@ -122,3 +122,18 @@ class ActMetrics(Metrics):
         return super().forward(
             x, cache=GlobalizedCache(cache, subname=self.name), **kwargs
         )
+
+
+class PreActs(Metrics):
+    def __init__(self, name=None, **kwargs):
+        self.name = name
+        if "acts" in kwargs or "pre_acts" in kwargs:
+            raise ValueError("acts is a reserved keyword")
+        super().__init__(**kwargs, pre_acts=cl.ops.Identity())
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        cache.act_metrics_name = ...
+        cache.act_metrics_name = self.name
+        return super().forward(
+            x, cache=GlobalizedCache(cache, subname=self.name), **kwargs
+        )
