@@ -4,6 +4,8 @@ import torch
 from load import root_eval
 
 
+levels, families = root_eval.generate_feature_families2()
+(levels[1] == levels[2]).all()
 all_families = root_eval.get_feature_families()
 fams2 = [all_families.levels[0].families[0], all_families.levels[0].families[1]]
 res = root_eval.top_overlapped_feature_family_documents(

@@ -115,7 +115,7 @@ class FamilyTreeNode:
 
     @cached_property
     def family(self):
-        return set(self.descendant_ids) | {self.feature_id}
+        return {int(i) for i in self.descendant_ids} | {int(self.feature_id)}
 
     @cached_property
     def children_ids(self):

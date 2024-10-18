@@ -573,7 +573,13 @@ class Evaluation:
         return levels
 
     def generate_feature_families2(
-        self, doc_agg=None, threshold=0.1, n=3, use_D=False, freq_bounds=None
+        self,
+        doc_agg=None,
+        threshold=0.1,
+        n=3,
+        use_D=False,
+        freq_bounds=None,
+        min_family_sizes=[20, 12, 7],
     ):
         # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
         if use_D:
@@ -610,20 +616,30 @@ class Evaluation:
         from .mst import Families, FamilyTreeNode, mst, my_mst
 
         levels = []
-        feat_counts = feat_counts.to(self.cuda)
-        for _ in tqdm.trange(n):
+        families = []
+        for i in range(n):
             tree = mst(C).transpose(0, 1)
             roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
+            family = Families.from_tree(tree)
+            kept = [r for r in family.roots if len(r) > min_family_sizes[i]]
+            mask = torch.zeros_like(C, dtype=torch.bool)
+            for f in tqdm.tqdm(kept):
+                m = torch.zeros_like(mask[0])
+                m[list(f.family)] = 1
+                mask |= m.unsqueeze(0) & m.unsqueeze(1)
+            C[~mask] = 0
+
             # for i in range(nz.shape[0]):
             #     c = nz[i]
             #     assert feat_counts[c[0]] >= feat_counts[c[1]]
             # families = Families.from_tree(tree)
             levels.append(tree)
+            families.append(kept)
             C[roots] = 0
             C[:, roots] = 0
         # roots = [((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0) for tree in levels]
 
-        return levels
+        return levels, families
 
     @torch.no_grad()
     def generate_feature_families(self, doc_agg=None, threshold=None, n=3, use_D=False):
@@ -726,7 +742,7 @@ class Evaluation:
         # learned =
         # C = info.clone()
         C = info
-        threshold = threshold or C[C > 0].median()
+        threshold = threshold if threshold is not None else C[C > 0].median()
         # C = unnormalized / (().cpu().unsqueeze(-1) + 1e-6)
 
         C.max(dim=0, keepdim=True)
@@ -775,11 +791,11 @@ class Evaluation:
         return levels
 
     @torch.no_grad()
-    def _get_feature_family_trees(
+    def _get_feature_family_treesz(
         self, doc_agg=None, threshold=None, n=3, use_D=False, freq_bounds=None
     ):
         return torch.stack(
-            self.generate_feature_families1(
+            self.generate_feature_families2(
                 doc_agg=doc_agg,
                 threshold=threshold,
                 n=n,
@@ -811,7 +827,7 @@ class Evaluation:
     def _get_feature_families_unlabeled(self) -> GetFamiliesResponse:
         from .mst import Families, FamilyTreeNode
 
-        levels = self.cached_call._get_feature_family_trees()
+        levels = self.cached_call._get_feature_family_treesz()
         famlevels = [Families.from_tree(f) for f in levels]
 
         niceroots: list[list[FamilyTreeNode]] = [
