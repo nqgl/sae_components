@@ -628,6 +628,7 @@ class Evaluation:
                 m[list(f.family)] = 1
                 mask |= m.unsqueeze(0) & m.unsqueeze(1)
             C[~mask] = 0
+            tree[~mask] = 0
 
             # for i in range(nz.shape[0]):
             #     c = nz[i]
@@ -792,7 +793,7 @@ class Evaluation:
 
     @torch.no_grad()
     def _get_feature_family_treesz(
-        self, doc_agg=None, threshold=None, n=3, use_D=False, freq_bounds=None
+        self, doc_agg="count", threshold=None, n=3, use_D=False, freq_bounds=None
     ):
         return torch.stack(
             self.generate_feature_families2(
@@ -801,7 +802,7 @@ class Evaluation:
                 n=n,
                 use_D=use_D,
                 freq_bounds=freq_bounds,
-            )
+            )[0]
         )
 
     def get_feature_families(self):
@@ -809,6 +810,34 @@ class Evaluation:
         for level in ffs.levels:
             for family in level.families.values():
                 family.label = self.get_family_label(family)
+        ###
+        feature_level = FamilyLevel(
+            level=3,
+            families={
+                i: Family(
+                    level=3,
+                    family_id=i,
+                    label=None,
+                    subfamilies=[],
+                    subfeatures=[],
+                )
+                for i in range(self.d_dict)
+                if i < 1000
+            },
+        )
+        ffs.levels.append(feature_level)
+        for family in ffs.levels[2].families.values():
+            family.subfamilies.extend(
+                [
+                    ScoredFamilyRef(
+                        family=FamilyRef(level=3, family_id=feat.feature.feature_id),
+                        score=feat.score,
+                    )
+                    for feat in family.subfeatures
+                    if feat.feature.feature_id < 1000
+                ]
+            )
+        ###
         return ffs
 
     def get_feature_label(self, feature_id):
@@ -823,11 +852,12 @@ class Evaluation:
     def set_family_label(self, family: FamilyRef, label: str):
         self.family_labels[str((int(family.level), int(family.family_id)))] = label
 
-    @cache_version(6)
+    @cache_version(10)
     def _get_feature_families_unlabeled(self) -> GetFamiliesResponse:
         from .mst import Families, FamilyTreeNode
 
-        levels = self.cached_call._get_feature_family_treesz()
+        # TODO .cached_call
+        levels = self._get_feature_family_treesz()
         famlevels = [Families.from_tree(f) for f in levels]
 
         niceroots: list[list[FamilyTreeNode]] = [

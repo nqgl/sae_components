@@ -42,8 +42,10 @@ from .fastapi_models.families_draft import (
 from .fastapi_models.Feature import Feature
 from .fastapi_models.intersection_filter import GetIntersectionFilterKey
 
+LLM = True
 
-def create_app(app, root: Evaluation):
+
+def create_app(app: FastAPI, root: Evaluation):
     gene_conversions_path = (
         Path.home() / "workspace" / "cached_sae_acts" / "class_conversion.json"
     )
@@ -160,7 +162,16 @@ def create_app(app, root: Evaluation):
                     count=count,
                     normalized_count=normalized_count,
                     score=score,
-                    info=gene_conversions[tokstr],
+                    info=(
+                        GeneInfo(
+                            category=tokstr,
+                            geneClass=tokstr,
+                            geneName=tokstr,
+                            displayBoth=False,
+                        )
+                        if LLM
+                        else gene_conversions[tokstr]
+                    ),
                 )
                 for tokstr, token, count, normalized_count, score in zip(
                     tokstrs,
@@ -372,6 +383,12 @@ def create_app(app, root: Evaluation):
 
     @app.put("/patching_logit_effects")
     def patching_logit_effects(query: LogitEffectsRequest) -> TopKFeatureEffects:
+        # return TopKFeatureEffects(
+        #     pos_tokens=[str(i) for i in range(query.k)],
+        #     pos_values=list(range(query.k)),
+        #     neg_tokens=[str(i) for i in range(query.k)],
+        #     neg_values=list(range(query.k)),
+        # )
         ev = query.filter(root)
         effects = ev.average_aggregated_patching_effect_on_dataset(
             feature_id=query.feature,
