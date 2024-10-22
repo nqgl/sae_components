@@ -67,13 +67,20 @@ class FamilyOps:
             str_metadatas=str_metadatas,
         )
 
+    def _get_family_psuedofeature_artifact_names(
+        self: "Evaluation", families: list[Family], aggregation_method: str
+    ) -> list[str]:
+        return [
+            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}_version{self._get_feature_families_unlabeled._version}"
+            for family in families
+        ]
+
     def get_family_psuedofeature_tensors(
         self: "Evaluation", families: list[Family], aggregation_method="sum", cuda=True
     ) -> list[FilteredTensor]:
-        artifact_names = [
-            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
-            for family in families
-        ]
+        artifact_names = self._get_family_psuedofeature_artifact_names(
+            families, aggregation_method
+        )
         self.init_family_psuedofeature_tensors(families, aggregation_method)
         return [
             FilteredTensor.from_value_and_mask(
@@ -90,10 +97,9 @@ class FamilyOps:
     def init_family_psuedofeature_tensors(
         self: "Evaluation", families: list[Family], aggregation_method="sum"
     ) -> list[FilteredTensor]:
-        artifact_names = [
-            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
-            for family in families
-        ]
+        artifact_names = self._get_family_psuedofeature_artifact_names(
+            families, aggregation_method
+        )
         precached = [
             artifact_name in self.artifacts for artifact_name in artifact_names
         ]
@@ -180,7 +186,7 @@ class FamilyOps:
                 agg_doc_score += da.to(self.cuda)
         agg_doc = FilteredTensor.from_value_and_mask(value=agg_doc_score, mask=agg_mask)
 
-        k = Evaluation._pk_to_k(p, k, agg_doc_score.shape[0])
+        k = self._pk_to_k(p, k, agg_doc_score.shape[0])
         if k == 0:
             return [], [[] for _ in range(len(families))], [], []
         topk = agg_doc.value.topk(k, sorted=True)
