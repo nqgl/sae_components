@@ -22,7 +22,7 @@ PROJECT = "sae sweeps"
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         # data_cfg=gpt_2_block(7, "input"),
-        data_cfg=gemma_2_2b_openwebtext,
+        data_cfg=gpt_2_block(),
         # data_cfg=DataConfig(
         #     model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True)),
         #     # trainsplit=SplitConfig(start=0, end=40, tokens_from_split=50_000_000),
@@ -45,7 +45,7 @@ cfg = RunConfig[Config](
         l0_targeting_enabled=False,
         l0_target_adjustment_size=0.0002,
         coeffs={
-            "sparsity_loss": Swept(0.01),
+            "sparsity_loss": Swept(3e-4),
             "L2_loss": 1,
         },
         #

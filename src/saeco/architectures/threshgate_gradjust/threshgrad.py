@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from saeco.components.penalties.l0targeter import L0Targeting
 from saeco.sweeps import SweepableConfig
-from torch.cuda.amp import custom_bwd, custom_fwd
+from torch.amp import custom_bwd, custom_fwd
 
 
 def shrinkgrad_adjustment(errors, leniency, dd, b):
@@ -29,7 +29,7 @@ windows = {"sig": sig_grad}
 def GT2(grad_window=sig_grad):
     class GT2(torch.autograd.Function):
         @staticmethod
-        @custom_fwd
+        @custom_fwd(device_type="cuda")
         def forward(ctx, gate_pre, gate_post, noise, mag, leniency, dd=768):
             gate = gate_pre > 0
             ctx.save_for_backward(gate_pre, mag, gate)
@@ -40,7 +40,7 @@ def GT2(grad_window=sig_grad):
             return gate.float()
 
         @staticmethod
-        @custom_bwd
+        @custom_bwd(device_type="cuda")
         def backward(ctx: torch.Any, grad_output):
 
             gate_pre, mag, gate = ctx.saved_tensors

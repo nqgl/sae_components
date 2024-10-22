@@ -21,12 +21,14 @@ def get_recons_loss(
     cfg = cfg or encoder.cfg
     loss_list = []
     with_sae = to_losses(
-        with_sae_runner(model, encoder, cfg, skip_first=bos_processed_with_hook)
+        with_sae_runner(model, encoder, cfg, skip_first=not bos_processed_with_hook)
     )
     zero = to_losses(
-        zero_ablated_runner(model, cfg, skip_first=bos_processed_with_hook)
+        zero_ablated_runner(model, cfg, skip_first=not bos_processed_with_hook)
     )
-    normal = to_losses(normal_runner(model, cfg, skip_first=bos_processed_with_hook))
+    normal = to_losses(
+        normal_runner(model, cfg, skip_first=not bos_processed_with_hook)
+    )
     rand_tokens = tokens[torch.randperm(len(tokens))]
     with torch.autocast(device_type="cuda"):
         for i in range(num_batches):

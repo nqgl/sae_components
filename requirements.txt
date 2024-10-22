@@ -11,4 +11,4 @@ attrs
 jaxtyping
 datasets
 transformers
-# torchlars
+torchlars

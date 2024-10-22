@@ -235,7 +235,7 @@ class FamilyGenerator:
                 )
         return d, n
 
-    @cache_version(16)
+    @cache_version(17)
     def _get_feature_families_unlabeled(self, **kwargs) -> GetFamiliesResponse:
         from ..mst import Families, FamilyTreeNode
 
@@ -770,15 +770,16 @@ class FamilyGenerator:
     def generate_feature_families4(
         self: "Evaluation",
         doc_agg=None,
-        threshold=0.1,
+        threshold=0.0,
         n=3,
         use_D=False,
-        min_family_sizes=[200, 40, 7, 5, 3],
-        max_num_families=[2**2, 2**5, 2**8],
+        min_family_sizes=[20, 10, 7, 5, 3],
+        max_num_families=[2**3, 2**7, 2**10],
     ):
-        conn = lambda CC, tree, roots: connectedness(
+        cconn = lambda CC, tree, roots: connectedness(
             tree.to(self.cuda), roots.to(self.cuda)
         ).to(CC.device)
+        conn = lambda CC, tree, roots: CC[roots]
         fam_fn = bid_on_dists
         fam_max = lambda x: x.max(dim=0)
 
@@ -787,6 +788,7 @@ class FamilyGenerator:
             dist_gen=conn,
             fam_fn=bid_on_dists,
             cuda=self.cuda,
+            dist_gen_final=cconn,
         )
 
         return fg(
@@ -909,15 +911,19 @@ class FamilyGenerator:
         return C
 
 
+from typing import Callable
+
+
 @define
 class FamilyGen:
-    getC: callable
-    dist_gen: callable
+    getC: Callable
+    dist_gen: Callable
     cuda: torch.device
-    fam_fn: callable = bid_on_dists
+    fam_fn: Callable = bid_on_dists
     transpose_tree: bool = True
     root_connection_mult: float = 0.0
-    no_family_connection: float = 0.01
+    no_family_connection: float = 0.0001
+    dist_gen_final: Callable | None = None
 
     def nf_fam(self, dist):
         if self.no_family_connection == 0:
@@ -935,10 +941,10 @@ class FamilyGen:
     def __call__(
         self,
         doc_agg=None,
-        threshold=0.1,
+        threshold=0.0,
         n=3,
         use_D=False,
-        min_family_sizes=[200, 40, 7, 5, 3],
+        min_family_sizes=[20, 10, 7, 5, 3],
         max_num_families=[2**2, 2**5, 2**8],
     ):
         C = self.getC(doc_agg=doc_agg, use_D=use_D, threshold=threshold)
@@ -974,7 +980,9 @@ class FamilyGen:
                 dists = self.dist_gen(CC=CC, tree=tree, roots=roots)
                 families = self.nf_fam(dists)
                 u, n = families.indices[families.values != 0].unique(return_counts=True)
-            dists = self.dist_gen(CC=CC, tree=tree, roots=roots)
+            dists = (self.dist_gen_final or self.dist_gen)(
+                CC=CC, tree=tree, roots=roots
+            )
             families = self.nf_fam(dists)
             u, n = families.indices[families.values != 0].unique(return_counts=True)
 
