@@ -4,6 +4,7 @@ from typing import Optional
 import datasets
 import torch
 from pydantic import Field
+from safetensors.torch import load_file, save_file
 from torch.utils.data import DataLoader
 
 from saeco.data.acts_data import ActsData, ActsDataset
@@ -17,7 +18,6 @@ from saeco.data.tokens_data import TokensData
 from saeco.sweeps import SweepableConfig
 
 
-# @dataclass
 class DataConfig(SweepableConfig):
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"
     load_from_disk: bool = False
@@ -47,8 +47,9 @@ class DataConfig(SweepableConfig):
     generation_config: DataGenerationProcessConfig = Field(
         default_factory=DataGenerationProcessConfig
     )
+    perm_all: bool = False
 
-    def idstr(self):
+    def idstr(self) -> str:
         seq_len = str(self.seq_len) if self.seq_len is not None else "null"
         fromdisk = "fromdisk_" if self.load_from_disk else ""
         extra_strs = fromdisk + seq_len
@@ -137,16 +138,38 @@ class DataConfig(SweepableConfig):
         return getattr(self, f"{split}split")
 
     def load_dataset_from_split(self, split: SplitConfig, to_torch=True):
-        if self.load_from_disk:
-            dataset = datasets.load_from_disk(
-                self.dataset,
+        if self.perm_all:
+            perm_path = (
+                DATA_DIRS._CHUNKS_DIR
+                / self.idstr()
+                / self.model_cfg.modelstring
+                / "perm.safetensors"
             )
-        else:
+            assert not self.load_from_disk
             dataset = datasets.load_dataset(
                 self.dataset,
-                split=split.get_split_key(),
                 cache_dir=DATA_DIRS.CACHE_DIR,
             )
+            if not perm_path.exists():
+                perm = torch.randperm(len(dataset))
+                save_file({"perm", perm}, perm_path)
+            else:
+                perm = load_file(perm_path)["perm"]
+            start = int(len(dataset) * split.start / 100)
+            end = int(len(dataset) * split.end / 100)
+            split_perm = perm[start:end]
+            dataset = dataset.select(split_perm)
+        else:
+            if self.load_from_disk:
+                dataset = datasets.load_from_disk(
+                    self.dataset,
+                )
+            else:
+                dataset = datasets.load_dataset(
+                    self.dataset,
+                    split=split.get_split_key(),
+                    cache_dir=DATA_DIRS.CACHE_DIR,
+                )
 
         if to_torch:
             dataset.set_format(

@@ -87,5 +87,5 @@ class ModelConfig(SweepableConfig):
         self._setmodel(m)
 
     @property
-    def modelstring(self):
+    def modelstring(self) -> str:
         return f"{self.model_name}_{self.acts_cfg.actstring}"
