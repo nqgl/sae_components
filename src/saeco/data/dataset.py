@@ -53,6 +53,12 @@ class DataConfig(SweepableConfig):
         seq_len = str(self.seq_len) if self.seq_len is not None else "null"
         fromdisk = "fromdisk_" if self.load_from_disk else ""
         extra_strs = fromdisk + seq_len
+        extra_strs += "_perm" if self.perm_all else ""
+        extra_strs += (
+            f"_kwargs{self.model_cfg.model_kwargs}"
+            if self.model_cfg.model_kwargs
+            else ""
+        )
         return f"{self.dataset.replace('/', '_')}_{extra_strs}_{self.set_bos}"
 
     def _get_tokens_split_path(self, split: SplitConfig):
