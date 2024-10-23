@@ -158,6 +158,7 @@ class DataConfig(SweepableConfig):
                 cache_dir=DATA_DIRS.CACHE_DIR,
             )
             if not perm_path.exists():
+                perm_path.parent.mkdir(parents=True, exist_ok=True)
                 perm = torch.randperm(dataset.shape[0])
                 save_file({"perm": perm}, perm_path)
             else:
