@@ -154,11 +154,12 @@ class DataConfig(SweepableConfig):
             assert not self.load_from_disk
             dataset = datasets.load_dataset(
                 self.dataset,
+                split=split.split,
                 cache_dir=DATA_DIRS.CACHE_DIR,
             )
             if not perm_path.exists():
-                perm = torch.randperm(len(dataset))
-                save_file({"perm", perm}, perm_path)
+                perm = torch.randperm(dataset.shape[0])
+                save_file({"perm": perm}, perm_path)
             else:
                 perm = load_file(perm_path)["perm"]
             start = int(len(dataset) * split.start / 100)
