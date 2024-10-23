@@ -305,6 +305,7 @@ class Trainer:
             else:
                 loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
         self.eval_log(cache)
+        cache.destruct()
 
     def do_intermittent_metrics(self, buffer=None):
         self.log_recons("recons/with_bos/", True)
