@@ -94,6 +94,15 @@ class SparseGrowingDiskTensor:
         ).coalesce()
 
     @property
+    def tensor_uncoalesced(self):
+        assert self.indices.finalized and self.values.finalized
+        return torch.sparse_coo_tensor(
+            self.indices.tensor,
+            self.values.tensor,
+            self.shape,
+        )
+
+    @property
     def indices_path(self):
         return self.path / "indices.bin"
 

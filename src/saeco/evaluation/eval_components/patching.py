@@ -35,10 +35,12 @@ class Patching:
         call_patch_with_cache=False,
         act_name=None,
         return_sae_acts=False,
+        return_sae_preacts=False,
     ):
         """
         patch_fn maps from acts to patched acts and returns the patched acts
         """
+        assert not (return_sae_preacts and not return_sae_acts)
 
         def shaped_hook(shape, return_acts_l=None):
             def acts_hook(cache, acts):
@@ -69,6 +71,8 @@ class Patching:
             cache = self.sae.make_cache()
             cache.acts = ...
             cache.act_metrics_name = ...
+            if return_sae_preacts:
+                cache.pre_acts = ...
             shape = x.shape
             x = einops.rearrange(x, "doc seq data -> (doc seq) data")
             if cache_template is not None:
@@ -82,8 +86,18 @@ class Patching:
             out = einops.rearrange(
                 out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
             )
+            if return_sae_preacts:
+                pre_acts = einops.rearrange(
+                    cache.pre_acts,
+                    "(doc seq) data -> doc seq data",
+                    doc=shape[0],
+                    seq=shape[1],
+                )
+            cache.destruct()
             if return_sae_acts:
                 assert len(acts_l) == 1
+                if return_sae_preacts:
+                    return (out, acts_l[0], pre_acts)
                 return (out, acts_l[0])
             return out
 
@@ -406,3 +420,82 @@ class Patching:
                     else:
                         ldiff = self.patchdiff(batch_docs, patch_fn, invert=True)
                     yield ldiff, batch_seq_pos
+
+    def get_acts_with_intervention(
+        self: "Evaluation", tokens, write_in_site, intervention_fn
+    ):
+        with self.nnsight_model.trace(tokens) as tracer:
+            setsite(
+                self.nnsight_model,
+                write_in_site,
+                nnsight.apply(
+                    intervention_fn, getsite(self.nnsight_model, write_in_site)
+                ),
+            )
+
+            lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+            actsx2 = self.sae_with_patch(
+                lambda x: x, return_sae_acts=True, return_sae_preacts=True
+            )(lm_acts)
+            sae_acts = actsx2[1].save()
+            sae_preacts = actsx2[2].save()
+            lm_acts.stop()
+        return sae_acts, sae_preacts
+
+    @torch.no_grad()
+    def ff_multi_feature(
+        self: "Evaluation", tokens, feat_ids, offset=1, lerp=0.02, scale=1, set_or_add=0
+    ):
+        if tokens.ndim == 1:
+            tokens = tokens.unsqueeze(0).expand(feat_ids.shape[0], -1)
+        else:
+            assert tokens.ndim == 2 and tokens.shape[0] == feat_ids.shape[0]
+
+        def patch_fn(acts):
+            acts = acts.clone()
+            if set_or_add == 0:
+                assert (
+                    (acts[torch.arange(len(feat_ids)), :, feat_ids] > 0).any(-1).all()
+                )
+            assert acts.ndim == 3
+            if set_or_add > 0:
+                acts[torch.arange(len(feat_ids)), :, feat_ids] += set_or_add
+            else:
+                acts[torch.arange(len(feat_ids)), :, feat_ids] = set_or_add
+            return acts
+
+        normal_out1 = self.run_with_sae(tokens)
+        patched_out1 = self.run_with_sae(tokens, patch_fn)
+
+        input_embedding = self.nnsight_model._model.get_input_embeddings()
+
+        normal_emb = (normal_out1.logits.softmax(-1)) @ input_embedding.weight
+        patched_emb = (patched_out1.logits.softmax(-1)) @ input_embedding.weight
+
+        write_in_site = "transformer.h.0.input"
+
+        def make_intervention(patch_in_value):
+            def intervention_fn(acts: Tensor):
+                replace = acts.clone()
+                if offset:
+                    replace[:, offset:].lerp_(patch_in_value[:, :-offset], lerp)
+                else:
+                    replace.lerp_(patch_in_value, lerp)
+                replace *= scale
+                return replace
+
+            return intervention_fn
+
+        patched_acts, patched_preacts = self.get_acts_with_intervention(
+            tokens, write_in_site, make_intervention(patched_emb)
+        )
+        normal_acts, normal_preacts = self.get_acts_with_intervention(
+            tokens, write_in_site, make_intervention(normal_emb)
+        )
+        if set_or_add == 0:
+            return (
+                normal_acts - patched_acts,
+                normal_preacts - patched_preacts,
+            )
+        else:
+            return patched_acts - normal_acts, patched_preacts - normal_preacts

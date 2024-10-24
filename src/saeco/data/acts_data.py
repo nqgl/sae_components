@@ -58,6 +58,7 @@ class ActsData:
         rearrange=True,
         skip_exclude=False,
         force_not_skip_padding=False,
+        batched_kwargs={},
     ):
         acts_list = []
         with torch.autocast(device_type="cuda", dtype=self.cfg.model_cfg.torch_dtype):
@@ -67,10 +68,14 @@ class ActsData:
                     tokens.shape[0],
                     llm_batch_size,
                 ):
-                    model: nnsight.LanguageModel = self.model
+                    batch_kwargs = {
+                        k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
+                    }
+                    model = self.model
                     with model.trace(
                         tokens[i : i + llm_batch_size],
                         **self.cfg.model_cfg.model_kwargs,
+                        **batch_kwargs,
                     ):
                         acts_module = getsite(model, self.cfg.model_cfg.acts_cfg.site)
                         acts = acts_module.save()
