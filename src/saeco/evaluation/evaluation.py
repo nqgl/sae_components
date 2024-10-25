@@ -490,15 +490,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @property
     def token_occurrence_count(self):
-        return self.cached_call._get_token_occurrences()
-
-    def _get_token_occurrences(self):
-        counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
-        for chunk in tqdm.tqdm(self.saved_acts.chunks):
-            tokens = chunk.tokens.value.to(self.cuda)
-            t, c_counts = tokens.unique(return_counts=True)
-            counts[t] += c_counts
-        return counts
+        return self.cached_call.count_token_occurrence()
 
     def top_activating_examples(self, feature_id: int, p=None, k=None):
         feature = self.features[feature_id]
@@ -668,7 +660,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @property
     def seq_activation_counts(self):
-        return self.cached_call._feature_num_active_tokens()
+        return self.cached_call._feature_num_active_tokens().cpu()
 
     @property
     def seq_activation_probs(self):
@@ -676,7 +668,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @property
     def doc_activation_counts(self):
-        return self.cached_call._feature_num_active_docs()
+        return self.cached_call._feature_num_active_docs().cpu()
 
     @property
     def doc_activation_probs(self):

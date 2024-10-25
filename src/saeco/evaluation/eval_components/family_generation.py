@@ -21,6 +21,9 @@ from attrs import define, field
 
 from torch import Tensor
 
+INFOC_VERSION = 2
+MAIN_VERSION = 19
+
 
 @define
 class Controller: ...
@@ -127,42 +130,6 @@ def bid_on_dists(dists):
     return bm
 
 
-def distances2(tree: Tensor, roots: Tensor):
-    tree = tree + tree.transpose(0, 1)
-    tree = torch.where(tree > 0, tree, torch.inf)
-
-    root_ids = roots.nonzero()[:, 0]
-    dists = torch.zeros(
-        roots.sum(),
-        tree.shape[0],
-        device=tree.device,
-    )
-    dists[:] = torch.inf
-
-    dists[root_ids, torch.arange(len(root_ids))] = 0
-    visited = torch.zeros_like(dists, dtype=torch.bool)
-    # print("root", root)
-    while True:
-        nextmask = (dists != torch.inf) & ~visited
-        if not nextmask.any():
-            break
-        tree[nextmask].shape
-        v = tree[nextmask]
-        v[:, visited] = torch.inf
-        m = v.min(dim=1)
-        # print(m.indices)
-        notinf = v != torch.inf
-        z = torch.where(notinf, (v + dist[nextmask].unsqueeze(-1)), 0).sum(0)
-
-        dist[notinf.any(0)] = z[notinf.any(0)]
-        # print((dist != torch.inf).sum())
-        visited |= nextmask
-        if visited.all():
-            break
-
-    return dists
-
-
 class FamilyGenerator:
 
     @torch.no_grad()
@@ -235,7 +202,7 @@ class FamilyGenerator:
                 )
         return d, n
 
-    @cache_version(17)
+    @cache_version(MAIN_VERSION + INFOC_VERSION)
     def _get_feature_families_unlabeled(self, **kwargs) -> GetFamiliesResponse:
         from ..mst import Families, FamilyTreeNode
 
@@ -773,8 +740,8 @@ class FamilyGenerator:
         threshold=0.0,
         n=3,
         use_D=False,
-        min_family_sizes=[20, 10, 7, 5, 3],
-        max_num_families=[2**3, 2**7, 2**10],
+        min_family_sizes=[20, 10, 3],
+        max_num_families=[2**5, 2**8, 2**10],
     ):
         cconn = lambda CC, tree, roots: connectedness(
             tree.to(self.cuda), roots.to(self.cuda)
@@ -784,11 +751,11 @@ class FamilyGenerator:
         fam_max = lambda x: x.max(dim=0)
 
         fg = FamilyGen(
-            getC=self.get_infoC,
+            getC=self.cached_call.get_infoC,
             dist_gen=conn,
             fam_fn=bid_on_dists,
             cuda=self.cuda,
-            dist_gen_final=cconn,
+            dist_gen_final=conn,
         )
 
         return fg(
@@ -801,6 +768,7 @@ class FamilyGenerator:
         )
 
     @torch.no_grad()
+    @cache_version(INFOC_VERSION)
     def get_infoC(self: "Evaluation", doc_agg=None, threshold=None, use_D=False):
         unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
         if use_D:
@@ -808,7 +776,7 @@ class FamilyGenerator:
         unnormalized[unnormalized.isnan()] = 0
         feat_counts = (
             self.doc_activation_counts if doc_agg else self.seq_activation_counts
-        )
+        ).cpu()
         # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
 
         def denan(x):
@@ -856,7 +824,7 @@ class FamilyGenerator:
         P_B = probmat(B / N)
         # P_AB = probmat(V / N)
         P_B_given_A = probmat((V + P_B * P_A) / (A + 1))  # +
-        P_B_given_not_A = probmat((B - V + (1 - P_B) * (1 - P_A)) / (N - A + 1))
+        # P_B_given_not_A = probmat((B - V + (1 - P_B) * (1 - P_A)) / (N - A + 1))
         # C = P_A * torch.log()
         # info = A * ent(P_B_given_A) + (N - A) * ent(P_B_given_not_A)
         # info = P_A * nent(V, A) + (1 - P_A) * nent((B - V), (N - A)) - nent(B, N)
@@ -867,16 +835,16 @@ class FamilyGenerator:
         # (info[P_B_given_A > P_B]).sum()
         # (P_B_given_A > P_B).sum() / (P_B_given_A < P_B).sum()
         # r = P_A * torch.log(P_B_given_A / P_B)
-        r = torch.log(P_B_given_A / P_B)
+        # r = torch.log(P_B_given_A / P_B)
         r = ent(P_B) - ent(P_B_given_A)
 
-        t = (1 - P_A) * torch.log(P_B_given_not_A / P_B)
+        # t = (1 - P_A) * torch.log(P_B_given_not_A / P_B)
         # other = P_A * torch.log(P_B_given_A / P_B) + (1 - P_A) * torch.log(
         #     P_B_given_not_A / P_B
         # )
 
         r = denan(r)
-        t = denan(t)
+        # t = denan(t)
         # r[P_B_given_A > P_B].sum()
         # r[P_B_given_A < P_B].sum()
         # t[P_B_given_A > P_B].sum()
