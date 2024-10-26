@@ -117,16 +117,13 @@ def bid_on_dists(dists):
     n_fam = dists.shape[0]
     # root_currency_per_node = torch.ones(n_fam, device=dists.device)
     nodes_owned = torch.ones(n_fam, device=dists.device)
-    for i in range(200):
-        if i % 10 == 0:
-            print(nodes_owned)
+    for i in range(100):
         root_currency_per_node = 1 / (nodes_owned + 1)
         bids = root_currency_per_node.unsqueeze(-1) * dists
         bm = bids.max(dim=0)
         idx = bm.indices[bm.values > 0]
         nodes_owned.scatter_add_(0, idx, torch.ones_like(idx, dtype=torch.float) * 0.03)
         nodes_owned /= 1.03
-        print(nodes_owned)
     return bm
 
 
@@ -675,7 +672,6 @@ class FamilyGenerator:
             # roots = self.artifacts["roots_1234"]
             dists = distances(tree.cuda(), roots.cuda())
             c = connectedness(tree.cuda() * 0.99, roots.cuda())
-            print()
             c.shape
             u, n = c.max(dim=0).indices.unique(return_counts=True)
 
