@@ -10,9 +10,9 @@ from saeco.evaluation.fastapi_models.feature_effects import (
 from saeco.misc.nnsite import getsite, setsite
 from torch import Tensor
 
-b = root_eval.average_aggregated_patching_effect_on_dataset(22535, random_subset_n=200)
-print("did B")
-a = root_eval.average_aggregated_patching_effect_on_dataset(22535)
+# b = root_eval.average_aggregated_patching_effect_on_dataset(22535, random_subset_n=200)
+# print("did B")
+# a = root_eval.average_aggregated_patching_effect_on_dataset(22535)
 
 
 def topk(fd, k=35):
@@ -95,13 +95,13 @@ def procedure2_by_ablation(
         out = root_eval.nnsight_model.output.save()
 
     normal = sae_acts.value
-    fd = patched - normal
+    fd = normal - patched
     return fd
 
 
 @torch.no_grad()
 def procedure2_by_ablation_preacts(
-    tokens, feat_id, offset=1, set_to=0, ln=False, lerp=0.03, scale=1
+    tokens, feat_id, offset=1, set_to=0, ln=False, lerp=0.5, scale=1.1
 ):
     def patch_fn(acts):
         acts = acts.clone()
@@ -191,23 +191,26 @@ def ftk2(feat, set_to=0, doc_index=1, ndocs=20, **kwargs):
     return set([i.item() for i in tk.indices]), tk, topk(-fab)
 
 
-s22, tk22, ntk = ftk2(605, doc_index=1, ndocs=10, set_to=0)
+s22, tk22, ntk = ftk2(606, doc_index=1, ndocs=80, set_to=1)
 
 
 # %%
-e = root_eval.average_aggregated_patching_effect_on_dataset(605)
+e = root_eval.average_aggregated_patching_effect_on_dataset(606, random_subset_n=40)
 tk22
-# %%
+
+
 root_eval.detokenize(e.topk(50).indices)
 # %%
+# %%
 
-for i in [j.item() for j in tk22.indices[:3]]:
+
+for i in [j.item() for j in tk22.indices[:10]]:
     print(i)
     print(
         ",".join(
             root_eval.detokenize(
                 root_eval.average_aggregated_patching_effect_on_dataset(
-                    i, random_subset_n=200
+                    i, random_subset_n=20
                 )
                 .topk(30)
                 .indices
@@ -215,13 +218,13 @@ for i in [j.item() for j in tk22.indices[:3]]:
         )
     )
 print("INVERSES")
-for i in [j.item() for j in ntk.indices[:3]]:
+for i in [j.item() for j in ntk.indices[:10]]:
     print(i)
     print(
         ",".join(
             root_eval.detokenize(
                 root_eval.average_aggregated_patching_effect_on_dataset(
-                    i, random_subset_n=200
+                    i, random_subset_n=20
                 )
                 .topk(30)
                 .indices

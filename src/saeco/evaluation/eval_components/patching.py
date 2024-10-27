@@ -454,9 +454,17 @@ class Patching:
         def patch_fn(acts):
             acts = acts.clone()
             if set_or_add == 0:
-                assert (
-                    (acts[torch.arange(len(feat_ids)), :, feat_ids] > 0).any(-1).all()
-                )
+                if (
+                    not (acts[torch.arange(len(feat_ids)), :, feat_ids] > 0)
+                    .any(-1)
+                    .all()
+                ):
+                    mismatch = (acts[torch.arange(len(feat_ids)), :, feat_ids] > 0).any(
+                        -1
+                    )
+                    print(
+                        f"mismatch: {mismatch.sum()} total empty, {feat_ids[mismatch]}"
+                    )
             assert acts.ndim == 3
             if set_or_add > 0:
                 acts[torch.arange(len(feat_ids)), :, feat_ids] += set_or_add
