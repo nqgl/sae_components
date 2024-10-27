@@ -444,7 +444,14 @@ class Patching:
 
     @torch.no_grad()
     def ff_multi_feature(
-        self: "Evaluation", tokens, feat_ids, offset=1, lerp=0.02, scale=1, set_or_add=0
+        self: "Evaluation",
+        tokens,
+        feat_ids,
+        offset=1,
+        lerp=0.02,
+        scale=1,
+        set_or_add=0,
+        write_in_site="transformer.h.0.input",
     ):
         if tokens.ndim == 1:
             tokens = tokens.unsqueeze(0).expand(feat_ids.shape[0], -1)
@@ -479,8 +486,6 @@ class Patching:
 
         normal_emb = (normal_out1.logits.softmax(-1)) @ input_embedding.weight
         patched_emb = (patched_out1.logits.softmax(-1)) @ input_embedding.weight
-
-        write_in_site = "transformer.h.0.input"
 
         def make_intervention(patch_in_value):
             def intervention_fn(acts: Tensor):
