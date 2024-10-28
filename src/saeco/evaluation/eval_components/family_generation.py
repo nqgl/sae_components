@@ -736,8 +736,8 @@ class FamilyGenerator:
         threshold=0.0,
         n=3,
         use_D=False,
-        min_family_sizes=[20, 10, 3],
-        max_num_families=[2**4, 2**8, 2**10],
+        min_family_sizes=[20, 6, 2],
+        max_num_families=[2**5, 2**8, 2**11],
     ):
         cconn = lambda CC, tree, roots: connectedness(
             tree.to(self.cuda), roots.to(self.cuda)
