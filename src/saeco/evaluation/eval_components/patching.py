@@ -346,12 +346,28 @@ class Patching:
         feature_active = feature.indices()
         feature = feature.to_dense()
 
-        with torch.no_grad():
+        def batch_iter(bbatch):
+            docs = None
+            mask = None
+            seq_pos = None
             for chunk in tqdm.tqdm(self.saved_acts.chunks):
                 tokens = chunk.tokens.to(self.cuda)
-                docs, mask = tokens.index_where_valid(feature_active[0:1])
-                seq_pos = feature_active[1, mask]
-                assert docs.shape[0] == seq_pos.shape[0]
+                docs_i, mask_i = tokens.index_where_valid(feature_active[0:1])
+                seq_pos_i = feature_active[1, mask_i]
+                docs = docs_i if docs is None else torch.cat([docs, docs_i])
+                seq_pos = (
+                    seq_pos_i if seq_pos is None else torch.cat([seq_pos, seq_pos_i])
+                )
+                if docs.shape[0] >= bbatch:
+                    yield docs, seq_pos
+                    docs = None
+                    mask = None
+                    seq_pos = None
+            if docs is not None:
+                yield docs, seq_pos
+
+        with torch.no_grad():
+            for docs, seq_pos in batch_iter(batch_size * 4):
                 for i in range(0, docs.shape[0], batch_size):
                     batch_docs = docs[i : i + batch_size]
                     batch_seq_pos = seq_pos[i : i + batch_size]
