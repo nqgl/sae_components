@@ -116,7 +116,7 @@ def create_app(app: FastAPI, root: Evaluation):
         #     doc_indices=doc_indices.tolist(),
         # )
 
-    @app.put("/top_activating_examples")
+    @app.put("/metadata_enrichment")
     def get_metadata_enrichment(
         query: MetadataEnrichmentRequest,
     ) -> MetadataEnrichmentResponse:
