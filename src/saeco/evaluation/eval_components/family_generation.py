@@ -737,7 +737,7 @@ class FamilyGenerator:
         n=3,
         use_D=False,
         min_family_sizes=[20, 10, 3],
-        max_num_families=[2**5, 2**8, 2**10],
+        max_num_families=[2**4, 2**8, 2**10],
     ):
         cconn = lambda CC, tree, roots: connectedness(
             tree.to(self.cuda), roots.to(self.cuda)
@@ -751,7 +751,7 @@ class FamilyGenerator:
             dist_gen=conn,
             fam_fn=bid_on_dists,
             cuda=self.cuda,
-            dist_gen_final=cconn,
+            dist_gen_final=conn,
         )
 
         return fg(
