@@ -368,7 +368,7 @@ def create_app(app: FastAPI, root: Evaluation):
         print(f"calling get_intersection_filter_key")
         key = root.get_metadata_intersection_filter_key(query.metadatas_values)
 
-        if query.initialzie_families:
+        if query.initialize_families:
             init_all_families(FilterableQuery(filter_id=key))
         return key
 
