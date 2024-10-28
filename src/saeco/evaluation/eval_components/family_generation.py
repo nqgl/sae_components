@@ -22,7 +22,7 @@ from attrs import define, field
 from torch import Tensor
 
 INFOC_VERSION = 2
-MAIN_VERSION = 20
+MAIN_VERSION = 21
 
 
 @define
