@@ -751,7 +751,7 @@ class FamilyGenerator:
             dist_gen=conn,
             fam_fn=bid_on_dists,
             cuda=self.cuda,
-            dist_gen_final=conn,
+            dist_gen_final=cconn,
         )
 
         return fg(
@@ -885,8 +885,8 @@ class FamilyGen:
     cuda: torch.device
     fam_fn: Callable = bid_on_dists
     transpose_tree: bool = True
-    root_connection_mult: float = 0.0
-    no_family_connection: float = 0.0001
+    root_connection_mult: float = 0.03
+    no_family_connection: float = 0.000001
     dist_gen_final: Callable | None = None
 
     def nf_fam(self, dist):
