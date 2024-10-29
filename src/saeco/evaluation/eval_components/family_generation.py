@@ -22,7 +22,7 @@ from attrs import define, field
 from torch import Tensor
 
 INFOC_VERSION = 3
-MAIN_VERSION = 22
+MAIN_VERSION = 23
 
 
 @define
@@ -736,7 +736,7 @@ class FamilyGenerator:
         threshold=0.0,
         n=3,
         use_D=False,
-        min_family_sizes=[10, 6, 2],
+        min_family_sizes=[1, 1, 1],
         max_num_families=[2**5, 2**8, 2**11],
     ):
         cconn = lambda CC, tree, roots: connectedness(
