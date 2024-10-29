@@ -21,8 +21,8 @@ from attrs import define, field
 
 from torch import Tensor
 
-INFOC_VERSION = 3
-MAIN_VERSION = 24
+INFOC_VERSION = 4
+MAIN_VERSION = 25
 
 
 @define
