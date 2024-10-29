@@ -22,7 +22,7 @@ from attrs import define, field
 from torch import Tensor
 
 INFOC_VERSION = 3
-MAIN_VERSION = 23
+MAIN_VERSION = 24
 
 
 @define
@@ -763,8 +763,8 @@ class FamilyGenerator:
             max_num_families=max_num_families,
         )
 
-    @torch.no_grad()
     @cache_version(INFOC_VERSION)
+    @torch.no_grad()
     def get_infoC(self: "Evaluation", doc_agg=None, threshold=None, use_D=False):
         unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
         if use_D:
