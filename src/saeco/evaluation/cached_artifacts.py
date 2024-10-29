@@ -37,6 +37,7 @@ class CachedCalls:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             stringified_call = f"{name}({args}, {kwargs})".replace(".", "-")
+
             if inspect.signature(func).return_annotation is not None and issubclass(
                 inspect.signature(func).return_annotation, BaseModel
             ):
@@ -45,6 +46,8 @@ class CachedCalls:
                 value = func(*args, **kwargs)
                 self.raw.bmstore.set(func, args, kwargs, value)
                 return value
+            if hasattr(func, "_version"):
+                stringified_call += f"__v{func._version}"
 
             if stringified_call in self.raw.artifacts:
                 return self.raw.artifacts[stringified_call]
