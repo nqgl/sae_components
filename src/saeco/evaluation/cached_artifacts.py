@@ -2,7 +2,6 @@ import functools
 import inspect
 
 import shelve
-from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -62,15 +61,3 @@ class CachedCalls:
         return wrapper
 
     def cache_some_other_call(self, func): ...
-
-
-def cache_version(v):
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            return f(*args, **kwargs)
-
-        setattr(wrapper, "_version", v)
-        return wrapper
-
-    return decorator
