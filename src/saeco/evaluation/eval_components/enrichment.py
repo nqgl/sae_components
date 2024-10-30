@@ -44,21 +44,28 @@ class Enrichment:
             feature=feature, p=p, k=k, metadata_keys=metadata_keys
         )
         r = {}
+        num_docs = doc_ids.shape[0]
         for mdname, md in metadatas.items():
             assert md.ndim == 1
             full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
             labels, mdcat_counts = torch.cat([md, full_lc[0]]).unique(
-                return_counts=True
+                return_counts=True  # adds one of each of all labels to it so that it has all metadatas and is consistently indexed with the full counts
             )
             counts = mdcat_counts - 1
             assert (labels == full_lc[0]).all()
             assert counts.shape == labels.shape == full_lc[1].shape
             proportions = counts / full_lc[1]
+            scores = self.score_enrichment(
+                counts=counts,
+                sel_denom=num_docs,
+                total_counts=full_lc[1],
+                total_denom=self.num_docs,
+            )
+            scores = scores[counts > 0]
             labels = labels[counts > 0]
             proportions = proportions[counts > 0]
             counts = counts[counts > 0]
             normalized_counts = proportions * self.num_docs / doc_ids.shape[0]
-            scores = normalized_counts.log()
             if sort_by == TokenEnrichmentSortBy.counts:
                 i = counts.argsort(descending=True)
             elif sort_by == TokenEnrichmentSortBy.normalized_count:
@@ -129,7 +136,12 @@ class Enrichment:
             self.token_occurrence_count.to(self.cuda)[tokens]
             / (self.num_docs * self.seq_len)
         )
-        scores = normalized_counts.log()
+        scores = self.score_enrichment(
+            counts=counts,
+            sel_denom=seltoks.numel(),
+            total_counts=self.token_occurrence_count.to(self.cuda)[tokens],
+            total_denom=self.num_docs * self.seq_len,
+        )
         if sort_by == TokenEnrichmentSortBy.counts:
             i = counts.argsort(descending=True)
         elif sort_by == TokenEnrichmentSortBy.normalized_count:
@@ -144,3 +156,24 @@ class Enrichment:
         scores = scores[i]
 
         return tokens, counts, normalized_counts, scores
+
+    def score_enrichment(
+        self: "Evaluation",
+        total_counts: torch.Tensor,
+        total_denom: int | float,
+        counts: torch.Tensor,
+        sel_denom: torch.Tensor,
+        smoothing=1,
+        r=0.5,
+        base_smoothing=1,
+        r_base=0.5,
+    ):
+        assert total_counts.ndim == counts.ndim == 1
+        base_rate = total_counts.float().mean() / total_denom
+        p_total = (total_counts + base_smoothing * base_rate**r_base) / (
+            total_denom + base_smoothing * base_rate ** (r_base - 1)
+        )
+        p_subset = (counts + smoothing * p_total**r) / (
+            sel_denom + smoothing * p_total ** (r - 1)
+        )
+        return torch.log2(p_subset / p_total)
