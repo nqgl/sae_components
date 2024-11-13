@@ -1,14 +1,16 @@
 # %%
-from saeco.sweeps import SweepableConfig, Swept
-from typing import Any, Optional, overload, Callable
 from functools import wraps
+from typing import Any, Callable, Optional, overload
+
 from pydantic import Field
+
+from saeco.sweeps import SweepableConfig, Swept
 
 
 AmbiguousTypes = [Optional[int | float], int | float]
 # Run length
 # ", resample period
-from saeco.trainer.tosteps_wrapper import RunFloat, ResFloat, tosteps_wrapper
+from saeco.trainer.tosteps_wrapper import ResFloat, RunFloat, tosteps_wrapper
 
 
 def assert_wrapped(fn):
@@ -38,12 +40,13 @@ class RunSchedulingConfig(SweepableConfig):
     targeting_warmup_length: int | RunFloat = 0.15
 
     ### lr scheduler # this is not quite the continuous pretraining scheduler, seems fine though
-    lr_warmup_length: int | RunFloat = 0.05
+    lr_warmup_length: int | RunFloat = 1_500
     lr_cooldown_length: int | RunFloat = 0.2
     lr_resample_warmup_length: int | ResFloat = 0.2
-    lr_warmup_factor: float = 0.0
-    lr_cooldown_factor: float = 0.0
-    lr_resample_warmup_factor: float = 0.0
+    lr_warmup_factor: float = 0.1
+    lr_cooldown_factor: float = 0.1
+    lr_resample_warmup_factor: float = 0.1
+    lr_geometric_rescale: bool = False
 
     # def model_post_init(self):
     @property
@@ -99,6 +102,42 @@ class RunSchedulingConfig(SweepableConfig):
 
     @assert_wrapped
     def lr_scale(self, t: int) -> float:
+        if self.lr_geometric_rescale:
+
+            def interpolate(scale, factor):
+                assert 0 < factor <= 1 and 0 <= scale <= 1
+                return factor ** (1 - scale)
+
+        else:
+
+            def interpolate(scale, factor):
+                assert 0 <= factor <= 1 and 0 <= scale <= 1
+                return max(scale, factor)
+
+        return self._lr_scale2(t, interpolate)
+
+    @assert_wrapped
+    def _lr_scale2(self, t: int, interpolator: Callable) -> float:
+        re_lr = 1
+        endmin = 1
+        if self.lr_resample_warmup_length and (resample_t := self.resample_t(t)) != -1:
+            re_lr = interpolator(
+                min(resample_t / self.lr_resample_warmup_length, 1),
+                self.lr_resample_warmup_factor,
+            )
+        if t < self.lr_warmup_length:
+            return re_lr * interpolator(
+                t / self.lr_warmup_length, self.lr_warmup_factor
+            )
+        to_end = self.run_length - t
+        if to_end < self.lr_cooldown_length:
+            return re_lr * interpolator(
+                to_end / self.lr_cooldown_length, self.lr_cooldown_factor
+            )
+        return re_lr
+
+    @assert_wrapped
+    def _lr_scale(self, t: int) -> float:
         re_lr = 1
         if self.lr_resample_warmup_length and (rt := self.resample_t(t)) != -1:
             re_warmup = self.tosteps(
