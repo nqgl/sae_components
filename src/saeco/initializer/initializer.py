@@ -1,9 +1,10 @@
-from saeco.initializer.linear_factory import LinearFactory, Tied
-import saeco.components as co
-from saeco.core.basic_ops import Add
-from .initializer_config import InitConfig
 import torch
 import torch.nn as nn
+
+import saeco.components as co
+from saeco.core.basic_ops import Add
+from saeco.initializer.linear_factory import LinearFactory, Tied
+from .initializer_config import InitConfig
 
 
 class Initializer:
@@ -19,7 +20,7 @@ class Initializer:
         self.d_data = d_data
         d_dict = d_dict or int(d_data * dict_mult)
         self.d_dict = d_dict
-        self.l0_target = int(l0_target)
+        self.l0_target = int(l0_target) if l0_target is not None else None
         # self.tied_bias = True
         self.tied_init = True
         self.tied_weights = False

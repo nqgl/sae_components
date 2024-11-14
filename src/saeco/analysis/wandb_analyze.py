@@ -1,24 +1,25 @@
 # %%
+import asyncio
+import os
+
+from typing import Any
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import polars as pl
+import seaborn as sns
 import wandb
 import wandb.apis
+import wandb.apis.public as wapublic
 import wandb.data_types
 import wandb.util
+from saeco.analysis.run_history import RunHistories
 from saeco.misc import lazycall
-import asyncio
 
 # from wandb.data_types
 # from wandb.wandb_run import Run
-from wandb.apis.public import Run, Sweep, Runs
-import wandb.apis.public as wapublic
-
-from typing import Any
-import os
-import pandas as pd
-import numpy as np
-import polars as pl
-import seaborn as sns
-import matplotlib.pyplot as plt
-from saeco.analysis.run_history import RunHistories
+from wandb.apis.public import Run, Runs, Sweep
 
 r: Run
 histories = RunHistories()
@@ -209,6 +210,7 @@ class Sweep:
         self.value_targets = [ValueTarget("cache/L2_loss")]
         # self.sweept_fields: dict[list[str], dict[Any, set[Run]]] = {}
         self.prev_avg_min = 0
+        self.top_level_ignore_keys = ["pod_info"]
         # df = self.df
         # self.add_target_history()
         # self.add_target_averages()
@@ -224,6 +226,8 @@ class Sweep:
             for k, v in d.items():
                 if k == self.full_cfg_key:
                     assert prefix == []
+                    continue
+                if k in self.top_level_ignore_keys and prefix == []:
                     continue
                 if isinstance(v, list):
                     v = tuple(v)

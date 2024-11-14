@@ -1,4 +1,4 @@
-torch
+torch==2.4.1
 unpythonic
 triton
 pytest

@@ -6,16 +6,16 @@ import pandas as pd
 import torch
 from load import root_eval
 
-f = root_eval.cached_call._get_feature_families_unlabeled()
 all_families = root_eval.get_feature_families()
-families = [v for level in all_families.levels for k, v in level.families.items()]
-root_eval.init_family_psuedofeature_tensors(families)
+# f = root_eval._get_feature_families_unlabeled()
+# families = [v for level in all_families.levels for k, v in level.families.items()]
+# root_eval.init_family_psuedofeature_tensors(families)
 
-print()
-f.levels[0].families[3].subfamilies
+# print()
+# f.levels[0].families[3].subfamilies
 
-f.levels[1].families[8].subfamilies
-f.levels[2].families[21].subfeatures
+# f.levels[1].families[8].subfamilies
+# f.levels[2].families[21].subfeatures
 
 # 0,3 -> 1,8 seems ok maybe
 # 1,8 -> 2,21 not ok

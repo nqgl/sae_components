@@ -6,6 +6,7 @@ import torch.utils
 import tqdm
 import wandb
 from schedulefree import AdamWScheduleFree, ScheduleFreeWrapper
+from torch.amp import GradScaler
 
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from saeco.core import Cache
@@ -84,7 +85,8 @@ class Trainer:
             self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
         ).get_tokens()
         self.eval_step_freq = 100
-        self.gradscaler = torch.cuda.amp.GradScaler() if self.cfg.use_autocast else None
+
+        self.gradscaler = GradScaler() if self.cfg.use_autocast else None
         self.l0_targeter = TARGETER_TYPES[self.cfg.l0_targeter_type](
             l0_target=self.cfg.l0_target,
             schedule=self.cfg.schedule,

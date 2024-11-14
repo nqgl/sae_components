@@ -22,7 +22,7 @@ root_eval.store_acts(
         # exclude_bos_from_storage=True,
         eager_sparse_generation=True,
         store_feature_tensors=False,
-        deferred_blocked_store_feats_block_size=False,
+        deferred_blocked_store_feats_block_size=10,
         # metadatas_from_src_column_names=["tissue", "cell_type"],
     ),
     displace_existing=True,

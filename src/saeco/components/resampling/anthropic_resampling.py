@@ -1,9 +1,11 @@
-from saeco.components.resampling.resampler import Resampler, ResamplerConfig
+from typing import ClassVar
+
 import torch
 import torch.nn as nn
 from attrs import define
+
+from saeco.components.resampling.resampler import Resampler, ResamplerConfig
 from saeco.core import Cache
-from typing import ClassVar
 
 # from collections import defaultdict
 
@@ -49,6 +51,7 @@ def get_param_parent_module(param, model: nn.Module):
 
 
 from enum import IntEnum
+
 from saeco.sweeps import SweepableConfig
 
 
@@ -85,6 +88,7 @@ class AnthResampler(Resampler):
         enc_inputs = []
         enc_module = self.get_encoder_containing_module(model.model)
         inputs = []
+        need_enc_in = self.cfg.enc_directions == 0 or self.cfg.dec_directions == 0
         for i in range(10):
             data = next(data_source).float()
             res = get_modules_io(model, modules=[enc_module], data=data)
@@ -93,7 +97,7 @@ class AnthResampler(Resampler):
                 for i in range(len(enc_inputs_list) - 1):
                     if torch.any(enc_inputs_list[i][0] != enc_inputs_list[i + 1][0]):
                         raise ValueError("Expected one input")
-            enc_input = enc_inputs_list[0][0]
+            enc_input = enc_inputs_list[0][0] if need_enc_in else None
             error = data - res.model_out
             assert error.ndim == 2
             errmag = error.norm(dim=1)
@@ -106,7 +110,7 @@ class AnthResampler(Resampler):
 
         error = model.normalizer(torch.cat(errors)[i], cache=Cache())
         inputs = model.normalizer(torch.cat(inputs)[i], cache=Cache())
-        enc_inputs = torch.cat(enc_inputs)[i]
+        enc_inputs = torch.cat(enc_inputs)[i] if need_enc_in else None
 
         # mag = 0.01
         direction_types = [enc_inputs, error, inputs]

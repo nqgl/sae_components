@@ -1,15 +1,15 @@
+import asyncio
+
+from nicegui import ui
 from saeco.analysis.ddmenuprop import ddmenuprop, ddupdate
+from saeco.analysis.uiitem import UIE
 from saeco.analysis.wandb_analyze import (
     Sweep,
     SweepAnalysis,
+    SweepKey,
     SweepKeys,
     ValueTarget,
-    SweepKey,
 )
-from saeco.analysis.uiitem import UIE
-
-from nicegui import ui
-import asyncio
 
 
 class SAView:
@@ -30,15 +30,18 @@ class SAView:
                 with ui.row():
                     self.aggregation
                     with ui.card():
+                        ui.label("Selected Keys")
                         self.key1
                         self.key2
                     with ui.card():
-                        # ui.label("Target Selection")
+                        ui.label("Target")
                         # self.aggregation
                         self.base_target
                         self.new_value_target
+                    with ui.card():
+                        ui.label("Run Agg")
+                        self.target_aggregation
                         self.begin_aggregation_phase
-                    self.target_aggregation
 
                     with ui.card():
                         self.update_hist_button
@@ -264,6 +267,7 @@ class SAView:
 
         c = ui.card()
         with c:
+            ui.label("Aggregation")
             for i, v in enumerate(vals):
                 l = ui.label(v)
                 labels.append(l)
@@ -325,6 +329,7 @@ class SAView:
 
         c = ui.card()
         with c:
+            ui.label("Aggregation")
             for i, v in enumerate(vals):
                 l = ui.label(v)
                 labels.append(l)
@@ -415,5 +420,5 @@ class MetaView:
 # SAView("sae sweeps/js9lfcmn")
 # SAView("sae sweeps/5yfl5r4f")
 # SAView("sae sweeps/89r31veb")
-SAView("L0Targeting/7o7ew1ro")
+SAView("L0Targeting/ye1ap8yb")
 ui.run()

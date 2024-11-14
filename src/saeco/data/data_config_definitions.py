@@ -1,3 +1,4 @@
+from saeco.sweeps.sweepable_config import Swept
 from .dataset import DataConfig, DataGenerationProcessConfig, SplitConfig
 from .model_cfg import ActsDataConfig, ModelConfig
 
@@ -27,7 +28,15 @@ def gpt_2(block_postfix):
         dataset="alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2",
         model_cfg=ModelConfig(
             acts_cfg=ActsDataConfig(
-                excl_first=True, site=f"transformer.h.{block_postfix}", d_data=768
+                excl_first=True,
+                site=(
+                    Swept[str](
+                        *[f"transformer.h.{bp}" for bp in block_postfix],
+                    )
+                    if isinstance(block_postfix, list | tuple)
+                    else f"transformer.h.{block_postfix}"
+                ),
+                d_data=768,
             ),
             model_name="gpt2",
         ),
@@ -35,12 +44,14 @@ def gpt_2(block_postfix):
         generation_config=DataGenerationProcessConfig(
             # tokens_per_pile=2**25,
             acts_per_pile=2**18,
-            meta_batch_size=2**18,
-            llm_batch_size=2**16,
+            meta_batch_size=2**23,
+            llm_batch_size=2**17,
         ),
         seq_len=256,
     )
 
 
 def gpt_2_block(layer=6, io="input"):
+    if isinstance(layer, list | tuple):
+        return gpt_2([f"{l}.{io}" for l in layer])
     return gpt_2(f"{layer}.{io}")

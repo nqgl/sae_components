@@ -16,10 +16,10 @@ if __name__ == "__main__":
 
     do_sweep(True)
 else:
-    from .model import anth_update_model, AnthUpdateConfig
+    from .model import resid_sae, ResidConfig
 
     PROJECT = "L0Targeting"
-    cfg = RunConfig[AnthUpdateConfig](
+    cfg = RunConfig[ResidConfig](
         train_cfg=TrainConfig(
             data_cfg=gpt_2_block(),
             raw_schedule_cfg=RunSchedulingConfig(
@@ -52,11 +52,11 @@ else:
         ),
         #
         init_cfg=InitConfig(),
-        arch_cfg=AnthUpdateConfig(),
+        arch_cfg=ResidConfig(),
     )
 
 
 def run(cfg):
 
-    tr = TrainingRunner(cfg, model_fn=anth_update_model)
+    tr = TrainingRunner(cfg, model_fn=resid_sae)
     tr.trainer.train()

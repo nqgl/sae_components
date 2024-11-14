@@ -39,12 +39,23 @@ def get_active_ff_matrix_on_document(doc_index=1, batch_size=32, active_only=Tru
         )
 
         features = (acts.sum(0).sum(0) > 0).nonzero().squeeze()
+
         print("features", features, acts.shape)
     else:
         features = torch.arange(root_eval.d_dict)
 
     for i in tqdm.trange(0, len(features), batch_size):
-        d = root_eval.ff_multi_feature(doc, features[i : i + batch_size], set_or_add=0)
+        d = root_eval.ff_multi_feature(
+            doc.clone(), features[i : i + batch_size], set_or_add=0
+        )
+        acts[:, :, features[i : i + batch_size]].sum(0).sum(0)
+        o = root_eval.nnsight_model._model(doc.cuda())
+        with root_eval.nnsight_model.trace(doc.unsqueeze(0).cuda().repeat(2, 1)):
+            out = root_eval.nnsight_model.output.save()
+        out.logits[0, 6].topk(5)
+        o.logits[6].topk(5)
+        o.shape
+        (o.logits - out.logits[1]).abs().sum()
         # ffmat_acts[i : i + batch_size] = d[0].mean(1)
         ffmat[features[i : i + batch_size]] = d[0].mean(1)
         ffmat_preacts[features[i : i + batch_size]] = d[1].mean(1)
@@ -52,13 +63,16 @@ def get_active_ff_matrix_on_document(doc_index=1, batch_size=32, active_only=Tru
 
 
 # %%
-DOC = 4
+DOC = 11
 root_eval.detokenize(root_eval.docs[torch.arange(DOC, DOC + 1)].squeeze())
 
 
 # %%
-m, m_pre, active = get_active_ff_matrix_on_document(DOC)
 
+i = DOC
+print("i", i)
+m, m_pre, active = get_active_ff_matrix_on_document(i)
+del m, m_pre, active
 
 # %%
 

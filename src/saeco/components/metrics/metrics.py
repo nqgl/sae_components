@@ -124,7 +124,7 @@ class ActMetrics(Metrics):
         )
 
 
-class PreActs(Metrics):
+class PreActMetrics(Metrics):
     def __init__(self, name=None, **kwargs):
         self.name = name
         if "acts" in kwargs or "pre_acts" in kwargs:

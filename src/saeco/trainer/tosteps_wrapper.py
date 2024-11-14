@@ -1,8 +1,8 @@
-from typing import Union, NewType
-from pydantic import GetCoreSchemaHandler, TypeAdapter
-from pydantic_core import CoreSchema, core_schema
 from functools import update_wrapper
-from typing import Any, Type
+from typing import Any, NewType, Type, Union
+
+from pydantic import GetCoreSchemaHandler, TypeAdapter
+from pydantic_core import core_schema, CoreSchema
 
 
 def tosteps(n: int | float, period: int | None = None) -> int:
