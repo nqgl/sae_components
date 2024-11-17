@@ -25,13 +25,14 @@ class ResidConfig(SweepableConfig):
     individual_dec_bias: bool = False
     anth_scale: bool = False
     thresh_range: tuple[float, float] = (0, 0)
+    reuse_layer: bool = False
 
 
 GLOBD = 0
 
 
 class ResidModule(cl.Module):
-    def __init__(self, *modules, cfg, acts_module):
+    def __init__(self, *modules, cfg: ResidConfig, acts_module):
         super().__init__()
         self.contained = nn.ModuleList(modules)
         self.metrics = acts_module
@@ -47,11 +48,10 @@ class ResidModule(cl.Module):
             print("begin")
             print((x).pow(2).mean())
         GLOBD += 1
-        thresh_range = (1, 0)
         for i, (enc, dec) in enumerate(self.contained):
-            thresh = thresh_range[0] - (thresh_range[0] - thresh_range[1]) * i / len(
-                self.contained
-            )
+            thresh = self.cfg.thresh_range[0] - (
+                self.cfg.thresh_range[0] - self.cfg.thresh_range[1]
+            ) * i / len(self.contained)
             pre_acts = enc(x - acc_pred)
             acts = torch.where(pre_acts > thresh, pre_acts, 0)
             pre_acts_l.append(pre_acts)
@@ -64,6 +64,49 @@ class ResidModule(cl.Module):
                 )
         cache(self).metrics(torch.cat(acts_l, dim=1))
         cache(self).preact_metrics(torch.cat(pre_acts_l, dim=1))
+        return acc_pred
+
+
+class ReuseResidModule(cl.Module):
+    def __init__(self, *modules, cfg: ResidConfig, acts_module):
+        super().__init__()
+        self.contained = nn.ModuleList(modules)
+        self.metrics = acts_module
+        self.preact_metrics = co.metrics.PreActMetrics()
+        self.cfg = cfg
+        self.accumulate_pre = self.cfg.reuse_layer == 2
+
+    def forward(self, x, *, cache: cl.Cache):
+        acc_pred = 0
+        pre_acts = 0
+        acts = 0
+        global GLOBD
+        if GLOBD % 100 == 50:
+            print("begin")
+            print((x).pow(2).mean())
+        GLOBD += 1
+        for i, (enc, dec) in enumerate(self.contained):
+            thresh = self.cfg.thresh_range[0] - (
+                self.cfg.thresh_range[0] - self.cfg.thresh_range[1]
+            ) * i / len(self.contained)
+            layer_pre_acts = enc(x - acc_pred)
+            pre_acts += layer_pre_acts
+            if self.accumulate_pre:
+                layer_acts = torch.where(pre_acts > thresh, pre_acts, 0)
+                acts = layer_acts
+            else:
+                layer_acts = torch.where(layer_pre_acts > thresh, layer_pre_acts, 0)
+                acts += layer_acts
+            pred = dec(acts)
+            acc_pred = pred
+
+            # acc_pred += pred  # TODO
+            if GLOBD % 100 == 50:
+                print(
+                    f"{layer_acts.count_nonzero(dim=1).float().mean().item():.2f}, {(x - acc_pred).pow(2).mean()}"
+                )
+        cache(self).metrics(acts)
+        cache(self).preact_metrics(pre_acts)
         return acc_pred
 
 
@@ -121,7 +164,7 @@ def resid_sae(
     )
     model_full = Seq(
         **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
-        encoder=ResidModule(
+        encoder=(ReuseResidModule if cfg.reuse_layer else ResidModule)(
             *split_pairs(
                 encoder=encoder,
                 decoder=decoder,

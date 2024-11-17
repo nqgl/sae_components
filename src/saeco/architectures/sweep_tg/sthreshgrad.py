@@ -30,12 +30,12 @@ def GT2(grad_window=sig_grad):
     class GT2(torch.autograd.Function):
         @staticmethod
         @custom_fwd
-        def forward(ctx, gate_pre, gate_post, noise, mag, leniency, dd=768):
+        def forward(ctx, gate_pre, gate_post, noise, mag, leniency, d_data=768):
             gate = gate_pre > 0
             ctx.save_for_backward(gate_pre, mag, gate)
             ctx.gate_post = gate_post
             ctx.leniency = leniency
-            ctx.dd = dd
+            ctx.d_data = d_data
             ctx.noise = noise
             return gate.float()
 
@@ -50,20 +50,20 @@ def GT2(grad_window=sig_grad):
 
             offgrad_mask = (~gate) & (grad_output != 0) & (noise > 0)
             grad_output = torch.where(mag != 0, grad_output / mag, 0)
-            dd = ctx.dd
-            b = gate_pre.shape[0]
+            d_data = ctx.d_data
+            batch_size = gate_pre.shape[0]
             off_adjustment = shrinkgrad_adjustment(
                 mag,
                 leniency=leniency,
-                dd=dd,
-                b=b,
+                dd=d_data,
+                b=batch_size,
             )
             grad_gate = (noise < 0) & (gate_post > 0)
             adjustment = shrinkgrad_adjustment(
                 -noise,
                 leniency=leniency,
-                dd=dd,
-                b=b,
+                dd=d_data,
+                b=batch_size,
             )
             # grad_output = torch.where(grad_gate, , 0)
             # grad_output = (
