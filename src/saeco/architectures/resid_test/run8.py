@@ -67,9 +67,7 @@ else:
             individual_dec_bias=True,
             individual_enc_bias=True,
             anth_scale=False,
-            thresh_range=Swept[tuple[float, float]](
-                (1, 1), (1, 0.5), (1, 0.2), (0.5, 0.5), (0.2, 1), (0.5, 0.1)
-            ),
+            thresh_range=(1, 0.5),
             # Swept[tuple[float, float]](
             #     (0, 0),
             #     (1, 0),
@@ -79,7 +77,7 @@ else:
             #     (0.5, 0),
             #     (0, 0.5),
             # ),
-            reuse_layer=Swept[ReuseLayer](0, 1, 2, 3, 4, 5, 6),
+            reuse_layer=1,
         ),
     )
 
