@@ -40,13 +40,13 @@ class RunSchedulingConfig(SweepableConfig):
     targeting_warmup_length: int | RunFloat = 0.15
 
     ### lr scheduler # this is not quite the continuous pretraining scheduler, seems fine though
-    lr_warmup_length: int | RunFloat = 1_500
+    lr_warmup_length: int | RunFloat = 2_000
     lr_cooldown_length: int | RunFloat = 0.2
     lr_resample_warmup_length: int | ResFloat = 0.2
     lr_warmup_factor: float = 0.1
     lr_cooldown_factor: float = 0.1
     lr_resample_warmup_factor: float = 0.1
-    lr_geometric_rescale: bool = False
+    lr_geometric_rescale: bool = True
 
     # def model_post_init(self):
     @property

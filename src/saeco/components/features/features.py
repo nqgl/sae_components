@@ -1,10 +1,12 @@
+from typing import Optional, Protocol, runtime_checkable
+
 import torch
 import torch.nn as nn
 from torch import Tensor
+
+import saeco.core as cl
 from saeco.components.features.features_param import FeaturesParam, HasFeatures
 from saeco.components.wrap import WrapsModule
-from typing import Protocol, runtime_checkable, Optional
-import saeco.core as cl
 
 
 @runtime_checkable  # TODO
@@ -138,10 +140,10 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         if test.isnan().any():
             print("NaNs in test! returning")
             return
-        fp.grad[:] = grad_orth
-        assert (fp.grad * dec_normed).sum(
+        assert (grad_orth * dec_normed).sum(
             -1
         ).abs().mean() < 1e-1, f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        fp.grad[:] = grad_orth
 
 
 def check(t, i=""):
