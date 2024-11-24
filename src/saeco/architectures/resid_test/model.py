@@ -65,6 +65,7 @@ class ResidConfig(SweepableConfig):
     anth_scale: bool = False
     thresh_range: tuple[float, float] = (0, 0)
     reuse_layer: ReuseLayer = False
+    unpenalized_restricted_final: bool = False
 
     @property
     def l1_shielding(self):
@@ -77,6 +78,22 @@ class ResidConfig(SweepableConfig):
     def l1_sharing(self):
         return self.reuse_layer in (
             ReuseLayer.ACC_ACTS_L1_SHARE,
+            ReuseLayer.ACC_PRE_L1_SHARE,
+        )
+
+    @property
+    def acc_acts(self):
+        return self.reuse_layer in (
+            ReuseLayer.ACC_ACTS,
+            ReuseLayer.ACC_ACTS_L1_SHIELD,
+            ReuseLayer.ACC_ACTS_L1_SHARE,
+        )
+
+    @property
+    def acc_pre(self):
+        return self.reuse_layer in (
+            ReuseLayer.ACC_PRE,
+            ReuseLayer.ACC_PRE_L1_SHIELD,
             ReuseLayer.ACC_PRE_L1_SHARE,
         )
 
@@ -144,21 +161,23 @@ class ReuseResidModule(cl.Module):
             print("begin")
             print((x).pow(2).mean())
         GLOBD += 1
-        if self.cfg.l1_sharing or self.cfg.l1_shielding:
-            activity_mask = torch.zeros(
-                (self.cfg.layers, x.shape[0], self.d_dict),
-                dtype=torch.bool,
-                device=x.device,
-            )
-            activities = torch.zeros(
-                (self.cfg.layers, x.shape[0], self.d_dict),
-                dtype=torch.float32,
-                device=x.device,
-            )
-            l1_acts = 0
-        else:
-            activity_mask = None
-            l1_acts = None
+        # if self.cfg.l1_sharing or self.cfg.l1_shielding:
+        activity_mask = torch.zeros(
+            (self.cfg.layers, x.shape[0], self.d_dict),
+            dtype=torch.bool,
+            device=x.device,
+        )
+        activities = []
+        # torch.zeros(
+        #     (self.cfg.layers, x.shape[0], self.d_dict),
+        #     dtype=torch.float32,
+        #     device=x.device,
+        # )
+        l1_acts = None
+        # else:
+        #     activity_mask = None
+        #     l1_acts = None
+
         for i, (enc, dec) in enumerate(self.contained):
             thresh = self.cfg.thresh_range[0] - (
                 self.cfg.thresh_range[0] - self.cfg.thresh_range[1]
@@ -167,10 +186,17 @@ class ReuseResidModule(cl.Module):
             pre_acts += layer_pre_acts
             if self.accumulate_pre:
                 layer_acts = torch.where(pre_acts > thresh, pre_acts, 0)
-                acts = layer_acts
             else:
                 layer_acts = torch.where(layer_pre_acts > thresh, layer_pre_acts, 0)
+
+            if self.cfg.unpenalized_restricted_final and i == len(self.contained) - 1:
+                layer_acts = torch.where(activity_mask.any(dim=0), layer_acts, 0)
+
+            if self.accumulate_pre:
+                acts = layer_acts
+            else:
                 acts = acts + layer_acts
+
             if self.cfg.l1_shielding:
                 l1_acts = l1_acts + torch.where(
                     activity_mask.any(dim=0), layer_acts.detach(), layer_acts
@@ -178,7 +204,21 @@ class ReuseResidModule(cl.Module):
 
             if activity_mask is not None:
                 activity_mask[i] = layer_acts > 0
-                activities[i] = layer_acts
+                if (
+                    self.cfg.unpenalized_restricted_final
+                    and i == len(self.contained) - 1
+                ):
+                    activities.append(layer_acts.detach())
+                else:
+                    activities.append(layer_acts)
+                if self.cfg.acc_acts:
+                    acts = attributed_positive_sum(torch.stack(activities), dim=0)
+                # if self.training and i == len(self.contained) - 1:
+                #     noise = 0.05 * (torch.rand_like(acts) - 0.5)
+                #     mask = (acts > 0) & (noise < 0)
+                #     acts = torch.where(acts > 0, acts + noise, acts)
+                #     acts = torch.where(mask, acts, acts.detach())
+
             pred = dec(acts)
             acc_pred = pred
 
@@ -188,8 +228,8 @@ class ReuseResidModule(cl.Module):
                     f"{layer_acts.count_nonzero(dim=1).float().mean().item():.2f}, {(x - acc_pred).pow(2).mean()}"
                 )
         if self.cfg.l1_sharing:
-            active_counts = activity_mask.sum(dim=0)
-            l1_acts = attributed_positive_sum(activities, dim=0)
+            # active_counts = activity_mask.sum(dim=0)
+            l1_acts = attributed_positive_sum(torch.stack(activities), dim=0)
             # l1_acts = torch.where(
             #     active_counts > 0,
             #     acts / active_counts

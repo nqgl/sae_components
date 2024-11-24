@@ -45,7 +45,7 @@ else:
             use_lars=True,
             #
             l0_targeting_enabled=True,
-            l0_target=50,
+            l0_target=100,
             l0_target_adjustment_size=0.0003,
             coeffs={
                 "sparsity_loss": 3e-3,  # 3e-3 gets like 50, 1e-2 gets like 5
@@ -60,16 +60,17 @@ else:
             optim_reset_cfg=OptimResetValuesConfig(), enc_directions=2
         ),
         #
-        init_cfg=InitConfig(),
+        init_cfg=InitConfig(dict_mult=16),
         arch_cfg=ResidConfig(
             layers=4,
             pre_bias=False,
             individual_dec_bias=True,
             individual_enc_bias=True,
             anth_scale=False,
-            thresh_range=Swept[tuple[float, float]](
-                (1, 1), (1, 0.5), (1, 0.2), (0.5, 0.5), (0.2, 1), (0.5, 0.1)
-            ),
+            thresh_range=(1, 0.5),
+            # Swept[tuple[float, float]](
+            #     (1, 1), (1, 0.5), (1, 0.2), (0.5, 0.5), (0.2, 1), (0.5, 0.1)
+            # ),
             # Swept[tuple[float, float]](
             #     (0, 0),
             #     (1, 0),
@@ -79,7 +80,8 @@ else:
             #     (0.5, 0),
             #     (0, 0.5),
             # ),
-            reuse_layer=Swept[ReuseLayer](0, 1, 2, 3, 4, 5, 6),
+            reuse_layer=Swept[ReuseLayer](1, 2, 3, 4, 5, 6),
+            unpenalized_restricted_final=Swept(True, False),
         ),
     )
 

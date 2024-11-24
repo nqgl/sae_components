@@ -1,6 +1,7 @@
 def do_sweep(purge_after=True, in_cmd=None):
-    from saeco.sweeps import Sweeper
     import sys
+
+    from saeco.sweeps import Sweeper
 
     swfpath = sys.argv[0]
     print("args:", sys.argv)
@@ -11,23 +12,26 @@ def do_sweep(purge_after=True, in_cmd=None):
     # sw.start_agent()
     options = ["run", "rand", "sweep", "yes"]
     sweep_or_run = -1
+    sw = Sweeper(thispath, module_name=filename)
     while sweep_or_run not in options:
         sweep_or_run = in_cmd or input(f"sweep? ({', '.join(options)}):")
-
-    sw = Sweeper(thispath, module_name=filename)
+        if sweep_or_run[:3] == "new":
+            print("initializing new sweep")
+            sw.initialize_sweep()
+            sweep_or_run = " ".join(sweep_or_run.split(" ")[1:])
     if sweep_or_run == "rand":
         sw.rand_run_no_agent()
         return
-    sw.initialize_sweep()
     if sweep_or_run == "run":
         sw.start_agent()
     elif sweep_or_run in ("sweep", "yes"):
+        sw.initialize_sweep()
         n = input("create instances?")
         try:
             n = int(n)
         except ValueError:
             n = False
-        from ezpod import Pods, RunProject, RunFolder
+        from ezpod import Pods, RunFolder, RunProject
 
         pods = Pods.All()
         if n:

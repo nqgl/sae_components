@@ -78,6 +78,7 @@ else:
             #     (0, 0.5),
             # ),
             reuse_layer=1,
+            unpenalized_restricted_final=False,
         ),
     )
 

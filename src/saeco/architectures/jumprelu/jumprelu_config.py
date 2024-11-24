@@ -17,12 +17,12 @@ cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=gpt_2_block(layer=6),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=16_000,
             resample_period=9_000,
             # lr_cooldown_length=0.4
         ),
         #
-        batch_size=4096,
+        batch_size=4096 * 4,
         optim="Adam",
         lr=Swept(1e-3),
         betas=(0.9, 0.997),
@@ -30,7 +30,7 @@ cfg = RunConfig[Config](
         use_autocast=False,
         use_lars=True,
         #
-        l0_target=50,
+        l0_target=100,
         l0_target_adjustment_size=0.0003,
         coeffs={
             "sparsity_loss": 7e-4,
@@ -42,7 +42,7 @@ cfg = RunConfig[Config](
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(), expected_biases=2
     ),
-    init_cfg=InitConfig(d_data=768, dict_mult=8),
+    init_cfg=InitConfig(d_data=768, dict_mult=16),
     #
     arch_cfg=Config(
         pre_bias=False,
