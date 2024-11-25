@@ -42,7 +42,7 @@ else:
             l0_target_adjustment_size=0.0002,
             coeffs={
                 "sparsity_loss": Swept(
-                    1e-3, 2e-3, 3e-3, 4e-3
+                    *[1e-3 * 1.2**i for i in range(12)]
                 ),  # 3e-3 gets like 50, 1e-2 gets like 5
                 "L2_loss": 1,
             },

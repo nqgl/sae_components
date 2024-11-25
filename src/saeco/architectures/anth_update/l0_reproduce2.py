@@ -37,12 +37,25 @@ else:
             use_autocast=False,
             use_lars=False,
             #
-            l0_targeting_enabled=False,
-            l0_target=25.45,
+            l0_targeting_enabled=True,
+            l0_target=Swept[float](
+                179.389271,
+                132.699618,
+                98.505438,
+                74.318137,
+                56.044189,
+                42.802845,
+                32.735085,
+                25.078591,
+                19.139515,
+                14.393821,
+                10.852739,
+                8.054066,
+            ),
             l0_target_adjustment_size=0.0002,
             coeffs={
                 "sparsity_loss": Swept(
-                    1e-3, 2e-3, 3e-3, 4e-3
+                    3e-4, 1e-3, 3e-3
                 ),  # 3e-3 gets like 50, 1e-2 gets like 5
                 "L2_loss": 1,
             },

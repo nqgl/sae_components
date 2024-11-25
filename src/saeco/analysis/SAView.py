@@ -18,11 +18,14 @@ class SAView:
         self.sa = None
         with ui.card():
             ui.label(sweep)
-            ui.label(
-                self.sw.runs[0].metadata["args"][0].split("/")[-1]
-                + "->"
-                + self.sw.runs[0].metadata["args"][-1]
-            )
+            try:
+                ui.label(
+                    self.sw.runs[0].metadata["args"][0].split("/")[-1]
+                    + "->"
+                    + self.sw.runs[0].metadata["args"][-1]
+                )
+            except:
+                pass
             with ui.row():
                 with ui.card() as c:
                     self.heatmap
@@ -173,7 +176,7 @@ class SAView:
             options=keys,
             multiple=True,
             on_change=cb,
-            value=keys[1:2],
+            value=keys[-1:],
         )
 
     @key2.value
@@ -420,5 +423,6 @@ class MetaView:
 # SAView("sae sweeps/js9lfcmn")
 # SAView("sae sweeps/5yfl5r4f")
 # SAView("sae sweeps/89r31veb")
-SAView("L0Targeting/ye1ap8yb")
+# SAView("L0Targeting/ye1ap8yb")
+SAView("L0Targeting_cmp/zvvtvwt0")
 ui.run()

@@ -207,7 +207,16 @@ class Sweep:
         self.sweep: wapublic.Sweep = api.sweep(sweep_path)
 
         self.full_cfg_key = "full_cfg"
-        self.value_targets = [ValueTarget("cache/L2_loss")]
+        self.value_targets = [
+            ValueTarget("cache/L2_loss"),
+            ValueTarget("eval/L2_loss"),
+            ValueTarget("cache/L0"),
+            ValueTarget("eval/L0"),
+            ValueTarget("cache/L1"),
+            ValueTarget("eval/L1"),
+            ValueTarget("recons/no_bos/nats_lost"),
+            ValueTarget("recons/with_bos/nats_lost"),
+        ]
         # self.sweept_fields: dict[list[str], dict[Any, set[Run]]] = {}
         self.prev_avg_min = 0
         self.top_level_ignore_keys = ["pod_info"]
@@ -273,14 +282,21 @@ class Sweep:
     @property
     @lazycall
     def keys(self) -> list[SweepKey]:
-        return [SweepKey(k, list(dv.keys())) for k, dv in self.sweep_cfg.items()]
+        return [SweepKey(k, list(dv.keys())) for k, dv in self.sweep_cfg.items()] + [
+            SweepKey("__NULLKEY", [1])
+        ]
 
     @property
     @lazycall
     def df(self):
         return pd.DataFrame(
             [
-                {**run.summary, "run": run, **self.run_sweep_values[run]}
+                {
+                    **run.summary,
+                    "run": run,
+                    **self.run_sweep_values[run],
+                    "__NULLKEY": 1,
+                }
                 # 2
                 for i, run in enumerate(self.runs)
                 # for run in runs

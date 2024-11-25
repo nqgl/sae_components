@@ -33,7 +33,7 @@ class RunSchedulingConfig(SweepableConfig):
     resample_delay: int | RunFloat = 0
     resampling_finished_phase: int | RunFloat = 0.3
 
-    targeting_post_resample_cooldown: int | ResFloat = 0.2
+    targeting_post_resample_cooldown: int | ResFloat = 0.4
     # targeting_resample_cooldown_period_override: Optional[int] = None
     targeting_post_resample_hiatus: int | ResFloat = 0.05
     targeting_delay: int | RunFloat = 0  # could be none -> copy cooldown
