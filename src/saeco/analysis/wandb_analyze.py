@@ -655,7 +655,7 @@ class SweepAnalysis:
 
     # def graph(self):
 
-    def heatmap(self, target=None, style=True):
+    def heatmap(self, target=None, style=True, color_axis=None):
         if target is None:
             return self.heatmap(self.sweep.value_targets[0])
         # df = df if df is not None else self.df
@@ -672,7 +672,7 @@ class SweepAnalysis:
         # )
         if not style:
             return piv
-        return piv.style.background_gradient(cmap=self.cmap, axis=None)
+        return piv.style.background_gradient(cmap=self.cmap, axis=color_axis)
 
 
 # sa = SweepAnalysis(sw, sks)

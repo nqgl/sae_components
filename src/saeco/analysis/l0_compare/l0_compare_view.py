@@ -1,5 +1,5 @@
 from nicegui import ui
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from saeco.analysis.uiitem import UIE
 from saeco.analysis.wandb_analyze import Sweep, ValueTarget
 import numpy as np
@@ -11,6 +11,7 @@ class L0CompareView:
         self.targeted_sweep = Sweep(targeted_sweep_path)
         self.targeted_sweep._df = None
         self.baseline_sweep._df = None
+        self.fig = None
         # Initialize UI components
         with ui.card():
             ui.label("L0 Targeting Comparison")
@@ -28,9 +29,43 @@ class L0CompareView:
                 with ui.card():
                     with ui.label("Plot"):
                         ui.separator()
-                        self.plot_container = (
-                            ui.html()
-                        )  # Container for matplotlib plot as HTML
+                        self.plot_card
+
+    @UIE
+    def plot_card(self, cb):
+        e = ui.card()
+        with e:
+            initial_fig = go.Figure()
+            initial_fig.update_layout(
+                title="L0 Targeting Comparison",
+                xaxis_title="Select X-Axis Metric",
+                yaxis_title="Select Y-Axis Metric",
+                template="plotly_white",
+                width=800,
+                height=600,
+            )
+            ui.plotly(initial_fig)
+
+        return e
+
+    @plot_card.updater
+    def plot_card(self, e):
+        print("Updating plot")
+        e.clear()  # Clear existing content
+        with e:
+            if self.fig is not None:
+                ui.plotly(self.fig)
+            else:
+                initial_fig = go.Figure()
+                initial_fig.update_layout(
+                    title="L0 Targeting Comparison",
+                    xaxis_title="Select X-Axis Metric",
+                    yaxis_title="Select Y-Axis Metric",
+                    template="plotly_white",
+                    width=800,
+                    height=600,
+                )
+                ui.plotly(initial_fig)
 
     @UIE
     def x_axis_target(self, cb):
@@ -63,7 +98,11 @@ class L0CompareView:
 
     @UIE
     def update_plot_button(self, cb):
-        return ui.button("Update Plot", on_click=self.update_plot)
+        def on_click():
+            self.update_plot()
+            cb()
+
+        return ui.button("Update Plot", on_click=on_click)
 
     def hist_update(self, sweep: Sweep):
         sweep.add_target_history()
@@ -89,6 +128,21 @@ class L0CompareView:
 
         return []
 
+    # def _create_plot(self):
+    #     """Create a new plot with current data"""
+    #     with self.plot_card:
+    #         self.plot_card.clear()  # Clear existing content
+    #         initial_fig = go.Figure()
+    #         initial_fig.update_layout(
+    #             title="L0 Targeting Comparison",
+    #             xaxis_title="Select X-Axis Metric",
+    #             yaxis_title="Select Y-Axis Metric",
+    #             template="plotly_white",
+    #             width=800,
+    #             height=600,
+    #         )
+    #         self.plot_container = ui.plotly(initial_fig)
+
     def update_plot(self):
         self.targeted_sweep._df = None
         self.baseline_sweep._df = None
@@ -97,51 +151,63 @@ class L0CompareView:
             return
 
         # Get values for both sweeps
-        baseline_x = self.get_target_values(self.baseline_sweep, self.x_axis_target)
-        baseline_y = self.get_target_values(self.baseline_sweep, self.y_axis_target)
-        targeted_x = self.get_target_values(self.targeted_sweep, self.x_axis_target)
-        targeted_y = self.get_target_values(self.targeted_sweep, self.y_axis_target)
-
-        # Create pairs of indices for matching runs
-        pairs = get_close_pairs(baseline_x, targeted_x)
-
-        # Create the plot
-        plt.figure(figsize=(10, 6))
-
-        # Plot baseline points
-        plt.scatter(baseline_x, baseline_y, label="Baseline", alpha=0.6)
-        # Plot targeted points
-        plt.scatter(targeted_x, targeted_y, label="Targeted", alpha=0.6)
-
-        # Draw lines connecting paired points
-        for baseline_idx, targeted_idx in pairs:
-            plt.plot(
-                [baseline_x[baseline_idx], targeted_x[targeted_idx]],
-                [baseline_y[baseline_idx], targeted_y[targeted_idx]],
-                "k-",
-                alpha=0.2,
-            )
-
-        plt.xlabel(self.x_axis_target)
-        plt.ylabel(self.y_axis_target)
-        plt.title("L0 Targeting Comparison")
-        plt.legend()
-
-        # Convert plot to HTML and update the container
-        import io
-        import base64
-
-        buf = io.BytesIO()
-        plt.savefig(buf, format="png", bbox_inches="tight")
-        buf.seek(0)
-        img_str = base64.b64encode(buf.read()).decode("utf-8")
-
-        # Update the HTML content with the image
-        self.plot_container.set_content(
-            f'<img src="data:image/png;base64,{img_str}" style="width:100%; max-width:800px;">'
+        baseline_x = np.array(
+            self.get_target_values(self.baseline_sweep, self.x_axis_target)
         )
+        baseline_y = np.array(
+            self.get_target_values(self.baseline_sweep, self.y_axis_target)
+        )
+        targeted_x = np.array(
+            self.get_target_values(self.targeted_sweep, self.x_axis_target)
+        )
+        targeted_y = np.array(
+            self.get_target_values(self.targeted_sweep, self.y_axis_target)
+        )
+
+        # Create the Plotly figure
+        fig = go.Figure()
+
+        # Add baseline points
+        fig.add_trace(
+            go.Scatter(
+                x=baseline_x,
+                y=baseline_y,
+                mode="markers",
+                name="Baseline",
+                marker=dict(size=10, opacity=0.6),
+                hovertemplate=f"{self.x_axis_target}: %{{x}}<br>"
+                + f"{self.y_axis_target}: %{{y}}<br>"
+                + "<extra>Baseline</extra>",
+            )
+        )
+
+        # Add targeted points
+        fig.add_trace(
+            go.Scatter(
+                x=targeted_x,
+                y=targeted_y,
+                mode="markers",
+                name="Targeted",
+                marker=dict(size=10, opacity=0.6),
+                hovertemplate=f"{self.x_axis_target}: %{{x}}<br>"
+                + f"{self.y_axis_target}: %{{y}}<br>"
+                + "<extra>Targeted</extra>",
+            )
+        )
+
+        # Update layout
+        fig.update_layout(
+            title="L0 Targeting Comparison",
+            xaxis_title=self.x_axis_target,
+            yaxis_title=self.y_axis_target,
+            hovermode="closest",
+            template="plotly_white",
+            width=800,
+            height=600,
+        )
+
+        self.fig = fig
         self.update()
-        plt.close()
 
     def update(self):
         pass
@@ -157,6 +223,6 @@ def get_close_pairs(l1: list[float], l2: list[float]) -> list[tuple[int, int]]:
 baseline_runs_name = "L0Targeting_cmp/f5jbxrmd"
 targeted_runs_name = "L0Targeting_cmp/zvvtvwt0"
 new_baseline_runs_name = "L0Targeting_cmp/dj9x0ne2"
-new_targeted_runs_name = "L0Targeting_cmp/19zx1k97"
+new_targeted_runs_name = "L0Targeting_cmp/qmamgr4a"
 L0CompareView(new_baseline_runs_name, new_targeted_runs_name)
 ui.run()

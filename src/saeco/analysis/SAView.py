@@ -49,6 +49,7 @@ class SAView:
                     with ui.card():
                         self.update_hist_button
                         self.cmap
+                        self.color_axis
 
             self.filters_keys_el = KeyFilters(self.sw.keys)
         self.hist_update()
@@ -140,7 +141,7 @@ class SAView:
         )
         sa.cmap = self.cmap
         e.set_content(
-            sa.heatmap(self.aggregation)
+            sa.heatmap(self.aggregation, color_axis=self.color_axis)
             .set_properties(
                 **{
                     "text-align": "center",
@@ -152,6 +153,16 @@ class SAView:
             .to_html()
         )
         e.update()
+
+    @UIE
+    def color_axis(self, cb):
+        return ui.select(
+            label="Color Axis",
+            options=[None, 0, 1],
+            multiple=False,
+            on_change=cb,
+            value=None,
+        )
 
     @UIE
     def key1(self, cb):
@@ -424,5 +435,7 @@ class MetaView:
 # SAView("sae sweeps/5yfl5r4f")
 # SAView("sae sweeps/89r31veb")
 # SAView("L0Targeting/ye1ap8yb")
-SAView("L0Targeting_cmp/zvvtvwt0")
+SAView("L0Targeting_cmp/vg1mkx3k")
+SAView("L0Targeting_cmp/qmamgr4a")
+
 ui.run()
