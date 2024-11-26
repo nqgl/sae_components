@@ -17,18 +17,18 @@ cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=gpt_2_block(layer=6),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=16_000,
+            run_length=32_000,
             resample_period=9_000,
             # lr_cooldown_length=0.4
         ),
         #
-        batch_size=4096 * 4,
+        batch_size=4096 * 2,
         optim="Adam",
-        lr=Swept(1e-3),
+        lr=Swept(3e-4, 1e-3, 3e-4),
         betas=(0.9, 0.997),
         #
-        use_autocast=False,
-        use_lars=True,
+        use_autocast=Swept(True, False),
+        use_lars=Swept(True, False),
         #
         l0_target=100,
         l0_target_adjustment_size=0.0003,

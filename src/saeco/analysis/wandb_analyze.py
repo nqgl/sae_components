@@ -289,7 +289,7 @@ class Sweep:
     @property
     @lazycall
     def df(self):
-        return pd.DataFrame(
+        d = pd.DataFrame(
             [
                 {
                     **run.summary,
@@ -302,6 +302,33 @@ class Sweep:
                 # for run in runs
             ]
         )
+        d = pd.DataFrame(
+            [
+                {
+                    **run.summary,
+                    "run": run,
+                    **self.run_sweep_values[run],
+                    "__NULLKEY": 1,
+                }
+                # 2
+                for i, run in enumerate(self.runs)
+                # for run in runs
+            ]
+        )
+        d = pd.DataFrame(
+            [
+                {
+                    **run.summary,
+                    "run": run,
+                    **self.run_sweep_values[run],
+                    "__NULLKEY": 1,
+                }
+                # 2
+                for i, run in enumerate(self.runs)
+                # for run in runs
+            ]
+        )
+        return d
 
     def add_target_averages(self, min_step=None, force=False):
         # if "history" not in self.df.columns:
