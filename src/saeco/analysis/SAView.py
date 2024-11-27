@@ -435,7 +435,8 @@ class MetaView:
 # SAView("sae sweeps/5yfl5r4f")
 # SAView("sae sweeps/89r31veb")
 # SAView("L0Targeting/ye1ap8yb")
-SAView("L0Targeting_cmp/vg1mkx3k")
-SAView("L0Targeting_cmp/qmamgr4a")
+if __name__ == "__main__" or __name__ == "__ng_main__":
+    SAView("L0Targeting_cmp/vg1mkx3k")
+    SAView("L0Targeting_cmp/qmamgr4a")
 
-ui.run()
+    ui.run()
