@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 
 VALUE_TARGETS = [
-    ValueTarget("cache/L2_loss"),
-    ValueTarget("eval/L2_loss"),
     ValueTarget("cache/L0"),
-    ValueTarget("eval/L0"),
+    ValueTarget("cache/L2_loss"),
     ValueTarget("cache/L1"),
+    ValueTarget("eval/L0"),
+    ValueTarget("eval/L2_loss"),
     ValueTarget("eval/L1"),
     ValueTarget("recons/no_bos/nats_lost"),
     ValueTarget("recons/with_bos/nats_lost"),
@@ -79,7 +79,9 @@ class SweepCompareConfigurationPanel:
 
 class L0CompareView:
     def __init__(self):
-        self.sweep_panels = {}  # name -> SweepCompareConfigurationPanel
+        self.sweep_panels: dict[str, SweepCompareConfigurationPanel] = (
+            {}
+        )  # name -> SweepCompareConfigurationPanel
         self.fig = None
 
         # Initialize UI components
@@ -244,4 +246,7 @@ class L0CompareView:
 view = L0CompareView()
 view.add_sweep("L0Targeting_cmp/dj9x0ne2", "Baseline")
 view.add_sweep("L0Targeting_cmp/umjlb4dt", "Targeted")
+view.add_sweep("L0Targeting_cmp/wt5a9w7t", "plateaued 5k")
+view.add_sweep("L0Targeting_cmp/ldpwjpll", "deflated 0.2")
+
 ui.run()
