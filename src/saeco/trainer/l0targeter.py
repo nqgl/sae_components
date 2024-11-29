@@ -1,11 +1,21 @@
 import torch
-from typing import Protocol, Optional
+from typing import Protocol, Optional, Callable
 from .schedule_cfg import RunSchedulingConfig
 
 
 class L0TargeterProto(Protocol):
-    target: float
+    _target: float | Callable[[], float] | None
     schedule: RunSchedulingConfig
+
+    @property
+    def target(self) -> float | None:
+        if callable(self._target):
+            return self._target()
+        return self._target
+
+    @target.setter
+    def target(self, value: float | Callable[[], float] | None):
+        self._target = value
 
     def __call__(self, l0: float, t: int) -> float: ...
 

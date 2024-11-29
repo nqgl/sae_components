@@ -88,7 +88,7 @@ class Trainer:
 
         self.gradscaler = GradScaler() if self.cfg.use_autocast else None
         self.l0_targeter = TARGETER_TYPES[self.cfg.l0_targeter_type](
-            l0_target=self.cfg.l0_target,
+            l0_target=self.get_l0_target(),
             schedule=self.cfg.schedule,
         )
         if self.cfg.use_averaged_model:
@@ -98,6 +98,15 @@ class Trainer:
                     multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.999),
                 )
             )
+
+    def get_l0_target(self):
+        if self.cfg.l0_target is None:
+            return None
+
+        def target():
+            return self.cfg.l0_target * self.cfg.schedule.targeting_multiplier(self.t)
+
+        return target
 
     def get_lr_lambda(self):
         if self.cfg.use_schedulefree:
@@ -133,7 +142,7 @@ class Trainer:
             wandb.log(d, step=self.t + self.log_t_offset)
 
     def coeffs(self):
-        # TODO
+        self.cfg.schedule
         return self.cfg.coeffs
 
     @contextmanager

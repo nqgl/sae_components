@@ -38,9 +38,11 @@ class RunSchedulingConfig(SweepableConfig):
     targeting_post_resample_hiatus: int | ResFloat = 0.05
     targeting_delay: int | RunFloat = 0  # could be none -> copy cooldown
     targeting_warmup_length: int | RunFloat = 0.15
+    targeting_pre_deflation: float | None = None
 
     ### lr scheduler # this is not quite the continuous pretraining scheduler, seems fine though
     lr_warmup_length: int | RunFloat = 2_000
+    lr_end_plateau_length: int | RunFloat = 0
     lr_cooldown_length: int | RunFloat = 0.2
     lr_resample_warmup_length: int | ResFloat = 0.2
     lr_warmup_factor: float = 0.1
@@ -93,6 +95,9 @@ class RunSchedulingConfig(SweepableConfig):
         # or a fraction of some period, default run length
         # signified by type -- ints are steps, floats are proportions
         # this converts proportions to steps and leaves steps as is
+        assert isinstance(
+            n, int
+        ), "some assumptions failed and this actually can't be removed. if i dont hit this, method is indeed obsolete"
         assert 0 <= n
         if isinstance(n, int):
             return n
@@ -129,12 +134,25 @@ class RunSchedulingConfig(SweepableConfig):
             return re_lr * interpolator(
                 t / self.lr_warmup_length, self.lr_warmup_factor
             )
-        to_end = self.run_length - t
+        to_end = max(0, self.run_length - t - self.lr_end_plateau_length)
         if to_end < self.lr_cooldown_length:
             return re_lr * interpolator(
                 to_end / self.lr_cooldown_length, self.lr_cooldown_factor
             )
         return re_lr
+
+    @assert_wrapped
+    def targeting_multiplier(self, t):
+        if self.targeting_pre_deflation is None:
+            return 1
+
+        to_end = min(
+            max(0, self.run_length - t - self.lr_end_plateau_length),
+            self.lr_cooldown_length,
+        )
+        v = 1 - self.targeting_pre_deflation * to_end / self.lr_cooldown_length
+        assert 0 <= 1 - self.targeting_pre_deflation <= v <= 1
+        return v
 
     @assert_wrapped
     def _lr_scale(self, t: int) -> float:
