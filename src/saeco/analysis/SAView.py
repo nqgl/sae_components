@@ -136,6 +136,11 @@ class SAView:
             return
         # self.sw.add_target_history()
         self.sw.add_target_averages()
+        # l = [r for r in self.sw.runs]
+        # self.sw.update()
+        # 3frlnlq9
+        # any(i.id == "3frlnlq9" for i in l)
+        # l[0].id
         sa = SweepAnalysis(
             sweep=self.sw, xkeys=self.key1, ykeys=self.key2, target=self.target
         )
@@ -435,8 +440,8 @@ class MetaView:
 # SAView("sae sweeps/5yfl5r4f")
 # SAView("sae sweeps/89r31veb")
 # SAView("L0Targeting/ye1ap8yb")
-if __name__ == "__main__" or __name__ == "__ng_main__":
-    SAView("L0Targeting_cmp/vg1mkx3k")
-    SAView("L0Targeting_cmp/qmamgr4a")
-
+if __name__ == "__main__" or __name__ == "__mp_main__":
+    # SAView("L0Targeting_cmp/vg1mkx3k")
+    # SAView("L0Targeting_cmp/qmamgr4a")
+    SAView("L0Targeting_cmp/sweeps/u5mdsaob")
     ui.run()

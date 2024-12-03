@@ -33,9 +33,9 @@ class RunSchedulingConfig(SweepableConfig):
     resample_delay: int | RunFloat = 0
     resampling_finished_phase: int | RunFloat = 0.3
 
-    targeting_post_resample_cooldown: int | ResFloat = 0.4
+    targeting_post_resample_step_size_warmup: int | ResFloat = 0.2
     # targeting_resample_cooldown_period_override: Optional[int] = None
-    targeting_post_resample_hiatus: int | ResFloat = 0.05
+    targeting_post_resample_hiatus: int | ResFloat = 0.2
     targeting_delay: int | RunFloat = 0  # could be none -> copy cooldown
     targeting_warmup_length: int | RunFloat = 0.15
     targeting_pre_deflation: float | None = None
@@ -61,7 +61,7 @@ class RunSchedulingConfig(SweepableConfig):
         res_t_since_hiatus = self.resample_t(t) - self.targeting_post_resample_hiatus
         if res_t_since_hiatus >= 0:
             stepscale *= min(
-                1, res_t_since_hiatus / self.targeting_post_resample_cooldown
+                1, res_t_since_hiatus / self.targeting_post_resample_step_size_warmup
             )
         if t < self.targeting_warmup_length:
             stepscale *= t / self.targeting_warmup_length

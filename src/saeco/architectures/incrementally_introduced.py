@@ -76,7 +76,7 @@ train_cfg = TrainConfig(
         lr_cooldown_length=0.1,
         targeting_post_resample_hiatus=0,
         targeting_delay=15_000,
-        targeting_post_resample_cooldown=0.2,
+        targeting_post_resample_step_size_warmup=0.2,
         # resample_delay=0.69,
         lr_warmup_length=0,
     ),

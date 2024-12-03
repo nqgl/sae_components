@@ -166,7 +166,7 @@ class L0Targeter(L0TargeterProto):
         schedule: RunSchedulingConfig,
     ):
 
-        self.target = torch.tensor([l0_target]).cuda()
+        self.target = l0_target
         self.schedule = schedule
 
         self.inv = True
@@ -226,6 +226,14 @@ class L0Targeter(L0TargeterProto):
         self.last_dsign = 0
         self.last_flip_t = 0
         self.last_flip_interval = 100
+
+    @property
+    def target(self):
+        return torch.tensor([super().target]).cuda()
+
+    @target.setter
+    def target(self, value):
+        self._target = value
 
     @property
     def I(self):

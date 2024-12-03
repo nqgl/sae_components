@@ -58,9 +58,18 @@ class SweepCompareConfigurationPanel:
 
     def get_categories(self) -> dict[str, pd.DataFrame]:
         """Get data frames for each category based on selected category keys"""
+        # Apply filters to the base DataFrame
+        filtered_df = self.sweep.df.copy()
+        for filter_obj, filter_val in zip(self.filters.filters, self.filters.values):
+            if filter_val:  # If the filter is enabled
+                key = filter_obj.key.key
+                values = filter_obj.filter_values
+                if values:  # If specific values are selected
+                    filtered_df = filtered_df[filtered_df[key].isin(values)]
+
         if len(self.category_keys.keys) == 0:
             # If no categories selected, return all data as one category
-            return {self.name: self.sweep.df}
+            return {self.name: filtered_df}
 
         categories = {}
         for keys in self.category_keys:
@@ -68,7 +77,7 @@ class SweepCompareConfigurationPanel:
             key_list = list(keys.d.keys()) if hasattr(keys, "d") else list(keys)
             key_names = [k.key for k in key_list]
             # Group data by the selected keys
-            for key_values, group_df in self.sweep.df.groupby(key_names):
+            for key_values, group_df in filtered_df.groupby(key_names):
                 if not isinstance(key_values, tuple):
                     key_values = (key_values,)
                 category_name = f"{self.name} ({', '.join(map(str, key_values))})"
@@ -96,6 +105,11 @@ class L0CompareView:
                         ui.label("Aggregation Settings")
                         self.aggregation_type
                         self.aggregation_step
+                    with ui.card():
+                        ui.label("Line Drawing Settings")
+                        self.draw_lines
+                        self.line_category
+                        self.sort_metric
                     self.update_plot_button
                     self.update_cb
 
@@ -175,6 +189,32 @@ class L0CompareView:
         return ui.number(label="Aggregation Start Step", value=49000, on_change=cb)
 
     @UIE
+    def draw_lines(self, cb):
+        return ui.checkbox("Draw Lines Between Points", on_change=cb)
+
+    @UIE
+    def line_category(self, cb):
+        return ui.select(
+            label="Draw Lines For Category",
+            options=["None"] + [name for name in self.sweep_panels.keys()],
+            on_change=cb,
+            value="None",
+        )
+
+    @line_category.updater
+    def line_category(self, e: ui.select):
+        e.set_options(["None"] + [name for name in self.sweep_panels.keys()])
+
+    @UIE
+    def sort_metric(self, cb):
+        return ui.select(
+            label="Sort Points By",
+            options=[t.nicename for t in VALUE_TARGETS],
+            on_change=cb,
+            value=[t.nicename for t in VALUE_TARGETS][0],
+        )
+
+    @UIE
     def update_plot_button(self, cb):
         def on_click():
             for panel in self.sweep_panels.values():
@@ -205,21 +245,39 @@ class L0CompareView:
             categories = panel.get_categories()
 
             for category_name, category_df in categories.items():
+                # Sort points if line drawing is enabled
+                if self.draw_lines and category_name == self.line_category:
+                    category_df = category_df.sort_values(by=self.sort_metric)
+
                 x_values = category_df[self.x_axis_target].tolist()
                 y_values = category_df[self.y_axis_target].tolist()
+
+                # Determine plotting mode based on line drawing setting
+                mode = (
+                    "markers+lines"
+                    if (self.draw_lines and category_name == self.line_category)
+                    else "markers"
+                )
 
                 fig.add_trace(
                     go.Scatter(
                         x=x_values,
                         y=y_values,
-                        mode="markers",
+                        mode=mode,
                         name=category_name,
                         marker=dict(size=10, opacity=0.6),
+                        line=(
+                            dict(dash="dot")
+                            if (self.draw_lines and category_name == self.line_category)
+                            else None
+                        ),
                         hovertemplate=(
                             f"{self.x_axis_target}: %{{x}}<br>"
                             f"{self.y_axis_target}: %{{y}}<br>"
+                            f"{self.sort_metric}: %{{customdata}}<br>"
                             f"<extra>{category_name}</extra>"
                         ),
+                        customdata=category_df[self.sort_metric].tolist(),
                     )
                 )
 
@@ -248,5 +306,7 @@ view.add_sweep("L0Targeting_cmp/dj9x0ne2", "Baseline")
 view.add_sweep("L0Targeting_cmp/umjlb4dt", "Targeted")
 view.add_sweep("L0Targeting_cmp/wt5a9w7t", "plateaued 5k")
 view.add_sweep("L0Targeting_cmp/ldpwjpll", "deflated 0.2")
-
+view.add_sweep("L0Targeting_cmp/sweeps/rx1w98jh", "hiatus test")
+view.add_sweep("L0Targeting_cmp/sweeps/azete078", "new")
+view.add_sweep("L0Targeting_cmp/sweeps/rqld0e1g", "new2")
 ui.run()

@@ -96,3 +96,5 @@ class Propagator(Collection):
         self._binary_reduction_initial_value = binary_initial_value
         self._cache_to_reduction = takes_cache
         return self
+
+    def then(self, *args, **kwargs): ...

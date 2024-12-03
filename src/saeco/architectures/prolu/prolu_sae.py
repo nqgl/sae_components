@@ -126,7 +126,7 @@ train_cfg = TrainConfig(
         run_length=70_000,
         resample_period=Swept(23_000, 10_000, 100_000),
         targeting_post_resample_hiatus=0,
-        targeting_post_resample_cooldown=0.5,
+        targeting_post_resample_step_size_warmup=0.5,
         lr_resample_warmup_factor=0.3,
         # resample_delay=0.69,
     ),

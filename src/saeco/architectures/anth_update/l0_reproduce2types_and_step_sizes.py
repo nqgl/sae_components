@@ -8,7 +8,7 @@ from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig, TrainingRunner
 from saeco.trainer.run_config import RunConfig
-from saeco.trainer.tosteps_wrapper import RunFloat
+from saeco.trainer.tosteps_wrapper import ResFloat, RunFloat
 from saeco.trainer.train_config import TrainConfig
 
 
@@ -26,8 +26,8 @@ else:
             raw_schedule_cfg=RunSchedulingConfig(
                 run_length=50_000,
                 resample_period=9_000,
-                lr_end_plateau_length=1_000,
-                targeting_pre_deflation=Swept(0.0, 0.1),
+                targeting_post_resample_step_size_warmup=Swept[ResFloat](0.0, 0.2, 0.4),
+                targeting_post_resample_hiatus=Swept[ResFloat](0.0, 0.05, 0.2, 0.3),
             ),
             #
             batch_size=4096,
@@ -39,17 +39,24 @@ else:
             use_autocast=False,
             use_lars=False,
             #
-            l0_targeter_type=Swept("gentle_basic", "basic", "pid"),
             l0_targeting_enabled=True,
             l0_target=Swept[float](
+                # 179.389271,
+                # 132.699618,
+                # 98.505438,
+                # 74.318137,
+                # 56.044189,
+                # 42.802845,
+                # 32.735085,
+                # 25.078591,
+                # 19.139515,
+                # 14.393821,
                 10.852739,
                 8.054066,
-                56.044189,
             ),
-            l0_target_adjustment_size=Swept(1e-4, 3e-4),
+            l0_target_adjustment_size=1e-4,
             coeffs={
-                # "sparsity_loss": 5e-3,
-                "sparsity_loss": Swept(1e-3, 3e-3),
+                "sparsity_loss": 5e-3,
                 # Swept(
                 #     3e-4, 1e-3, 3e-3, 5e-3, 8e-3, 1.1e-2
                 # ),  # 3e-3 gets like 50, 1e-2 gets like 5
