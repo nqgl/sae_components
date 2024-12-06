@@ -10,6 +10,8 @@ import comet_ml
 import wandb
 from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
+from attrs import define, field
+from saeco.mlog import mlog
 
 
 class SweepFile(Protocol):
@@ -55,10 +57,10 @@ class Sweeper:
         return open(self.path / "sweep_id.txt").read().strip()
 
     def run(self):
-        wandb.init()
+        mlog.init()
         basecfg: SweepableConfig = self.sweepfile.cfg
 
-        cfg = basecfg.from_selective_sweep(dict(wandb.config))
+        cfg = basecfg.from_selective_sweep(dict(mlog.config))
         pod_info = dict(
             id=os.environ.get("RUNPOD_POD_ID", "local"),
             hostname=os.environ.get("RUNPOD_POD_HOSTNAME", None),

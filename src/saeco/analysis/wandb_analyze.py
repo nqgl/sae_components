@@ -205,7 +205,9 @@ class Sweep:
     def __init__(self, sweep_path):
         self.sweep_path = sweep_path
         self.sweep: wapublic.Sweep = api.sweep(sweep_path)
+        self.sweep.load(force=True)
 
+        len(list(self.sweep.runs))
         self.full_cfg_key = "full_cfg"
         self.value_targets = [
             ValueTarget("cache/L2_loss"),
@@ -260,10 +262,10 @@ class Sweep:
 
     @property
     def runs(self) -> list[wapublic.Run]:
-        return self.sweep.runs
+        return list(self.sweep.runs)
 
     @property
-    @lazycall
+    # @lazycall
     def run_sweep_values(self) -> dict[Run, dict[list[str], Any]]:
         run_sweep_values = {}
         for k, vd in self.sweep_cfg.items():
@@ -375,6 +377,11 @@ class Sweep:
     def add_target_history(self):
         print()
         # self.add_target_history_async()
+        self.sweep.runs
+        # self.sweep.load(force=True)
+        len({k.id: 0 for k in self.sweep.runs})
+        len({k.id: 0 for k in self.runs})
+        self.sweep.runs
         histories.get_runs(self.runs, [vt.key for vt in self.value_targets])
         self.df["history"] = self.df.apply(self._get_target_history, axis=1)
         print()

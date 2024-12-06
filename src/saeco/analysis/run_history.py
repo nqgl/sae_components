@@ -56,6 +56,9 @@ class RunHistories:
                 if not self.get_run_key_path(run, key).exists():
                     print("Starting downloading", run.name, key)
                     procs.append(self.dispatch(run, key))
+                    print(run.name)
+                    print(run.id)
+                    print(run.storage_id)
                 self.runs[id] = {}
 
                 # TODO Pick up here
@@ -63,10 +66,27 @@ class RunHistories:
                 # cache_path = self.path / run.project / run.sweep.id / run.id
                 # cache_path.mkdir(parents=True, exist_ok=True)
                 run: Run
-                print(run.name)
-                print(run.id)
-                print(run.storage_id)
         ppoll = [True]
+        key
+        len([self.get_run_dir(run).exists() for run in runs])
+        len(
+            list(
+                (
+                    self.path / run.project.replace(" ", "-") / run.sweep.id / "history"
+                ).iterdir()
+            )
+        )
+
+        d = {run.id: [] for run in runs}
+        for run in runs:
+            d[run.id].append(run)
+        r1, r2 = d["4ki37bgq"]
+        r1.path
+        r2.path
+        r1: Run
+        r1.name
+        r2.name
+        # d["3frlnlq9"]
         while any(ppoll):
             time.sleep(1)
             ppoll = [p.poll() is None for p in procs]

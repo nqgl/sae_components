@@ -443,5 +443,6 @@ class MetaView:
 if __name__ == "__main__" or __name__ == "__mp_main__":
     # SAView("L0Targeting_cmp/vg1mkx3k")
     # SAView("L0Targeting_cmp/qmamgr4a")
-    SAView("L0Targeting_cmp/sweeps/u5mdsaob")
+    # SAView("L0Targeting_cmp/sweeps/u5mdsaob")
+    SAView("L0Targeting_cmp/u5mdsaob")
     ui.run()
