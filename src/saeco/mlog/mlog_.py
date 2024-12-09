@@ -29,3 +29,6 @@ class mlog:
     @staticmethod
     def finish():
         return finish()
+
+    @staticmethod
+    def instantiate_config(cfg): ...

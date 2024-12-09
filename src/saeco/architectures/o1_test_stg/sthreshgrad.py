@@ -29,7 +29,7 @@ windows = {"sig": sig_grad_window}
 def GT2(grad_window=sig_grad_window):
     class GT2(torch.autograd.Function):
         @staticmethod
-        @custom_fwd(device_type="cuda")
+        @custom_fwd
         def forward(ctx, gate_pre, gate_post, noise, mag, leniency, d_data=768):
             gate = gate_pre > 0
             ctx.save_for_backward(gate_pre, mag, gate)
@@ -40,7 +40,7 @@ def GT2(grad_window=sig_grad_window):
             return gate.float()
 
         @staticmethod
-        @custom_bwd(device_type="cuda")
+        @custom_bwd
         def backward(ctx: torch.Any, grad_output):
 
             gate_pre, mag, gate = ctx.saved_tensors

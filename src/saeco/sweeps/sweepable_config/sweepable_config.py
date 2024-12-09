@@ -13,7 +13,7 @@ from typing import (
 )
 
 import pydantic._internal._model_construction as mc
-from pydantic import BaseModel, create_model, dataclasses
+from pydantic import BaseModel, create_model, dataclasses, Field
 from typing_extensions import dataclass_transform
 
 T = TypeVar("T")
@@ -191,7 +191,7 @@ def _to_swept_selective_dict(
         items = target.items()
     for name, attr in items:
         if isinstance(attr, SweepExpression):
-            sweep_params |= attr.get_params()
+            sweep_params |= attr.get_sweepvars()
             continue
         elif isinstance(attr, SweepVar):
             sweep_params.add(attr)
@@ -219,7 +219,7 @@ def _get_sweepvars(target: BaseModel | dict, sweepvars: set["SweepVar"] = None):
         sweepvars = set()
     for name, attr in items:
         if isinstance(attr, SweepExpression):
-            sweepvars |= attr.get_params()
+            sweepvars |= attr.get_sweepvars()
             continue
         elif isinstance(attr, SweepVar):
             assert False
@@ -302,14 +302,17 @@ def fix_paramize(d):
 class SweepableConfig(BaseModel, metaclass=SweptMeta):
     _ignore_this: int = 0  # needs field due to being a dataclass
 
-    def is_concrete(self, search_target: BaseModel = None):
-        search_target = search_target or self
+    def is_concrete(self):
+        return self._is_concrete(self)
+
+    @classmethod
+    def _is_concrete(cls, search_target: BaseModel):
         for name, field in search_target.model_fields.items():
             attr = getattr(search_target, name)
             if isinstance(attr, Swept):
                 return False
             elif isinstance(attr, BaseModel):
-                if not self.is_concrete(attr):
+                if not cls.is_concrete(attr):
                     return False
         return True
 
@@ -351,6 +354,9 @@ class SweepableConfig(BaseModel, metaclass=SweptMeta):
             d["sweep_vars"] = {k.name: random.choice(k.values) for k in p}
         return self.from_selective_sweep(d)
 
+    def to_swept_nodes(self):
+        return SweptNode.from_sweepable(self)
+
 
 class SweepVar(Swept[T]):
     values: list[T]
@@ -358,7 +364,7 @@ class SweepVar(Swept[T]):
     instantiated_value: T | None = None
 
     def __hash__(self):
-        return id(self)
+        return hash(self.name)
 
     def sweep_dump(self):
         as_swept = Swept[T](*self.values)
@@ -373,13 +379,13 @@ class SweepExpression(Swept[T]):
     def __init__(self, *args, expr: Callable[[], T], **kwargs):
         super().__init__(values=[], expr=expr, args=args, kwargs=kwargs)
 
-    def get_params(self):
+    def get_sweepvars(self) -> set["SweepVar"]:
         params = set()
         for p in self.args + tuple(self.kwargs.values()):
             if isinstance(p, SweepVar):
                 params.add(p)
             elif isinstance(p, SweepExpression):
-                params |= p.get_params()
+                params |= p.get_sweepvars()
         return params
 
     def get_args(self):
@@ -395,6 +401,72 @@ class SweepExpression(Swept[T]):
 
     def instantiate(self):
         return self.expr(*self.get_args(), **self.get_kwargs())
+
+
+Location = list[str]
+
+
+class SweptNode(BaseModel):
+    location: Location = Field(default_factory=list)
+    children: dict[str, "SweptNode"] = Field(default_factory=dict)
+    swept_fields: dict[str, Swept] = Field(default_factory=dict)
+    expressions: dict[str, SweepExpression] = Field(default_factory=dict)
+    # sweepvars: set[SweepVar] = Field(default_factory=set)
+
+    @classmethod
+    def from_sweepable(
+        cls,
+        target: BaseModel | dict,
+        location: Location = [],
+    ) -> "SweptNode":
+        inst = cls(location=location)
+        if isinstance(target, BaseModel):
+            items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+        else:
+            assert isinstance(target, dict)
+            items = target.items()
+        for name, attr in items:
+            if isinstance(attr, SweepExpression):
+                inst.expressions[name] = attr
+                inst.sweepvars |= attr.get_sweepvars()
+            elif isinstance(attr, SweepVar):
+                raise NotImplementedError("sweepvars should be inside an expression")
+                # inst.sweepvars.add(attr)
+            elif isinstance(attr, Swept):
+                inst.swept_fields[name] = attr
+            elif isinstance(attr, BaseModel | dict) and has_sweep(attr):
+                inst.children[name] = cls.from_sweepable(attr, location + [name])
+            else:
+                continue
+
+        return inst
+
+    def get_sweepvars(self) -> set[SweepVar]:
+        s = set()
+        for k, v in self.expressions.items():
+            s |= v.get_sweepvars()
+        for k, v in self.children.items():
+            s |= v.get_sweepvars()
+        return s
+
+    def to_wandb(self):
+        sweepvars = self.get_sweepvars()
+        return {
+            "parameters": {
+                "sweep_vars": {k.name: k.sweep_dump() for k in sweepvars},
+                **{k: v._to_wandb_parameters_only() for k, v in self.children.items()},
+                **{k: v.model_dump() for k, v in self.swept_fields.items()},
+            },
+            "method": "grid",
+        }
+
+    def _to_wandb_parameters_only(self):
+        return {
+            "parameters": {
+                **{k: v._to_wandb_parameters_only() for k, v in self.children.items()},
+                **{k: v.model_dump() for k, v in self.swept_fields.items()},
+            }
+        }
 
 
 def test():

@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Protocol
 
 import wandb
+from saeco.components.model import Architecture
 from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
 from attrs import define, field
 from saeco.mlog import mlog
+import clearml
 
 
 class SweepFile(Protocol):
@@ -21,24 +23,24 @@ class SweepFile(Protocol):
 
 
 class Sweeper:
-    def __init__(self, path, module_name="sweepfile"):
-        module_name = module_name.replace(".py", "")
-        self.path = Path(path)
-        pkg = str(self.path).split("src/")[-1].replace("/", ".")
-        self.module_name = module_name
-        self.full_name = f"{pkg}.{module_name}"
+    def __init__(self, arch: Architecture):
+        self.arch = arch
 
-    @cached_property
-    def sweepfile(self) -> SweepFile:
-        spec = importlib.util.spec_from_file_location(
-            self.full_name, str(self.path / f"{self.module_name}.py")
-        )
-        sweepfile = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(sweepfile)
-        return sweepfile
+    # @cached_property
+    # def sweepfile(self) -> SweepFile:
+    #     spec = importlib.util.spec_from_file_location(
+    #         self.full_name, str(self.path / f"{self.module_name}.py")
+    #     )
+    #     sweepfile = importlib.util.module_from_spec(spec)
+    #     spec.loader.exec_module(sweepfile)
+    #     return sweepfile
+
+    @property
+    def cfg(self):
+        return self.arch.base_cfg
 
     def initialize_sweep(self):
-        cfg = self.sweepfile.cfg
+        cfg = self.cfg
         representation = cfg.to_swept_nodes()
 
         sweep_id = mlog.begin_sweep(representation, project=self.sweepfile.PROJECT)
@@ -77,7 +79,7 @@ class Sweeper:
             )
         )
         print(dict(wandb.config))
-        self.sweepfile.run(cfg)
+        self.arch.run(cfg)
         wandb.finish()
 
     def start_agent(self):
