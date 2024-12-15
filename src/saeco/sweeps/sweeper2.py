@@ -1,12 +1,7 @@
-import importlib
-import importlib.util
 import os
-import sys
 from functools import cached_property
 from pathlib import Path
 from typing import Protocol
-
-import wandb
 from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
 from attrs import define, field
@@ -27,9 +22,12 @@ class Sweeper:
         pkg = str(self.path).split("src/")[-1].replace("/", ".")
         self.module_name = module_name
         self.full_name = f"{pkg}.{module_name}"
+        self.pods = None
 
     @cached_property
     def sweepfile(self) -> SweepFile:
+        import importlib.util
+
         spec = importlib.util.spec_from_file_location(
             self.full_name, str(self.path / f"{self.module_name}.py")
         )
@@ -40,12 +38,9 @@ class Sweeper:
     def initialize_sweep(self):
         cfg = self.sweepfile.cfg
         representation = cfg.to_swept_nodes()
-
-        sweep_id = mlog.begin_sweep(representation, project=self.sweepfile.PROJECT)
-        # sweep_id = wandb.sweep(
-        #     sweep=representation.to_wandb(),
-        #     project=self.sweepfile.PROJECT,
-        # )
+        sweep_id = mlog.begin_sweep(
+            representation.to_wandb(), project=self.sweepfile.PROJECT
+        )
         with open(self.path / "sweep_id.txt", "w") as f:
             f.write(sweep_id)
 
@@ -54,10 +49,12 @@ class Sweeper:
         return open(self.path / "sweep_id.txt").read().strip()
 
     def run(self):
-        mlog.init()
         basecfg: SweepableConfig = self.sweepfile.cfg
+        current_config = mlog.config()
+        cfg = basecfg.from_selective_sweep(dict(current_config))
 
-        cfg = basecfg.from_selective_sweep(dict(mlog.config))
+        # Instead of wandb.config.update(...), now use mlog.update_config
+        # to store run metadata if needed
         pod_info = dict(
             id=os.environ.get("RUNPOD_POD_ID", "local"),
             hostname=os.environ.get("RUNPOD_POD_HOSTNAME", None),
@@ -69,33 +66,31 @@ class Sweeper:
             cuda_version=os.environ.get("CUDA_VERSION", None),
             pytorch_version=os.environ.get("PYTORCH_VERSION", None),
         )
+        mlog.update_config(dict(full_cfg=cfg.model_dump(), pod_info=pod_info))
 
-        wandb.config.update(
-            dict(
-                full_cfg=cfg.model_dump(),
-                pod_info=pod_info,
-            )
-        )
-        print(dict(wandb.config))
         self.sweepfile.run(cfg)
-        wandb.finish()
+        mlog.finish()
 
     def start_agent(self):
-        wandb.agent(
-            self.sweep_id,
-            function=self.run,
-            project=self.sweepfile.PROJECT,  # TODO change project to being from config maybe? or remove from config
-        )
+        mlog.run_agent(self.sweep_id, self.sweepfile.PROJECT, self.run)
 
     def rand_run_no_agent(self):
         basecfg: SweepableConfig = self.sweepfile.cfg
-
         cfg = basecfg.random_sweep_configuration()
-        # wandb.init()
-        wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
-        # wandb.config.update(cfg.model_dump())
-        self.sweepfile.run(cfg)
-        wandb.finish()
+        # For a random run, just init mlog and run
+        with mlog.enter(project=self.sweepfile.PROJECT, config=cfg.model_dump()):
+            self.sweepfile.run(cfg)
+
+    def start_pods(self, num_pods=None):
+        from ezpod import Pods
+
+        pods = Pods.All()
+        if num_pods:
+            pods.make_new_pods(num_pods)
+        pods.sync()
+        pods.setup()
+        pods.runpy(f"src/saeco/sweeps/sweeper2.py --worker --sweep-id {self.sweep_id}")
+        pods.purge()
 
 
 def main():

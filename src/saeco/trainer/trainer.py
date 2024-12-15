@@ -12,11 +12,11 @@ from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from saeco.core import Cache
 from saeco.data.model_cfg import ModelConfig
 from saeco.data.tokens_data import TokensData
-from saeco.trainer.OptimConfig import get_optim_cls, OptimConfig
-from saeco.trainer.post_backward_normalization import do_post_backward, do_post_step
-from saeco.trainer.train_cache import TrainCache
-from saeco.trainer.train_config import TrainConfig
-from saeco.trainer.trainable import Trainable
+from .OptimConfig import get_optim_cls, OptimConfig
+from .post_backward_normalization import do_post_backward, do_post_step
+from .train_cache import TrainCache
+from .train_config import TrainConfig
+from .trainable import Trainable
 from .l0targeter import L0Targeter, TARGETER_TYPES
 from .recons import get_recons_loss
 from .run_config import RunConfig
@@ -216,15 +216,16 @@ class Trainer:
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
         self.post_step()
-        if wandb.run is None:
-            wandb.init(
-                **self.cfg.wandb_cfg,
-                config=self.run_cfg.model_dump(),
-                reinit=True,
-            )
-        if self.namestuff is not None:
-            lars = "(lars)" if self.cfg.use_lars else ""
-            wandb.run.name = f"{lars}{self.namestuff}[{self.cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
+        # if wandb.run is None:
+        #     wandb.init(
+        #         **self.cfg.wandb_cfg,
+        #         config=self.run_cfg.model_dump(),
+        #         reinit=True,
+        #     )
+        if wandb.run is not None:
+            if self.namestuff is not None:
+                lars = "(lars)" if self.cfg.use_lars else ""
+                wandb.run.name = f"{lars}{self.namestuff}[{self.cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
 
         # if self.cfg.use_schedulefree:
         #     self.optim.train()
@@ -350,7 +351,6 @@ class Trainer:
     def full_log(self, cache: Cache):
         if self.t % self.log_freq != 0:  # and self.t % 23000 > 100:
             return
-        # if wandb.run is not None:
         self.log(
             cache.logdict(
                 exclude_contains=["normalization/mu", "normalization/std"],

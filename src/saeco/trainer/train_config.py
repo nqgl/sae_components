@@ -1,8 +1,8 @@
 from saeco.data.dataset import DataConfig
 from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig, Swept
-from saeco.trainer.OptimConfig import get_optim_cls
-from saeco.trainer.schedule_cfg import RunSchedulingConfig
+from .OptimConfig import get_optim_cls
+from .schedule_cfg import RunSchedulingConfig
 
 
 from pydantic import Field

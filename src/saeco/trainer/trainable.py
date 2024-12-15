@@ -14,11 +14,29 @@ from saeco.components.losses import (
 )
 from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
 from saeco.core import Cache
-from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
-from saeco.trainer.train_cache import TrainCache
+from .normalizers import ConstL2Normalizer, Normalized, Normalizer
+from .train_cache import TrainCache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.architecture.architecture import SAE
 
 
 class Trainable(cl.Module):
+    """
+    current responsibilities:
+    normalization:
+        this handles normalization for both model io
+        model losses in particular
+        holds and can create the normalizer
+         - not responsible for priming the normalizer
+    sets up the resampling and holds the resampler
+    losses/metrics:
+        generate the total loss from all losses
+    creates cache if no cache is provided (operability with external code)
+
+
+    """
 
     losses: dict[Loss]
     model: cl.Module
@@ -27,7 +45,7 @@ class Trainable(cl.Module):
 
     def __init__(
         self,
-        models: list[cl.Module],
+        models: list[SAE],
         losses: Optional[dict[str, Loss]] = None,
         extra_losses: Optional[dict[str, Loss]] = None,
         metrics: Optional[dict[str, Loss]] = None,
@@ -65,7 +83,8 @@ class Trainable(cl.Module):
             }
         )
         self.model = self.normalizer.io_normalize(models[0])
-
+        self.encode_only = self.normalizer.input_normalize(models[0].encoder)
+        self.decode_only = self.normalizer.output_denormalize(models[0].decoder)
         if resampler:
             self.resampler = resampler
         elif resampler is None:
