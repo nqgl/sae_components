@@ -371,6 +371,8 @@ class Trainer:
         from pathlib import Path
 
         save_dir = Path.home() / "workspace/saved_models/"
+        if wandb.run is None:
+            return
         if wandb.run.project:
             save_dir /= wandb.run.project
         if wandb.run.sweep_id:

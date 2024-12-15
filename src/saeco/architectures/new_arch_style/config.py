@@ -1,5 +1,5 @@
 from saeco.trainer.run_config import RunConfig
-from .model import Config
+from arch import GatedConfig, Gated
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -12,7 +12,7 @@ from saeco.initializer import InitConfig
 
 PROJECT = "sae sweeps"
 
-cfg = RunConfig[Config](
+cfg = RunConfig[GatedConfig](
     train_cfg=TrainConfig(
         data_cfg=DataConfig(
             model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
@@ -44,7 +44,12 @@ cfg = RunConfig[Config](
     ),
     #
     init_cfg=InitConfig(),
-    arch_cfg=Config(
-        ...,
-    ),
+    arch_cfg=GatedConfig(),
 )
+g = Gated(cfg)
+print()
+cfg.is_concrete()
+d = cfg.random_sweep_configuration()
+g.instantiate(d.model_dump())
+g.model
+print()

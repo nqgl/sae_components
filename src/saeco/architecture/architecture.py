@@ -13,6 +13,7 @@ from saeco.components.losses import Loss
 from saeco.initializer.initializer import Initializer
 from saeco.sweeps import SweepableConfig
 from saeco.trainer.normalizers.normalizer import (
+    Normalizer,
     StaticInvertibleGeneralizedNormalizer,
     NormalizedIO,
     NormalizedInputs,
@@ -24,6 +25,9 @@ import saeco.components as co
 from functools import cached_property
 from torch import nn
 from abc import abstractmethod
+
+from saeco.trainer.trainable import Trainable
+from .arch_prop import loss_prop, model_prop, aux_model_prop
 
 ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
 
@@ -55,7 +59,7 @@ class SAE(Generic[ArchConfigType], cl.Seq):
     nonlinearity: cl.Module
     encoder: cl.Module
     decoder: cl.Module
-    acts: ActMetrics = None
+    acts: ActMetrics
     freqs: EMAFreqTracker | None
     penalty: co.Penalty | None
     losses: list[Loss]
@@ -85,7 +89,6 @@ class SAE(Generic[ArchConfigType], cl.Seq):
                 preacts=preacts,
                 nonlinearity=nonlinearity,
             )
-        self.losses = nn.ModuleList()
         super().__init__(
             # encoder_pre=encoder_pre,
             # preacts=preacts,
@@ -136,8 +139,13 @@ class SAE(Generic[ArchConfigType], cl.Seq):
 #         self.normalizer = normalizer
 
 
-# @define
-class Architecture(Generic[ArchConfigType], cl.Module):
+MODEL_FIELD_NAME = "model_fields"
+AUX_MODEL_FIELDS_NAME = "aux_model_fields"
+AUX_MODEL_LIST_FIELDS_NAME = "aux_models_list_fields"
+LOSSES_FIELDS_NAME = "losses_fields"
+
+
+class Architecture(Generic[ArchConfigType]):
     """
     multiple ways to set up an architecture
 
@@ -158,7 +166,8 @@ class Architecture(Generic[ArchConfigType], cl.Module):
     def __init__(self, run_cfg: RunConfig[ArchConfigType]):
         self.run_cfg = run_cfg
         self.cfg = None
-        self.instantiated = False
+        self._instantiated = False
+        self._setup_complete = False
         self._aux_models = nn.ModuleList()
         self._model = None
         self._losses = nn.ModuleList()
@@ -168,14 +177,50 @@ class Architecture(Generic[ArchConfigType], cl.Module):
             self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
         self.cfg = self.run_cfg.arch_cfg
         assert self.cfg.is_concrete() and self.run_cfg.is_concrete()
-        self.instantiated = True
+        self._instantiated = True
+        self._setup()
+
+    def _setup(self):
+        assert self._instantiated
         self.setup()
+        self._setup_complete = True
+
+    @cached_property
+    def model(self) -> SAE:
+        return model_prop.get_from_fields(self)
+
+    @cached_property
+    def losses(self) -> list[Loss]:
+        return loss_prop.get_from_fields(self)
+
+    @cached_property
+    def aux_models(self) -> list[SAE]:
+        aux_models = aux_model_prop.get_from_fields(self)
+        l = []
+        for am in aux_models.values():
+            if isinstance(am, list):
+                l.extend(am)
+            elif isinstance(am, SAE):
+                l.append([am])
+            else:
+                raise ValueError(
+                    f"aux_models must be a list of SAEs or lists of SAEs, got {type(am)}"
+                )
+        return l
 
     @abstractmethod
     def setup(self): ...
 
-    def build(self):
-        raise NotImplementedError
+    def get_trainable(self):
+        return Trainable(
+            [self.model, *self.aux_models],
+            losses=self.losses,
+            normalizer=self.normalizer,
+            resampler=self.get_resampler(),
+        )
+
+    def get_resampler(self):
+        return None
 
     # def __attrs_post_init__(self):
     #     if self.__class__ == Architecture:
@@ -205,15 +250,56 @@ class Architecture(Generic[ArchConfigType], cl.Module):
         )
 
     @cached_property
-    def model(self) -> SAE:
-        return SAE(
-            encoder_pre=self.make_encoder_pre(),
-            nonlinearity=self.make_nonlinearity(),
-            encoder=self.make_encoder(),
-            decoder=self.make_decoder(),
-        )
-
+    def normalizer(self) -> Normalizer: ...
     def run(cfg):
 
-        tr = TrainingRunner(cfg, model_fn=anth_update_model)
+        tr = TrainingRunner
         tr.trainer.train()
+
+
+### modified from functools // standard library
+from functools import cached_property
+
+#     if self.attrname is None:
+#         self.attrname = name
+#     elif name != self.attrname:
+#         raise TypeError(
+#             "Cannot assign the same cached_property to two different names "
+#             f"({self.attrname!r} and {name!r})."
+#         )
+
+# def __get__(self, instance, owner=None):
+#     if instance is None:
+#         return self
+#     if self.attrname is None:
+#         raise TypeError(
+#             "Cannot use cached_property instance without calling __set_name__ on it."
+#         )
+#     try:
+#         cache = instance.__dict__
+#     except (
+#         AttributeError
+#     ):  # not all objects have __dict__ (e.g. class defines slots)
+#         msg = (
+#             f"No '__dict__' attribute on {type(instance).__name__!r} "
+#             f"instance to cache {self.attrname!r} property."
+#         )
+#         raise TypeError(msg) from None
+#     val = cache.get(self.attrname, _NOT_FOUND)
+#     if val is _NOT_FOUND:
+#         with self.lock:
+#             # check if another thread filled cache while we awaited lock
+#             val = cache.get(self.attrname, _NOT_FOUND)
+#             if val is _NOT_FOUND:
+#                 val = self.func(instance)
+#                 try:
+#                     cache[self.attrname] = val
+#                 except TypeError:
+#                     msg = (
+#                         f"The '__dict__' attribute on {type(instance).__name__!r} instance "
+#                         f"does not support item assignment for caching {self.attrname!r} property."
+#                     )
+#                     raise TypeError(msg) from None
+#     return val
+
+# __class_getitem__ = classmethod(GenericAlias)

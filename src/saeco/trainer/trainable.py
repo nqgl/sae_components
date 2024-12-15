@@ -45,7 +45,7 @@ class Trainable(cl.Module):
 
     def __init__(
         self,
-        models: list[SAE],
+        models: list["SAE"],
         losses: Optional[dict[str, Loss]] = None,
         extra_losses: Optional[dict[str, Loss]] = None,
         metrics: Optional[dict[str, Loss]] = None,

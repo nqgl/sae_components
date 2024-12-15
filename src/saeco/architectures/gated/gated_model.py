@@ -85,7 +85,7 @@ def gated_sae(
     )
 
     model_aux = Seq(  # this one is just used for training the gate appropriately
-        encoder=enc_gate,  # oh and it's missing 1-2 detaches
+        encoder=enc_gate,  # oh and it's missing 1-2 detatches
         L1=L1Penalty(),
         freqs=EMAFreqTracker(),
         decoder=init._decoder.detached if cfg.detach else init.decoder,

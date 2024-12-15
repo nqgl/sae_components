@@ -1,7 +1,7 @@
-from pydantic import BaseModel
+from saeco.sweeps import SweepableConfig
 
 
-class DataGenerationProcessConfig(BaseModel):
+class DataGenerationProcessConfig(SweepableConfig):
     """
     Nothing in here matters wrt training behavior.
     This just changes the data generation process in ways that effect efficiency and file size.
