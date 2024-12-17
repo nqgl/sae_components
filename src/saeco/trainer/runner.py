@@ -120,7 +120,7 @@ class TrainingRunner:
             self.cfg.train_cfg,
             run_cfg=self.cfg,
             model=self.trainable,
-            wandb_run_label=self.name,
+            run_name=self.name,
             reload_info=ModelReloadInfo.from_model_fn(self.model_fn),
         )
         # trainer.post_step()

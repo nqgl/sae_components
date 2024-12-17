@@ -1,10 +1,14 @@
+from pathlib import Path
 from typing import Callable, TypeVar, Generic
 from pydantic import BaseModel
 from attrs import define, field
+import torch
 from saeco.components.metrics.metrics import ActMetrics, PreActMetrics
+from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
 from saeco.core.cache import Cache
 from saeco.misc.utils import useif
+import inspect
 
 # Assuming these classes are defined or imported from your codebase
 from saeco.trainer import TrainingRunner
@@ -27,7 +31,9 @@ from torch import nn
 from abc import abstractmethod
 
 from saeco.trainer.trainable import Trainable
-from .arch_prop import loss_prop, model_prop, aux_model_prop
+from saeco.trainer.trainer import Trainer
+from .arch_prop import loss_prop, metric_prop, model_prop, aux_model_prop
+import typing
 
 ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
 
@@ -100,14 +106,8 @@ class SAE(Generic[ArchConfigType], cl.Seq):
             decoder=decoder,
         )
 
-    def __lshift__(self, other):
-        if issubclass(other, Loss):
-            return self.losses.append(other(self))
-        elif isinstance(other, Loss):
-            assert (
-                other.module.module is self
-            ), "if this causes issues, we may want to seek self instead or add flag for complex architectures"
-            return self.losses.append(other)
+    def set_to_aux_model(self, aux_name):
+        self.acts.name = aux_name
 
     # @cached_property
     # def encode(self):
@@ -139,19 +139,41 @@ class SAE(Generic[ArchConfigType], cl.Seq):
 #         self.normalizer = normalizer
 
 
-MODEL_FIELD_NAME = "model_fields"
-AUX_MODEL_FIELDS_NAME = "aux_model_fields"
-AUX_MODEL_LIST_FIELDS_NAME = "aux_models_list_fields"
-LOSSES_FIELDS_NAME = "losses_fields"
+CFG_PATH_EXT = ".arch_cfg"
+ARCH_REF_PATH_EXT = ".arch_ref"
+MODEL_WEIGHTS_PATH_EXT = ".pt"
+AVERAGED_WEIGHTS_PATH_EXT = ".averagedpt"
+
+
+class ArchStoragePaths(BaseModel):
+    path: Path
+
+    @property
+    def cfg(self):
+        return self.path.with_suffix(CFG_PATH_EXT)
+
+    @property
+    def arch_cls_ref(self):
+        return self.path.with_suffix(ARCH_REF_PATH_EXT)
+
+    @property
+    def model_weights(self):
+        return self.path.with_suffix(MODEL_WEIGHTS_PATH_EXT)
+
+    @property
+    def averaged_weights(self):
+        return self.path.with_suffix(AVERAGED_WEIGHTS_PATH_EXT)
+
+    @classmethod
+    def from_path(cls, path: Path):
+        if isinstance(path, cls):
+            return path
+        return cls(path=path)
 
 
 class Architecture(Generic[ArchConfigType]):
     """
     multiple ways to set up an architecture
-
-    override constructor methods (make_*)
-    set the modules fields
-    override the functional methods (encode, decode)
 
     also for encoder in particular, it can either be defined by:
     - encoder_pre + nonlinearity
@@ -159,23 +181,27 @@ class Architecture(Generic[ArchConfigType]):
 
     """
 
-    normalizer: StaticInvertibleGeneralizedNormalizer
-    primary_model: SAE | None = field(default=None)
-    aux_models: list[SAE] | None = field(default=None)
+    # normalizer: StaticInvertibleGeneralizedNormalizer
+    # primary_model: SAE | None = field(default=None)
+    # aux_models: list[SAE] | None = field(default=None)
 
-    def __init__(self, run_cfg: RunConfig[ArchConfigType]):
+    def __init__(
+        self, run_cfg: RunConfig[ArchConfigType], state_dict=None, device="cuda"
+    ):
         self.run_cfg = run_cfg
-        self.cfg = None
+        self.state_dict = state_dict
         self._instantiated = False
         self._setup_complete = False
-        self._aux_models = nn.ModuleList()
-        self._model = None
-        self._losses = nn.ModuleList()
+        self._trainable = None
+        self.device = device
+
+    @property
+    def cfg(self) -> ArchConfigType:
+        return self.run_cfg.arch_cfg
 
     def instantiate(self, inst_cfg=None):
         if inst_cfg:
             self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
-        self.cfg = self.run_cfg.arch_cfg
         assert self.cfg.is_concrete() and self.run_cfg.is_concrete()
         self._instantiated = True
         self._setup()
@@ -186,41 +212,62 @@ class Architecture(Generic[ArchConfigType]):
         self._setup_complete = True
 
     @cached_property
-    def model(self) -> SAE:
+    def _core_model(self) -> SAE:
         return model_prop.get_from_fields(self)
 
     @cached_property
-    def losses(self) -> list[Loss]:
+    def _losses(self) -> list[Loss]:
         return loss_prop.get_from_fields(self)
+
+    @cached_property
+    def _metrics(self) -> list[Loss]:
+        return metric_prop.get_from_fields(self)
 
     @cached_property
     def aux_models(self) -> list[SAE]:
         aux_models = aux_model_prop.get_from_fields(self)
-        l = []
-        for am in aux_models.values():
-            if isinstance(am, list):
-                l.extend(am)
-            elif isinstance(am, SAE):
-                l.append([am])
+        l: list[SAE] = []
+        for name, e in aux_models.items():
+            if isinstance(e, list):
+                e: list[SAE]
+                for i, sae in enumerate(e):
+                    sae.set_to_aux_model(f"{name}.{i}")
+                    l.append(sae)
+            elif isinstance(e, SAE):
+                e: SAE
+                e.set_to_aux_model(name)
+                l.append(e)
             else:
                 raise ValueError(
-                    f"aux_models must be a list of SAEs or lists of SAEs, got {type(am)}"
+                    f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
                 )
         return l
 
     @abstractmethod
     def setup(self): ...
 
-    def get_trainable(self):
-        return Trainable(
-            [self.model, *self.aux_models],
-            losses=self.losses,
-            normalizer=self.normalizer,
-            resampler=self.get_resampler(),
-        )
+    @property
+    def trainable(self) -> Trainable:
+        if self._trainable is None:
+            self._trainable = self.make_trainable().to(device=self.device)
+        return self._trainable
 
-    def get_resampler(self):
-        return None
+    def make_trainable(self):
+        trainable = Trainable(
+            [self._core_model, *self.aux_models],
+            losses=self._losses,
+            normalizer=self.normalizer,
+            resampler=self.make_resampler(),
+        )
+        if self.state_dict is not None:
+            load_result = trainable.load_state_dict(self.state_dict)
+            print("loaded state dict into trainable:", load_result)
+        return trainable
+
+    def make_resampler(self):
+        resampler = AnthResampler(self.run_cfg.resampler_config)
+        resampler.assign_model(self._core_model)
+        return resampler
 
     # def __attrs_post_init__(self):
     #     if self.__class__ == Architecture:
@@ -250,56 +297,116 @@ class Architecture(Generic[ArchConfigType]):
         )
 
     @cached_property
-    def normalizer(self) -> Normalizer: ...
-    def run(cfg):
+    def data(self):
+        return iter(self.run_cfg.train_cfg.data_cfg.get_databuffer())
 
-        tr = TrainingRunner
-        tr.trainer.train()
+    @cached_property
+    def normalizer(self) -> StaticInvertibleGeneralizedNormalizer:
+        normalizer = StaticInvertibleGeneralizedNormalizer(
+            init=self.init, cfg=self.run_cfg.normalizer_cfg
+        )
+        if self.state_dict is None:
+            normalizer.prime_normalizer(self.data)
+        return normalizer
 
+    @cached_property
+    def trainer(self):
+        trainer = Trainer(
+            self.run_cfg.train_cfg,
+            run_cfg=self.run_cfg,
+            model=self.trainable,
+            run_name=self.__class__.__name__,
+            save_callback=self.save_to_path,
+        )
+        # trainer.post_step()
+        return trainer
 
-### modified from functools // standard library
-from functools import cached_property
+    # def run(cfg):
 
-#     if self.attrname is None:
-#         self.attrname = name
-#     elif name != self.attrname:
-#         raise TypeError(
-#             "Cannot assign the same cached_property to two different names "
-#             f"({self.attrname!r} and {name!r})."
-#         )
+    #     tr = TrainingRunner
+    #     tr.trainer.train()
 
-# def __get__(self, instance, owner=None):
-#     if instance is None:
-#         return self
-#     if self.attrname is None:
-#         raise TypeError(
-#             "Cannot use cached_property instance without calling __set_name__ on it."
-#         )
-#     try:
-#         cache = instance.__dict__
-#     except (
-#         AttributeError
-#     ):  # not all objects have __dict__ (e.g. class defines slots)
-#         msg = (
-#             f"No '__dict__' attribute on {type(instance).__name__!r} "
-#             f"instance to cache {self.attrname!r} property."
-#         )
-#         raise TypeError(msg) from None
-#     val = cache.get(self.attrname, _NOT_FOUND)
-#     if val is _NOT_FOUND:
-#         with self.lock:
-#             # check if another thread filled cache while we awaited lock
-#             val = cache.get(self.attrname, _NOT_FOUND)
-#             if val is _NOT_FOUND:
-#                 val = self.func(instance)
-#                 try:
-#                     cache[self.attrname] = val
-#                 except TypeError:
-#                     msg = (
-#                         f"The '__dict__' attribute on {type(instance).__name__!r} instance "
-#                         f"does not support item assignment for caching {self.attrname!r} property."
-#                     )
-#                     raise TypeError(msg) from None
-#     return val
+    @classmethod
+    def get_arch_config_class(cls):
+        if cls is Architecture:
+            raise ValueError(
+                "Architecture class must not be generic to get config class"
+            )
 
-# __class_getitem__ = classmethod(GenericAlias)
+        assert len(cls.__orig_bases__) == 1
+        p = typing.get_args(cls.__orig_bases__[0])
+        assert len(p) == 1
+        return p[0]
+
+    @classmethod
+    def get_config_class(cls):
+        return RunConfig[cls.get_arch_config_class()]
+
+    def save_to_path(
+        self, path: Path | ArchStoragePaths, save_weights=..., averaged_weights=None
+    ):
+        from .arch_reload_info import ArchReloadInfo
+
+        path.mkdir(parents=True, exist_ok=True)
+        path = ArchStoragePaths.from_path(path)
+
+        arch_ref = ArchReloadInfo.from_arch(self)
+        if path.arch_cls_ref.exists():
+            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
+            raise ValueError(
+                f"file already exists at {path.arch_cls_ref}, wrote to {path.path.name}_1"
+            )
+        elif path.cfg.exists():
+            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
+            raise ValueError(
+                f"file already exists at {path.cfg}, wrote to {path.path.name}_1"
+            )
+        elif path.model_weights.exists():
+            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
+            raise ValueError(
+                f"file already exists at {path.model_weights}, wrote to {path.path.name}_1"
+            )
+        elif path.averaged_weights.exists():
+            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
+            raise ValueError(
+                f"file already exists at {path.averaged_weights}, wrote to {path.path.name}_1"
+            )
+        path.arch_cls_ref.write_text(arch_ref.model_dump_json())
+        path.cfg.write_text(self.run_cfg.model_dump_json())
+        if save_weights is True or (
+            save_weights is ... and self._trainable is not None
+        ):
+            if self._trainable is None:
+                raise ValueError("trainable is None but attempted to save weights")
+            torch.save(self._trainable.state_dict(), path.model_weights)
+        if averaged_weights is not None:
+            torch.save(averaged_weights, path.averaged_weights)
+
+    @classmethod
+    def load_from_path(cls, path: Path | ArchStoragePaths, load_weights=None):
+        from .arch_reload_info import ArchReloadInfo
+
+        path = ArchStoragePaths.from_path(path)
+        if cls is Architecture:
+            arch_ref = ArchReloadInfo.model_validate_json(path.arch_cls_ref.read_text())
+            arch_cls = arch_ref.get_arch_class()
+            return arch_cls.load_from_path(path, load_weights=load_weights)
+        cfg_cls = cls.get_config_class()
+        cfg = cfg_cls.model_validate_json(path.cfg.read_text())
+        state_dict = None
+        if path.model_weights.exists():
+            if load_weights is None:
+                raise ValueError(
+                    f"weights exist at {path.model_weights}, but load_weights is not set"
+                )
+            if load_weights:
+                state_dict = torch.load(path.model_weights)
+        else:
+            if load_weights:
+                raise ValueError(
+                    f"weights do not exist at {path.model_weights}, but load_weights is set"
+                )
+        inst = cls(cfg, state_dict=state_dict)
+        if cfg.is_concrete():
+            inst.instantiate()
+        return inst

@@ -88,7 +88,7 @@ class arch_prop(cached_property):
 
 class _base_model_prop(arch_prop):
 
-    def setloss(self, fn):
+    def add_loss(self, fn):
         if isinstance(fn, types.FunctionType) or isinstance(fn, types.LambdaType):
 
             def _loss(inst):
@@ -101,8 +101,19 @@ class _base_model_prop(arch_prop):
 
         return loss_prop(_loss)
 
+    def add_metric(self, metric):
+        def _metric(inst):
+            return metric(self.__get__(inst))
+
+        return metric_prop(_metric)
+
 
 class loss_prop(arch_prop):
+    def __get__(self, instance, owner=None):
+        return super().__get__(instance, owner)
+
+
+class metric_prop(arch_prop):
     def __get__(self, instance, owner=None):
         return super().__get__(instance, owner)
 

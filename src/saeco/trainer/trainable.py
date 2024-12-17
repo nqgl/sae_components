@@ -115,11 +115,24 @@ class Trainable(cl.Module):
         assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
         return loss
 
-    def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+    def rearrange(self, x: torch.Tensor):
         shape = None
         if x.ndim == 3:
             shape = x.shape
             x = einops.rearrange(x, "doc seq data -> (doc seq) data")
+        elif x.ndim != 2:
+            raise NotImplementedError
+        return x, shape
+
+    def dearrange(self, x: torch.Tensor, shape: tuple[int, int]):
+        if shape is None:
+            return x
+        return einops.rearrange(
+            x, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
+        )
+
+    def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+        x, shape = self.rearrange(x)
 
         made_cache = False
         if cache is None:
@@ -129,11 +142,7 @@ class Trainable(cl.Module):
         if made_cache:
             cache.destruct()
             del cache
-        if shape is not None:
-            out = einops.rearrange(
-                out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
-            )
-        return out
+        return self.dearrange(out, shape)
 
     def get_losses_and_metrics_names(self) -> list[str]:
         return (
@@ -191,3 +200,13 @@ class Trainable(cl.Module):
         if pre_acts:
             return acts, preacts
         return acts
+
+    def encode(self, x, cache: TrainCache = None):
+        cache = cache or self.make_cache()
+        x, shape = self.rearrange(x)
+        return self.dearrange(cache(self).encode_only(x), shape)
+
+    def decode(self, x, cache: TrainCache = None):
+        cache = cache or self.make_cache()
+        x, shape = self.rearrange(x)
+        return self.dearrange(cache(self).decode_only(x), shape)

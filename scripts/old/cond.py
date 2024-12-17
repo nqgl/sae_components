@@ -405,7 +405,7 @@ def train_cond(model_fn, l0_target=45, lr=3e-4):
         lr=lr,
     )
     trainable = Trainable(models, losses).cuda()
-    trainer = Trainer(cfg, trainable, wandb_run_label=name + f"_{lr:.0e}")
+    trainer = Trainer(cfg, trainable, run_name=name + f"_{lr:.0e}")
     buf = trainer.get_databuffer()
     trainable.normalizer.prime_normalizer(buf)
     trainer.post_step()
@@ -437,7 +437,7 @@ def train_lars(model_fn, l0_target=45, lr=3e-4):
         wandb_cfg=dict(project=PROJECT),
     )
     trainable = Trainable(models, losses, normalizer=L2Normalizer()).cuda()
-    trainer = Trainer(cfg, trainable, wandb_run_label=name + f"_{lr:.0e}")
+    trainer = Trainer(cfg, trainable, run_name=name + f"_{lr:.0e}")
     buf = iter(trainer.get_databuffer())
     trainable.normalizer.prime_normalizer(buf)
     trainer.post_step()

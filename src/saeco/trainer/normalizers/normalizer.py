@@ -88,7 +88,7 @@ class NormalizedInputs(Normalized):
 
 class DeNormalizedOutputs(Normalized):
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        return cache(self).normalizer.invert(
+        return self._normalizer.invert(
             self.model(x, cache=cache["normalized"]), cache=cache["normalization"]
         )
 

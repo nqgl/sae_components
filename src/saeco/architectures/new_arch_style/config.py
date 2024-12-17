@@ -1,3 +1,4 @@
+from saeco.data.data_config_definitions import gpt_2_block
 from saeco.trainer.run_config import RunConfig
 from arch import GatedConfig, Gated
 from saeco.components.resampling.anthropic_resampling import (
@@ -14,11 +15,9 @@ PROJECT = "sae sweeps"
 
 cfg = RunConfig[GatedConfig](
     train_cfg=TrainConfig(
-        data_cfg=DataConfig(
-            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
-        ),
+        data_cfg=gpt_2_block(layer=6),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=200,
             resample_period=12_500,
         ),
         #
@@ -51,5 +50,19 @@ print()
 cfg.is_concrete()
 d = cfg.random_sweep_configuration()
 g.instantiate(d.model_dump())
-g.model
+g.trainable
+g.trainer.train()
 print()
+import torch
+
+v = torch.randn(2, 768).cuda()
+model = g.trainable
+
+o = model(v)
+o2 = model.decode(model.encode(v))
+from pathlib import Path
+
+p = Path.home() / "workspace/saved_models/Gated/201"
+
+a2 = Gated.load_from_path(p, load_weights=True)
+a2.trainable

@@ -89,7 +89,7 @@ class Gated(Architecture[GatedConfig]):
             penalty=None,
         )
 
-    L2_loss = gated_model.setloss(L2Loss)
+    L2_loss = gated_model.add_loss(L2Loss)
 
     @aux_model_prop
     def model_aux(self):
@@ -101,5 +101,5 @@ class Gated(Architecture[GatedConfig]):
             ),
         )
 
-    L2_aux_loss = model_aux.setloss(L2Loss)
-    sparsity_loss = model_aux.setloss(SparsityPenaltyLoss)
+    L2_aux_loss = model_aux.add_loss(L2Loss)
+    sparsity_loss = model_aux.add_loss(SparsityPenaltyLoss)

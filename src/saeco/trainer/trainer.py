@@ -31,14 +31,14 @@ class Trainer:
         cfg: TrainConfig,
         run_cfg: RunConfig,
         model: Trainable,
-        wandb_run_label=None,
+        run_name=None,
         optim: torch.optim.Optimizer | None = None,
-        reload_info: ModelReloadInfo | None = None,
+        save_callback=None,
     ):
         self.cfg: TrainConfig = cfg
         self.run_cfg: RunConfig = run_cfg
         self.trainable = model
-        self.reload_info = reload_info
+        self.save_callback = save_callback
         self.t = 1
         self.log_t_offset = 0
         self.log_freq = 10
@@ -80,7 +80,7 @@ class Trainer:
             self.optim = LARS(self.optim)
             assert optim is None or not isinstance(optim, LARS)
 
-        self.namestuff = wandb_run_label
+        self.namestuff = run_name
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
         ).get_tokens()
@@ -207,8 +207,6 @@ class Trainer:
         finally:
             if self.cfg.save_on_complete:
                 self.save()
-                if self.cfg.use_averaged_model:
-                    self.save(averaged=True)
 
     def _train(self, buffer=None, num_steps=None):
         if buffer is None:
@@ -367,29 +365,36 @@ class Trainer:
         # if wandb.run is not None:
         self.log(d)
 
-    def save(self, averaged=False):
+    def save(self):
         from pathlib import Path
 
         save_dir = Path.home() / "workspace/saved_models/"
-        if wandb.run is None:
-            return
-        if wandb.run.project:
-            save_dir /= wandb.run.project
-        if wandb.run.sweep_id:
-            save_dir /= f"sweep{wandb.run.sweep_id}"
-        name = f"{wandb.run.name}/{self.t}"
-        if averaged:
-            name = f"{name}_averaged"
-        savename = save_dir / name
-        save_dir.mkdir(exist_ok=True, parents=True)
-        cfg_path = savename.with_suffix(".json")
-        model_path = savename.with_suffix(".pt")
-        reload_info = savename.with_suffix(".reload_info.json")
-        assert (not cfg_path.exists()) and (not model_path.exists())
-        cfg_path.parent.mkdir(exist_ok=True, parents=True)
-        if averaged:
-            torch.save(self.averaged_model.state_dict(), model_path)
+        if wandb.run:
+            if wandb.run.project:
+                save_dir /= wandb.run.project
+            if wandb.run.sweep_id:
+                save_dir /= f"sweep{wandb.run.sweep_id}"
+            name = f"{wandb.run.name}/{self.t}"
         else:
-            torch.save(self.trainable.state_dict(), model_path)
-        cfg_path.write_text(self.run_cfg.model_dump_json())
-        reload_info.write_text(self.reload_info.model_dump_json())
+            name = f"{self.namestuff}/{self.t}"
+        savename = save_dir / name
+
+        if self.cfg.use_averaged_model:
+            self.save_callback(
+                savename,
+                save_weights=True,
+                averaged_weights=self.averaged_model.state_dict(),
+            )
+        else:
+            self.save_callback(savename, save_weights=True, trainable=self.trainable)
+        # cfg_path = savename.with_suffix(".json")
+        # model_path = savename.with_suffix(".pt")
+        # reload_info = savename.with_suffix(".reload_info.json")
+        # assert (not cfg_path.exists()) and (not model_path.exists())
+        # cfg_path.parent.mkdir(exist_ok=True, parents=True)
+        # if averaged:
+        #     torch.save(self.averaged_model.state_dict(), model_path)
+        # else:
+        #     torch.save(self.trainable.state_dict(), model_path)
+        # cfg_path.write_text(self.run_cfg.model_dump_json())
+        # reload_info.write_text(self.reload_info.model_dump_json())
