@@ -61,8 +61,9 @@ class ModelConfig(SweepableConfig):
                 else:
                     model = get_model_fn(
                         self.model_name,
-                        torch_dtype=str_to_dtype(self.torch_dtype_str),
+                        torch_dtype=self.torch_dtype,
                         device_map=self._device,
+                        # dtype=self.torch_dtype,
                     )
                 if MODEL_FN_CALLABLE_OVERRIDE is not None:
                     model = NNsight(model)

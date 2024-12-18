@@ -1,4 +1,4 @@
-from saeco.data.data_config_definitions import gpt_2_block
+from saeco.data.data_config_definitions import gpt_2_block, gemma_2_2b_openwebtext
 from saeco.trainer.run_config import RunConfig
 from arch import GatedConfig, Gated
 from saeco.components.resampling.anthropic_resampling import (
@@ -15,54 +15,89 @@ PROJECT = "sae sweeps"
 
 cfg = RunConfig[GatedConfig](
     train_cfg=TrainConfig(
-        data_cfg=gpt_2_block(layer=6),
+        data_cfg=gemma_2_2b_openwebtext,
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=200,
+            run_length=45000,
             resample_period=12_500,
         ),
         #
         batch_size=4096,
         optim="Adam",
-        lr=Swept(1e-3, 3e-4, 1e-4),
+        lr=3e-4,
         betas=(0.9, 0.999),
         #
-        use_autocast=True,
+        use_autocast=False,
         use_lars=True,
         #
-        l0_target=25,
+        l0_target=50,
         l0_target_adjustment_size=0.0002,
         coeffs={
-            "sparsity_loss": 3e-3,
+            "sparsity_loss": 1.5e-3,
             "L2_loss": 1,
         },
         #
         wandb_cfg=dict(project=PROJECT),
+        intermittent_metric_freq=1000,
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
+        expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(),
+    init_cfg=InitConfig(d_data=2304, dict_mult=8),
     arch_cfg=GatedConfig(),
 )
+from transformers import Gemma2ForCausalLM
+
+# import saeco.data.model_cfg as mc
+
+# # mc.MODEL_FN_CALLABLE_OVERRIDE = Gemma2ForCausalLM.from_pretrained
 g = Gated(cfg)
 print()
 cfg.is_concrete()
 d = cfg.random_sweep_configuration()
 g.instantiate(d.model_dump())
-g.trainable
-g.trainer.train()
-print()
+import nnsight
 import torch
+import einops
 
-v = torch.randn(2, 768).cuda()
-model = g.trainable
+g.trainer.train()
 
-o = model(v)
-o2 = model.decode(model.encode(v))
-from pathlib import Path
 
-p = Path.home() / "workspace/saved_models/Gated/201"
+def normal_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig, skip_first=False):
+    def nrunner(tokens):
+        return model.trace(tokens, trace=False)
 
-a2 = Gated.load_from_path(p, load_weights=True)
-a2.trainable
+    return nrunner
+
+
+def to_losses(model_callable):
+    def runner(tokens: torch.Tensor):
+        out = model_callable(tokens)
+        l = einops.rearrange(
+            out.logits[:, :-1], "batch seq vocab -> (batch seq) vocab"
+        ).cuda()
+        t = einops.rearrange(tokens[:, 1:], "batch seq -> (batch seq)").cuda()
+        loss = torch.nn.functional.cross_entropy(l, t)
+
+        return loss
+
+    return runner
+
+
+model = cfg.train_cfg.data_cfg.model_cfg.model
+normal = to_losses(
+    normal_runner(
+        model,
+        cfg.train_cfg.data_cfg.model_cfg.acts_cfg,
+        skip_first=True,
+    )
+)
+with torch.inference_mode():
+    input_text = "Write me a poem about Machine Learning."
+    input_ids = model.tokenizer(input_text, return_tensors="pt")
+    input_ids["input_ids"].dtype
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        normal(input_ids["input_ids"].cuda())
+
+print("done")

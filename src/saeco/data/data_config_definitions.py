@@ -2,6 +2,7 @@ from saeco.sweeps.sweepable_config import Swept
 from .dataset import DataConfig, DataGenerationProcessConfig, SplitConfig
 from .model_cfg import ActsDataConfig, ModelConfig
 
+
 gemma_2_2b_openwebtext = DataConfig(
     dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
     model_cfg=ModelConfig(
@@ -13,13 +14,14 @@ gemma_2_2b_openwebtext = DataConfig(
         model_name="google/gemma-2-2b",
         torch_dtype_str="bfloat16",
     ),
-    trainsplit=SplitConfig(start=0, end=20, tokens_from_split=300_000_000),
+    trainsplit=SplitConfig(start=0, end=25, tokens_from_split=250_000_000),
     generation_config=DataGenerationProcessConfig(
         # tokens_per_pile=2**25,
         acts_per_pile=2**18,
         meta_batch_size=2**18,
-        llm_batch_size=2**16,
+        llm_batch_size=2**13,
     ),
+    seq_len=1024,
 )
 
 

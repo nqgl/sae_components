@@ -28,7 +28,7 @@ from types import GenericAlias
 
 
 class GatedConfig(SweepableConfig):
-    pre_bias: bool = True
+    pre_bias: bool = False
     detach: bool = True
     # decay_l1_penalty: float =
 

@@ -3,7 +3,7 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.data.data_config_definitions import gpt_2_block
+from saeco.data.data_config_definitions import gpt_2_block, gemma_2_2b_openwebtext
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig, Swept
 from saeco.trainer import RunSchedulingConfig, TrainingRunner
@@ -22,7 +22,7 @@ else:
     PROJECT = "L0Targeting_cmp"
     cfg = RunConfig[AnthUpdateConfig](
         train_cfg=TrainConfig(
-            data_cfg=gpt_2_block(layer=6),
+            data_cfg=gemma_2_2b_openwebtext,
             raw_schedule_cfg=RunSchedulingConfig(
                 run_length=17_000,
                 resample_period=4_000,
@@ -57,7 +57,7 @@ else:
             optim_reset_cfg=OptimResetValuesConfig(),
         ),
         #
-        init_cfg=InitConfig(dict_mult=32),
+        init_cfg=InitConfig(dict_mult=8, d_data=2304),
         arch_cfg=AnthUpdateConfig(),
     )
 

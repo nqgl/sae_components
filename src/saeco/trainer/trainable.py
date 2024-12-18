@@ -21,6 +21,26 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from saeco.architecture.architecture import SAE
 
+from functools import wraps
+
+
+def make_cache_optional(fn):
+    @wraps(fn)
+    def wrapper(self, *args, cache: TrainCache | None = None, **kwargs):
+        made_cache = False
+        if cache is None:
+            cache = TrainCache()
+            made_cache = True
+
+        out = fn(self, *args, cache=cache, **kwargs)
+
+        if made_cache:
+            cache.destruct()
+            del cache
+        return out
+
+    return wrapper
+
 
 class Trainable(cl.Module):
     """
@@ -131,17 +151,10 @@ class Trainable(cl.Module):
             x, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
         )
 
-    def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+    @make_cache_optional
+    def forward(self, x: torch.Tensor, *, cache: Cache) -> torch.Tensor:
         x, shape = self.rearrange(x)
-
-        made_cache = False
-        if cache is None:
-            cache = TrainCache()
-            made_cache = True
         out = self.model(x, cache=cache)
-        if made_cache:
-            cache.destruct()
-            del cache
         return self.dearrange(out, shape)
 
     def get_losses_and_metrics_names(self) -> list[str]:
@@ -182,11 +195,8 @@ class Trainable(cl.Module):
     def make_cache(self) -> TrainCache:
         return TrainCache()
 
+    @make_cache_optional
     def get_acts(self, x, cache: TrainCache = None, pre_acts=False):
-        made_cache = False
-        if cache is None:
-            cache = self.make_cache()
-            made_cache = True
         cache.acts = ...
         if pre_acts:
             cache.pre_acts = ...
@@ -194,19 +204,16 @@ class Trainable(cl.Module):
         acts = cache.acts
         if pre_acts:
             preacts = cache.pre_acts
-        if made_cache:
-            cache.destruct()
-            del cache
         if pre_acts:
             return acts, preacts
         return acts
 
+    @make_cache_optional
     def encode(self, x, cache: TrainCache = None):
-        cache = cache or self.make_cache()
         x, shape = self.rearrange(x)
         return self.dearrange(cache(self).encode_only(x), shape)
 
+    @make_cache_optional
     def decode(self, x, cache: TrainCache = None):
-        cache = cache or self.make_cache()
         x, shape = self.rearrange(x)
         return self.dearrange(cache(self).decode_only(x), shape)

@@ -34,6 +34,18 @@ class Normalizer(cl.Module, ABC):
     def output_denormalize(self, module) -> "DeNormalizedOutputs":
         return DeNormalizedOutputs(model=module, normalizer=self)
 
+    def get_denormalizer(self):
+        return DeNormalizer(self)
+
+
+class DeNormalizer(cl.Module):
+    def __init__(self, normalizer: Normalizer):
+        super().__init__()
+        self.normalizer = normalizer
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        return self.normalizer.invert(x, cache=cache, **kwargs)
+
 
 class Normalized(cl.Module):
     model: cl.Module

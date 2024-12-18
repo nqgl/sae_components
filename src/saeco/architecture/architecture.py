@@ -96,6 +96,7 @@ class SAE(Generic[ArchConfigType], cl.Seq):
                 nonlinearity=nonlinearity,
             )
         super().__init__(
+            # normalizer=normalizer,
             # encoder_pre=encoder_pre,
             # preacts=preacts,
             # nonlinearity=nonlinearity,
@@ -104,18 +105,19 @@ class SAE(Generic[ArchConfigType], cl.Seq):
             freqs=freqs,
             **useif(penalty is not None, penalty=penalty),
             decoder=decoder,
+            # denormalizer=...
         )
 
     def set_to_aux_model(self, aux_name):
         self.acts.name = aux_name
 
     # @cached_property
-    # def encode(self):
+    # def encode(self) -> cl.Seq:
     #     return self[:"acts"]
 
     # @cached_property
-    # def decode(self):
-    #     return self.decoder
+    # def decode(self) -> cl.Seq:
+    #     return self["decoder":]
 
     # # encode: cl.Module = NotImplemented
     # @classmethod

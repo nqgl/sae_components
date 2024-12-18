@@ -34,6 +34,7 @@ class Trainer:
         run_name=None,
         optim: torch.optim.Optimizer | None = None,
         save_callback=None,
+        **kwargs,
     ):
         self.cfg: TrainConfig = cfg
         self.run_cfg: RunConfig = run_cfg
@@ -206,7 +207,10 @@ class Trainer:
             self._train(buffer=buffer, num_steps=num_steps)
         finally:
             if self.cfg.save_on_complete:
-                self.save()
+                try:
+                    self.save()
+                except Exception as e:
+                    print(e)
 
     def _train(self, buffer=None, num_steps=None):
         if buffer is None:
@@ -355,6 +359,16 @@ class Trainer:
                 excluded=["act_metrics_name"],
             )
         )
+        if wandb.run is None and self.t % 25 == 0:
+            d = cache.logdict(
+                exclude_contains=["normalization/mu", "normalization/std"],
+                excluded=["act_metrics_name"],
+            )
+            n = ["L2_loss", "L2_aux_loss", "sparsity_loss", "l0", "L0"]
+            for key in n:
+                k = f"cache/{key}"
+                if k in d:
+                    print(f"{k}: {d[k]}")
 
     def eval_log(self, cache: Cache):
         d = {
