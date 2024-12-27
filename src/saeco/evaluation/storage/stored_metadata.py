@@ -6,61 +6,29 @@ from attrs import define, field
 from pydantic import BaseModel
 from torch import Tensor
 
-from .named_filter import NamedFilter
+from saeco.evaluation.saved_acts_config import CachingConfig
 
-from .saved_acts_config import CachingConfig
-from .storage.disk_tensor import DiskTensor
-from .storage.growing_disk_tensor import GrowingDiskTensor
+from ...data.storage.disk_tensor_collection import DiskTensorCollection
+
+from ..named_filter import NamedFilter
+
+from ...data.storage.disk_tensor import DiskTensor
+from ...data.storage.growing_disk_tensor import GrowingDiskTensor
 
 
 @define
-class Artifacts:
-    path: Path
+class CollectionWithCachingConfig(DiskTensorCollection):
     cached_config: CachingConfig
-    artifacts_category: str = "artifacts"
-    return_raw: bool = False
-
-    @property
-    def storage_dir(self):
-        return self.path / self.artifacts_category
-
-    def create(self, name, dtype, shape) -> DiskTensor:
-        path = self.storage_dir / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            raise ValueError(f"Metadata already exists at {path}")
-        return DiskTensor.create(
-            path=path,
-            shape=shape,
-            dtype=dtype,
-        )
-
-    def get(self, name):
-        return DiskTensor.open(self.storage_dir / name)
-
-    def __getitem__(self, name):
-        if self.return_raw:
-            return DiskTensor.open(self.storage_dir / name)
-        return DiskTensor.open(self.storage_dir / name).tensor
-
-    def __setitem__(self, name, value):
-        assert isinstance(name, str)
-        assert isinstance(value, torch.Tensor)
-        assert not name in self
-        disk_tensor = self.create(name, value.dtype, value.shape)
-        disk_tensor.tensor[:] = value
-        disk_tensor.finalize()
-
-    def __contains__(self, name):
-        return name in self.keys()
-
-    def keys(self):
-        return list(set([p.stem for p in self.storage_dir.glob("*")]))
 
 
 @define
-class Filters(Artifacts):
-    artifacts_category: str = "filters"
+class Artifacts(CollectionWithCachingConfig):
+    stored_tensors_subdirectory_name: str = "artifacts"
+
+
+@define
+class Filters(CollectionWithCachingConfig):
+    stored_tensors_subdirectory_name: str = "filters"
 
     def __setitem__(self, name, value):
         if value.shape[0] != self.cached_config.num_docs:
@@ -76,8 +44,8 @@ class Filters(Artifacts):
 
 
 @define
-class Metadatas(Artifacts):
-    artifacts_category: str = "metadatas"
+class Metadatas(CollectionWithCachingConfig):
+    stored_tensors_subdirectory_name: str = "metadatas"
 
     def create(self, name, dtype, item_shape=[]) -> DiskTensor:
         path = self.storage_dir / name

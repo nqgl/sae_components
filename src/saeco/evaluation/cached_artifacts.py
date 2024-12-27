@@ -11,7 +11,7 @@ from torch import Tensor
 
 from .filtered import FilteredTensor
 
-from .metadata import Artifacts
+from ..data.storage.disk_tensor_collection import DiskTensorCollection
 
 
 class CachedCalls:

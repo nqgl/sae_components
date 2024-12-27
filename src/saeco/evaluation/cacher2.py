@@ -14,7 +14,7 @@ from saeco.data.tokens_data import PermutedDocs
 
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
-from saeco.evaluation.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.trainer import Trainable, TrainingRunner
 
 

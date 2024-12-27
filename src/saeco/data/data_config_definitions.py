@@ -1,5 +1,5 @@
 from saeco.sweeps.sweepable_config import Swept
-from .dataset import DataConfig, DataGenerationProcessConfig, SplitConfig
+from .data_cfg import DataConfig, DataGenerationProcessConfig, SplitConfig
 from .model_cfg import ActsDataConfig, ModelConfig
 
 

@@ -21,6 +21,7 @@ from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
 
 from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
+from ..data.storage.disk_tensor_collection import DiskTensorCollection
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .cached_artifacts import CachedCalls
@@ -45,7 +46,7 @@ from .fastapi_models.families_draft import (
 )
 
 from .filtered import FilteredTensor
-from .metadata import Artifacts, Filters, Metadatas
+from .storage.stored_metadata import Filters, Metadatas, Artifacts
 from .named_filter import NamedFilter
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk

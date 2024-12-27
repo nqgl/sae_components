@@ -2,7 +2,7 @@
 
 
 from saeco.data.split_config import SplitConfig
-from saeco.data.dataset import DataConfig
+from saeco.data.data_cfg import DataConfig
 from transformer_lens import HookedTransformer
 
 from saeco.trainer.train_config import TrainConfig

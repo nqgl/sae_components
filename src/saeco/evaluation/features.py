@@ -13,7 +13,7 @@ from .saved_acts_config import CachingConfig
 from .storage.chunk import Chunk
 
 # from .storage.filtered_chunk import FilteredChunk
-from .storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from ..data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 @define

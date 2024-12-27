@@ -10,7 +10,7 @@ from safetensors.torch import load_file, save_file
 
 from ..filtered import Filter, FilteredTensor
 from ..named_filter import NamedFilter
-from .sparse_safetensors import load_sparse_tensor, save_sparse_tensor
+from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 
 
 @define

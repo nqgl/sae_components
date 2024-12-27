@@ -7,10 +7,10 @@ from nnsight import LanguageModel
 from torch import Tensor
 
 from saeco.data.split_config import SplitConfig
-from saeco.data.tabletensor import Piler
+from saeco.data.piler import Piler
 
 if TYPE_CHECKING:
-    from saeco.data.dataset import DataConfig
+    from saeco.data.data_cfg import DataConfig
 
 
 class TokensData:

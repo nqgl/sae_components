@@ -23,10 +23,10 @@ cfg = RunConfig[GatedConfig](
         #
         batch_size=4096,
         optim="Adam",
-        lr=3e-4,
+        lr=1e-3,
         betas=(0.9, 0.999),
         #
-        use_autocast=False,
+        use_autocast=True,
         use_lars=True,
         #
         l0_target=50,
@@ -44,7 +44,7 @@ cfg = RunConfig[GatedConfig](
         expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(d_data=2304, dict_mult=8),
+    init_cfg=InitConfig(d_data=2304, dict_mult=16),
     arch_cfg=GatedConfig(),
 )
 from transformers import Gemma2ForCausalLM

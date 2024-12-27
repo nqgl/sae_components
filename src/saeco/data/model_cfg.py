@@ -12,10 +12,18 @@ class ActsDataConfig(SweepableConfig):
     site: str = "transformer.h.6.input"
     excl_first: bool = True
     filter_pad: bool = True
+    storage_dtype_str: str | None = None
+    autocast_dtype_str: str | None = None
 
     @property
     def actstring(self):
         return f"{self.site}_{self.excl_first}"
+
+    @property
+    def storage_dtype(self):
+        if self.storage_dtype_str is None:
+            return None
+        return str_to_dtype(self.storage_dtype_str)
 
 
 class ModelConfig(SweepableConfig):

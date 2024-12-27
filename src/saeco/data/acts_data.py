@@ -10,9 +10,10 @@ from saeco.data.bufferized_iter import bufferized_iter
 from saeco.data.split_config import SplitConfig
 from saeco.data.tokens_data import TokensData
 from saeco.misc.nnsite import getsite
+from saeco.misc import str_to_dtype
 
 if TYPE_CHECKING:
-    from saeco.data.dataset import DataConfig
+    from saeco.data.data_cfg import DataConfig
 
 
 class ActsData:

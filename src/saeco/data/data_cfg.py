@@ -13,7 +13,7 @@ from saeco.data.generation_config import DataGenerationProcessConfig
 from saeco.data.locations import DATA_DIRS
 from saeco.data.model_cfg import ModelConfig
 from saeco.data.split_config import SplitConfig
-from saeco.data.tabletensor import Piler
+from saeco.data.piler import Piler
 from saeco.data.tokens_data import TokensData
 from saeco.sweeps import SweepableConfig
 
