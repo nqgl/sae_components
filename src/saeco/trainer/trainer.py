@@ -258,7 +258,6 @@ class Trainer:
                 self.trainable.train()
 
             cache = self.get_cache()
-
             self.trainstep(x, cache)
 
             self.full_log(cache)
@@ -283,21 +282,26 @@ class Trainer:
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
                 break
 
-    def trainstep(self, x, cache: Cache):
-        if self.cfg.use_autocast:
-            with torch.autocast(device_type="cuda"):
-                loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
-                self.proc_cache_after_forward(cache)
-        else:
-            loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
-            self.proc_cache_after_forward(cache)
+    @contextmanager
+    def _nullcontext(self, yield_value=None):
+        yield yield_value
 
+    def cast(self):
+        if self.cfg.use_autocast:
+            return torch.autocast(
+                device_type="cuda",
+                dtype=self.cfg.data_cfg.model_cfg.acts_cfg.autocast_dtype,
+            )
+        return self._nullcontext()
+
+    def handle_backward(self, loss):
         if self.cfg.use_autocast:
             self.gradscaler.scale(loss).backward()
         else:
             loss.backward()
         self.post_backward()
 
+    def handle_step(self):
         if self.cfg.use_autocast:
             self.gradscaler.step(self.optim)
             self.gradscaler.update()
@@ -306,18 +310,22 @@ class Trainer:
         self.lr_scheduler.step()
         self.post_step()
 
+    def trainstep(self, x, cache: Cache):
+        with self.cast():
+            loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
+            self.proc_cache_after_forward(cache)
+        self.handle_backward(loss)
+        self.handle_step()
+
     def eval_step(self, x):
         if self.cfg.use_averaged_model:
-            trainable = self.averaged_model.module
+            model = self.averaged_model.module
         else:
-            trainable = self.trainable
+            model = self.trainable
         cache = self.get_cache()
         with torch.no_grad():
-            if self.cfg.use_autocast:
-                with torch.autocast(device_type="cuda"):
-                    loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
-            else:
-                loss = trainable.loss(x, cache=cache, coeffs=self.coeffs())
+            with self.cast():
+                loss = model.loss(x, cache=cache, coeffs=self.coeffs())
         self.eval_log(cache)
         cache.destruct()
 
@@ -326,16 +334,6 @@ class Trainer:
         self.log_recons("recons/no_bos/", False)
 
     def log_recons(self, label, proc_bos, num_batches=5):
-        def run_rescaled_model(x):
-            with torch.autocast(
-                device_type="cuda",
-                dtype=torch.float16 if self.cfg.use_autocast else torch.float32,
-            ):
-                cache = self.get_cache()
-                cache.scale = ...
-                cache.scale = True
-                return self.trainable(x, cache=cache)
-
         self.log(
             {
                 (label + k): v

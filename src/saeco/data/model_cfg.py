@@ -14,6 +14,7 @@ class ActsDataConfig(SweepableConfig):
     filter_pad: bool = True
     storage_dtype_str: str | None = None
     autocast_dtype_str: str | None = None
+    force_cast_dtype_str: str | None = None
 
     @property
     def actstring(self):
@@ -24,6 +25,18 @@ class ActsDataConfig(SweepableConfig):
         if self.storage_dtype_str is None:
             return None
         return str_to_dtype(self.storage_dtype_str)
+
+    @property
+    def autocast_dtype(self):
+        if self.autocast_dtype_str is None:
+            return self.storage_dtype
+        return str_to_dtype(self.autocast_dtype_str)
+
+    @property
+    def force_cast_dtype(self):
+        if self.force_cast_dtype_str is None:
+            return None
+        return str_to_dtype(self.force_cast_dtype_str)
 
 
 class ModelConfig(SweepableConfig):

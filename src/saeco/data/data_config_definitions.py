@@ -24,6 +24,53 @@ gemma_2_2b_openwebtext = DataConfig(
     seq_len=1024,
 )
 
+gemma_2_2b_openwebtext_test = DataConfig(
+    dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
+    model_cfg=ModelConfig(
+        acts_cfg=ActsDataConfig(
+            excl_first=True,
+            d_data=2304,
+            site="model.layers.16.input",
+            storage_dtype_str="bfloat16",
+            autocast_dtype_str=None,
+        ),
+        model_name="google/gemma-2-2b",
+        torch_dtype_str="bfloat16",
+    ),
+    trainsplit=SplitConfig(start=0, end=25, tokens_from_split=10_000_000),
+    generation_config=DataGenerationProcessConfig(
+        # tokens_per_pile=2**25,
+        acts_per_pile=2**18,
+        meta_batch_size=2**18,
+        llm_batch_size=2**13,
+    ),
+    seq_len=1024,
+)
+
+gemma_2_2b_openwebtext_test_fp16 = DataConfig(
+    dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
+    model_cfg=ModelConfig(
+        acts_cfg=ActsDataConfig(
+            excl_first=True,
+            d_data=2304,
+            site="model.layers.16.input",
+            storage_dtype_str="float16",
+            autocast_dtype_str="bfloat16",
+            force_cast_dtype_str="float16",
+        ),
+        model_name="google/gemma-2-2b",
+        torch_dtype_str="bfloat16",
+    ),
+    trainsplit=SplitConfig(start=0, end=24, tokens_from_split=10_000_000),
+    generation_config=DataGenerationProcessConfig(
+        # tokens_per_pile=2**25,
+        acts_per_pile=2**18,
+        meta_batch_size=2**18,
+        llm_batch_size=2**13,
+    ),
+    seq_len=1024,
+)
+
 
 def gpt_2(block_postfix):
     return DataConfig(

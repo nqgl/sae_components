@@ -9,7 +9,7 @@ from safetensors.torch import load_file, save_file
 
 
 class DiskTensorMetadata(BaseModel):
-    shape: list[int]
+    shape: list[int | None]
     dtype_str: str
     # cat_axis: int
 

@@ -62,7 +62,13 @@ class ActsData:
         batched_kwargs={},
     ):
         acts_list = []
-        with torch.autocast(device_type="cuda", dtype=self.cfg.model_cfg.torch_dtype):
+        with torch.autocast(
+            device_type="cuda",
+            dtype=(
+                self.cfg.model_cfg.acts_cfg.autocast_dtype
+                or self.cfg.model_cfg.torch_dtype
+            ),
+        ):
             with torch.inference_mode():
                 for i in range(
                     0,
@@ -82,7 +88,9 @@ class ActsData:
                         acts = acts_module.save()
                         acts_module.stop()
                     acts_list.append(acts.value)
-        acts = torch.cat(acts_list, dim=0).half()
+        acts = torch.cat(acts_list, dim=0)
+        if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
+            acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
         toks_re = tokens
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
@@ -160,7 +168,7 @@ class ActsData:
                 # if p == id:
                 #     nextpile = nextpile[: (id % nw + 1) * len(nextpile) // nw]
                 # pile = nextpile
-                assert pile.dtype == torch.float16
+                assert pile.dtype == self.cfg.model_cfg.acts_cfg.storage_dtype
                 print("got next pile")
                 for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                     yield pile[i : i + batch_size]

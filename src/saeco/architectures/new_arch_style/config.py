@@ -1,4 +1,9 @@
-from saeco.data.data_config_definitions import gpt_2_block, gemma_2_2b_openwebtext
+from saeco.data.data_config_definitions import (
+    gpt_2_block,
+    gemma_2_2b_openwebtext_test,
+    gemma_2_2b_openwebtext,
+    gemma_2_2b_openwebtext_test_fp16,
+)
 from saeco.trainer.run_config import RunConfig
 from arch import GatedConfig, Gated
 from saeco.components.resampling.anthropic_resampling import (
@@ -15,24 +20,26 @@ PROJECT = "sae sweeps"
 
 cfg = RunConfig[GatedConfig](
     train_cfg=TrainConfig(
-        data_cfg=gemma_2_2b_openwebtext,
+        data_cfg=gemma_2_2b_openwebtext_test_fp16,
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=45000,
+            run_length=5100,
             resample_period=12_500,
+            lr_cooldown_length=0.5,
+            lr_warmup_length=500,
         ),
         #
-        batch_size=4096,
+        batch_size=4096 // 4,
         optim="Adam",
         lr=1e-3,
-        betas=(0.9, 0.999),
+        betas=(0.9, 0.997),
         #
         use_autocast=True,
         use_lars=True,
         #
         l0_target=50,
-        l0_target_adjustment_size=0.0002,
+        l0_target_adjustment_size=0.001,
         coeffs={
-            "sparsity_loss": 1.5e-3,
+            "sparsity_loss": 1.1e-3,
             "L2_loss": 1,
         },
         #
@@ -44,10 +51,10 @@ cfg = RunConfig[GatedConfig](
         expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(d_data=2304, dict_mult=16),
+    init_cfg=InitConfig(d_data=2304, dict_mult=8),
     arch_cfg=GatedConfig(),
 )
-from transformers import Gemma2ForCausalLM
+# from transformers import Gemma2ForCausalLM
 
 # import saeco.data.model_cfg as mc
 

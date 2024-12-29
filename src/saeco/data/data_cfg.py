@@ -13,7 +13,7 @@ from saeco.data.generation_config import DataGenerationProcessConfig
 from saeco.data.locations import DATA_DIRS
 from saeco.data.model_cfg import ModelConfig
 from saeco.data.split_config import SplitConfig
-from saeco.data.piler import Piler
+from saeco.data.piler.piler2 import Piler
 from saeco.data.tokens_data import TokensData
 from saeco.sweeps import SweepableConfig
 
@@ -96,7 +96,7 @@ class DataConfig(SweepableConfig):
             num_piles = self.generation_config.num_act_piles(num_tokens)
         return Piler(
             self._acts_piles_path(split),
-            dtype=torch.float16,
+            dtype=self.model_cfg.acts_cfg.storage_dtype,
             fixed_shape=[self.model_cfg.acts_cfg.d_data],
             num_piles=(num_piles if write else None),
         )

@@ -1,4 +1,4 @@
-from saeco.data.dataset import DataConfig
+from saeco.data.data_cfg import DataConfig
 from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig, Swept
 from .OptimConfig import get_optim_cls

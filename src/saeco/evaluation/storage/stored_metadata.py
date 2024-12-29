@@ -16,7 +16,7 @@ from ...data.storage.disk_tensor import DiskTensor
 from ...data.storage.growing_disk_tensor import GrowingDiskTensor
 
 
-@define
+@define(kw_only=True)
 class CollectionWithCachingConfig(DiskTensorCollection):
     cached_config: CachingConfig
 

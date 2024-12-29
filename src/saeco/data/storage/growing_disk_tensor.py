@@ -39,8 +39,24 @@ class GrowingDiskTensor(DiskTensor):
         if "9999" in self.path.name:
             print("done resizing to ", new_len)
 
+    @property
+    def valid_tensor(self):
+        written_slice = [slice(None)] * self.cat_axis + [
+            slice(None, self.metadata.shape[self.cat_axis])
+        ]
+        return self.tensor[written_slice]
+
     def finalize(self):
         self.resize(self.metadata.shape[self.cat_axis], truncate=True)
+        super().finalize()
+
+    def shuffle_then_finalize(self, shuffle_axis: int | None = None):
+        if shuffle_axis is None:
+            shuffle_axis = self.cat_axis
+        self.resize(self.metadata.shape[self.cat_axis], truncate=True)
+        self.tensor[:] = self.tensor.index_select(
+            shuffle_axis, torch.randperm(self.tensor.shape[shuffle_axis])
+        )
         super().finalize()
 
     @classmethod
@@ -59,15 +75,21 @@ class GrowingDiskTensor(DiskTensor):
         path: Path,
         shape: list[int],
         dtype: torch.dtype,
-        initial_nnz: int = 2**15,
+        initial_nnz: int | None = None,
         cat_axis=0,
     ):
-        cat_len = int(
+        if initial_nnz is None:
+            initial_nnz = 2**15
+        else:
+            shape = shape.copy()
+            shape[cat_axis] = None
+        cat_len = shape[cat_axis] or int(
             initial_nnz
             // torch.prod(torch.tensor(shape[:cat_axis] + shape[cat_axis + 1 :])).item()
             + 1
         )
         assert cat_len > 0
+        shape[cat_axis] = 0
         inst = cls(
             path=path,
             storage_len=cat_len,
