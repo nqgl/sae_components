@@ -5,8 +5,10 @@ import sys
 from functools import cached_property
 from pathlib import Path
 from typing import Protocol
+from pydantic import BaseModel
 
 import wandb
+from saeco.architecture.arch_reload_info import ArchClassRef
 from saeco.components.model import Architecture
 from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
@@ -102,16 +104,44 @@ class Sweeper:
     def load_architecture(self, path: Path): ...
 
 
+class SweepData(BaseModel):
+    root_arch_path: str
+    sweep_id: str
+
+
+from typing import TypeVar, Generic
+import json
+
+T = TypeVar("T", bound=SweepableConfig)
+
+
+class SweepData(BaseModel, Generic[T]):
+    arch_class_ref: ArchClassRef
+    root_config: T
+    sweep_id: str
+
+    @classmethod
+    def load(cls, path: Path) -> "SweepData":
+        data = json.loads(path.read_text())
+        arch_cls_ref = ArchClassRef.model_validate(data["arch_class_ref"])
+        arch_cls = arch_cls_ref.get_arch_class()
+        return cls.model_validate(data)
+
+    def save(self, path: Path | None):
+        if path is None:
+            path = Path(f"sweeprefs/{self.sweep_id}.json")
+        path.write_text(self.model_dump_json())
+        return path
+
+
 def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Sweeper for Saeco")
-    parser.add_argument("path", type=str)
-    parser.add_argument("--init", action="store_true")
-    parser.add_argument("--runpod-n-instances", type=int)
-    parser.add_argument("--module-name", type=str, default="sweepfile")
+    parser.add_argument("arch_path", type=str)
+    parser.add_argument("--sweep-id", action="store_true")
     args = parser.parse_args()
-    sw = Sweeper(args.path, module_name=args.module_name)
+    sw = Sweeper(Architecture.load_from_path(args.arch_path), sweep_id=args.sweep_id)
     if args.init:
         sw.initialize_sweep()
     else:

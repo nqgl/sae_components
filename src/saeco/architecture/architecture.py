@@ -59,7 +59,7 @@ ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
 #         return x
 
 
-class SAE(Generic[ArchConfigType], cl.Seq):
+class SAE(cl.Seq):
     encoder_pre: cl.Module
     preacts: PreActMetrics
     nonlinearity: cl.Module
@@ -142,7 +142,7 @@ class SAE(Generic[ArchConfigType], cl.Seq):
 
 
 CFG_PATH_EXT = ".arch_cfg"
-ARCH_REF_PATH_EXT = ".arch_ref"
+ARCH_CLASS_REF_PATH_EXT = ".arch_ref"
 MODEL_WEIGHTS_PATH_EXT = ".pt"
 AVERAGED_WEIGHTS_PATH_EXT = ".averagedpt"
 
@@ -156,7 +156,7 @@ class ArchStoragePaths(BaseModel):
 
     @property
     def arch_cls_ref(self):
-        return self.path.with_suffix(ARCH_REF_PATH_EXT)
+        return self.path.with_suffix(ARCH_CLASS_REF_PATH_EXT)
 
     @property
     def model_weights(self):
@@ -347,12 +347,12 @@ class Architecture(Generic[ArchConfigType]):
     def save_to_path(
         self, path: Path | ArchStoragePaths, save_weights=..., averaged_weights=None
     ):
-        from .arch_reload_info import ArchReloadInfo
+        from .arch_reload_info import ArchClassRef
 
         path.mkdir(parents=True, exist_ok=True)
         path = ArchStoragePaths.from_path(path)
 
-        arch_ref = ArchReloadInfo.from_arch(self)
+        arch_ref = ArchClassRef.from_arch(self)
         if path.arch_cls_ref.exists():
             self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
             raise ValueError(
@@ -383,14 +383,15 @@ class Architecture(Generic[ArchConfigType]):
             torch.save(self._trainable.state_dict(), path.model_weights)
         if averaged_weights is not None:
             torch.save(averaged_weights, path.averaged_weights)
+        return path
 
     @classmethod
     def load_from_path(cls, path: Path | ArchStoragePaths, load_weights=None):
-        from .arch_reload_info import ArchReloadInfo
+        from .arch_reload_info import ArchClassRef
 
         path = ArchStoragePaths.from_path(path)
         if cls is Architecture:
-            arch_ref = ArchReloadInfo.model_validate_json(path.arch_cls_ref.read_text())
+            arch_ref = ArchClassRef.model_validate_json(path.arch_cls_ref.read_text())
             arch_cls = arch_ref.get_arch_class()
             return arch_cls.load_from_path(path, load_weights=load_weights)
         cfg_cls = cls.get_config_class()

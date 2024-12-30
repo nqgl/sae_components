@@ -1,12 +1,6 @@
 from functools import cache, cached_property
 from pathlib import Path
-from typing import TypeVar
 
-from saeco.architectures.outdated.gate_hierarch import (
-    HGatesConfig,
-    hierarchical_softaux,
-    HierarchicalSoftAuxConfig,
-)
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.initializer import Initializer
 from saeco.initializer.initializer_config import InitConfig

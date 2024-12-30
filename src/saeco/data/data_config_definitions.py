@@ -10,6 +10,8 @@ gemma_2_2b_openwebtext = DataConfig(
             excl_first=True,
             d_data=2304,
             site="model.layers.17.input",
+            storage_dtype_str="bfloat16",
+            autocast_dtype_str=None,
         ),
         model_name="google/gemma-2-2b",
         torch_dtype_str="bfloat16",

@@ -20,13 +20,13 @@ def get_src(obj):
     return inspect.getsource(module)
 
 
-class ArchReloadInfo(BaseModel):
+class ArchClassRef(BaseModel):
     module: str
     cls_name: str
     source_backup: str = None
 
     @classmethod
-    def from_arch(cls, arch: "Architecture") -> "ArchReloadInfo":
+    def from_arch(cls, arch: "Architecture") -> "ArchClassRef":
         return cls(
             module=arch.__class__.__module__,
             cls_name=arch.__class__.__name__,

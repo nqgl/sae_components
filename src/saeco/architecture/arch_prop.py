@@ -11,7 +11,7 @@ _fields_dict = defaultdict(dict)  # (cls -> (field_categ_name -> field_name/name
 _missing_name = set()
 
 
-def getfields(cls: type, FIELD_NAME):
+def _getfields(cls: type, FIELD_NAME):
     if not isinstance(cls, type):
         cls = cls.__class__
     cls_d = _fields_dict[cls]
@@ -25,6 +25,13 @@ def getfields(cls: type, FIELD_NAME):
                 pass
         raise AttributeError(FIELD_NAME)
     return cls_d[FIELD_NAME]
+
+
+def getfields(cls: type, FIELD_NAME):
+    try:
+        return _getfields(cls, FIELD_NAME)
+    except AttributeError:
+        return {}
 
 
 def setfield(cls: type, FIELD_NAME, value):
