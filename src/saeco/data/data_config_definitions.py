@@ -48,6 +48,28 @@ gemma_2_2b_openwebtext_test = DataConfig(
     ),
     seq_len=1024,
 )
+gemma_2_2b_openwebtext_test_fp32 = DataConfig(
+    dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
+    model_cfg=ModelConfig(
+        acts_cfg=ActsDataConfig(
+            excl_first=True,
+            d_data=2304,
+            site="model.layers.16.input",
+            storage_dtype_str="float32",
+            autocast_dtype_str=None,
+        ),
+        model_name="google/gemma-2-2b",
+        torch_dtype_str=None,
+    ),
+    trainsplit=SplitConfig(start=0, end=23, tokens_from_split=10_000_000),
+    generation_config=DataGenerationProcessConfig(
+        # tokens_per_pile=2**25,
+        acts_per_pile=2**17,
+        meta_batch_size=2**16,
+        llm_batch_size=2**12,
+    ),
+    seq_len=1024,
+)
 
 gemma_2_2b_openwebtext_test_fp16 = DataConfig(
     dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
@@ -69,6 +91,52 @@ gemma_2_2b_openwebtext_test_fp16 = DataConfig(
         acts_per_pile=2**18,
         meta_batch_size=2**18,
         llm_batch_size=2**13,
+    ),
+    seq_len=1024,
+)
+gemma_2_2b_openwebtext_fp32 = DataConfig(
+    dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
+    model_cfg=ModelConfig(
+        acts_cfg=ActsDataConfig(
+            excl_first=True,
+            d_data=2304,
+            site="model.layers.17.input",
+            storage_dtype_str="float32",
+            autocast_dtype_str=None,
+        ),
+        model_name="google/gemma-2-2b",
+        torch_dtype_str=None,
+    ),
+    trainsplit=SplitConfig(start=0, end=25, tokens_from_split=250_000_000),
+    generation_config=DataGenerationProcessConfig(
+        # tokens_per_pile=2**25,
+        acts_per_pile=2**15,
+        meta_batch_size=2**17,
+        llm_batch_size=2**14,
+    ),
+    seq_len=1024,
+)
+
+
+gemma_2_2b_openwebtext_bf16 = DataConfig(
+    dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
+    model_cfg=ModelConfig(
+        acts_cfg=ActsDataConfig(
+            excl_first=True,
+            d_data=2304,
+            site="model.layers.17.input",
+            storage_dtype_str="bfloat16",
+            autocast_dtype_str="bfloat16",
+        ),
+        model_name="google/gemma-2-2b",
+        torch_dtype_str="bfloat16",
+    ),
+    trainsplit=SplitConfig(start=0, end=25, tokens_from_split=100_000_000),
+    generation_config=DataGenerationProcessConfig(
+        # tokens_per_pile=2**25,
+        acts_per_pile=2**15,
+        meta_batch_size=2**18,
+        llm_batch_size=2**16,
     ),
     seq_len=1024,
 )

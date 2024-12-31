@@ -3,6 +3,9 @@ from saeco.data.data_config_definitions import (
     gemma_2_2b_openwebtext_test,
     gemma_2_2b_openwebtext,
     gemma_2_2b_openwebtext_test_fp16,
+    gemma_2_2b_openwebtext_test_fp32,
+    gemma_2_2b_openwebtext_fp32,
+    gemma_2_2b_openwebtext_bf16,
 )
 from saeco.trainer.run_config import RunConfig
 from arch import GatedConfig, Gated
@@ -20,7 +23,7 @@ PROJECT = "sae sweeps"
 
 cfg = RunConfig[GatedConfig](
     train_cfg=TrainConfig(
-        data_cfg=gemma_2_2b_openwebtext_test_fp16,
+        data_cfg=gemma_2_2b_openwebtext_bf16,
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=5100,
             resample_period=12_500,
@@ -33,7 +36,7 @@ cfg = RunConfig[GatedConfig](
         lr=1e-3,
         betas=(0.9, 0.997),
         #
-        use_autocast=True,
+        use_autocast=False,
         use_lars=True,
         #
         l0_target=50,

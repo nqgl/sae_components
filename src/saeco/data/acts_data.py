@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import einops
@@ -43,6 +44,8 @@ class ActsData:
                 // tokens_data.seq_len,
             ),
             total=len(tokens_split),
+            position=0,
+            desc="Storing",
         ):
             acts_piler.distribute(acts)
         acts_piler.shuffle_piles()
@@ -51,6 +54,21 @@ class ActsData:
         for tokens in tokens_generator:
             acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
+
+    @contextmanager
+    def _null_context(self):
+        yield
+
+    def autocast_context(self):
+        if self.cfg.model_cfg.acts_cfg.autocast_dtype is False:
+            return self._null_context()
+        return torch.autocast(
+            device_type="cuda",
+            dtype=(
+                self.cfg.model_cfg.acts_cfg.autocast_dtype
+                or self.cfg.model_cfg.torch_dtype
+            ),
+        )
 
     def to_acts(
         self,
@@ -62,19 +80,11 @@ class ActsData:
         batched_kwargs={},
     ):
         acts_list = []
-        with torch.autocast(
-            device_type="cuda",
-            dtype=(
-                self.cfg.model_cfg.acts_cfg.autocast_dtype
-                or self.cfg.model_cfg.torch_dtype
-            ),
-        ):
+        with self.autocast_context():
             with torch.inference_mode():
-                for i in range(
-                    0,
-                    tokens.shape[0],
-                    llm_batch_size,
-                ):
+                trng = tqdm.trange(0, tokens.shape[0], llm_batch_size, leave=False)
+                trng.set_description(f"Tracing {tokens.shape[0]}")
+                for i in trng:
                     batch_kwargs = {
                         k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
                     }

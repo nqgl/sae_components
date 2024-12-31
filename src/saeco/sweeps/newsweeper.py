@@ -28,15 +28,6 @@ class Sweeper:
     def __init__(self, arch: Architecture):
         self.arch = arch
 
-    # @cached_property
-    # def sweepfile(self) -> SweepFile:
-    #     spec = importlib.util.spec_from_file_location(
-    #         self.full_name, str(self.path / f"{self.module_name}.py")
-    #     )
-    #     sweepfile = importlib.util.module_from_spec(spec)
-    #     spec.loader.exec_module(sweepfile)
-    #     return sweepfile
-
     @property
     def cfg(self):
         return self.arch.base_cfg
@@ -104,18 +95,13 @@ class Sweeper:
     def load_architecture(self, path: Path): ...
 
 
-class SweepData(BaseModel):
-    root_arch_path: str
-    sweep_id: str
-
-
 from typing import TypeVar, Generic
 import json
 
 T = TypeVar("T", bound=SweepableConfig)
 
 
-class SweepData(BaseModel, Generic[T]):
+class SweepData2(BaseModel, Generic[T]):
     arch_class_ref: ArchClassRef
     root_config: T
     sweep_id: str
@@ -125,6 +111,22 @@ class SweepData(BaseModel, Generic[T]):
         data = json.loads(path.read_text())
         arch_cls_ref = ArchClassRef.model_validate(data["arch_class_ref"])
         arch_cls = arch_cls_ref.get_arch_class()
+        return cls[arch_cls.get_config_class()].model_validate(data)
+
+    def save(self, path: Path | None):
+        if path is None:
+            path = Path(f"sweeprefs/{self.sweep_id}.json")
+        path.write_text(self.model_dump_json())
+        return path
+
+
+class SweepData(BaseModel):
+    root_arch_path: str
+    sweep_id: str
+
+    @classmethod
+    def load(cls, path: Path) -> "SweepData":
+        data = json.loads(path.read_text())
         return cls.model_validate(data)
 
     def save(self, path: Path | None):

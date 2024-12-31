@@ -1,3 +1,4 @@
+import tqdm
 from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
 from . import DiskTensor, GrowingDiskTensor, DiskTensorCollection
 from attrs import define, field
@@ -74,14 +75,18 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
             raise ValueError(
                 f"Cannot shuffle finalized tensors: tensor {f} is finalized"
             )
-        for name in self.keys():
+        tkeys = tqdm.tqdm(self.keys())
+        tkeys.set_description("Shuffling")
+        for name in tkeys:
             dt = self.get(name)
             dt.shuffle_then_finalize()
         self.metadata.finalized = True
         self.metadata.save(self.storage_dir)
 
     def finalize(self) -> None:
-        for name in self.keys():
+        tkeys = tqdm.tqdm(self.keys())
+        tkeys.set_description("Shuffling")
+        for name in tkeys:
             dt = self.get(name)
             if not dt.finalized:
                 dt.finalize()

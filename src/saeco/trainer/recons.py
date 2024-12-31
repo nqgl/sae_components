@@ -31,13 +31,13 @@ def get_recons_loss(
         normal_runner(model, cfg, skip_first=not bos_processed_with_hook)
     )
     rand_tokens = tokens[torch.randperm(len(tokens))]
-    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-        for i in range(num_batches):
-            batch_tokens = rand_tokens[i * batch_size : (i + 1) * batch_size].cuda()
-            loss = normal(batch_tokens)
-            re = with_sae(batch_tokens)
-            zeroed = zero(batch_tokens)
-            loss_list.append((loss, re, zeroed))
+
+    for i in range(num_batches):
+        batch_tokens = rand_tokens[i * batch_size : (i + 1) * batch_size].cuda()
+        loss = normal(batch_tokens)
+        re = with_sae(batch_tokens)
+        zeroed = zero(batch_tokens)
+        loss_list.append((loss, re, zeroed))
     losses = torch.tensor(loss_list)
     loss, recons_loss, zero_abl_loss = losses.mean(0).tolist()
     print(loss, recons_loss, zero_abl_loss)

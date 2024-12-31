@@ -75,12 +75,14 @@ class Piler:
             i = torch.randint(0, self.num_piles, [t.shape[0]])
         else:
             i = indexer
-        for pile in range(self.num_piles):
+        trng = tqdm.trange(self.num_piles, leave=False)
+        trng.set_description(f"Distributing {t.shape[0]}")
+        for pile in trng:
             self.piles.get(pile).append(t[i == pile])
         return i
 
     def shuffle_piles(self):
-        tqdm.tqdm.write("Shuffling piles")
+        # tqdm.tqdm.write("Shuffling piles")
         if self.readonly:
             raise ValueError("Cannot write to a readonly Piler")
         self.piles.shuffle_then_finalize()

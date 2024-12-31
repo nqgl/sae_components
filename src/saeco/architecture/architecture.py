@@ -34,29 +34,13 @@ from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
 from .arch_prop import loss_prop, metric_prop, model_prop, aux_model_prop
 import typing
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.sweeps.newsweeper import SweepData
+
 
 ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
-
-
-# class Model(Generic[ArchConfigType], cl.Module):
-#     normalizer: StaticInvertibleGeneralizedNormalizer
-#     _encoder_pre: cl.Module = NotImplemented
-#     nonlinearity: cl.Module = NotImplemented
-#     _decoder: cl.Module = NotImplemented
-#     encoder: cl.Module = NotImplemented
-#     pre_acts: cl.Module = NotImplemented
-#     losses: list[Loss] = field(factory=list)
-
-#     def encode(self, x, cache: cl.Cache, **kwargs): ...
-
-#     def decode(self, x, cache: cl.Cache, **kwargs): ...
-
-#     def encode_pre(self, x, cache: cl.Cache, **kwargs): ...
-
-#     def forward(self, x, *, cache: cl.Cache, **kwargs):
-#         x = cache(self).encode(x)
-#         x = cache(self).decode(x)
-#         return x
 
 
 class SAE(cl.Seq):
@@ -347,12 +331,9 @@ class Architecture(Generic[ArchConfigType]):
     def save_to_path(
         self, path: Path | ArchStoragePaths, save_weights=..., averaged_weights=None
     ):
-        from .arch_reload_info import ArchClassRef
-
-        path.mkdir(parents=True, exist_ok=True)
         path = ArchStoragePaths.from_path(path)
+        path.path.parent.mkdir(parents=True, exist_ok=True)
 
-        arch_ref = ArchClassRef.from_arch(self)
         if path.arch_cls_ref.exists():
             self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
             raise ValueError(
@@ -373,6 +354,11 @@ class Architecture(Generic[ArchConfigType]):
             raise ValueError(
                 f"file already exists at {path.averaged_weights}, wrote to {path.path.name}_1"
             )
+
+        from .arch_reload_info import ArchClassRef
+
+        arch_ref = ArchClassRef.from_arch(self)
+
         path.arch_cls_ref.write_text(arch_ref.model_dump_json())
         path.cfg.write_text(self.run_cfg.model_dump_json())
         if save_weights is True or (
@@ -384,6 +370,17 @@ class Architecture(Generic[ArchConfigType]):
         if averaged_weights is not None:
             torch.save(averaged_weights, path.averaged_weights)
         return path
+
+    def make_sweep_data(self, sweep_info: str) -> "SweepData":
+        from .arch_reload_info import ArchClassRef
+        from saeco.sweeps.newsweeper import SweepData
+
+        arch_ref = ArchClassRef.from_arch(self)
+        return SweepData(
+            arch_class_ref=arch_ref,
+            root_config=self.run_cfg,
+            sweep_id=sweep_info,
+        )
 
     @classmethod
     def load_from_path(cls, path: Path | ArchStoragePaths, load_weights=None):
