@@ -1,6 +1,8 @@
 import os
 from contextlib import contextmanager
 
+from saeco.sweeps.sweepable_config.sweepable_config import SweptNode
+
 # Instead of hardcoding WANDB = True, let's read from config or env
 WANDB = os.environ.get("USE_WANDB", "true").lower() in ("true", "1", "yes")
 
@@ -23,9 +25,12 @@ class WandbLogger(Logger):
 
         self.wandb = wandb
         self.run = None
+        self.project = "default_project"
 
     def init(self, project=None, config=None, run_name=None):
-        self.run = self.wandb.init(project=project, config=config, name=run_name)
+        self.run = self.wandb.init(
+            project=project or self.project, config=config, name=run_name
+        )
 
     def log(self, data, step=None):
         if step is not None:
@@ -34,17 +39,21 @@ class WandbLogger(Logger):
             self.wandb.log(data)
 
     def finish(self):
-        if self.run:
+        if self.wandb.run:
             self.wandb.finish()
 
     def update_config(self, config_dict):
         self.wandb.config.update(config_dict)
 
-    def sweep(self, sweep_config, project):
-        return self.wandb.sweep(sweep=sweep_config, project=project)
+    def sweep(self, swept_nodes: SweptNode, project):
+        res = self.wandb.sweep(
+            sweep=swept_nodes.to_wandb(), project=project or self.project
+        )
+        return res
 
-    def agent(self, sweep_id, project, function):
-        self.wandb.agent(sweep_id, function=function, project=project)
+    def agent(self, sweep_id, function, project=None):
+        print("STARTING AGENT:", sweep_id, project, self.project)
+        self.wandb.agent(sweep_id, function=function, project=project or self.project)
 
     def config_get(self):
         # wandb.config is a wandb process global

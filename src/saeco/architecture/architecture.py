@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Callable, TypeVar, Generic
-from pydantic import BaseModel
 from attrs import define, field
 import torch
+from saeco.architecture.arch_reload_info import ArchStoragePaths
 from saeco.components.metrics.metrics import ActMetrics, PreActMetrics
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
@@ -125,36 +125,8 @@ class SAE(cl.Seq):
 #         self.normalizer = normalizer
 
 
-CFG_PATH_EXT = ".arch_cfg"
-ARCH_CLASS_REF_PATH_EXT = ".arch_ref"
-MODEL_WEIGHTS_PATH_EXT = ".pt"
-AVERAGED_WEIGHTS_PATH_EXT = ".averagedpt"
-
-
-class ArchStoragePaths(BaseModel):
-    path: Path
-
-    @property
-    def cfg(self):
-        return self.path.with_suffix(CFG_PATH_EXT)
-
-    @property
-    def arch_cls_ref(self):
-        return self.path.with_suffix(ARCH_CLASS_REF_PATH_EXT)
-
-    @property
-    def model_weights(self):
-        return self.path.with_suffix(MODEL_WEIGHTS_PATH_EXT)
-
-    @property
-    def averaged_weights(self):
-        return self.path.with_suffix(AVERAGED_WEIGHTS_PATH_EXT)
-
-    @classmethod
-    def from_path(cls, path: Path):
-        if isinstance(path, cls):
-            return path
-        return cls(path=path)
+# CFG_PATH_EXT = ".arch_cfg"
+# ARCH_CLASS_REF_PATH_EXT = ".arch_ref"
 
 
 class Architecture(Generic[ArchConfigType]):
@@ -334,33 +306,28 @@ class Architecture(Generic[ArchConfigType]):
         path = ArchStoragePaths.from_path(path)
         path.path.parent.mkdir(parents=True, exist_ok=True)
 
-        if path.arch_cls_ref.exists():
+        if path.arch_ref.exists():
             self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
             raise ValueError(
-                f"file already exists at {path.arch_cls_ref}, wrote to {path.path.name}_1"
+                f"file already existed at {path.arch_ref}, wrote to {path.path.name}_1"
             )
-        elif path.cfg.exists():
-            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
-            raise ValueError(
-                f"file already exists at {path.cfg}, wrote to {path.path.name}_1"
-            )
+
         elif path.model_weights.exists():
             self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
             raise ValueError(
-                f"file already exists at {path.model_weights}, wrote to {path.path.name}_1"
+                f"file already existed at {path.model_weights}, wrote to {path.path.name}_1"
             )
         elif path.averaged_weights.exists():
             self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
             raise ValueError(
-                f"file already exists at {path.averaged_weights}, wrote to {path.path.name}_1"
+                f"file already existed at {path.averaged_weights}, wrote to {path.path.name}_1"
             )
 
-        from .arch_reload_info import ArchClassRef
+        from .arch_reload_info import ArchClassRef, ArchRef
 
-        arch_ref = ArchClassRef.from_arch(self)
+        arch_ref = ArchRef.from_arch(self)
 
-        path.arch_cls_ref.write_text(arch_ref.model_dump_json())
-        path.cfg.write_text(self.run_cfg.model_dump_json())
+        path.arch_ref.write_text(arch_ref.model_dump_json())
         if save_weights is True or (
             save_weights is ... and self._trainable is not None
         ):
@@ -382,31 +349,43 @@ class Architecture(Generic[ArchConfigType]):
             sweep_id=sweep_info,
         )
 
-    @classmethod
-    def load_from_path(cls, path: Path | ArchStoragePaths, load_weights=None):
-        from .arch_reload_info import ArchClassRef
+    # @classmethod
+    # def load_from_path(cls, path: Path | ArchStoragePaths, load_weights=None):
+    #     from .arch_reload_info import ArchClassRef
 
-        path = ArchStoragePaths.from_path(path)
-        if cls is Architecture:
-            arch_ref = ArchClassRef.model_validate_json(path.arch_cls_ref.read_text())
-            arch_cls = arch_ref.get_arch_class()
-            return arch_cls.load_from_path(path, load_weights=load_weights)
-        cfg_cls = cls.get_config_class()
-        cfg = cfg_cls.model_validate_json(path.cfg.read_text())
-        state_dict = None
-        if path.model_weights.exists():
-            if load_weights is None:
-                raise ValueError(
-                    f"weights exist at {path.model_weights}, but load_weights is not set"
-                )
-            if load_weights:
-                state_dict = torch.load(path.model_weights)
-        else:
-            if load_weights:
-                raise ValueError(
-                    f"weights do not exist at {path.model_weights}, but load_weights is set"
-                )
-        inst = cls(cfg, state_dict=state_dict)
-        if cfg.is_concrete():
-            inst.instantiate()
-        return inst
+    #     path = ArchStoragePaths.from_path(path)
+    #     if cls is Architecture:
+    #         arch_ref = ArchClassRef.model_validate_json(path.arch_cls_ref.read_text())
+    #         arch_cls = arch_ref.get_arch_class()
+    #         return arch_cls.load_from_path(path, load_weights=load_weights)
+    #     cfg_cls = cls.get_config_class()
+    #     cfg = cfg_cls.model_validate_json(path.cfg.read_text())
+    #     state_dict = None
+    #     if path.model_weights.exists():
+    #         if load_weights is None:
+    #             raise ValueError(
+    #                 f"weights exist at {path.model_weights}, but load_weights is not set"
+    #             )
+    #         if load_weights:
+    #             state_dict = torch.load(path.model_weights)
+    #     else:
+    #         if load_weights:
+    #             raise ValueError(
+    #                 f"weights do not exist at {path.model_weights}, but load_weights is set"
+    #             )
+    #     inst = cls(cfg, state_dict=state_dict)
+    #     if cfg.is_concrete():
+    #         inst.instantiate()
+    #     return inst
+
+    @classmethod
+    def load(cls, path: Path | ArchStoragePaths, load_weights=None):
+        return ArchStoragePaths.from_path(path).load_arch(load_weights=load_weights)
+
+    def run_training(self):
+        self.trainer.train()
+
+    def get_sweep_manager(self):
+        from saeco.sweeps.newsweeper import SweepManager
+
+        return SweepManager(self)

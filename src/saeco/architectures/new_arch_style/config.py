@@ -8,7 +8,7 @@ from saeco.data.data_config_definitions import (
     gemma_2_2b_openwebtext_bf16,
 )
 from saeco.trainer.run_config import RunConfig
-from arch import GatedConfig, Gated
+from saeco.architectures.new_arch_style.arch import GatedConfig, Gated
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -23,20 +23,20 @@ PROJECT = "sae sweeps"
 
 cfg = RunConfig[GatedConfig](
     train_cfg=TrainConfig(
-        data_cfg=gemma_2_2b_openwebtext_bf16,
+        data_cfg=gemma_2_2b_openwebtext_bf16(17),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=5100,
+            run_length=120_100,
             resample_period=12_500,
-            lr_cooldown_length=0.5,
+            lr_cooldown_length=0.3,
             lr_warmup_length=500,
         ),
         #
-        batch_size=4096 // 4,
+        batch_size=4096 * 2,
         optim="Adam",
         lr=1e-3,
         betas=(0.9, 0.997),
         #
-        use_autocast=False,
+        use_autocast=True,
         use_lars=True,
         #
         l0_target=50,

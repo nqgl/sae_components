@@ -5,14 +5,17 @@ from saeco.data.data_config_definitions import (
     gemma_2_2b_openwebtext_test_fp16,
     gemma_2_2b_openwebtext_test_fp32,
     gemma_2_2b_openwebtext_fp32,
+    gemma_2_2b_openwebtext_bf16,
 )
+from saeco.data.generation_config import DataGenerationProcessConfig
+from saeco.data.split_config import SplitConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig, Swept, SweepVar, SweepExpression
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig
@@ -25,22 +28,27 @@ from saeco.architectures.vanilla import Config, VanillaSAE
 
 PROJECT = "sae sweeps"
 
+
+var = SweepVar(1, 2, 3, name="var")
+batch_size_mult_var = SweepVar(1, 2, 3, name="batch_size_mult")
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
-        data_cfg=gemma_2_2b_openwebtext_fp32,
+        data_cfg=gpt_2_block(),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=9100,
-            resample_period=12_500,
+            run_length=SweepExpression(batch_size_mult_var, expr=lambda x: 50_000 // x),
+            resample_period=SweepExpression(
+                var, batch_size_mult_var, expr=lambda x, y: 8_000 // x // y
+            ),
             lr_cooldown_length=0.5,
             lr_warmup_length=500,
         ),
         #
-        batch_size=4096 // 4,
+        batch_size=SweepExpression(batch_size_mult_var, expr=lambda x: 4096 * x),
         optim="Adam",
-        lr=1e-3,
+        lr=SweepExpression(var, expr=lambda x: 1e-3 * x),
         betas=(0.9, 0.997),
         #
-        use_autocast=False,
+        use_autocast=True,
         use_lars=True,
         #
         l0_target=50,
@@ -55,10 +63,10 @@ cfg = RunConfig[Config](
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
-        expected_biases=2,
+        expected_biases=1,
     ),
     #
-    init_cfg=InitConfig(d_data=2304, dict_mult=8),
+    init_cfg=InitConfig(d_data=768, dict_mult=8),
     arch_cfg=Config(),
 )
 # from transformers import Gemma2ForCausalLM
@@ -67,6 +75,17 @@ cfg = RunConfig[Config](
 
 # # mc.MODEL_FN_CALLABLE_OVERRIDE = Gemma2ForCausalLM.from_pretrained
 g = VanillaSAE(cfg)
+sweep_manager = g.get_sweep_manager()
+sweep_manager.initialize_sweep()
+sweep_manager.local_sweep()
+sweep_manager.get_worker_run_command()
+sweep_manager.run_sweep_on_pods_with_monitoring(
+    0, purge_after=False, keep_after=True, challenge_file=None
+)
+
+sweep_manager.rand_run_no_agent()
+
+sweep_manager.initialize_sweep()
 print()
 cfg.is_concrete()
 d = cfg.random_sweep_configuration()

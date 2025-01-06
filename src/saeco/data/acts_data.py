@@ -79,6 +79,7 @@ class ActsData:
         force_not_skip_padding=False,
         batched_kwargs={},
     ):
+        assert isinstance(tokens, torch.Tensor)
         acts_list = []
         with self.autocast_context():
             with torch.inference_mode():
@@ -116,7 +117,10 @@ class ActsData:
             toks_re,
             "batch seq -> (batch seq)",
         )
-        if self.cfg.model_cfg.acts_cfg.filter_pad:
+        if (
+            self.cfg.model_cfg.acts_cfg.filter_pad
+            and self.model.tokenizer.pad_token_id is not None
+        ):
             mask = toks_re != self.model.tokenizer.pad_token_id
             if not mask.all():
                 print(f"removing {(~mask).sum()} activations from pad token locations")
@@ -153,8 +157,8 @@ class ActsData:
                 else None
             )
             for p in range(id % nw, piler.num_piles, nw):
-                print("get next pile")
-                print(id, nw, p)
+                # print("get next pile")
+                # print(id, nw, p)
                 pile = piler[p]
                 if progress is None:
                     progress = tqdm.trange(
@@ -162,7 +166,7 @@ class ActsData:
                     )
 
                 assert pile.dtype == torch.float16
-                print("got next pile")
+                # print("got next pile")
                 for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                     yield pile[i : i + batch_size]
                     progress.update()
@@ -172,14 +176,14 @@ class ActsData:
             spares = []
             nspare = 0
             for p in range(id % nw, piler.num_piles, nw):
-                print("get next pile")
-                print(id, nw, p)
+                # print("get next pile")
+                # print(id, nw, p)
                 pile = piler[p]
                 # if p == id:
                 #     nextpile = nextpile[: (id % nw + 1) * len(nextpile) // nw]
                 # pile = nextpile
                 assert pile.dtype == self.cfg.model_cfg.acts_cfg.storage_dtype
-                print("got next pile")
+                # print("got next pile")
                 for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                     yield pile[i : i + batch_size]
                 spare = pile[len(pile) // batch_size * batch_size :]
@@ -225,11 +229,10 @@ class ActsData:
         assert nsteps is None
         pile = piler[id]
         for p in range(id + nw, piler.num_piles, nw):
-            print("get next pile")
-            print(id, nw, p)
+            # print("get next pile")
+            # print(id, nw, p)
             nextpile = piler[p]
-            assert pile.dtype == torch.float16
-            print("got next pile")
+            # print("got next pile")
             yield pile
             pile = nextpile
         for i in range(0, len(pile) // batch_size * batch_size, batch_size):
@@ -254,10 +257,13 @@ class ActsDataset(torch.utils.data.IterableDataset):
             gen_fn = self.acts.acts_generator
         if worker_info is None:
             return gen_fn(self.split, self.batch_size)
-        bpp = self.acts.cfg.generation_config.acts_per_pile // self.batch_size
+        batches_per_pile = (
+            self.acts.cfg.generation_config.acts_per_pile // self.batch_size
+        )
         id = worker_info.id
         nw = worker_info.num_workers
-        offset = (id % nw) * bpp // nw
+        offset = (id % nw) * batches_per_pile // nw
+        base_size = int(4096 / self.batch_size * 8 + 1)
         return bufferized_iter(
             gen_fn(
                 self.split,
@@ -265,6 +271,6 @@ class ActsDataset(torch.utils.data.IterableDataset):
                 id=id,
                 nw=nw,
             ),
-            queue_size=32 + offset,
+            queue_size=base_size + offset,
             # getnext=lambda i: next(i).share_memory_(),
         )

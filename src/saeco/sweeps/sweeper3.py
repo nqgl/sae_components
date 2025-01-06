@@ -12,7 +12,6 @@ from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
 from attrs import define, field
 from saeco.mlog import mlog
-import clearml
 
 
 class SweepFile(Protocol):
@@ -43,7 +42,7 @@ class Sweeper:
         cfg = self.cfg
         representation = cfg.to_swept_nodes()
 
-        sweep_id = mlog.begin_sweep(representation, project=self.sweepfile.PROJECT)
+        sweep_id = mlog.create_sweep(representation, project=self.sweepfile.PROJECT)
         # sweep_id = wandb.sweep(
         #     sweep=representation.to_wandb(),
         #     project=self.sweepfile.PROJECT,

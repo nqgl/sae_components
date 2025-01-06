@@ -33,7 +33,6 @@ class Config(SweepableConfig):
 
 class VanillaSAE(Architecture[Config]):
     def setup(self):
-        self.init._encoder.bias = False
         self.init._decoder.add_wrapper(ft.NormFeatures)
         self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 

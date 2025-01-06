@@ -1,3 +1,4 @@
+import random
 from typing import (
     Annotated,
     Any,
@@ -282,11 +283,35 @@ def _merge_dicts_left2(orig, new, obj):
     #     items = obj.items()
     else:
         return orig
-    for key, value in items:
-        obj_attr = getattr(obj, key)
-        if isinstance(obj_attr, SweepExpression):
-            orig[key] = obj_attr.instantiate()
+    # for key, value in items:
+    #     obj_attr = getattr(obj, key)
+    #     if isinstance(obj_attr, SweepExpression):
+    #         orig[key] = obj_attr.instantiate()
     return orig
+
+
+def acc_path(obj, path: list[str]):
+    if len(path) == 0:
+        return obj
+    acc = obj[path[0]] if isinstance(obj, dict) else getattr(obj, path[0])
+    return acc_path(acc, path[1:])
+
+
+def set_path(obj, path: list[str], value):
+    target = acc_path(obj, path[:-1])
+    key = path[-1]
+    if isinstance(target, dict):
+        target[key] = value
+    else:
+        setattr(target, key, value)
+
+
+def _instantiate_sweepexpressions(target, obj: "SweepableConfig", swept_vars):
+    paths = obj.to_swept_nodes().get_paths_to_sweep_expressions()
+    for path in paths:
+        t: SweepExpression = acc_path(obj, path)
+        set_path(target, path, t.instantiated(swept_vars))
+        # acc_path(target, path[:-1])
 
 
 def fix_paramize(d):
@@ -337,13 +362,21 @@ class SweepableConfig(BaseModel, metaclass=SweptMeta):
             for k, v in var_data.items():
                 sv_dict[k].instantiated_value = v
         else:
-            assert "sweep_vars" not in sweep
+            print("no sweep vars?")
+            print("self paths", self.to_swept_nodes().get_paths_to_sweep_expressions())
+            print("copy paths", copy.to_swept_nodes().get_paths_to_sweep_expressions())
+
+            assert "sweep_vars" not in sweep, (
+                self.to_swept_nodes().get_paths_to_sweep_expressions(),
+                copy.to_swept_nodes().get_paths_to_sweep_expressions(),
+            )
         mydict2 = copy.model_dump()
         _merge_dicts_left2(mydict2, sweep, copy)
+        _instantiate_sweepexpressions(mydict2, copy, var_data)
         # mydict2["train_cfg"]["data_cfg"]
         return copy.model_validate(mydict2)
 
-    def random_sweep_configuration(self):
+    def random_sweep_inst_dict(self):
         d = _to_randomly_selected_dict(self)
         copy = self.model_copy(deep=True)
         p = _get_sweepvars(copy)
@@ -352,7 +385,10 @@ class SweepableConfig(BaseModel, metaclass=SweptMeta):
         assert "sweep_vars" not in d
         if p:
             d["sweep_vars"] = {k.name: random.choice(k.values) for k in p}
-        return self.from_selective_sweep(d)
+        return d
+
+    def random_sweep_configuration(self):
+        return self.from_selective_sweep(self.random_sweep_inst_dict())
 
     def to_swept_nodes(self):
         return SweptNode.from_sweepable(self)
@@ -388,19 +424,37 @@ class SweepExpression(Swept[T]):
                 params |= p.get_sweepvars()
         return params
 
-    def get_args(self):
-        return [
-            a.instantiated_value if isinstance(a, SweepVar) else a for a in self.args
-        ]
-
-    def get_kwargs(self):
-        return {
-            k: v.instantiated_value if isinstance(v, SweepVar) else v
-            for k, v in self.kwargs.items()
-        }
+    def evaluate(self, *args, **kwargs):
+        print(f"evaluating SweepExpression {self.expr}(*{args}, **{kwargs})")
+        return self.expr(*args, **kwargs)
 
     def instantiate(self):
-        return self.expr(*self.get_args(), **self.get_kwargs())
+        return self.evaluate(*self.get_args(), **self.get_kwargs())
+
+    def instantiated(self, swept_vars):
+        return self.evaluate(*self.get_args(swept_vars), **self.get_kwargs(swept_vars))
+
+    def get_args(self, swept_vars=None):
+        if swept_vars is None:
+            return [
+                a.instantiated_value if isinstance(a, SweepVar) else a
+                for a in self.args
+            ]
+        return [
+            swept_vars[arg.name] if isinstance(arg, SweepVar) else arg
+            for arg in self.args
+        ]
+
+    def get_kwargs(self, swept_vars=None):
+        if swept_vars is None:
+            return {
+                k: v.instantiated_value if isinstance(v, SweepVar) else v
+                for k, v in self.kwargs.items()
+            }
+        return {
+            k: swept_vars[kwarg.name] if isinstance(kwarg, SweepVar) else kwarg
+            for k, kwarg in self.kwargs.items()
+        }
 
 
 Location = list[str]
@@ -428,7 +482,7 @@ class SweptNode(BaseModel):
         for name, attr in items:
             if isinstance(attr, SweepExpression):
                 inst.expressions[name] = attr
-                inst.sweepvars |= attr.get_sweepvars()
+                # inst.sweepvars |= attr.get_sweepvars()
             elif isinstance(attr, SweepVar):
                 raise NotImplementedError("sweepvars should be inside an expression")
                 # inst.sweepvars.add(attr)
@@ -449,12 +503,35 @@ class SweptNode(BaseModel):
             s |= v.get_sweepvars()
         return s
 
+    def swept_combination(self):
+        """excluding sweepvar options"""
+        n = 1
+        for k, v in self.swept_fields.items():
+            n *= len(v.values)
+        for k, v in self.children.items():
+            n *= v.swept_option_count()
+        return n
+
+    def swept_options_sum(self):
+        n = 0
+        for k, v in self.swept_fields.items():
+            n += len(v.values)
+        for k, v in self.children.items():
+            n += v.swept_options_sum()
+        return n
+
     def to_wandb(self):
         sweepvars = self.get_sweepvars()
         return {
             "parameters": {
-                "sweep_vars": {k.name: k.sweep_dump() for k in sweepvars},
-                **{k: v._to_wandb_parameters_only() for k, v in self.children.items()},
+                "sweep_vars": {
+                    "parameters": {k.name: k.sweep_dump() for k in sweepvars}
+                },
+                **{
+                    k: v._to_wandb_parameters_only()
+                    for k, v in self.children.items()
+                    if v.swept_options_sum() > 0
+                },
                 **{k: v.model_dump() for k, v in self.swept_fields.items()},
             },
             "method": "grid",
@@ -467,6 +544,39 @@ class SweptNode(BaseModel):
                 **{k: v.model_dump() for k, v in self.swept_fields.items()},
             }
         }
+
+    def random_selection(self, sweep_vars=None):
+        if sweep_vars is None:
+            vars = self.get_sweepvars()
+            var_values = {var.name: random.choice(var.values) for var in vars}
+            return {
+                **self.random_selection(var_values),
+                "sweep_vars": var_values,
+            }
+        return {
+            **{k: v.random_selection(sweep_vars) for k, v in self.children.items()},
+            **{k: random.choice(v.values) for k, v in self.swept_fields.items()},
+        }
+
+    def get_paths_to_sweep_expressions(self) -> list[Location]:
+        paths = []
+        for k, v in self.children.items():
+            paths.extend([[k] + p for p in v.get_paths_to_sweep_expressions()])
+        paths.extend([[k] for k in self.expressions.keys()])
+        return paths
+
+
+def add_dictlist(d1: dict[Any, list], d2: dict[Any, list]) -> dict[Any, list]:
+    out = {}
+    k1 = set(d1.keys())
+    k2 = set(d2.keys())
+    for k in k1 & k2:
+        out[k] = d1[k] + d2[k]
+    for k in k1 - k2:
+        out[k] = d1[k].copy()
+    for k in k2 - k1:
+        out[k] = d2[k].copy()
+    return out
 
 
 def test():

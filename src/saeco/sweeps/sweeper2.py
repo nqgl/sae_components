@@ -38,7 +38,7 @@ class Sweeper:
     def initialize_sweep(self):
         cfg = self.sweepfile.cfg
         representation = cfg.to_swept_nodes()
-        sweep_id = mlog.begin_sweep(
+        sweep_id = mlog.create_sweep(
             representation.to_wandb(), project=self.sweepfile.PROJECT
         )
         with open(self.path / "sweep_id.txt", "w") as f:
@@ -72,7 +72,7 @@ class Sweeper:
         mlog.finish()
 
     def start_agent(self):
-        mlog.run_agent(self.sweep_id, self.sweepfile.PROJECT, self.run)
+        mlog.start_sweep_agent(self.sweep_id, self.sweepfile.PROJECT, self.run)
 
     def rand_run_no_agent(self):
         basecfg: SweepableConfig = self.sweepfile.cfg

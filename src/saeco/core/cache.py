@@ -4,8 +4,6 @@ from jaxtyping import Float, jaxtyped
 from torch import Tensor, NumberType
 from saeco.misc.exception_location_hint import locate_cache_exception
 
-# from beartype import beartype as typechecker
-from typeguard import typechecked as typechecker
 import inspect
 import re
 

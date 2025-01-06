@@ -6,7 +6,6 @@ from functools import cached_property
 from pathlib import Path
 from typing import Protocol
 
-import comet_ml
 import wandb
 from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig

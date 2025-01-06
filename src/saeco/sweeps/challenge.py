@@ -3,7 +3,6 @@ import torch.nn as nn
 import saeco.components as co
 import saeco.components.features.features as ft
 from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
-from saeco.configs import RunSchedulingConfig
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
 
@@ -12,6 +11,7 @@ from saeco.initializer.initializer_config import InitConfig
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.trainer.run_config import RunConfig
+from saeco.trainer.schedule_cfg import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 
 

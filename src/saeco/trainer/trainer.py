@@ -172,10 +172,12 @@ class Trainer:
                 )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def get_databuffer(self, num_batches=None, num_workers=0, queue_size=256):
+    def get_databuffer(self, num_batches=None, num_workers=0, queue_size=...):
         buf = self.cfg.data_cfg.get_databuffer(
             num_workers=num_workers, batch_size=self.cfg.batch_size
         )
+        if queue_size is ...:
+            queue_size = int(4096 / self.cfg.batch_size * 64 + 4)
         if queue_size is not None:
             queue = [next(buf).cuda(non_blocking=True) for _ in range(queue_size)]
 
@@ -332,8 +334,9 @@ class Trainer:
     def do_intermittent_metrics(self, buffer=None):
         self.log_recons("recons/with_bos/", True)
         self.log_recons("recons/no_bos/", False)
+        self.log_recons("recons/no_bos2/", False, num_batches=50)
 
-    def log_recons(self, label, proc_bos, num_batches=5):
+    def log_recons(self, label, proc_bos, num_batches=20):
         self.log(
             {
                 (label + k): v
@@ -344,6 +347,7 @@ class Trainer:
                     cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
                     bos_processed_with_hook=proc_bos,
                     num_batches=num_batches,
+                    cast_fn=self.cast,
                 ).items()
             }
         )
