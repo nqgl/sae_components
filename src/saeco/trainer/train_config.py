@@ -12,9 +12,7 @@ from pydantic import Field
 class TrainConfig(SweepableConfig):
     data_cfg: DataConfig = Field(default_factory=DataConfig)
     wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
-    coeffs: dict[str, float | Swept[float]] = Field(
-        default_factory=lambda: dict(sparsity_loss=1e-3)
-    )
+    coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
     # coeffs: Coeffs = Field(default_factory=Coeffs)
     l0_targeter_type: str = "gentle_basic"
     l0_target: float | None = None

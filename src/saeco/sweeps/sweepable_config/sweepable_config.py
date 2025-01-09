@@ -5,27 +5,107 @@ from typing import (
     TYPE_CHECKING,
     TypeVar,
     Union,
+    get_origin,
+    get_args,
 )
 import pydantic._internal._model_construction as mc
-from pydantic import BaseModel, create_model, dataclasses
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ValidationError,
+    create_model,
+    dataclasses,
+)
 from typing_extensions import dataclass_transform
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 from saeco.sweeps.sweepable_config.shared_fns import has_sweep
 
-from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
+from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Op, Val
+from types import UnionType, GenericAlias
 
 T = TypeVar("T")
 
 
-def Sweepable(type):
-    if type is ClassVar:
-        return type
+# def generic_issubclass(t, cls):
+#     try:
+#         return issubclass(t, cls)
+#     except TypeError:
+#         pass
+#     if get_origin(t) is Union or isinstance(t, UnionType):
+#         return any([generic_issubclass(a, cls) for a in get_args(t)])
+
+
+def generic_isinstance(inst, cls, name=None):
+    try:
+        return isinstance(inst, cls)
+    except TypeError:
+        pass
+    if get_origin(cls) is Union or isinstance(cls, UnionType):
+        return any([generic_isinstance(inst, a) for a in get_args(cls)])
+    if not isinstance(cls, GenericAlias):
+        return False
+    origin = get_origin(cls)
+    args = get_args(cls)
+    if not generic_isinstance(inst, origin):
+        return False
+    if origin is list:
+        if not len(args) == 1:
+            return False
+        t = args[0]
+        return all([generic_isinstance(i, t) for i in inst])
+    if origin is dict:
+        if not len(args) == 2:
+            return False
+        t_k, t_v = args
+        return all(
+            [
+                all([generic_isinstance(k, t_k), generic_isinstance(v, t_v)])
+                for k, v in inst.items()
+            ]
+        )
+    return False
+
+
+def SweptValidatorConverter(t, name=None):
+    def converter_validator(value: Any):
+        if isinstance(t, TypeVar):
+            return value
+        if generic_isinstance(value, t, name=name):
+            return value
+        # elif issubclass(type(value), t):
+        #     return value
+        options = [Op, SweepVar, Val, Swept]
+        if name == "batch_size":
+            print("options", options)
+        for option in options:
+            try:
+                return option.model_validate(value)
+            except ValidationError:
+                continue
+        return value
+        # raise TypeError(f"Validation Error: Invalid value for {t}: {value}")
+
+    return converter_validator
+
+
+def Sweepable(t, name=None):
+    if get_origin(t) is dict and get_args(t) and len(get_args(t)) == 2:
+        key_type, value_type = get_args(t)
+        s_t = t | dict[key_type, Sweepable(value_type, name=name)]
+    else:
+        s_t = t
+    if t is ClassVar:
+        return t
     assert not isinstance(
-        type, Swept
+        t, Swept
     ), "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
-    return Union[Swept[type], type]
+
+    return Annotated[
+        Union[Swept[t], s_t], BeforeValidator(SweptValidatorConverter(t, name=name))
+    ]
+    # return Union[Swept[type], type]
 
 
 @dataclass_transform(
@@ -44,7 +124,7 @@ class SweepableMeta(mc.ModelMetaclass):
     ) -> type:
         if "__annotations__" in namespace:
             namespace["__annotations__"] = {
-                name: Sweepable(annotation)
+                name: Sweepable(annotation, name=name)
                 for name, annotation in namespace["__annotations__"].items()
             }
         return super().__new__(
@@ -188,7 +268,7 @@ def _instantiate_sweepexpressions(target, obj: "SweepableConfig", swept_vars):
     paths = obj.to_swept_nodes().get_paths_to_sweep_expressions()
     for path in paths:
         t: SweepExpression = acc_path(obj, path)
-        set_path(target, path, t.instantiated(swept_vars))
+        set_path(target, path, t.evaluate(swept_vars))
         # acc_path(target, path[:-1])
 
 

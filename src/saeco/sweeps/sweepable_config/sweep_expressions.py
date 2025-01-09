@@ -10,6 +10,7 @@ from typing import Any, Callable, TypeVar, Union
 from saeco.sweeps.sweepable_config.se_types import (
     any_literal_as_generic,
 )
+from types import NoneType
 
 T = TypeVar("T")
 
@@ -27,6 +28,7 @@ class ExpressionOpEnum(str, Enum):
 
     def evaluate(self, *args):
         ### non-binary ops
+        print("evaluating", self, args)
         if self == ExpressionOpEnum.ADD:
             z = args[0]
             for arg in args[1:]:
@@ -178,12 +180,18 @@ class SweepVar(SweepExpression[T]):
     def get_sweepvars(self):
         return set([self])
 
+    def evaluate(self, vars_dict: dict[str, Any]):
+        return vars_dict[self.name]
+
 
 class Op(SweepExpression):
     op: ExpressionOpEnum
     children: list[SweepExpressionAnyLiteral]
+    values: list = []
 
     def evaluate(self, vars_dict: dict[str, Any]):
+        print(self)
+        print(vars_dict)
         return self.op.evaluate(*[child.evaluate(vars_dict) for child in self.children])
 
     def get_sweepvars(self):

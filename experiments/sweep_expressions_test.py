@@ -31,7 +31,7 @@ from saeco.architectures.vanilla import Config, VanillaSAE
 PROJECT = "sae sweeps"
 
 var = SweepVar[float](1, 2, 3, name="var")
-batch_size_mult_var = SweepVar(1, 2, 3, name="batch_size_mult")
+batch_size_mult_var = SweepVar[int](1, 2, 3, name="batch_size_mult")
 
 val50k_int = Val[int](value=50_000)
 val50k_int.generic_type
@@ -63,7 +63,7 @@ cfg = RunConfig[Config](
         l0_target_adjustment_size=0.001,
         coeffs={
             "sparsity_loss": 1.1e-3,
-            "L2_loss": 1,
+            "L2_loss": 1.0,
         },
         #
         wandb_cfg=dict(project=PROJECT),
@@ -74,7 +74,7 @@ cfg = RunConfig[Config](
         expected_biases=1,
     ),
     #
-    init_cfg=InitConfig(d_data=768, dict_mult=8),
+    init_cfg=InitConfig(d_data=768, dict_mult=32),
     arch_cfg=Config(),
 )
 # from transformers import Gemma2ForCausalLM
@@ -85,13 +85,13 @@ cfg = RunConfig[Config](
 g = VanillaSAE(cfg)
 sweep_manager = g.get_sweep_manager()
 sweep_manager.initialize_sweep()
+# sweep_manager.rand_run_no_agent()
 sweep_manager.local_sweep()
-sweep_manager.get_worker_run_command()
+# sweep_manager.get_worker_run_command()
 sweep_manager.run_sweep_on_pods_with_monitoring(
-    0, purge_after=False, keep_after=True, challenge_file=None
+    1, purge_after=False, keep_after=True, challenge_file=None
 )
 
-sweep_manager.rand_run_no_agent()
 
 sweep_manager.initialize_sweep()
 print()

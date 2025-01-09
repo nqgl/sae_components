@@ -9,7 +9,7 @@ LITERALS = [int, float, str, bool]
 
 
 class SweepExpression(Swept[T]):
-    values: NoneType = None
+    values: list = []
 
     @classmethod
     def convert_other(cls, other):

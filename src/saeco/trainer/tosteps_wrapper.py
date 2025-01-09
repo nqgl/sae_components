@@ -18,7 +18,14 @@ def tosteps(n: int | float, period: int | None = None) -> int:
     return int(n * period)
 
 
-class RunFloat(float):
+class FloatCheckMeta(type):
+    def __instancecheck__(self, __instance: Any) -> bool:
+        if isinstance(__instance, float):
+            return True
+        return super().__instancecheck__(__instance)
+
+
+class RunFloat(float, metaclass=FloatCheckMeta):
     @classmethod
     def __get_pydantic_core_schema__(
         cls, source_type: Any, handler: GetCoreSchemaHandler
@@ -28,7 +35,7 @@ class RunFloat(float):
     PERIOD_FIELD_NAME = "run_length"
 
 
-class ResFloat(float):
+class ResFloat(float, metaclass=FloatCheckMeta):
     @classmethod
     def __get_pydantic_core_schema__(
         cls, source_type: Any, handler: GetCoreSchemaHandler
@@ -38,10 +45,16 @@ class ResFloat(float):
     PERIOD_FIELD_NAME = "resample_period"
 
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, get_origin, get_args
 
 if TYPE_CHECKING:
     from saeco.trainer.schedule_cfg import RunSchedulingConfig
+
+
+def deannotate(annotation):
+    if isinstance(annotation, Annotated):
+        return get_args(annotation)[0]
+    return annotation
 
 
 def tosteps_wrapper(cls: Type["RunSchedulingConfig"]):
@@ -82,7 +95,7 @@ def tosteps_wrapper(cls: Type["RunSchedulingConfig"]):
         return replace_field
 
     for name, field in mfi.items():
-        annotation = cls.__annotations__[name]
+        annotation = deannotate(field.annotation)
         if issubclass(int, annotation):
             if issubclass(RunFloat, annotation) and issubclass(ResFloat, annotation):
                 raise Exception(
