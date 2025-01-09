@@ -11,7 +11,8 @@ from saeco.data import (
 )
 from saeco.data.data_config_definitions import gemma_2_2b_openwebtext, gpt_2_block
 from saeco.initializer import InitConfig
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig

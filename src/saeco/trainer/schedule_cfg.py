@@ -4,7 +4,8 @@ from typing import Any, Callable, Optional, overload
 
 from pydantic import Field
 
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 AmbiguousTypes = [Optional[int | float], int | float]

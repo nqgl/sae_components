@@ -7,6 +7,7 @@ from saeco.components import (
     L2Loss,
     SparsityPenaltyLoss,
 )
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.normalizers import GNConfig
@@ -63,7 +64,7 @@ def ln_sae(
 
 from saeco.trainer.runner import TrainingRunner, DataConfig
 from saeco.data.data_cfg import ModelConfig, ActsDataConfig
-from saeco.sweeps import Swept, do_sweep
+from saeco.sweeps import do_sweep
 
 
 model_fn = ln_sae

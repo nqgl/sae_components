@@ -19,7 +19,8 @@ from saeco.core import Seq
 
 from saeco.misc import useif
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 class Config(SweepableConfig):

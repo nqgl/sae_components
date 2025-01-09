@@ -10,19 +10,14 @@ from saeco.data.data_config_definitions import (
 from saeco.data.generation_config import DataGenerationProcessConfig
 from saeco.data.split_config import SplitConfig
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.sweeps.sweepable_config.sweep_expressions import (
-    SweepVar,
-    Var,
-)
+from saeco.sweeps.sweepable_config.sweep_expressions import Val
 from saeco.trainer.run_config import RunConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.sweep_expressions import Val
+from saeco.sweeps import SweepableConfig, Swept, SweepVar
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig
@@ -35,18 +30,26 @@ from saeco.architectures.vanilla import Config, VanillaSAE
 
 PROJECT = "sae sweeps"
 
-
-var = SweepVar(1, 2, 3, name="var")
+var = SweepVar[float](1, 2, 3, name="var")
 batch_size_mult_var = SweepVar(1, 2, 3, name="batch_size_mult")
+
+val50k_int = Val[int](value=50_000)
+val50k_int.generic_type
+val50k = Val(value=50_000)
+val50k.generic_type
+print()
+raw_schedule_cfg = RunSchedulingConfig(
+    run_length=Val[int](value=50_000) // batch_size_mult_var,
+    resample_period=Val[int](value=8_000) // var // batch_size_mult_var,
+    lr_cooldown_length=0.5,
+    lr_warmup_length=500,
+)
+
+
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
         data_cfg=gpt_2_block(),
-        raw_schedule_cfg=RunSchedulingConfig(
-            run_length=SweepExpression(batch_size_mult_var, expr=lambda x: 50_000 // x),
-            resample_period=Val(8_000) // var // batch_size_mult_var,
-            lr_cooldown_length=0.5,
-            lr_warmup_length=500,
-        ),
+        raw_schedule_cfg=raw_schedule_cfg,
         #
         batch_size=batch_size_mult_var * 4096,
         optim="Adam",

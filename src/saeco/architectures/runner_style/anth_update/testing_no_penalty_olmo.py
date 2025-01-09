@@ -7,7 +7,8 @@ from saeco.data.data_config_definitions import gpt_2_block
 from saeco.data.generation_config import DataGenerationProcessConfig
 from saeco.data.split_config import SplitConfig
 from saeco.initializer import InitConfig
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig, TrainingRunner
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.tosteps_wrapper import RunFloat

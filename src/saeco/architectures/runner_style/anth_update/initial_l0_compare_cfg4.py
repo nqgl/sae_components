@@ -5,7 +5,8 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.data.data_config_definitions import gpt_2_block, gemma_2_2b_openwebtext
 from saeco.initializer import InitConfig
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig, TrainingRunner
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.tosteps_wrapper import RunFloat

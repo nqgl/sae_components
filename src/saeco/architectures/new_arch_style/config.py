@@ -7,6 +7,7 @@ from saeco.data.data_config_definitions import (
     gemma_2_2b_openwebtext_fp32,
     gemma_2_2b_openwebtext_bf16,
 )
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer.run_config import RunConfig
 from saeco.architectures.new_arch_style.arch import GatedConfig, Gated
 from saeco.components.resampling.anthropic_resampling import (
@@ -14,7 +15,7 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig

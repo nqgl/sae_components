@@ -25,11 +25,12 @@ from saeco.components.penalties.l1_penalizer import (
     L0TargetingL1Penalty,
     LinearDecayL1Penalty,
 )
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
 import einops
 from saeco.components.hierarchical import hl2ll
 from torch.cuda.amp import custom_bwd, custom_fwd
 from saeco.components.jumprelu.kernels_fns import rect, gauss
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 def thresh_shrink(shrink_amount, eps, mult_by_shrank):

@@ -1,3 +1,4 @@
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer.run_config import RunConfig
 from .model import HSAEConfig
 from saeco.components.resampling.anthropic_resampling import (
@@ -5,7 +6,7 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 

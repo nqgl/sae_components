@@ -1,4 +1,4 @@
-from saeco.sweeps.sweepable_config.sweepable_config import SweptNode
+from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 from .fns import logger_instance
 import os
 

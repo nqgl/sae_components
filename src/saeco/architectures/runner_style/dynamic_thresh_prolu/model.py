@@ -22,7 +22,8 @@ from saeco.core import Seq
 from saeco.initializer import Initializer
 
 from saeco.misc import useif
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 # torch.backends.cudnn.benchmark = True

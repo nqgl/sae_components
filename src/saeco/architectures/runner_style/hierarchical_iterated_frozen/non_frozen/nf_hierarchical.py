@@ -35,7 +35,7 @@ from saeco.components.threshgate import (
 # TODO
 # do an "update optim" step when incrementing the level
 
-from saeco.sweeps import Swept
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.architectures.anth_update.model import anth_update_model, AnthUpdateConfig
 
 from saeco.architectures.topk.model import topk_sae, TopKConfig

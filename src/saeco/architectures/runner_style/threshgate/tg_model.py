@@ -20,9 +20,10 @@ from saeco.core import Seq
 from saeco.misc import useif
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.components.penalties.l1_penalizer import L0TargetingL1Penalty
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
 import einops
 from saeco.components.hierarchical import hl2ll
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 class ThreshGate(cl.Module):

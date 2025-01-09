@@ -11,3 +11,4 @@ models-from-remote/
 *.json
 *.safetensors
 testdata/
+.vscode/

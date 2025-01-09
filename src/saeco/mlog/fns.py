@@ -1,7 +1,7 @@
 import os
 from contextlib import contextmanager
 
-from saeco.sweeps.sweepable_config.sweepable_config import SweptNode
+from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 
 # Instead of hardcoding WANDB = True, let's read from config or env
 WANDB = os.environ.get("USE_WANDB", "true").lower() in ("true", "1", "yes")

@@ -1,94 +1,22 @@
-import random
 from typing import (
     Annotated,
     Any,
-    Callable,
     ClassVar,
-    Generic,
-    List,
-    Literal,
-    Type,
     TYPE_CHECKING,
     TypeVar,
     Union,
 )
-
 import pydantic._internal._model_construction as mc
-from pydantic import BaseModel, create_model, dataclasses, Field
+from pydantic import BaseModel, create_model, dataclasses
 from typing_extensions import dataclass_transform
+from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
+from saeco.sweeps.sweepable_config.Swept import Swept
+from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+from saeco.sweeps.sweepable_config.shared_fns import has_sweep
+
+from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
 
 T = TypeVar("T")
-
-
-class SweptCheckerMeta(mc.ModelMetaclass):
-    def __instancecheck__(self, instance: Any) -> bool:
-        if mc.ModelMetaclass.__instancecheck__(self, instance):
-            return True
-        if self is Swept:
-            return False
-        if not isinstance(instance, Swept):
-            return False
-        iT = instance.__pydantic_generic_metadata__["args"]
-        sT = self.__pydantic_generic_metadata__["args"]
-        if len(iT) == len(sT) == 1:
-            try:
-                if issubclass(iT[0], sT[0]):
-                    return True
-            except TypeError:
-                pass
-        if len(sT) == 1 and all(isinstance(v, sT) for v in instance.values):
-            return True
-        return False
-
-
-from typing import Dict, Set
-
-
-class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
-    values: list[T]
-
-    def __init__(self, *values, **kwargs):
-        if values:
-            if "values" in kwargs:
-                raise Exception("two sources of values in Swept initialization!")
-            kwargs["values"] = values
-        return super().__init__(**kwargs)
-
-    def model_dump(
-        self,
-        *,
-        mode: str = "python",
-        include: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
-        exclude: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
-        context: dict[str, Any] | None = None,
-        by_alias: bool = False,
-        exclude_unset: bool = False,
-        exclude_defaults: bool = False,
-        exclude_none: bool = False,
-        round_trip: bool = False,
-        warnings: bool | Literal["none"] | Literal["warn"] | Literal["error"] = True,
-        serialize_as_any: bool = False,
-    ) -> dict[str, Any]:
-        dump = super().model_dump(
-            mode=mode,
-            include=include,
-            exclude=exclude,
-            context=context,
-            by_alias=by_alias,
-            exclude_unset=exclude_unset,
-            exclude_defaults=exclude_defaults,
-            exclude_none=exclude_none,
-            round_trip=round_trip,
-            warnings=warnings,
-            serialize_as_any=serialize_as_any,
-        )
-        # T_args = self.__pydantic_generic_metadata__["args"]
-        # if T_args:
-        for i, v in enumerate(dump["values"]):
-            if isinstance(v, bool):
-                dump["values"][i] = int(v)
-
-        return dump
 
 
 def Sweepable(type):
@@ -103,7 +31,7 @@ def Sweepable(type):
 @dataclass_transform(
     kw_only_default=True,
 )
-class SweptMeta(mc.ModelMetaclass):
+class SweepableMeta(mc.ModelMetaclass):
     def __new__(
         mcs,
         cls_name: str,
@@ -129,56 +57,6 @@ class SweptMeta(mc.ModelMetaclass):
             _create_model_module,
             **kwargs,
         )
-
-
-# class ParametersForWandb(BaseModel):
-#     parameters: dict[str, Any]
-
-
-# def _to_swept_fields(target: BaseModel):
-#     for name, field in target.model_fields.items():
-#         attr = getattr(target, name)
-#         if isinstance(attr, Swept):
-#             continue
-#         if isinstance(attr, BaseModel):
-#             _to_swept_fields(attr)
-#             new_swept = ParametersForWandb(parameters=attr)
-#         else:
-#             new_swept = Swept[type(attr)](attr)
-#         setattr(target, name, new_swept)
-#     return target
-
-
-# def _to_swept_dict(target: BaseModel):
-#     d = {}
-#     for name, field in target.model_fields.items():
-#         attr = getattr(target, name)
-#         if isinstance(attr, Swept):
-#             subdict = attr.model_dump()
-#         elif isinstance(attr, BaseModel):
-#             subdict = dict(parameters=_to_swept_dict(attr))
-#         else:
-#             subdict = Swept[type(attr)](attr).model_dump()
-#         d[name] = subdict
-#     return d
-
-
-def has_sweep(target: BaseModel | dict):
-    if isinstance(target, BaseModel):
-        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
-    else:
-        assert isinstance(target, dict)
-        items = target.items()
-    for name, attr in items:
-        if isinstance(attr, Swept):
-            return True
-        elif isinstance(attr, BaseModel | dict):
-            if has_sweep(attr):
-                return True
-    return False
-
-
-from functools import singledispatch
 
 
 def _to_swept_selective_dict(
@@ -324,7 +202,7 @@ def fix_paramize(d):
     }
 
 
-class SweepableConfig(BaseModel, metaclass=SweptMeta):
+class SweepableConfig(BaseModel, metaclass=SweepableMeta):
     _ignore_this: int = 0  # needs field due to being a dataclass
 
     def is_concrete(self):
@@ -392,178 +270,6 @@ class SweepableConfig(BaseModel, metaclass=SweptMeta):
 
     def to_swept_nodes(self):
         return SweptNode.from_sweepable(self)
-
-
-class SweepVar(Swept[T]):
-    values: list[T]
-    name: str
-    instantiated_value: T | None = None
-
-    def __hash__(self):
-        return hash(self.name)
-
-    def sweep_dump(self):
-        as_swept = Swept[T](*self.values)
-        return as_swept.model_dump()
-
-
-class SweepExpression(Swept[T]):
-    expr: Callable[..., T]
-    args: tuple[Any, ...]
-    kwargs: dict[str, Any]
-
-    def __init__(self, *args, expr: Callable[[], T], **kwargs):
-        super().__init__(values=[], expr=expr, args=args, kwargs=kwargs)
-
-    def get_sweepvars(self) -> set["SweepVar"]:
-        params = set()
-        for p in self.args + tuple(self.kwargs.values()):
-            if isinstance(p, SweepVar):
-                params.add(p)
-            elif isinstance(p, SweepExpression):
-                params |= p.get_sweepvars()
-        return params
-
-    def evaluate(self, *args, **kwargs):
-        print(f"evaluating SweepExpression {self.expr}(*{args}, **{kwargs})")
-        return self.expr(*args, **kwargs)
-
-    def instantiate(self):
-        return self.evaluate(*self.get_args(), **self.get_kwargs())
-
-    def instantiated(self, swept_vars):
-        return self.evaluate(*self.get_args(swept_vars), **self.get_kwargs(swept_vars))
-
-    def get_args(self, swept_vars=None):
-        if swept_vars is None:
-            return [
-                a.instantiated_value if isinstance(a, SweepVar) else a
-                for a in self.args
-            ]
-        return [
-            swept_vars[arg.name] if isinstance(arg, SweepVar) else arg
-            for arg in self.args
-        ]
-
-    def get_kwargs(self, swept_vars=None):
-        if swept_vars is None:
-            return {
-                k: v.instantiated_value if isinstance(v, SweepVar) else v
-                for k, v in self.kwargs.items()
-            }
-        return {
-            k: swept_vars[kwarg.name] if isinstance(kwarg, SweepVar) else kwarg
-            for k, kwarg in self.kwargs.items()
-        }
-
-
-Location = list[str]
-
-
-class SweptNode(BaseModel):
-    location: Location = Field(default_factory=list)
-    children: dict[str, "SweptNode"] = Field(default_factory=dict)
-    swept_fields: dict[str, Swept] = Field(default_factory=dict)
-    expressions: dict[str, SweepExpression] = Field(default_factory=dict)
-    # sweepvars: set[SweepVar] = Field(default_factory=set)
-
-    @classmethod
-    def from_sweepable(
-        cls,
-        target: BaseModel | dict,
-        location: Location = [],
-    ) -> "SweptNode":
-        inst = cls(location=location)
-        if isinstance(target, BaseModel):
-            items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
-        else:
-            assert isinstance(target, dict)
-            items = target.items()
-        for name, attr in items:
-            if isinstance(attr, SweepExpression):
-                inst.expressions[name] = attr
-                # inst.sweepvars |= attr.get_sweepvars()
-            elif isinstance(attr, SweepVar):
-                raise NotImplementedError("sweepvars should be inside an expression")
-                # inst.sweepvars.add(attr)
-            elif isinstance(attr, Swept):
-                inst.swept_fields[name] = attr
-            elif isinstance(attr, BaseModel | dict) and has_sweep(attr):
-                inst.children[name] = cls.from_sweepable(attr, location + [name])
-            else:
-                continue
-
-        return inst
-
-    def get_sweepvars(self) -> set[SweepVar]:
-        s = set()
-        for k, v in self.expressions.items():
-            s |= v.get_sweepvars()
-        for k, v in self.children.items():
-            s |= v.get_sweepvars()
-        return s
-
-    def swept_combination(self):
-        """excluding sweepvar options"""
-        n = 1
-        for k, v in self.swept_fields.items():
-            n *= len(v.values)
-        for k, v in self.children.items():
-            n *= v.swept_option_count()
-        return n
-
-    def swept_options_sum(self):
-        n = 0
-        for k, v in self.swept_fields.items():
-            n += len(v.values)
-        for k, v in self.children.items():
-            n += v.swept_options_sum()
-        return n
-
-    def to_wandb(self):
-        sweepvars = self.get_sweepvars()
-        return {
-            "parameters": {
-                "sweep_vars": {
-                    "parameters": {k.name: k.sweep_dump() for k in sweepvars}
-                },
-                **{
-                    k: v._to_wandb_parameters_only()
-                    for k, v in self.children.items()
-                    if v.swept_options_sum() > 0
-                },
-                **{k: v.model_dump() for k, v in self.swept_fields.items()},
-            },
-            "method": "grid",
-        }
-
-    def _to_wandb_parameters_only(self):
-        return {
-            "parameters": {
-                **{k: v._to_wandb_parameters_only() for k, v in self.children.items()},
-                **{k: v.model_dump() for k, v in self.swept_fields.items()},
-            }
-        }
-
-    def random_selection(self, sweep_vars=None):
-        if sweep_vars is None:
-            vars = self.get_sweepvars()
-            var_values = {var.name: random.choice(var.values) for var in vars}
-            return {
-                **self.random_selection(var_values),
-                "sweep_vars": var_values,
-            }
-        return {
-            **{k: v.random_selection(sweep_vars) for k, v in self.children.items()},
-            **{k: random.choice(v.values) for k, v in self.swept_fields.items()},
-        }
-
-    def get_paths_to_sweep_expressions(self) -> list[Location]:
-        paths = []
-        for k, v in self.children.items():
-            paths.extend([[k] + p for p in v.get_paths_to_sweep_expressions()])
-        paths.extend([[k] for k in self.expressions.keys()])
-        return paths
 
 
 def add_dictlist(d1: dict[Any, list], d2: dict[Any, list]) -> dict[Any, list]:

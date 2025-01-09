@@ -1,3 +1,5 @@
+from saeco.sweeps.sweepable_config.Swept import Swept
+from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.trainer.run_config import RunConfig
 from .model import Config
 from saeco.components.resampling.anthropic_resampling import (
@@ -5,8 +7,8 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig, Swept
-from saeco.sweeps.sweepable_config import SweepVar, SweepExpression
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig

@@ -1,6 +1,7 @@
 from saeco.data.data_cfg import DataConfig
 from saeco.misc import lazycall
-from saeco.sweeps import SweepableConfig, Swept
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 from .OptimConfig import get_optim_cls
 from .schedule_cfg import RunSchedulingConfig
 

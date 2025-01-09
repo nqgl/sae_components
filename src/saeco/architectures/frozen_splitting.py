@@ -21,6 +21,7 @@ from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 import saeco.core as cl
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 from saeco.trainer import RunSchedulingConfig
@@ -28,7 +29,7 @@ from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.data import DataConfig, ModelConfig, ActsDataConfig
-from saeco.sweeps import Swept, do_sweep
+from saeco.sweeps import do_sweep
 
 
 class Config(SweepableConfig):
