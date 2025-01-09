@@ -186,7 +186,7 @@ class SweepVar(SweepExpression[T]):
 
 class Op(SweepExpression):
     op: ExpressionOpEnum
-    children: list[SweepExpressionAnyLiteral]
+    children: list[Union["Op", "Val", SweepVar]]
     values: list = []
 
     def evaluate(self, vars_dict: dict[str, Any]):

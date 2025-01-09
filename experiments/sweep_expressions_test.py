@@ -84,12 +84,12 @@ cfg = RunConfig[Config](
 # # mc.MODEL_FN_CALLABLE_OVERRIDE = Gemma2ForCausalLM.from_pretrained
 g = VanillaSAE(cfg)
 sweep_manager = g.get_sweep_manager()
-sweep_manager.initialize_sweep()
+print(sweep_manager.initialize_sweep())
 # sweep_manager.rand_run_no_agent()
-sweep_manager.local_sweep()
+# sweep_manager.local_sweep()
 # sweep_manager.get_worker_run_command()
 sweep_manager.run_sweep_on_pods_with_monitoring(
-    1, purge_after=False, keep_after=True, challenge_file=None
+    0, purge_after=False, keep_after=True, challenge_file=None
 )
 
 

@@ -102,10 +102,12 @@ def Sweepable(t, name=None):
         t, Swept
     ), "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
 
-    return Annotated[
-        Union[Swept[t], s_t], BeforeValidator(SweptValidatorConverter(t, name=name))
-    ]
-    # return Union[Swept[type], type]
+    # return Annotated[
+    #     Union[Swept[t], s_t], BeforeValidator(SweptValidatorConverter(t, name=name))
+    # ]
+    from .sweep_expressions import Op
+
+    return Union[Op[t], Swept[t], t]
 
 
 @dataclass_transform(
