@@ -39,12 +39,12 @@ val50k = Val(value=50_000)
 val50k.generic_type
 print()
 raw_schedule_cfg = RunSchedulingConfig(
-    run_length=Val[int](value=50_000) // batch_size_mult_var,
+    run_length=Val[int](value=5_000) // batch_size_mult_var,
     resample_period=Val[int](value=8_000) // var // batch_size_mult_var,
     lr_cooldown_length=0.5,
     lr_warmup_length=500,
 )
-
+dictval = Val[dict[int, int]](value={1: 22, 2: 33, 3: 55})
 
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
@@ -59,7 +59,7 @@ cfg = RunConfig[Config](
         use_autocast=True,
         use_lars=True,
         #
-        l0_target=50,
+        l0_target=dictval[var],
         l0_target_adjustment_size=0.001,
         coeffs={
             "sparsity_loss": 1.1e-3,
@@ -89,7 +89,7 @@ print(sweep_manager.initialize_sweep())
 # sweep_manager.local_sweep()
 # sweep_manager.get_worker_run_command()
 sweep_manager.run_sweep_on_pods_with_monitoring(
-    0, purge_after=False, keep_after=True, challenge_file=None
+    9, purge_after=True, keep_after=True, challenge_file=None
 )
 
 

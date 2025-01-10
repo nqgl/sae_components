@@ -7,14 +7,9 @@ from saeco.sweeps.sweepable_config.Swept import Swept
 
 from typing import Any, Callable, TypeVar, Union
 
-from saeco.sweeps.sweepable_config.se_types import (
-    any_literal_as_generic,
-)
 from types import NoneType
 
 T = TypeVar("T")
-
-from .se_types import SweepExpressionAnyLiteral
 
 
 class ExpressionOpEnum(str, Enum):
@@ -25,6 +20,7 @@ class ExpressionOpEnum(str, Enum):
     INTDIV = "//"
     POW = "**"
     MOD = "%"
+    INDEX = "[]"
 
     def evaluate(self, *args):
         ### non-binary ops
@@ -55,6 +51,8 @@ class ExpressionOpEnum(str, Enum):
             return args[0] ** args[1]
         elif self == ExpressionOpEnum.MOD:
             return args[0] % args[1]
+        elif self == ExpressionOpEnum.INDEX:
+            return args[0][str(args[1])]
 
 
 # class SweepExpression(Swept[T]):
@@ -215,7 +213,7 @@ class Op(SweepExpression):
 
 
 class Val(SweepExpression):
-    value: str | int | float | bool
+    value: str | int | float | bool | list | tuple | dict
 
     def evaluate(self, vars_dict: dict[str, Any]):
         return self.value
@@ -225,7 +223,28 @@ class Val(SweepExpression):
 
     @property
     def generic_type(self):
-        return type(self.value)
+        if not (
+            isinstance(self.value, dict)
+            or isinstance(self.value, list)
+            or isinstance(self.value, tuple)
+        ):
+            return type(self.value)
+        if isinstance(self.value, dict):
+            kt = type(next(iter(self.value.keys())))
+            vt = type(next(iter(self.value.values())))
+            assert all(
+                [isinstance(k, kt) and isinstance(v, vt) for k, v in self.value.items()]
+            )
+            return dict[kt, vt]
+        elif isinstance(self.value, list):
+            t = type(self.value[0])
+            assert all([isinstance(v, t) for v in self.value])
+            return list[t]
+        elif isinstance(self.value, tuple):
+            t = type(self.value[0])
+            assert all([isinstance(v, t) for v in self.value])
+            return tuple[t]
+        raise ValueError(f"Cannot get generic type of {self.value}")
 
 
 # class SweepExpression(Swept[T]):

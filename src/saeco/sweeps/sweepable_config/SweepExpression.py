@@ -2,13 +2,13 @@ from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 from types import NoneType
-from typing import Any, TypeVar
+from typing import Any, TypeVar, get_args, get_origin, Generic
 
 T = TypeVar("T")
 LITERALS = [int, float, str, bool]
 
 
-class SweepExpression(Swept[T]):
+class SweepExpression(Swept[T], Generic[T]):
     values: list = []
 
     @classmethod
@@ -127,6 +127,35 @@ class SweepExpression(Swept[T]):
         other = self.convert_other(other)
         t = self.common_type([self, other])
         return Op[t](op=ExpressionOpEnum.MOD, children=[self, other])
+
+    def __getitem__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import (
+            ExpressionOpEnum,
+            Op,
+            Val,
+        )
+
+        get_origin(type(self))
+        get_args(type(self))
+        other = self.convert_other(other)
+
+        # if (
+        #     "args" in self.__pydantic_generic_metadata__
+        #     and self.__pydantic_generic_metadata__["args"]
+        # ):
+        dtype = self.generic_type
+        if get_origin(dtype):
+            if get_origin(dtype) is dict:
+                t = get_args(dtype)[1]
+            elif get_origin(dtype) in [list, tuple]:
+                t = get_args(dtype)[0]
+            else:
+                raise ValueError(f"Cannot index {dtype}")
+        else:
+            t = get_args(dtype)[1]
+        # else:
+        #     t = get_args(self.generic_type)[1]
+        return Op[t](op=ExpressionOpEnum.INDEX, children=[self, other])
 
     def evaluate(self, vars_dict: dict[str, Any]): ...
 
