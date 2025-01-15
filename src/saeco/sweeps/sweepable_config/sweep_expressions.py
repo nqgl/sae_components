@@ -52,7 +52,13 @@ class ExpressionOpEnum(str, Enum):
         elif self == ExpressionOpEnum.MOD:
             return args[0] % args[1]
         elif self == ExpressionOpEnum.INDEX:
-            return args[0][str(args[1])]
+            if isinstance(args[0], dict):
+                if args[1] in args[0]:
+                    assert isinstance(args[1], str) or str(args[1]) not in args[0]
+                    return args[0][args[1]]
+                return args[0][str(args[1])]
+            elif isinstance(args[0], list) or isinstance(args[0], tuple):
+                return args[0][int(args[1])]
 
 
 # class SweepExpression(Swept[T]):

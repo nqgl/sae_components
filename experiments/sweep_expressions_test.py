@@ -30,8 +30,8 @@ from saeco.architectures.vanilla import Config, VanillaSAE
 
 PROJECT = "sae sweeps"
 
-var = SweepVar[float](1, 2, 3, name="var")
-batch_size_mult_var = SweepVar[int](1, 2, 3, name="batch_size_mult")
+# var = SweepVar[int](1, 2, name="var")
+batch_size_mult_var = SweepVar[int](1, 2, 4, 8, name="batch_size_mult")
 
 val50k_int = Val[int](value=50_000)
 val50k_int.generic_type
@@ -39,10 +39,10 @@ val50k = Val(value=50_000)
 val50k.generic_type
 print()
 raw_schedule_cfg = RunSchedulingConfig(
-    run_length=Val[int](value=5_000) // batch_size_mult_var,
-    resample_period=Val[int](value=8_000) // var // batch_size_mult_var,
-    lr_cooldown_length=0.5,
-    lr_warmup_length=500,
+    run_length=Val[int](value=50_000) // batch_size_mult_var,
+    resample_period=Val[int](value=8_000) // batch_size_mult_var,
+    lr_cooldown_length=0.3,
+    lr_warmup_length=2000,
 )
 dictval = Val[dict[int, int]](value={1: 22, 2: 33, 3: 55})
 
@@ -53,16 +53,16 @@ cfg = RunConfig[Config](
         #
         batch_size=batch_size_mult_var * 4096,
         optim="Adam",
-        lr=var * 1e-3,
+        lr=2e-3,
         betas=(0.9, 0.997),
         #
         use_autocast=True,
         use_lars=True,
         #
-        l0_target=dictval[var],
+        l0_target=50,
         l0_target_adjustment_size=0.001,
         coeffs={
-            "sparsity_loss": 1.1e-3,
+            "sparsity_loss": 1e-3,
             "L2_loss": 1.0,
         },
         #
@@ -74,7 +74,7 @@ cfg = RunConfig[Config](
         expected_biases=1,
     ),
     #
-    init_cfg=InitConfig(d_data=768, dict_mult=32),
+    init_cfg=InitConfig(d_data=768, dict_mult=Swept(*[2**i for i in range(1, 8)])),
     arch_cfg=Config(),
 )
 # from transformers import Gemma2ForCausalLM
@@ -88,9 +88,7 @@ print(sweep_manager.initialize_sweep())
 # sweep_manager.rand_run_no_agent()
 # sweep_manager.local_sweep()
 # sweep_manager.get_worker_run_command()
-sweep_manager.run_sweep_on_pods_with_monitoring(
-    9, purge_after=True, keep_after=True, challenge_file=None
-)
+sweep_manager.run_sweep_on_pods_with_monitoring(44, purge_after=True, setup_min=38)
 
 
 sweep_manager.initialize_sweep()

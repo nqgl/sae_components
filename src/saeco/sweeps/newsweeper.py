@@ -236,9 +236,10 @@ class SweepManager:
         purge_after=True,
         challenge_file="src/saeco/sweeps/challenge.py",
         keep_after=False,
+        setup_min=None,
     ):
 
-        with self.created_pods(new_pods, keep=keep_after) as pods:
+        with self.created_pods(new_pods, keep=keep_after, setup_min=setup_min) as pods:
             print("running on remotes")
             task = pods.runpy_with_monitor(
                 self.get_worker_run_command(),
@@ -247,7 +248,12 @@ class SweepManager:
             )
 
     @contextmanager
-    def created_pods(self, num_pods=None, keep=False) -> Generator["Pods", None, None]:
+    def created_pods(
+        self,
+        num_pods=None,
+        keep=False,
+        setup_min=None,
+    ) -> Generator["Pods", None, None]:
         from ezpod import Pods
 
         if num_pods is None:
@@ -256,6 +262,7 @@ class SweepManager:
         pods.make_new_pods(num_pods)
         pods.sync()
         pods.setup()
+        pods.EZPOD_MIN_COMPLETE_TO_CONTINUE = setup_min
         try:
             yield pods
         finally:
