@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import torch
 import inspect
@@ -65,7 +65,7 @@ T2 = TypeVar("T2", bound=SweepableConfig)
 
 class ArchRef(BaseModel, Generic[T]):
     class_ref: ArchClassRef
-    config: T
+    config: T = Field()
 
     @classmethod
     def open(cls, path: Path) -> "ArchRef":

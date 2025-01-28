@@ -1,10 +1,17 @@
 import os
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.sweeps.newsweeper import SweepData
+from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 
-# Instead of hardcoding WANDB = True, let's read from config or env
+# Environment variables for logger selection
 WANDB = os.environ.get("USE_WANDB", "true").lower() in ("true", "1", "yes")
+USE_NEPTUNE = os.environ.get("USE_NEPTUNE", "false").lower() in ("true", "1", "yes")
+CUSTOM_SWEEP = os.environ.get("CUSTOM_SWEEP", "false").lower() in ("true", "1", "yes")
 
 
 class Logger:
@@ -51,7 +58,8 @@ class WandbLogger(Logger):
         )
         return res
 
-    def agent(self, sweep_id, function, project=None):
+    def agent(self, sweep_data: "SweepData", function, project=None):
+        sweep_id = sweep_data.sweep_id
         print("STARTING AGENT:", sweep_id, project, self.project)
         self.wandb.agent(sweep_id, function=function, project=project or self.project)
 
@@ -89,14 +97,163 @@ class NoOpLogger(Logger):
         return self._config
 
 
+class NeptuneLogger(Logger):
+    def __init__(self):
+        import neptune
+
+        self.neptune = neptune
+        self.run: neptune.Run | None = None
+        self.project = "default-project"
+
+    @classmethod
+    def neptune_config_fix(cls, config_dict):
+        from enum import Enum
+
+        if not isinstance(config_dict, dict):
+            return config_dict
+        return {
+            k: v.value if isinstance(v, Enum) else cls.neptune_config_fix(v)
+            for k, v in config_dict.items()
+        }
+
+    @classmethod
+    def neptune_config_fix(cls, item):
+        from enum import Enum
+
+        if isinstance(item, Enum):
+            return item.value
+        if isinstance(item, dict):
+            return {k: cls.neptune_config_fix(v) for k, v in item.items()}
+        elif isinstance(item, list) or isinstance(item, tuple):
+            return {i: v for i, v in enumerate(item)}
+
+        return item
+
+    def init(self, project=None, config=None, run_name=None):
+        import neptune
+
+        if project:
+            self.project = project
+        print("init neptune", self.project, run_name)
+        self.run = neptune.init_run(
+            project=self.project,
+            name=run_name,
+        )
+        print("init neptune done")
+        if config:
+            self.update_config(config)
+
+    def log(self, data, step=None):
+        print("log neptune", data, step)
+        for key, value in data.items():
+            key = "/".join((ks := key.split("/"))[:-1] + [f"{ks[-1]}_"])
+            if step is not None:
+                self.run[key].append(value, step=step)
+            else:
+                self.run[key].append(value)
+
+    def finish(self):
+        if self.run:
+            self.run.stop()
+
+    def update_config(self, config_dict):
+        if self.run:
+            print("\n" * 20 + "CONFIG" + "\n" * 20)
+            config_dict = self.neptune_config_fix(config_dict)
+            # print(config_dict)
+            # print("CONFIG" + "\n" * 20)
+
+            # assert "config" not in self.run, "config already exists"
+            self.run["config"] = config_dict
+
+    def sweep(self, swept_nodes: SweptNode, project):
+        raise NotImplementedError("Neptune sweeps not yet implemented")
+
+    def agent(self, sweep_data: "SweepData", function, project=None):
+        raise NotImplementedError("Neptune sweeps not yet implemented")
+
+    def config_get(self):
+        print("config_get neptune")
+        if self.run and "parameters" in self.run:
+            print("config_get neptune", self.run["parameters"].fetch())
+            return dict(self.run["parameters"].fetch())
+        print("config_get neptune empty")
+        return {}
+
+
+if TYPE_CHECKING:
+    from saeco.architecture.arch_reload_info import ArchRef
+
+
+class CustomSweeper(Logger):
+    root_config: SweepableConfig
+
+    def __init__(self, prev_logger: Logger):
+        self._config: SweepableConfig = None
+        self.root_config: SweepableConfig = SweepableConfig()
+        self._sweep_inst_config = None
+        self.sweep_data: "SweepData" | None = None
+        self.prev_logger = prev_logger
+        assert not isinstance(prev_logger, CustomSweeper)
+
+    def init(self, project=None, config=None, run_name=None):
+        assert config is None
+        self.prev_logger.init(project=project, config=config, run_name=run_name)
+
+    def log(self, data, step=None):
+        self.prev_logger.log(data, step=step)
+
+    def finish(self):
+        self.prev_logger.finish()
+
+    def update_config(self, config_dict):
+        self.prev_logger.update_config(config_dict)
+
+    def sweep(self, sweep_config, project): ...
+
+    def agent(
+        self,
+        sweep_data: "SweepData",
+        function,
+        sweep_index,
+        sweep_hash,
+        project=None,
+    ):
+        assert self.sweep_data is None and self._config is None
+        self.sweep_data = sweep_data
+        self.root_config: SweepableConfig = sweep_data.root_arch_ref.config
+        sweep_instance_selective = (
+            self.root_config.to_swept_nodes().select_instance_by_index(sweep_index)
+        )
+        cfg: SweepableConfig = self.root_config.from_selective_sweep(
+            sweep_instance_selective
+        )
+        assert cfg.get_hash() == sweep_hash, f"{cfg.get_hash()} != {sweep_hash}"
+        self._sweep_inst_config = sweep_instance_selective
+        if project:
+            self.prev_logger.project = project
+
+        self._config = cfg
+        print("agent custom sweep starting training")
+        function()
+        print("agent custom sweep finished training")
+
+    def config_get(self):
+        return self._sweep_inst_config
+
+
 def get_logger():
-    if WANDB:
+    if USE_NEPTUNE:
+        return NeptuneLogger()
+    elif WANDB:
         return WandbLogger()
     else:
         return NoOpLogger()
 
 
-logger_instance = get_logger()
+# logger_instance = get_logger()
+# if CUSTOM_SWEEP:
+#     logger_instance = CustomSweeper(logger_instance)
 
 
 @contextmanager

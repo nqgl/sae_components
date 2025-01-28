@@ -31,7 +31,7 @@ from saeco.architectures.vanilla import Config, VanillaSAE
 PROJECT = "sae sweeps"
 
 # var = SweepVar[int](1, 2, name="var")
-batch_size_mult_var = SweepVar[int](1, 2, 4, 8, name="batch_size_mult")
+batch_size_mult_var = SweepVar[int](1, 2, name="batch_size_mult")
 
 val50k_int = Val[int](value=50_000)
 val50k_int.generic_type
@@ -53,7 +53,7 @@ cfg = RunConfig[Config](
         #
         batch_size=batch_size_mult_var * 4096,
         optim="Adam",
-        lr=2e-3,
+        lr=Swept(1e-3, 2e-3),
         betas=(0.9, 0.997),
         #
         use_autocast=True,
@@ -74,7 +74,7 @@ cfg = RunConfig[Config](
         expected_biases=1,
     ),
     #
-    init_cfg=InitConfig(d_data=768, dict_mult=Swept(*[2**i for i in range(1, 8)])),
+    init_cfg=InitConfig(d_data=768, dict_mult=Swept(*[2**i for i in range(2, 4)])),
     arch_cfg=Config(),
 )
 # from transformers import Gemma2ForCausalLM
@@ -82,13 +82,19 @@ cfg = RunConfig[Config](
 # import saeco.data.model_cfg as mc
 
 # # mc.MODEL_FN_CALLABLE_OVERRIDE = Gemma2ForCausalLM.from_pretrained
+
+from saeco.sweeps.sweepable_config.SweptNode import check_config_combinations
+
+check_config_combinations(cfg)
 g = VanillaSAE(cfg)
 sweep_manager = g.get_sweep_manager()
-print(sweep_manager.initialize_sweep())
+print(sweep_manager.initialize_sweep(project="project2", custom_sweep=True))
 # sweep_manager.rand_run_no_agent()
 # sweep_manager.local_sweep()
 # sweep_manager.get_worker_run_command()
-sweep_manager.run_sweep_on_pods_with_monitoring(44, purge_after=True, setup_min=38)
+sweep_manager.get_worker_run_commands_for_manual_sweep()
+sweep_manager.run_manual_sweep_with_monitoring(8, purge_after=True, setup_min=8)
+sweep_manager.run_sweep_on_pods_with_monitoring(8, purge_after=True, setup_min=8)
 
 
 sweep_manager.initialize_sweep()

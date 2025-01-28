@@ -29,77 +29,6 @@ class SweepFile(Protocol):
     def run(self, cfg: SweepableConfig): ...
 
 
-class Sweeper:
-    def __init__(self, arch: Architecture):
-        self.arch = arch
-
-    @property
-    def cfg(self):
-        return self.arch.base_cfg
-
-    def initialize_sweep(self):
-        cfg = self.cfg
-        representation = cfg.to_swept_nodes()
-
-        sweep_id = mlog.create_sweep(representation, project=self.sweepfile.PROJECT)
-        # sweep_id = wandb.sweep(
-        #     sweep=representation.to_wandb(),
-        #     project=self.sweepfile.PROJECT,
-        # )
-        with open(self.path / "sweep_id.txt", "w") as f:
-            f.write(sweep_id)
-
-    @property
-    def sweep_id(self):
-        return open(self.path / "sweep_id.txt").read().strip()
-
-    def run(self):
-        mlog.init()
-        basecfg: SweepableConfig = self.sweepfile.cfg
-
-        cfg = basecfg.from_selective_sweep(dict(mlog.config))
-        pod_info = dict(
-            id=os.environ.get("RUNPOD_POD_ID", "local"),
-            hostname=os.environ.get("RUNPOD_POD_HOSTNAME", None),
-            gpu_count=os.environ.get("RUNPOD_GPU_COUNT", None),
-            cpu_count=os.environ.get("RUNPOD_CPU_COUNT", None),
-            public_ip=os.environ.get("RUNPOD_PUBLIC_IP", None),
-            datacenter_id=os.environ.get("RUNPOD_DC_ID", None),
-            volume_id=os.environ.get("RUNPOD_VOLUME_ID", None),
-            cuda_version=os.environ.get("CUDA_VERSION", None),
-            pytorch_version=os.environ.get("PYTORCH_VERSION", None),
-        )
-
-        wandb.config.update(
-            dict(
-                full_cfg=cfg.model_dump(),
-                pod_info=pod_info,
-            )
-        )
-        print(dict(wandb.config))
-        self.arch.run(cfg)
-        wandb.finish()
-
-    def start_agent(self):
-        wandb.agent(
-            self.sweep_id,
-            function=self.run,
-            project=self.sweepfile.PROJECT,  # TODO change project to being from config maybe? or remove from config
-        )
-
-    def rand_run_no_agent(self):
-        basecfg: SweepableConfig = self.sweepfile.cfg
-
-        cfg = basecfg.random_sweep_configuration()
-        # wandb.init()
-        wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
-        # wandb.config.update(cfg.model_dump())
-        self.sweepfile.run(cfg)
-        wandb.finish()
-
-    def load_architecture(self, path: Path): ...
-
-
 from typing import TypeVar, Generic
 import json
 
@@ -127,7 +56,7 @@ T = TypeVar("T", bound=SweepableConfig)
 
 class SweepData(BaseModel, Generic[T]):
     root_arch_ref: ArchRef[T]
-    sweep_id: str
+    sweep_id: str | None = None
     project: str | None = None
 
     @classmethod
@@ -172,6 +101,9 @@ class SweepData(BaseModel, Generic[T]):
         return path
 
 
+import uuid
+
+
 @define
 class SweepManager:
     arch: Architecture
@@ -183,14 +115,16 @@ class SweepManager:
     def cfg(self):
         return self.arch.run_cfg
 
-    def initialize_sweep(self, project=None):
+    def initialize_sweep(self, project=None, custom_sweep=False):
         assert self.sweep_data is None and self.sweep_data_path is None
         if self.cfg.is_concrete():
             raise ValueError(
                 "tried to initialize sweep on a config with no swept fields"
             )
-
-        sweep_id = mlog.create_sweep(self.cfg.to_swept_nodes(), project=project)
+        if custom_sweep:
+            sweep_id = uuid.uuid4().hex
+        else:
+            sweep_id = mlog.create_sweep(self.cfg.to_swept_nodes(), project=project)
         self.sweep_data = SweepData.from_arch_and_id(
             self.arch, sweep_id, project=project
         )
@@ -208,13 +142,26 @@ class SweepManager:
 
     def load_architecture(self, path: Path): ...
 
-    def get_worker_run_command(self):
+    def get_worker_run_command(self, extra_args: str = ""):
         path = (
             self.sweep_data_path
             if not self.sweep_data_path.is_absolute()
             else self.sweep_data_path.relative_to(Path.cwd())
         )
-        return f"src/saeco/sweeps/sweeprunner_cli.py {path}"
+        return f"src/saeco/sweeps/sweeprunner_cli.py {path} {extra_args}"
+
+    def get_worker_run_commands_for_manual_sweep(self):
+        root = self.arch.run_cfg
+        root_swept = root.to_swept_nodes()
+        N = root_swept.swept_combinations_count_including_vars()
+        variants = []
+        for i in range(N):
+            cfg = root.from_selective_sweep(root_swept.select_instance_by_index(i))
+            variants.append((i, cfg.get_hash()))
+        return [
+            self.get_worker_run_command(f"--sweep-index {i} --sweep-hash {h}")
+            for i, h in variants
+        ]
 
     def run_sweep_on_pods(
         self,
@@ -245,6 +192,22 @@ class SweepManager:
                 self.get_worker_run_command(),
                 purge_after=purge_after,
                 challenge_file=challenge_file,
+            )
+
+    def run_manual_sweep_with_monitoring(
+        self,
+        new_pods=None,
+        purge_after=True,
+        keep_after=False,
+        setup_min=None,
+    ):
+
+        with self.created_pods(new_pods, keep=keep_after, setup_min=setup_min) as pods:
+            print("running on remotes")
+            task = pods.runpy_with_monitor(
+                self.get_worker_run_commands_for_manual_sweep(),
+                purge_after=purge_after,
+                challenge_file=None,
             )
 
     @contextmanager

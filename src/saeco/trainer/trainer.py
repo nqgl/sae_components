@@ -21,6 +21,7 @@ from .l0targeter import L0Targeter, TARGETER_TYPES
 from .recons import get_recons_loss
 from .run_config import RunConfig
 from .saved_model_source_info import ModelReloadInfo
+from saeco.mlog import mlog
 
 # torch.multiprocessing.set_start_method("spawn")
 
@@ -139,8 +140,8 @@ class Trainer:
         do_post_step(self.trainable)
 
     def log(self, d):
-        if wandb.run is not None:
-            wandb.log(d, step=self.t + self.log_t_offset)
+        # if wandb.run is not None:
+        mlog.log(d, step=self.t + self.log_t_offset)
 
     def coeffs(self):
         self.cfg.schedule
@@ -362,6 +363,7 @@ class Trainer:
             )
         )
         if wandb.run is None and self.t % 25 == 0:
+
             d = cache.logdict(
                 exclude_contains=["normalization/mu", "normalization/std"],
                 excluded=["act_metrics_name"],

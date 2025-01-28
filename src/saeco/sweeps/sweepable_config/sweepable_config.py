@@ -314,13 +314,15 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
     def from_selective_sweep(self, sweep: dict):
         # mydict = self.model_dump()
         # _merge_dicts_left(mydict, sweep)
+        sweep = sweep.copy()
+        print("sweep", sweep)
         copy = self.model_copy(deep=True)
         p = _get_sweepvars(copy)
         if p:
             var_data = sweep.pop("sweep_vars")
-            sv_dict = {var.name: var for var in p}
-            for k, v in var_data.items():
-                sv_dict[k].instantiated_value = v
+            # sv_dict = {var.name: var for var in p}
+            # for k, v in var_data.items():
+            #     sv_dict[k].instantiated_value = v
         else:
             print("no sweep vars?")
             print("self paths", self.to_swept_nodes().get_paths_to_sweep_expressions())
@@ -352,6 +354,11 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
 
     def to_swept_nodes(self):
         return SweptNode.from_sweepable(self)
+
+    def get_hash(self) -> str:
+        from hashlib import sha256
+
+        return sha256(self.model_dump_json().encode()).hexdigest()
 
 
 def add_dictlist(d1: dict[Any, list], d2: dict[Any, list]) -> dict[Any, list]:

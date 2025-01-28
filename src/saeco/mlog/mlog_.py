@@ -1,6 +1,11 @@
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
-from .fns import logger_instance
+from .fns import get_logger, CustomSweeper
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.sweeps.SweepRunner import SweepRunner
+    from saeco.sweeps.newsweeper import SweepData
 
 
 class classproperty(property):
@@ -15,51 +20,66 @@ class classproperty(property):
 
 
 class mlog:
-    @staticmethod
-    def init(project=None, config=None, run_name=None):
+    logger_instance = get_logger()
+
+    @classmethod
+    def use_custom_sweep(cls):
+        print("using custom sweep logger!")
+        if not isinstance(cls.logger_instance, CustomSweeper):
+            cls.logger_instance = CustomSweeper(cls.logger_instance)
+
+    @classmethod
+    def init(cls, arch_ref=None, project=None, config=None, run_name=None):
         print("init")
-        logger_instance.init(project=project, config=config, run_name=run_name)
+        cls.logger_instance.init(project=project, config=config, run_name=run_name)
         print("init done")
 
-    @staticmethod
-    def finish():
-        logger_instance.finish()
+    @classmethod
+    def finish(cls):
+        cls.logger_instance.finish()
 
-    @staticmethod
-    def log(data: dict, step=None):
-        logger_instance.log(data, step=step)
+    @classmethod
+    def log(cls, data: dict, step=None):
+        cls.logger_instance.log(data, step=step)
 
-    @staticmethod
-    def update_config(**config_dict):
-        logger_instance.update_config(config_dict)
+    @classmethod
+    def update_config(cls, **config_dict):
+        cls.logger_instance.update_config(config_dict)
 
-    @staticmethod
-    def config():
-        return logger_instance.config_get()
+    @classmethod
+    def config(cls):
+        return cls.logger_instance.config_get()
 
-    @staticmethod
-    def create_sweep(swept_nodes: SweptNode, project):
-        return logger_instance.sweep(swept_nodes, project=project)
+    @classmethod
+    def create_sweep(cls, swept_nodes: SweptNode, project):
+        return cls.logger_instance.sweep(swept_nodes, project=project)
 
-    @staticmethod
-    def start_sweep_agent(sweep_id, function):
-        logger_instance.agent(sweep_id, function=function)
+    @classmethod
+    def set_project(cls, project):
+        cls.logger_instance.project = project
 
-    @staticmethod
-    def enter(project=None, config=None, run_name=None):
+    @classmethod
+    def start_sweep_agent(cls, sweep_data: "SweepData", function, **kwargs):
+        cls.logger_instance.agent(sweep_data, function=function, **kwargs)
+
+    @classmethod
+    def enter(cls, arch_ref=None, project=None, config=None, run_name=None):
         from contextlib import contextmanager
 
         @contextmanager
         def ctx():
-            mlog.init(project=project, config=config, run_name=run_name)
+            mlog.init(
+                arch_ref=arch_ref, project=project, config=config, run_name=run_name
+            )
             # mlog.update_config(dict(pod_info=mlog._get_pod_info()))
             yield
+            print("finish run context")
             mlog.finish()
 
         return ctx()
 
-    @staticmethod
-    def _get_pod_info():
+    @classmethod
+    def _get_pod_info(cls):
         return dict(
             id=os.environ.get("RUNPOD_POD_ID", "local"),
             hostname=os.environ.get("RUNPOD_POD_HOSTNAME", None),
