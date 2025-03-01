@@ -16,13 +16,9 @@ def start(sweepdata_path: str, sweep_index: int | None, sweep_hash: str | None):
         sweepdata_path: Path to the sweep data file
     """
     sweep_data = SweepData.load(Path(sweepdata_path))
-    print("index", sweep_index)
-    print("hash", sweep_hash)
-    print("sweep data", sweep_data)
     worker = SweepRunner.from_sweepdata(
         sweep_data, sweep_index=sweep_index, sweep_hash=sweep_hash
     )
-    print("made worker")
     worker.start_sweep_agent()
 
 

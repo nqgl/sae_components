@@ -1,1 +1,1 @@
-from .vanilla_model import Config, VanillaSAE
+from .vanilla_model import VanillaConfig, VanillaSAE

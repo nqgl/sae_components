@@ -86,7 +86,7 @@ class SAE(cl.Seq):
             # nonlinearity=nonlinearity,
             encoder=encoder,
             acts=acts,
-            freqs=freqs,
+            **useif(freqs is not None, freqs=freqs),
             **useif(penalty is not None, penalty=penalty),
             decoder=decoder,
             # denormalizer=...

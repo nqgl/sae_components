@@ -12,3 +12,4 @@ jaxtyping
 datasets
 transformers
 torchlars
+neptune

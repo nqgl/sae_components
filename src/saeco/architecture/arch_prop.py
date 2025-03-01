@@ -93,20 +93,27 @@ class arch_prop(cached_property):
         return {f: getattr(inst, f) for f in fields}
 
 
-class _base_model_prop(arch_prop):
+class _model_prop_base(arch_prop):
+    """
+    Base class for model_prop and aux_model_prop.
+    Adds on top of arch_prop: methods for attaching losses and metrics to a model.
+    - these methods create a new loss_prop or metric_prop where
+        the called function/constructor will be called with the
+        model as an argument
+    """
 
-    def add_loss(self, fn):
-        if isinstance(fn, types.FunctionType) or isinstance(fn, types.LambdaType):
+    def add_loss(self, loss):
+        # tries to infer whether this is a method (therefore needing self as the first arg)
+        # or a Loss constructor
+        from saeco.components.losses import Loss
 
-            def _loss(inst):
-                return fn(inst, self.__get__(inst))
+        assert isinstance(loss, Loss)
 
-        else:
+        # must be a Loss constructor
+        def get_loss_object(inst):
+            return loss(self.__get__(inst))
 
-            def _loss(inst):
-                return fn(self.__get__(inst))
-
-        return loss_prop(_loss)
+        return loss_prop(get_loss_object)
 
     def add_metric(self, metric):
         def _metric(inst):
@@ -125,14 +132,14 @@ class metric_prop(arch_prop):
         return super().__get__(instance, owner)
 
 
-class model_prop(_base_model_prop):
+class model_prop(_model_prop_base):
     COLLECTED_FIELD_SINGULAR = True
 
     def __get__(self, instance, owner=None):
         return super().__get__(instance, owner)
 
 
-class aux_model_prop(_base_model_prop):
+class aux_model_prop(_model_prop_base):
     COLLECTED_FIELD_SINGULAR = False
 
     def __get__(self, instance, owner=None):

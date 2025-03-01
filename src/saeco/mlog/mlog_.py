@@ -24,15 +24,12 @@ class mlog:
 
     @classmethod
     def use_custom_sweep(cls):
-        print("using custom sweep logger!")
         if not isinstance(cls.logger_instance, CustomSweeper):
             cls.logger_instance = CustomSweeper(cls.logger_instance)
 
     @classmethod
     def init(cls, arch_ref=None, project=None, config=None, run_name=None):
-        print("init")
         cls.logger_instance.init(project=project, config=config, run_name=run_name)
-        print("init done")
 
     @classmethod
     def finish(cls):
@@ -71,9 +68,7 @@ class mlog:
             mlog.init(
                 arch_ref=arch_ref, project=project, config=config, run_name=run_name
             )
-            # mlog.update_config(dict(pod_info=mlog._get_pod_info()))
             yield
-            print("finish run context")
             mlog.finish()
 
         return ctx()

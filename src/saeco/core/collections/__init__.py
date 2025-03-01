@@ -8,4 +8,4 @@ from saeco.core.collections.parallel import (
 )
 from saeco.core.collections.router import Router
 
-from .seq import Seq
+from .seq import Seq, ResidualSeq

@@ -40,7 +40,7 @@ class ArchClassRef(BaseModel):
             source_backup=get_src(arch.__class__),
         )
 
-    def get_arch_class(self):
+    def get_arch_class(self, assert_unchanged: bool = False):
         module = importlib.import_module(self.module)
         arch_cls = getattr(module, self.cls_name)
         from .architecture import Architecture
@@ -54,6 +54,10 @@ class ArchClassRef(BaseModel):
                 (but not necessarily)
                 """
             )
+            if assert_unchanged:
+                raise ValueError(
+                    "loaded architecture source code has changed since this model was saved"
+                )
         return arch_cls
 
 

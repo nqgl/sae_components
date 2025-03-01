@@ -19,16 +19,16 @@ class SweepRunner:
     sweep_hash: str | None = field(default=None)
 
     def run_sweep(self):
-        with mlog.enter(arch_ref=self.sweep_data.root_arch_ref):
+        with mlog.enter(
+            arch_ref=self.sweep_data.root_arch_ref, project=self.sweep_data.project
+        ):
             print("run_sweep entered")
+
             arch = self.sweep_data.root_arch_ref.load_arch()
-            print("run_sweep instantiated")
             arch.instantiate(mlog.config())
-            print("run_sweep updated config")
             mlog.update_config(full_cfg=arch.run_cfg.model_dump())
-            print("run_sweep running training")
+            # mlog.update_config(sweep=self.sweep_data)
             arch.run_training()
-            print("run_sweep finished training")
         return arch
 
     def run_random_instance(self):
@@ -41,6 +41,15 @@ class SweepRunner:
         return arch
 
     def start_sweep_agent(self):
+        if self.sweep_index is not None:
+            kwargs = {"sweep_index": self.sweep_index, "sweep_hash": self.sweep_hash}
+            mlog.use_custom_sweep()
+
+        else:
+            kwargs = {}
+        mlog.start_sweep_agent(self.sweep_data, self.run_sweep, **kwargs)
+
+    def run_local_sweep(self):
         if self.sweep_index is not None:
             kwargs = {"sweep_index": self.sweep_index, "sweep_hash": self.sweep_hash}
             mlog.use_custom_sweep()

@@ -122,7 +122,9 @@ class SweepManager:
                 "tried to initialize sweep on a config with no swept fields"
             )
         if custom_sweep:
-            sweep_id = uuid.uuid4().hex
+            import datetime
+
+            sweep_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         else:
             sweep_id = mlog.create_sweep(self.cfg.to_swept_nodes(), project=project)
         self.sweep_data = SweepData.from_arch_and_id(
@@ -139,6 +141,19 @@ class SweepManager:
         arch_ref = ArchRef.from_arch(self.arch)
         sweeprunner = SweepRunner(arch_ref, self.sweep_data.sweep_id)
         return sweeprunner.start_sweep_agent()
+
+    def local_custom_sweep(self):
+        # root = self.sweep_data.root_arch_ref.config
+        root = self.arch.run_cfg
+        root_swept = root.to_swept_nodes()
+        N = root_swept.swept_combinations_count_including_vars()
+        for i in range(N):
+            cfg = root.from_selective_sweep(root_swept.select_instance_by_index(i))
+            cfg_hash = cfg.get_hash()
+            runner = SweepRunner.from_sweepdata(
+                self.sweep_data, sweep_index=i, sweep_hash=cfg_hash
+            )
+            runner.start_sweep_agent()
 
     def load_architecture(self, path: Path): ...
 
@@ -181,7 +196,8 @@ class SweepManager:
         self,
         new_pods=None,
         purge_after=True,
-        challenge_file="src/saeco/sweeps/challenge.py",
+        challenge_file=None,
+        # challenge_file="src/saeco/sweeps/challenge.py",
         keep_after=False,
         setup_min=None,
     ):
@@ -200,6 +216,7 @@ class SweepManager:
         purge_after=True,
         keep_after=False,
         setup_min=None,
+        prefix_vars=None,
     ):
 
         with self.created_pods(new_pods, keep=keep_after, setup_min=setup_min) as pods:
@@ -208,6 +225,7 @@ class SweepManager:
                 self.get_worker_run_commands_for_manual_sweep(),
                 purge_after=purge_after,
                 challenge_file=None,
+                prefix_vars=prefix_vars,
             )
 
     @contextmanager
@@ -245,32 +263,3 @@ class SweepManager:
                         Pods.All().purge()
                         raise e
                     raise e
-
-
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Sweeper for Saeco")
-    parser.add_argument("arch_path", type=str)
-    parser.add_argument("--sweep-id", action="store_true")
-    args = parser.parse_args()
-    sw = Sweeper(Architecture.load_from_path(args.arch_path), sweep_id=args.sweep_id)
-    if args.init:
-        sw.initialize_sweep()
-    else:
-        sw.start_agent()
-    if args.runpod_n_instances:
-        assert args.init
-        from ezpod import Pods
-
-        pods = Pods.All()
-        pods.make_new_pods(args.runpod_n_instances)
-        pods.sync()
-        pods.setup()
-        print("running!")
-        pods.runpy(f"src/saeco/sweeps/sweeper.py {args.path}")
-        pods.purge()
-
-
-if __name__ == "__main__":
-    main()

@@ -5,7 +5,7 @@ from .cache_layer import (
     CacheLayerConfig,
     CacheProcLayer,
 )
-from .collections import Parallel, Seq, Router
+from .collections import Parallel, Seq, Router, ResidualSeq
 from . import collections
 from .pass_through import PassThroughModule
 from .reused_forward import ReuseForward

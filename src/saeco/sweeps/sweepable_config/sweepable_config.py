@@ -318,19 +318,20 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
         print("sweep", sweep)
         copy = self.model_copy(deep=True)
         p = _get_sweepvars(copy)
-        if p:
-            var_data = sweep.pop("sweep_vars")
-            # sv_dict = {var.name: var for var in p}
-            # for k, v in var_data.items():
-            #     sv_dict[k].instantiated_value = v
-        else:
+        var_data = sweep.pop("sweep_vars")
+        if not p:
+            #     # sv_dict = {var.name: var for var in p}
+            #     # for k, v in var_data.items():
+            #     #     sv_dict[k].instantiated_value = v
+            # else:
             print("no sweep vars?")
             print("self paths", self.to_swept_nodes().get_paths_to_sweep_expressions())
             print("copy paths", copy.to_swept_nodes().get_paths_to_sweep_expressions())
 
-            assert "sweep_vars" not in sweep, (
+            assert "sweep_vars" not in sweep or sweep["sweep_vars"] == {}, (
                 self.to_swept_nodes().get_paths_to_sweep_expressions(),
                 copy.to_swept_nodes().get_paths_to_sweep_expressions(),
+                sweep["sweep_vars"],
             )
         mydict2 = copy.model_dump()
         _merge_dicts_left2(mydict2, sweep, copy)
@@ -359,6 +360,24 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
         from hashlib import sha256
 
         return sha256(self.model_dump_json().encode()).hexdigest()
+
+    def from_optuna_trial(self, trial):
+        import optuna
+
+        trial: optuna.trial.Trial
+        search_space = self.to_swept_nodes().to_optuna_grid_search_space(
+            values_only=False
+        )
+        d = {}
+        for k, v in search_space.items():
+            self._build_from_optuna_trial(k, trial, d)
+
+    @classmethod
+    def _build_from_optuna_trial(cls, key: str, trial, d: dict, swept_obj: Swept):
+        import optuna
+
+        trial: optuna.trial.Trial
+        ...
 
 
 def add_dictlist(d1: dict[Any, list], d2: dict[Any, list]) -> dict[Any, list]:

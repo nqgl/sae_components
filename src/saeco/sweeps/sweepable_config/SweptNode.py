@@ -209,6 +209,28 @@ class SweptNode(BaseModel):
         paths.extend([[k] for k in self.expressions.keys()])
         return paths
 
+    def _to_optuna_grid_search_space_params_only(self, values_only=True):
+        d = {
+            f"{k}/{child_k}": child_v
+            for k, v in self.children.items()
+            for child_k, child_v in v._to_optuna_grid_search_space_params_only(
+                values_only=values_only
+            ).items()
+        }
+        d.update(
+            {k: v.values if values_only else v for k, v in self.swept_fields.items()}
+        )
+        return d
+
+    def to_optuna_grid_search_space(self, values_only=True):
+        sweepvars = self.get_sweepvars()
+        d = self._to_optuna_grid_search_space_params_only()
+        sweepvars_d = {
+            f"sweep_vars/{sv.name}": sv.values if values_only else sv
+            for sv in sweepvars
+        }
+        return {**d, **sweepvars_d}
+
 
 def main():
     from saeco.sweeps.sweepable_config import (
@@ -217,7 +239,7 @@ def main():
         SweepExpression,
         SweepVar,
     )
-    from saeco.architectures.vanilla import Config, VanillaSAE
+    from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 
     class Ex(SweepableConfig):
         a: int = 1
