@@ -12,3 +12,5 @@ models-from-remote/
 *.safetensors
 testdata/
 .vscode/
+.neptune/
+sweeprefs/
