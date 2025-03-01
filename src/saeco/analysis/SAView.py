@@ -1,15 +1,15 @@
+import asyncio
+
+from nicegui import ui
 from saeco.analysis.ddmenuprop import ddmenuprop, ddupdate
+from saeco.analysis.uiitem import UIE
 from saeco.analysis.wandb_analyze import (
     Sweep,
     SweepAnalysis,
+    SweepKey,
     SweepKeys,
     ValueTarget,
-    SweepKey,
 )
-from saeco.analysis.uiitem import UIE
-
-from nicegui import ui
-import asyncio
 
 
 class SAView:
@@ -18,11 +18,14 @@ class SAView:
         self.sa = None
         with ui.card():
             ui.label(sweep)
-            ui.label(
-                self.sw.runs[0].metadata["args"][0].split("/")[-1]
-                + "->"
-                + self.sw.runs[0].metadata["args"][-1]
-            )
+            try:
+                ui.label(
+                    self.sw.runs[0].metadata["args"][0].split("/")[-1]
+                    + "->"
+                    + self.sw.runs[0].metadata["args"][-1]
+                )
+            except:
+                pass
             with ui.row():
                 with ui.card() as c:
                     self.heatmap
@@ -30,19 +33,23 @@ class SAView:
                 with ui.row():
                     self.aggregation
                     with ui.card():
+                        ui.label("Selected Keys")
                         self.key1
                         self.key2
                     with ui.card():
-                        # ui.label("Target Selection")
+                        ui.label("Target")
                         # self.aggregation
                         self.base_target
                         self.new_value_target
+                    with ui.card():
+                        ui.label("Run Agg")
+                        self.target_aggregation
                         self.begin_aggregation_phase
-                    self.target_aggregation
 
                     with ui.card():
                         self.update_hist_button
                         self.cmap
+                        self.color_axis
 
             self.filters_keys_el = KeyFilters(self.sw.keys)
         self.hist_update()
@@ -129,12 +136,17 @@ class SAView:
             return
         # self.sw.add_target_history()
         self.sw.add_target_averages()
+        # l = [r for r in self.sw.runs]
+        # self.sw.update()
+        # 3frlnlq9
+        # any(i.id == "3frlnlq9" for i in l)
+        # l[0].id
         sa = SweepAnalysis(
             sweep=self.sw, xkeys=self.key1, ykeys=self.key2, target=self.target
         )
         sa.cmap = self.cmap
         e.set_content(
-            sa.heatmap(self.aggregation)
+            sa.heatmap(self.aggregation, color_axis=self.color_axis)
             .set_properties(
                 **{
                     "text-align": "center",
@@ -146,6 +158,16 @@ class SAView:
             .to_html()
         )
         e.update()
+
+    @UIE
+    def color_axis(self, cb):
+        return ui.select(
+            label="Color Axis",
+            options=[None, 0, 1],
+            multiple=False,
+            on_change=cb,
+            value=None,
+        )
 
     @UIE
     def key1(self, cb):
@@ -170,7 +192,7 @@ class SAView:
             options=keys,
             multiple=True,
             on_change=cb,
-            value=keys[1:2],
+            value=keys[-1:],
         )
 
     @key2.value
@@ -264,6 +286,7 @@ class SAView:
 
         c = ui.card()
         with c:
+            ui.label("Aggregation")
             for i, v in enumerate(vals):
                 l = ui.label(v)
                 labels.append(l)
@@ -325,6 +348,7 @@ class SAView:
 
         c = ui.card()
         with c:
+            ui.label("Aggregation")
             for i, v in enumerate(vals):
                 l = ui.label(v)
                 labels.append(l)
@@ -415,5 +439,10 @@ class MetaView:
 # SAView("sae sweeps/js9lfcmn")
 # SAView("sae sweeps/5yfl5r4f")
 # SAView("sae sweeps/89r31veb")
-SAView("L0Targeting/7o7ew1ro")
-ui.run()
+# SAView("L0Targeting/ye1ap8yb")
+if __name__ == "__main__" or __name__ == "__mp_main__":
+    # SAView("L0Targeting_cmp/vg1mkx3k")
+    # SAView("L0Targeting_cmp/qmamgr4a")
+    # SAView("L0Targeting_cmp/sweeps/u5mdsaob")
+    SAView("L0Targeting_cmp/u5mdsaob")
+    ui.run()

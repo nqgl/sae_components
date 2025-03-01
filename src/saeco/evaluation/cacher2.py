@@ -14,7 +14,7 @@ from saeco.data.tokens_data import PermutedDocs
 
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
-from saeco.evaluation.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.trainer import Trainable, TrainingRunner
 
 
@@ -142,7 +142,7 @@ class ActsCacher:
             metadata_chunks.append(metadata_columns)
 
         if self.cfg.deferred_blocked_store_feats_block_size:
-            B = 10
+            B = self.cfg.deferred_blocked_store_feats_block_size
             K = 1
             features_batch_size = (
                 self.d_dict // self.cfg.deferred_blocked_store_feats_block_size

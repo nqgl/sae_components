@@ -7,10 +7,10 @@ from nnsight import LanguageModel
 from torch import Tensor
 
 from saeco.data.split_config import SplitConfig
-from saeco.data.tabletensor import Piler
+from saeco.data.piler import Piler
 
 if TYPE_CHECKING:
-    from saeco.data.dataset import DataConfig
+    from saeco.data.data_cfg import DataConfig
 
 
 class TokensData:
@@ -97,12 +97,10 @@ class TokensData:
             self.documents.shape[0]
             // self.cfg.generation_config.num_document_distribution_batches
         )
-        for i in tqdm.tqdm(
-            range(
-                0,
-                self.documents.shape[0] // doc_dist_batch_size * doc_dist_batch_size,
-                doc_dist_batch_size,
-            )
+        for i in tqdm.trange(
+            0,
+            self.documents.shape[0] // doc_dist_batch_size * doc_dist_batch_size,
+            doc_dist_batch_size,
         ):
             piler.distribute(self.documents[i : i + doc_dist_batch_size])
         piler.shuffle_piles()

@@ -16,19 +16,23 @@ def get_recons_loss(
     num_batches=10,
     cfg: ActsDataConfig = None,
     bos_processed_with_hook=False,
-    batch_size=16,
+    batch_size=1,
+    cast_fn=...,
 ):
     cfg = cfg or encoder.cfg
     loss_list = []
+
     with_sae = to_losses(
-        with_sae_runner(model, encoder, cfg, skip_first=bos_processed_with_hook)
+        with_sae_runner(model, encoder, cfg, skip_first=not bos_processed_with_hook)
     )
     zero = to_losses(
-        zero_ablated_runner(model, cfg, skip_first=bos_processed_with_hook)
+        zero_ablated_runner(model, cfg, skip_first=not bos_processed_with_hook)
     )
-    normal = to_losses(normal_runner(model, cfg, skip_first=bos_processed_with_hook))
+    normal = to_losses(
+        normal_runner(model, cfg, skip_first=not bos_processed_with_hook)
+    )
     rand_tokens = tokens[torch.randperm(len(tokens))]
-    with torch.autocast(device_type="cuda"):
+    with cast_fn():
         for i in range(num_batches):
             batch_tokens = rand_tokens[i * batch_size : (i + 1) * batch_size].cuda()
             loss = normal(batch_tokens)
@@ -55,7 +59,7 @@ def with_sae_runner(
     def saerunner(tokens):
         with model.trace(tokens) as tracer:
             lm_acts = getsite(model, cfg.site)
-            acts_re = nnsight.apply(lambda x: encoder(x), lm_acts)
+            acts_re = nnsight.apply(lambda x: encoder(x.float()).to(x.dtype), lm_acts)
             if skip_first:
                 patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
             else:

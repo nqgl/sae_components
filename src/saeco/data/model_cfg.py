@@ -1,8 +1,11 @@
+from functools import cached_property
 from nnsight import LanguageModel, NNsight
 from pydantic import Field
 
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL_FN_CALLABLE_OVERRIDE = None
 
@@ -12,10 +15,33 @@ class ActsDataConfig(SweepableConfig):
     site: str = "transformer.h.6.input"
     excl_first: bool = True
     filter_pad: bool = True
+    storage_dtype_str: str | None = None
+    autocast_dtype_str: str | bool | None = None
+    force_cast_dtype_str: str | None = None
 
     @property
     def actstring(self):
-        return f"{self.site}_{self.excl_first}"
+        return f"{self.site}_{self.excl_first}_{self.filter_pad}_{self.storage_dtype_str}_{self.autocast_dtype_str}_{self.force_cast_dtype_str}"
+
+    @property
+    def storage_dtype(self):
+        if self.storage_dtype_str is None:
+            return None
+        return str_to_dtype(self.storage_dtype_str)
+
+    @property
+    def autocast_dtype(self):
+        if self.autocast_dtype_str is False:
+            return False
+        if self.autocast_dtype_str is None:
+            return self.storage_dtype
+        return str_to_dtype(self.autocast_dtype_str)
+
+    @property
+    def force_cast_dtype(self):
+        if self.force_cast_dtype_str is None:
+            return None
+        return str_to_dtype(self.force_cast_dtype_str)
 
 
 class ModelConfig(SweepableConfig):
@@ -23,7 +49,7 @@ class ModelConfig(SweepableConfig):
     acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
     model_kwargs: dict = Field(default_factory=dict)
     _device: str = "cuda"
-    no_processing: bool = False
+    # no_processing: bool = False
     torch_dtype_str: str | None = None
 
     @property
@@ -33,8 +59,6 @@ class ModelConfig(SweepableConfig):
         return str_to_dtype(self.torch_dtype_str)
 
     def model_post_init(self, __context) -> None:
-        # super().__init__(**data)
-        model = None
         assert not any(
             [
                 v in self.model_kwargs
@@ -48,44 +72,50 @@ class ModelConfig(SweepableConfig):
                 ]
             ]
         ), "config's kwargs clash with nnsight::trace kwargs"
+        self._raw_model = None
 
-        def getmodel():
-            nonlocal model
-            if model is None:
-                get_model_fn = MODEL_FN_CALLABLE_OVERRIDE or LanguageModel
-                if self.torch_dtype_str is None:
-                    model = get_model_fn(
-                        self.model_name,
-                        device_map=self._device,
-                    )
-                else:
-                    model = get_model_fn(
-                        self.model_name,
-                        torch_dtype=str_to_dtype(self.torch_dtype_str),
-                        device_map=self._device,
-                    )
-                if MODEL_FN_CALLABLE_OVERRIDE is not None:
-                    model = NNsight(model)
-
-            return model
-
-        def setmodel(m):
-            nonlocal model
-            assert model is None, "model already set"
-            model = m
-
-        self._setmodel = setmodel
-        self._getmodel = getmodel
         return super().model_post_init(__context)
 
+    @cached_property
+    def tokenizer(self):
+        return AutoTokenizer.from_pretrained(self.model_name)
+
+    def _make_raw_model(self):
+        get_model_fn = (
+            MODEL_FN_CALLABLE_OVERRIDE or AutoModelForCausalLM.from_pretrained
+        )
+        if self.torch_dtype_str is None:
+            model = get_model_fn(
+                self.model_name,
+                device_map=self._device,
+            )
+        else:
+            model = get_model_fn(
+                self.model_name,
+                torch_dtype=self.torch_dtype,
+                device_map=self._device,
+            )
+        return model
+        # if MODEL_FN_CALLABLE_OVERRIDE is not None:
+        #     model = NNsight(model)
+
     @property
-    def model(self) -> LanguageModel:
-        return self._getmodel()
+    def raw_model(self) -> AutoModelForCausalLM:
+        if self._raw_model is None:
+            self._raw_model = self._make_raw_model()
+        return self._raw_model
+
+    @property
+    def model(self) -> NNsight:
+        model = NNsight(self.raw_model)
+        if not hasattr(model, "tokenizer"):
+            setattr(model, "tokenizer", self.tokenizer)
+        return model
 
     @model.setter
-    def model(self, m: LanguageModel):
-        self._setmodel(m)
+    def model(self, m: NNsight):
+        self._raw_model = m
 
     @property
-    def modelstring(self):
-        return f"{self.model_name}_{self.acts_cfg.actstring}"
+    def modelstring(self) -> str:
+        return f"{self.model_name}_{self.torch_dtype_str}_{self.acts_cfg.actstring}"

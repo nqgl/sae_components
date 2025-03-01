@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import einops
@@ -10,9 +11,10 @@ from saeco.data.bufferized_iter import bufferized_iter
 from saeco.data.split_config import SplitConfig
 from saeco.data.tokens_data import TokensData
 from saeco.misc.nnsite import getsite
+from saeco.misc import str_to_dtype
 
 if TYPE_CHECKING:
-    from saeco.data.dataset import DataConfig
+    from saeco.data.data_cfg import DataConfig
 
 
 class ActsData:
@@ -42,6 +44,8 @@ class ActsData:
                 // tokens_data.seq_len,
             ),
             total=len(tokens_split),
+            position=0,
+            desc="Storing",
         ):
             acts_piler.distribute(acts)
         acts_piler.shuffle_piles()
@@ -51,6 +55,21 @@ class ActsData:
             acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
 
+    @contextmanager
+    def _null_context(self):
+        yield
+
+    def autocast_context(self):
+        if self.cfg.model_cfg.acts_cfg.autocast_dtype is False:
+            return self._null_context()
+        return torch.autocast(
+            device_type="cuda",
+            dtype=(
+                self.cfg.model_cfg.acts_cfg.autocast_dtype
+                or self.cfg.model_cfg.torch_dtype
+            ),
+        )
+
     def to_acts(
         self,
         tokens,
@@ -58,25 +77,31 @@ class ActsData:
         rearrange=True,
         skip_exclude=False,
         force_not_skip_padding=False,
+        batched_kwargs={},
     ):
+        assert isinstance(tokens, torch.Tensor)
         acts_list = []
-        with torch.autocast(device_type="cuda", dtype=self.cfg.model_cfg.torch_dtype):
+        with self.autocast_context():
             with torch.inference_mode():
-                for i in range(
-                    0,
-                    tokens.shape[0],
-                    llm_batch_size,
-                ):
-                    model: nnsight.LanguageModel = self.model
+                trng = tqdm.trange(0, tokens.shape[0], llm_batch_size, leave=False)
+                trng.set_description(f"Tracing {tokens.shape[0]}")
+                for i in trng:
+                    batch_kwargs = {
+                        k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
+                    }
+                    model = self.model
                     with model.trace(
                         tokens[i : i + llm_batch_size],
                         **self.cfg.model_cfg.model_kwargs,
+                        **batch_kwargs,
                     ):
                         acts_module = getsite(model, self.cfg.model_cfg.acts_cfg.site)
                         acts = acts_module.save()
                         acts_module.stop()
                     acts_list.append(acts.value)
-        acts = torch.cat(acts_list, dim=0).half()
+        acts = torch.cat(acts_list, dim=0)
+        if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
+            acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
         toks_re = tokens
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
@@ -92,7 +117,10 @@ class ActsData:
             toks_re,
             "batch seq -> (batch seq)",
         )
-        if self.cfg.model_cfg.acts_cfg.filter_pad:
+        if (
+            self.cfg.model_cfg.acts_cfg.filter_pad
+            and self.model.tokenizer.pad_token_id is not None
+        ):
             mask = toks_re != self.model.tokenizer.pad_token_id
             if not mask.all():
                 print(f"removing {(~mask).sum()} activations from pad token locations")
@@ -129,8 +157,8 @@ class ActsData:
                 else None
             )
             for p in range(id % nw, piler.num_piles, nw):
-                print("get next pile")
-                print(id, nw, p)
+                # print("get next pile")
+                # print(id, nw, p)
                 pile = piler[p]
                 if progress is None:
                     progress = tqdm.trange(
@@ -138,7 +166,7 @@ class ActsData:
                     )
 
                 assert pile.dtype == torch.float16
-                print("got next pile")
+                # print("got next pile")
                 for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                     yield pile[i : i + batch_size]
                     progress.update()
@@ -148,14 +176,14 @@ class ActsData:
             spares = []
             nspare = 0
             for p in range(id % nw, piler.num_piles, nw):
-                print("get next pile")
-                print(id, nw, p)
+                # print("get next pile")
+                # print(id, nw, p)
                 pile = piler[p]
                 # if p == id:
                 #     nextpile = nextpile[: (id % nw + 1) * len(nextpile) // nw]
                 # pile = nextpile
-                assert pile.dtype == torch.float16
-                print("got next pile")
+                assert pile.dtype == self.cfg.model_cfg.acts_cfg.storage_dtype
+                # print("got next pile")
                 for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                     yield pile[i : i + batch_size]
                 spare = pile[len(pile) // batch_size * batch_size :]
@@ -201,11 +229,10 @@ class ActsData:
         assert nsteps is None
         pile = piler[id]
         for p in range(id + nw, piler.num_piles, nw):
-            print("get next pile")
-            print(id, nw, p)
+            # print("get next pile")
+            # print(id, nw, p)
             nextpile = piler[p]
-            assert pile.dtype == torch.float16
-            print("got next pile")
+            # print("got next pile")
             yield pile
             pile = nextpile
         for i in range(0, len(pile) // batch_size * batch_size, batch_size):
@@ -230,10 +257,13 @@ class ActsDataset(torch.utils.data.IterableDataset):
             gen_fn = self.acts.acts_generator
         if worker_info is None:
             return gen_fn(self.split, self.batch_size)
-        bpp = self.acts.cfg.generation_config.acts_per_pile // self.batch_size
+        batches_per_pile = (
+            self.acts.cfg.generation_config.acts_per_pile // self.batch_size
+        )
         id = worker_info.id
         nw = worker_info.num_workers
-        offset = (id % nw) * bpp // nw
+        offset = (id % nw) * batches_per_pile // nw
+        base_size = int(4096 / self.batch_size * 8 + 1)
         return bufferized_iter(
             gen_fn(
                 self.split,
@@ -241,6 +271,6 @@ class ActsDataset(torch.utils.data.IterableDataset):
                 id=id,
                 nw=nw,
             ),
-            queue_size=32 + offset,
+            queue_size=base_size + offset,
             # getnext=lambda i: next(i).share_memory_(),
         )

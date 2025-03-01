@@ -4,5 +4,9 @@
 			"path": "."
 		}
 	],
-	"settings": {}
+	"settings": {
+		"python.languageServer": "Default",
+		"windsurfPyright.disableLanguageServices": false,
+		"workbench.settings.enableNaturalLanguageSearch": false
+	}
 }

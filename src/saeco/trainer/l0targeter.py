@@ -1,11 +1,21 @@
 import torch
-from typing import Protocol, Optional
+from typing import Protocol, Optional, Callable
 from .schedule_cfg import RunSchedulingConfig
 
 
 class L0TargeterProto(Protocol):
-    target: float
+    _target: float | Callable[[], float] | None
     schedule: RunSchedulingConfig
+
+    @property
+    def target(self) -> float | None:
+        if callable(self._target):
+            return self._target()
+        return self._target
+
+    @target.setter
+    def target(self, value: float | Callable[[], float] | None):
+        self._target = value
 
     def __call__(self, l0: float, t: int) -> float: ...
 
@@ -156,7 +166,7 @@ class L0Targeter(L0TargeterProto):
         schedule: RunSchedulingConfig,
     ):
 
-        self.target = torch.tensor([l0_target]).cuda()
+        self.target = l0_target
         self.schedule = schedule
 
         self.inv = True
@@ -216,6 +226,14 @@ class L0Targeter(L0TargeterProto):
         self.last_dsign = 0
         self.last_flip_t = 0
         self.last_flip_interval = 100
+
+    @property
+    def target(self):
+        return torch.tensor([super().target]).cuda()
+
+    @target.setter
+    def target(self, value):
+        self._target = value
 
     @property
     def I(self):

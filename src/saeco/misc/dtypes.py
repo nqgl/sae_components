@@ -6,6 +6,7 @@ S2D = {
     "bool": torch.bool,
     "float16": torch.float16,
     "bfloat16": torch.bfloat16,
+    "int32": torch.int32,
 }
 D2S = {v: k for k, v in S2D.items()}
 

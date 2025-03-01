@@ -1,5 +1,5 @@
 import shelve
-from functools import cached_property, wraps
+from functools import cached_property
 from pathlib import Path
 from typing import Generator, Iterable, Iterator, Tuple, Union
 
@@ -16,13 +16,18 @@ from torch import Tensor
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from saeco.data.locations import DATA_DIRS
+from saeco.evaluation.eval_components.coacts import Coactivity
+from saeco.evaluation.eval_components.enrichment import Enrichment
+from saeco.evaluation.eval_components.patching import Patching
 
 from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
+from ..data.storage.disk_tensor_collection import DiskTensorCollection
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .cached_artifacts import CachedCalls
 from .cacher2 import ActsCacher, CachingConfig
-
+from .eval_components.family_generation import FamilyGenerator
+from .eval_components.family_ops import FamilyOps
 from .fastapi_models import (
     Feature,
     MetadataEnrichmentLabelResult,
@@ -41,10 +46,11 @@ from .fastapi_models.families_draft import (
 )
 
 from .filtered import FilteredTensor
-from .metadata import Artifacts, Filters, Metadatas
+from .storage.stored_metadata import Filters, Metadatas, Artifacts
 from .named_filter import NamedFilter
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
+from .utils import fwad_safe_sdp
 
 
 @define
@@ -83,25 +89,8 @@ class BMStorShelf:
         self.shelf.sync()
 
 
-def cache_version(v):
-    def decorator(f):
-        @wraps(f)
-        def wrapper(*args, **kwargs):
-            return f(*args, **kwargs)
-
-        setattr(wrapper, "_version", v)
-        return wrapper
-
-    return decorator
-
-
-class Test(BaseModel):
-    a: int
-    b: int
-
-
 @define
-class Evaluation:
+class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     model_name: str
     training_runner: TrainingRunner = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
@@ -115,6 +104,14 @@ class Evaluation:
             self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name,
             cache_dir=DATA_DIRS.CACHE_DIR,
         )
+
+    @cached_property
+    def feature_labels(self):
+        return shelve.open(str(self.root.path / "feature_labels"))
+
+    @cached_property
+    def family_labels(self):
+        return shelve.open(str(self.path / "family_labels"))
 
     @cached_property
     def bmstore(self):
@@ -191,7 +188,7 @@ class Evaluation:
     def open_filtered(self, filter_name: str):
         return self._apply_filter(self.filters[filter_name])
 
-    def _make_metadata_builder_iter(
+    def _make_metadata_builder_iter(  ###
         self, dtype, device, item_size=[]
     ) -> Generator[Chunk, FilteredTensor, Tensor]:
         assert self._filter is None
@@ -330,10 +327,10 @@ class Evaluation:
             self.metadatas[name] = builder.value
             self.metadatas.set_str_translator(name, builder.unique_labels)
 
-    def get_features(self, feature_ids):
+    def get_features(self, feature_ids):  ###
         return [self.features[fid] for fid in feature_ids]
 
-    def get_feature(self, feature_id) -> FilteredTensor:
+    def get_feature(self, feature_id) -> FilteredTensor:  ###
         return self.features[feature_id]
 
     def filter_docs(self, docs_filter, only_return_selected=False, seq_level=False):
@@ -381,588 +378,46 @@ class Evaluation:
             return values
         return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
-    def activation_cosims(self):
-        mat = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-        f2sum = torch.zeros(self.d_dict).to(self.cuda)
-        for chunk in tqdm.tqdm(
-            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
-        ):
-            acts = chunk.acts.value.to(self.cuda).to_dense()
-            assert acts.ndim == 3
-            feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
-            f2s = feats_mat.pow(2).sum(-1)
-            assert f2s.shape == (self.d_dict,)
-            f2sum = f2s + f2sum
-            mat += feats_mat @ feats_mat.transpose(-2, -1)
-        norms = f2sum.sqrt()
-        mat /= norms.unsqueeze(0)
-        mat /= norms.unsqueeze(1)
-        prod = mat.diag()[~mat.diag().isnan()].prod()
-        assert prod < 1.001 and prod > 0.999
-        return mat
+    # def coactivations(self, doc_agg=None):
+    #     sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+    #     coact_counts = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
+    #     fa_sq_sum = torch.zeros(self.d_dict).to(self.cuda)
+    #     for chunk in tqdm.tqdm(
+    #         self.saved_acts.chunks, total=len(self.saved_acts.chunks)
+    #     ):
+    #         acts = chunk.acts.value.to(self.cuda).to_dense()
+    #         assert acts.ndim == 3
+    #         feature_activity = self.sequelize(
+    #             acts, doc_agg=doc_agg
+    #         )  # feat, (doc [seq])
+    #         feature_bin = (feature_activity > 0).float()
+    #         fa_sq_sum += feature_activity.pow(2).sum(-1)
+    #         sims += feature_activity @ feature_activity.transpose(-2, -1)
+    #         coact_counts += feature_bin @ feature_bin.transpose(-2, -1)
+    #     norms = fa_sq_sum.sqrt()
+    #     sims /= norms.unsqueeze(0)
+    #     sims /= norms.unsqueeze(1)
+    #     prod = sims.diag()[~sims.diag().isnan()].prod()
+    #     assert prod < 1.001 and prod > 0.999
+    #     return coact_counts, sims
 
-    def masked_activation_cosims(self):
-        """
-        Returns the masked cosine similarities matrix.
-        Indexes are like: [masking feature, masked feature]
-        """
-        threshold = 0
-        mat = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-        f2sum = torch.zeros(self.d_dict).to(self.cuda)
-        maskedf2sum = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-        for chunk in tqdm.tqdm(
-            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
-        ):
-            acts = chunk.acts.value.to(self.cuda).to_dense()
-            feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
-            feats_mask = feats_mat > threshold
+    def get_feature_label(self, feature_id):
+        return self.feature_labels.get(str(int(feature_id)))
 
-            f2s = feats_mat.pow(2).sum(-1)
-            assert f2s.shape == (self.d_dict,)
-            f2sum += f2s
-            maskedf2sum += feats_mask.float() @ feats_mat.transpose(-2, -1).pow(2)
-            mat += feats_mat @ feats_mat.transpose(-2, -1)
-        norms = f2sum.sqrt()
-        mat /= maskedf2sum.sqrt()
-        mat /= norms.unsqueeze(1)
-        prod = mat.diag()[~mat.diag().isnan()].prod()
-        assert prod < 1.001 and prod > 0.999
-        return mat
+    def set_feature_label(self, feature_id, label):
+        self.feature_labels[str(int(feature_id))] = label
 
-    def doc_level_co_occurrence(self, pooling="mean"):
-        """
-        Pooling: "mean", "max" or "binary"
-        this could be done at sequence level if we want
-        """
-        threshold = 0
-        mat = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-        f2sum = torch.zeros(self.d_dict).to(self.cuda)
-        for chunk in tqdm.tqdm(
-            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
-        ):
-            acts = chunk.acts.value.to(self.cuda).to_dense()
-            assert acts.ndim == 3
-            if pooling == "mean":
-                acts_pooled = acts.mean(1)
-            elif pooling == "max":
-                acts_pooled = acts.max(1).values
-            elif pooling == "binary":
-                acts_pooled = (acts > threshold).sum(1).float()
-            feats_mat = einops.rearrange(acts_pooled, "doc feat -> feat doc")
-            f2s = feats_mat.pow(2).sum(-1)
-            assert f2s.shape == (self.d_dict,)
-            f2sum = f2s + f2sum
-            mat += feats_mat @ feats_mat.transpose(-2, -1)
-        norms = f2sum.sqrt()
-        mat /= norms.unsqueeze(0)
-        mat /= norms.unsqueeze(1)
-        prod = mat.diag()[~mat.diag().isnan()].prod()
-        assert prod < 1.001 and prod > 0.999
-        return mat
+    def get_family_label(self, family):
+        return self.family_labels.get(str((int(family.level), int(family.family_id))))
 
-    def sequelize(
-        self,
-        acts: Tensor,
-        doc_agg: float | int | str | None = None,
-    ):
-        assert acts.ndim == 3
-        if doc_agg:
-            if isinstance(doc_agg, float | int):
-                acts = acts.pow(doc_agg).sum(dim=1).pow(1 / doc_agg)
-            elif doc_agg == "count":
-                acts = (acts > 0).sum(dim=1).float()
-            elif doc_agg == "max":
-                acts = acts.max(dim=1).values
-            else:
-                raise ValueError("Invalid doc_agg")
-            return einops.rearrange(acts, "doc feat -> feat doc")
-        else:
-            return einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
+    def set_family_label(self, family: FamilyRef, label: str):
+        self.family_labels[str((int(family.level), int(family.family_id)))] = label
 
-    def coactivations(self, doc_agg=None):
-        sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-        coact_counts = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-        fa_sq_sum = torch.zeros(self.d_dict).to(self.cuda)
-        for chunk in tqdm.tqdm(
-            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
-        ):
-            acts = chunk.acts.value.to(self.cuda).to_dense()
-            assert acts.ndim == 3
-            feature_activity = self.sequelize(
-                acts, doc_agg=doc_agg
-            )  # feat, (doc [seq])
-            feature_bin = (feature_activity > 0).float()
-            fa_sq_sum += feature_activity.pow(2).sum(-1)
-            sims += feature_activity @ feature_activity.transpose(-2, -1)
-            coact_counts += feature_bin @ feature_bin.transpose(-2, -1)
-        norms = fa_sq_sum.sqrt()
-        sims /= norms.unsqueeze(0)
-        sims /= norms.unsqueeze(1)
-        prod = sims.diag()[~sims.diag().isnan()].prod()
-        assert prod < 1.001 and prod > 0.999
-        return coact_counts, sims
-
-    def cosims(self, doc_agg=None):
-        return self.coactivations(doc_agg=doc_agg)[1]
-
-    def coactivity(self, doc_agg=None):
-        res = self.coactivations(doc_agg=doc_agg)
-        self.artifacts[f"cosims({(doc_agg,)}, {{}})"] = res[1]
-        return res[0]
-
-    def generate_feature_families1(
-        self, doc_agg=None, threshold=0.1, n=3, use_D=False, freq_bounds=None
-    ):
-        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
-        if use_D:
-            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
-        else:
-            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
-        # D = D.cpu()
-        C = unnormalized / (
-            (
-                feat_counts := (
-                    self.doc_activation_counts
-                    if doc_agg
-                    else self.seq_activation_counts
-                )
-            )
-            .cpu()
-            .unsqueeze(-1)
-            + 1e-6
+    def get_feature(self, feat_id) -> Feature:
+        return Feature(
+            feature_id=int(feat_id),
+            label=self.get_feature_label(feat_id),
         )
-        threshold = threshold or C[C > 0].median()
-
-        C[C.isnan()] = 0
-        C[C < threshold] = 0
-        if freq_bounds is not None:
-            fmin, fmax = freq_bounds
-            feat_probs = (
-                self.doc_activation_probs if doc_agg else self.seq_activation_probs
-            )
-            bound = (feat_probs >= fmin) & (feat_probs <= fmax)
-            C[~bound] = 0
-            C[:, ~bound] = 0
-        import scipy.sparse as ssp
-
-        from .mst import Families, FamilyTreeNode, mst, my_mst
-
-        levels = []
-        feat_counts = feat_counts.to(self.cuda)
-        for _ in tqdm.trange(n):
-            tree = mst(C).transpose(0, 1)
-            roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
-            # for i in range(nz.shape[0]):
-            #     c = nz[i]
-            #     assert feat_counts[c[0]] >= feat_counts[c[1]]
-            # families = Families.from_tree(tree)
-            levels.append(tree)
-            C[roots] = 0
-            C[:, roots] = 0
-        # roots = [((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0) for tree in levels]
-
-        return levels
-
-    @torch.no_grad()
-    def generate_feature_families(self, doc_agg=None, threshold=None, n=3, use_D=False):
-        if use_D:
-            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
-        else:
-            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
-        unnormalized[unnormalized.isnan()] = 0
-        feat_counts = (
-            self.doc_activation_counts if doc_agg else self.seq_activation_counts
-        )
-        # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
-
-        def denan(x):
-            return torch.where(x.isnan() | x.isinf(), torch.zeros_like(x), x)
-
-        def zdiag(x):
-            return torch.where(
-                torch.eye(x.shape[0], device=x.device, dtype=torch.bool), 0, x
-            )
-
-        def isprob(P):
-            assert (P >= 0).all() and (P <= 1).all()
-            return P
-
-        def probmat(P):
-            return isprob(zdiag(denan(P)))
-
-        def ent(P):
-            P = isprob(denan(P))
-            return torch.where(
-                (P > 0) & (P < 1),
-                -P * torch.log(P + 1e-6) - (1 - P) * torch.log(1 - P + 1e-6),
-                0,
-            )
-
-        def nicemat(M):
-            return zdiag(denan(M))
-
-        def nent(Q, R):
-            Q, R = nicemat(Q), nicemat(R)
-            P = nicemat(Q / R)
-            isprob(P)
-            return torch.where(
-                (P > 0) & (P < 1),
-                -Q * torch.log(P) - (R - Q) * torch.log(1 - P),
-                0,
-            )
-
-        N = self.num_docs if doc_agg else self.seq_len * self.num_docs
-        A = feat_counts.unsqueeze(1).expand(-1, feat_counts.shape[0])
-        B = feat_counts.unsqueeze(0).expand(feat_counts.shape[0], -1)
-        V = unnormalized
-
-        P_A = probmat(A / N)
-        P_B = probmat(B / N)
-        # P_AB = probmat(V / N)
-        P_B_given_A = probmat((V + P_B * P_A) / (A + 1))  # +
-        P_B_given_not_A = probmat((B - V + (1 - P_B) * (1 - P_A)) / (N - A + 1))
-        # C = P_A * torch.log()
-        # info = A * ent(P_B_given_A) + (N - A) * ent(P_B_given_not_A)
-        # info = P_A * nent(V, A) + (1 - P_A) * nent((B - V), (N - A)) - nent(B, N)
-        # info = (c := ent(P_B)) - (
-        #     (a := P_A * ent(P_B_given_A)) + (b := (1 - P_A) * ent(P_B_given_not_A))
-        # )
-        # info = torch.where((P_B_given_A > P_B), info + 1e-6, 0)
-        # (info[P_B_given_A > P_B]).sum()
-        # (P_B_given_A > P_B).sum() / (P_B_given_A < P_B).sum()
-        # r = P_A * torch.log(P_B_given_A / P_B)
-        r = torch.log(P_B_given_A / P_B)
-        r = ent(P_B) - ent(P_B_given_A)
-
-        t = (1 - P_A) * torch.log(P_B_given_not_A / P_B)
-        # other = P_A * torch.log(P_B_given_A / P_B) + (1 - P_A) * torch.log(
-        #     P_B_given_not_A / P_B
-        # )
-
-        r = denan(r)
-        t = denan(t)
-        # r[P_B_given_A > P_B].sum()
-        # r[P_B_given_A < P_B].sum()
-        # t[P_B_given_A > P_B].sum()
-        # t[P_B_given_A < P_B].sum()
-        info = r
-
-        # a.max(dim=0, keepdim=True)
-        # b.max(dim=0, keepdim=True)
-        # c.max(dim=0, keepdim=True)
-        # a.max(dim=1, keepdim=True)
-        # b.max(dim=1, keepdim=True)
-        # c.max(dim=1, keepdim=True)
-        # P_B.max()
-        # v = B.to(torch.float64) / N
-        # v.max()
-
-        info = torch.where((V > 0) & (info > 0), info, 0)
-
-        info = zdiag(denan(info))
-        assert (info >= 0).all()
-        # learned =
-        # C = info.clone()
-        C = info
-        threshold = threshold or C[C > 0].median()
-        # C = unnormalized / (().cpu().unsqueeze(-1) + 1e-6)
-
-        C.max(dim=0, keepdim=True)
-        C.max(dim=1, keepdim=True)
-
-        # C[C.isnan()] = 0
-        C[C < threshold] = 0
-        import scipy.sparse as ssp
-
-        from .mst import Families, FamilyTreeNode, mst, my_mst, prim_max
-
-        levels = []
-        feat_counts = feat_counts.to(self.cuda)
-        for _ in range(n):
-            # tree = mst(C)
-            i, v = my_mst(C.cuda())
-            tree = (
-                torch.sparse_coo_tensor(indices=i, values=v, size=C.shape)
-                .to_dense()
-                .cpu()
-                .transpose(0, 1)
-            )
-            nz = tree.nonzero()
-            print(
-                "proportion:",
-                (feat_counts[nz[:, 0]] >= feat_counts[nz[:, 1]]).float().mean(),
-            )
-
-            # families = Families.from_tree(tree)
-            roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
-            print("num_roots", roots.sum())
-            levels.append(tree)
-            C[roots] = 0
-            C[:, roots] = 0
-        # roots.sum()
-
-        # (
-        #     feat_counts[levels[0].roots[0].feature_id],
-        #     feat_counts[levels[1].roots[0].feature_id],
-        #     feat_counts[levels[2].roots[0].feature_id],
-        # )
-        # (len(levels[0].roots[0]), len(levels[1].roots[0]), len(levels[2].roots[0]))
-
-        # (len(levels[0]), len(levels[1]), len(levels[2]))
-
-        return levels
-
-    @torch.no_grad()
-    def _get_feature_family_trees(
-        self, doc_agg=None, threshold=None, n=3, use_D=False, freq_bounds=None
-    ):
-        return torch.stack(
-            self.generate_feature_families1(
-                doc_agg=doc_agg,
-                threshold=threshold,
-                n=n,
-                use_D=use_D,
-                freq_bounds=freq_bounds,
-            )
-        )
-
-    @cache_version(6)
-    def get_feature_families(self) -> GetFamiliesResponse:
-        from .mst import Families, FamilyTreeNode
-
-        levels = self.cached_call._get_feature_family_trees()
-        famlevels = [Families.from_tree(f) for f in levels]
-
-        niceroots: list[list[FamilyTreeNode]] = [
-            [r for r in f.roots if len(r) > 10]
-            for i, f in enumerate(
-                famlevels,
-            )
-        ]
-        [
-            len([r for r in f.roots if len(r) > 20 - i * 8])
-            for i, f in enumerate(
-                famlevels,
-            )
-        ]
-        levels = []
-        for levelnum, level in enumerate(niceroots):
-            fl = FamilyLevel(
-                level=levelnum,
-                families={
-                    fam_id: Family(
-                        level=levelnum,
-                        family_id=fam_id,
-                        label=None,
-                        subfamilies=[],
-                        subfeatures=[
-                            ScoredFeature(
-                                feature=Feature(feature_id=int(feat_id), label=None),
-                                score=0.9,
-                            )
-                            for feat_id in root.family
-                        ],
-                    )
-                    for fam_id, root in enumerate(level)
-                },
-            )
-            levels.append(fl)
-        level_lens = [len(l.families) for l in levels]
-        # csll = torch.tensor([0] + level_lens).cumsum(0).tolist()[:-1]
-        t0 = torch.zeros(
-            len(levels),
-            max(level_lens),
-            self.d_dict,
-            dtype=torch.float,
-            device=self.cuda,
-        )
-        for i, level in enumerate(levels):
-            for j, family in level.families.items():
-                for feat in family.subfeatures:
-                    feat: ScoredFeature
-                    t0[i, j, feat.feature.feature_id] = 1
-        ns = t0.sum(-1)
-
-        t0 /= ns.unsqueeze(-1) + 1e-8
-        sims = einops.einsum(t0, t0, "l1 f1 d, l2 f2 d -> l1 f1 l2 f2")
-        # sims_f = einops.rearrange(sims, "l1 f1 l2 f2 -> l1 f1 (l2 f2)")
-        # m = sims_f.max(dim=-1)
-
-        # sml = sims.max(dim=-1)
-        # smf = sml.values.max(dim=-1)
-        # fi = smf.indices
-        # li = sml.indices[fi]
-
-        threshold = 0
-        for i, level in enumerate(levels[:-1]):
-            next_level = i + 1
-            nl_sims = sims[i, :, next_level, :]
-            z = torch.zeros_like(nl_sims)
-            nlmax = nl_sims.max(dim=0)
-            z[nlmax.indices, torch.arange(nlmax.indices.shape[0])] = nlmax.values
-            z[z < threshold] = 0
-            for j, family in level.families.items():
-                # sim = sims[i, j, next_level, :]
-                # st = sim > threshold
-                st = z[j]
-                # if st.sum() < 3:
-                #     print("very few at threshold", threshold)
-                #     st = sim > threshold / 2
-
-                for f in st.nonzero():
-                    family.subfamilies.append(
-                        ScoredFamilyRef(
-                            family=FamilyRef(
-                                level=int(next_level),
-                                family_id=int(f.item()),
-                            ),
-                            score=st[f.item()],
-                        )
-                    )
-        return GetFamiliesResponse(levels=levels)
-
-    def top_coactivating_features(self, feature_id, top_n=10, mode="seq"):
-        """
-        mode: "seq" or "doc"
-        """
-        if mode == "seq":
-            mat = self.cached_call.activation_cosims()
-        elif mode == "doc":
-            mat = self.cached_call.doc_level_co_occurrence()
-        else:
-            raise ValueError("mode must be 'seq' or 'doc'")
-        vals = mat[feature_id]
-        vals[feature_id] = -torch.inf
-        vals[vals.isnan()] = -torch.inf
-        top = vals.topk(top_n + 1)
-
-        v = top.values
-        i = top.indices
-        v = v[i != feature_id][:top_n]
-        i = i[i != feature_id][:top_n]
-        return i, v
-
-    def sae_with_patch(
-        self,
-        patch_fn,
-        for_nnsight=True,
-        cache_template=None,
-        call_patch_with_cache=False,
-        act_name=None,
-        return_sae_acts=False,
-    ):
-        """
-        patch_fn maps from acts to patched acts and returns the patched acts
-        """
-
-        def shaped_hook(shape, return_acts_l=None):
-            def acts_hook(cache, acts):
-                """
-                Act_name=None corresponds to the main activations, usually correct
-                """
-                if cache._parent is None:
-                    return acts
-                if cache.act_metrics_name is not act_name:
-                    return acts
-                acts = einops.rearrange(
-                    acts, "(doc seq) dict -> doc seq dict", doc=shape[0], seq=shape[1]
-                )
-                out = (
-                    patch_fn(acts, cache=cache)
-                    if call_patch_with_cache
-                    else patch_fn(acts)
-                )
-                if return_sae_acts:
-                    return_acts_l.append(out)
-                return einops.rearrange(out, "doc seq dict -> (doc seq) dict")
-
-            return acts_hook
-
-        def call_sae(x):
-            acts_l = []
-            assert len(acts_l) == 0
-            cache = self.sae.make_cache()
-            cache.acts = ...
-            cache.act_metrics_name = ...
-            shape = x.shape
-            x = einops.rearrange(x, "doc seq data -> (doc seq) data")
-            if cache_template is not None:
-                cache += cache_template
-            if return_sae_acts:
-                hook = shaped_hook(shape, acts_l)
-            else:
-                hook = shaped_hook(shape)
-            cache.register_write_callback("acts", hook)
-            out = self.sae(x, cache=cache)
-            out = einops.rearrange(
-                out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
-            )
-            if return_sae_acts:
-                assert len(acts_l) == 1
-                return (out, acts_l[0])
-            return out
-
-        if not for_nnsight:
-            return call_sae
-
-        def apply_nnsight(x):
-            return nnsight.apply(call_sae, x)
-
-        return apply_nnsight
-
-    def run_with_sae(self, tokens, patch=lambda x: x):
-        with self.nnsight_model.trace(tokens) as tracer:
-            lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
-            res = self.sae_with_patch(patch, return_sae_acts=True)(lm_acts)
-            patch_in = self._skip_bos_if_appropriate(lm_acts, res[0])
-            setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
-            out = self.nnsight_model.output.save()
-        return out
-
-    def forward_ad_with_sae(
-        self,
-        tokens,
-        tangent=None,
-        tangent_gen=None,
-        patch_fn=lambda x: x,
-        return_prob_grads=False,
-    ):
-        assert tokens.ndim == 2
-        assert tangent or tangent_gen
-        if tangent:
-
-            def fwad_hook(acts):
-                acts = patch_fn(acts)
-                return fwAD.make_dual(acts, tangent)
-
-        else:
-
-            def fwad_hook(acts):
-                acts = patch_fn(acts)
-                return fwAD.make_dual(acts, tangent_gen(acts))
-
-        patched_sae = self.sae_with_patch(fwad_hook)
-        with fwAD.dual_level():
-            with self.nnsight_model.trace(tokens) as tracer:
-                lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
-                orig_lm_acts = lm_acts.save()
-                acts_re = patched_sae(orig_lm_acts).save()
-                patch_in = self._skip_bos_if_appropriate(lm_acts, acts_re)
-                setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
-                out = self.nnsight_model.output.save()
-                ls_logits = out.logits.log_softmax(dim=-1)
-                tangent = nnsight.apply(fwAD.unpack_dual, ls_logits).tangent.save()
-            if return_prob_grads:
-                soft = out.logits.softmax(dim=-1)
-                probspace = fwAD.unpack_dual(soft).tangent
-        if return_prob_grads:
-            return out, tangent, probspace
-        return out, tangent
-
-    def _skip_bos_if_appropriate(self, lm_acts, reconstructed_acts):
-        if self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first:
-            return torch.cat([lm_acts[:, :1], reconstructed_acts[:, 1:]], dim=1)
-        return reconstructed_acts
 
     def detokenize(self, tokens) -> list[str] | list[list[str]] | str:
         if isinstance(tokens, int):
@@ -984,19 +439,6 @@ class Evaluation:
         flat = einops.rearrange(tokens, "doc seq -> (doc seq)").unsqueeze(-1).tolist()
         flatl = self.tokenizer._tokenizer.decode_batch(flat, skip_special_tokens=False)
         return [flatl[i : i + lens] for i in range(0, len(flatl), lens)]
-
-    def patchdiff(self, tokens, patch_fn, return_prob_diffs=False, invert=False):
-        normal = self.run_with_sae(tokens)
-        patched = self.run_with_sae(tokens, patch_fn)
-        diff = patched.logits.log_softmax(-1) - normal.logits.log_softmax(-1)
-        if invert:
-            diff = -diff
-        if return_prob_diffs:
-            probdiff = patched.logits.softmax(-1) - normal.logits.softmax(-1)
-            if invert:
-                probdiff = -probdiff
-            return diff, probdiff
-        return diff
 
     def seq_aggregated_chunks_yielder(
         self, seq_agg
@@ -1047,195 +489,9 @@ class Evaluation:
         if docs_agg == "mean":
             results /= self.num_docs
 
-    def forward_token_attribution_to_features(self, tokens, seq_range):
-        assert tokens.ndim == 1 or tokens.ndim == 2 and tokens.shape[0] == 1
-        if tokens.ndim == 1:
-            tokens = tokens.unsqueeze(0)
-        tokens = tokens.repeat(seq_range[1] - seq_range[0], 1, 1)
-
-        def tangentize_embedding(embedding):
-            assert embedding.ndim == 3
-            return (
-                fwAD.make_dual(
-                    torch.ones_like(embedding[:, :, 0]).unsqueeze(-1),
-                    torch.eye(embedding.shape[1]).unsqueeze(-1)[
-                        seq_range[0] : seq_range[1]
-                    ],
-                )
-                * embedding
-            )
-
-        with fwAD.dual_level():
-            with self.nnsight_model.trace(tokens) as tracer:
-                embed = self.nnsight_model.transformer.wte.output
-                self.nnsight_model.transformer.wte.output = nnsight.apply(
-                    tangentize_embedding, embed
-                )
-                lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
-                res = self.sae_with_patch(lambda x: x, return_sae_acts=True)(lm_acts)
-                sae_acts = res[1]
-
-                acts_tangent = nnsight.apply(fwAD.unpack_dual, sae_acts).tangent.save()
-                lm_acts.stop()
-        return acts_tangent
-
-    def average_patching_effect_on_dataset(
-        self, feature_id, batch_size=8, scale=None, by_fwad=False, random_subset_n=None
-    ):
-        """
-        this will be like,
-            - on the filtered dataset,
-            - where the feature occurs
-                - (for each position),
-        what happens when we ablate the feature?
-        """
-        results = torch.zeros(
-            self.seq_len,
-            self.d_vocab,
-        ).to(self.cuda)
-        p_results = torch.zeros(
-            self.seq_len,
-            self.d_vocab,
-        ).to(self.cuda)
-        num_batches = torch.zeros(self.seq_len).to(self.cuda) + 1e-6
-        for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
-            feature_id=feature_id,
-            batch_size=batch_size,
-            scale=scale,
-            by_fwad=by_fwad,
-            random_subset_n=random_subset_n,
-        ):
-            for j in range(batch_seq_pos.shape[0]):
-                results[: -batch_seq_pos[j]] += ldiff[j, batch_seq_pos[j] :]
-                p_results[: -batch_seq_pos[j]] += pdiff[j, batch_seq_pos[j] :]
-                num_batches[: -batch_seq_pos[j]] += 1
-        return results / num_batches.unsqueeze(-1), p_results / num_batches.unsqueeze(
-            -1
-        )
-
-    def custom_patching_effect_aggregation(
-        self,
-        feature_id,
-        log_call,
-        prob_call,
-        batch_size=8,
-        scale=None,
-        by_fwad=False,
-        random_subset_n=None,
-    ):
-        num_batches = torch.zeros(self.seq_len) + 1e-6
-        for ldiff, pdiff, batch_seq_pos in self.patching_effect_on_dataset(
-            feature_id=feature_id,
-            batch_size=batch_size,
-            scale=scale,
-            by_fwad=by_fwad,
-            random_subset_n=random_subset_n,
-        ):
-            if log_call is not None:
-                log_call(ldiff, batch_seq_pos)
-            if prob_call is not None:
-                prob_call(pdiff, batch_seq_pos)
-        return num_batches
-
-    def patching_effect_on_dataset(
-        self, feature_id, batch_size=8, scale=None, by_fwad=False, random_subset_n=None
-    ):
-        """
-        this will be like,
-            - on the filtered dataset,
-            - where the feature occurs
-                - (for each position),
-            what happens when we ablate the feature? (or do fwad)
-
-        random_subset_n selects documents, rather than positions
-            this behavior may not be ideal if it overweighs certain documents
-        """
-        if scale is None:
-            scale = 1 if by_fwad else 0
-        feature0 = self.features[feature_id]
-        feature = feature0.filter_inactive_docs()
-        if random_subset_n:
-            if (s := feature.filter.mask.sum()) > random_subset_n:
-                new_mask = torch.zeros_like(feature.filter.mask)
-                new_mask[feature.filter.mask] = torch.randperm(s) < random_subset_n
-                assert new_mask.sum() == random_subset_n
-                new_feature = feature.mask_by_other(
-                    new_mask, return_ft=True, presliced=True, value_like=False
-                )
-                nfi = new_feature.indices()
-                fi = feature.indices().transpose(0, 1).tolist()
-                if nfi.numel() > 0:
-                    for i in nfi.transpose(0, 1).tolist():
-                        assert i in fi
-                feature = new_feature
-        feature_active = feature.indices()
-        feature = feature.to_dense()
-
-        with torch.no_grad():
-            for chunk in tqdm.tqdm(self.saved_acts.chunks):
-                tokens = chunk.tokens
-                docs, mask = tokens.index_where_valid(feature_active[0:1])
-                seq_pos = feature_active[1, mask]
-                assert docs.shape[0] == seq_pos.shape[0]
-                for i in range(0, docs.shape[0], batch_size):
-                    batch_docs = docs[i : i + batch_size]
-                    batch_seq_pos = seq_pos[i : i + batch_size]
-
-                    def patch_fn(acts):
-                        acts = acts.clone()
-                        acts[
-                            torch.arange(batch_seq_pos.shape[0]),
-                            batch_seq_pos,
-                            feature_id,
-                        ] *= scale
-                        return acts
-
-                    if by_fwad:
-
-                        def tangent_gen(acts):
-                            tangent = torch.zeros_like(acts)
-                            tangent[
-                                torch.arange(batch_seq_pos.shape[0]),
-                                batch_seq_pos,
-                                feature_id,
-                            ] = 1
-                            assert tangent.sum() == batch_seq_pos.shape[0]
-                            return acts
-
-                        out, ldiff, pdiff = self.forward_ad_with_sae(
-                            batch_docs,
-                            tangent_gen=tangent_gen,
-                            patch_fn=patch_fn,
-                            return_prob_grads=True,
-                        )
-                        # ldiff = ldiff.log_softmax(-1
-                        # not clear on if these should get some sort of
-                        # normalization to prevent overweighting of
-                        # particular documents w systematically larger grads
-                        # (eg due to diff logit scales)
-                        # maybe like z-score it or something
-                        # unclear if log-softmax would be a coherent thing to do
-                        # oh i think log-softmax on the dual tensor inside forward-ad
-                        # should do what we want.
-                        # seems good, added to forward_ad_with_sae
-
-                    else:
-                        ldiff, pdiff = self.patchdiff(
-                            batch_docs, patch_fn, return_prob_diffs=True, invert=True
-                        )
-                    yield ldiff, pdiff, batch_seq_pos
-
     @property
     def token_occurrence_count(self):
-        return self.cached_call._get_token_occurrences()
-
-    def _get_token_occurrences(self):
-        counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
-        for chunk in tqdm.tqdm(self.saved_acts.chunks):
-            tokens = chunk.tokens.value.to(self.cuda)
-            t, c_counts = tokens.unique(return_counts=True)
-            counts[t] += c_counts
-        return counts
+        return self.cached_call.count_token_occurrence()
 
     def top_activating_examples(self, feature_id: int, p=None, k=None):
         feature = self.features[feature_id]
@@ -1311,7 +567,7 @@ class Evaluation:
             acts = acts.to_sparse_coo()
         docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
         metadatas = {
-            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+            key: self._root_metadatas[key][doc_indices.cpu()] for key in metadata_keys
         }
         if str_metadatas:
             metadatas = self._root_metadatas.translate(metadatas)
@@ -1344,174 +600,6 @@ class Evaluation:
             for feature in features
         ]
 
-    # top_indices
-
-    # def top_acts_and_docs_from_doc_activations(self, doc_acts:FilteredTensor, k):
-    #     topk = doc_acts.value.topk(k, sorted=True)
-    #     top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
-    #     doc_indices = top_outer_indices[0]
-    #     docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
-    #     metadatas = {
-    #         key: self._root_metadatas[key][doc_indices] for key in metadata_keys
-    #     }
-    #     if str_metadatas:
-    #         metadatas = self._root_metadatas.translate(metadatas)
-    #     if return_doc_indices:
-    #         return docs, acts, metadatas, doc_indices
-    #     return docs, acts, metadatas
-
-    def top_activations_and_metadatas_for_family(
-        self,
-        family: Family,
-        aggregation_method: str = "sum",
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
-        return_str_docs: bool = False,
-        return_acts_sparse: bool = False,
-        return_doc_indices: bool = True,
-        str_metadatas: bool = False,
-    ):
-        feature = self.get_family_psuedofeature_tensors([family], aggregation_method)[0]
-        return self.top_activations_and_metadatas(
-            feature=feature,
-            p=p,
-            k=k,
-            metadata_keys=metadata_keys,
-            return_str_docs=return_str_docs,
-            return_acts_sparse=return_acts_sparse,
-            return_doc_indices=return_doc_indices,
-            str_metadatas=str_metadatas,
-        )
-
-    def get_family_psuedofeature_tensors(
-        self, families: list[Family], aggregation_method="sum", cuda=True
-    ) -> list[FilteredTensor]:
-        artifact_names = [
-            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
-            for family in families
-        ]
-        self.init_family_psuedofeature_tensors(families, aggregation_method)
-        return [
-            FilteredTensor.from_value_and_mask(
-                (
-                    self.artifacts[artifact_name].to(self.cuda)
-                    if cuda
-                    else self.artifacts[artifact_name]
-                ),
-                self._filter,
-            )
-            for artifact_name in artifact_names
-        ]
-
-    def init_family_psuedofeature_tensors(
-        self, families: list[Family], aggregation_method="sum"
-    ) -> list[FilteredTensor]:
-        artifact_names = [
-            f"family-feature-tensor-{aggregation_method}_level{family.level}_family{family.family_id}"
-            for family in families
-        ]
-        precached = [
-            artifact_name in self.artifacts for artifact_name in artifact_names
-        ]
-
-        if not all(precached):
-            indices = [
-                torch.tensor(
-                    [f.feature.feature_id for f in family.subfeatures],
-                    dtype=torch.long,
-                    device=self.cuda,
-                )
-                for family, prec in zip(families, precached)
-                if not prec
-            ]
-            new_artifact_names = [
-                artifact_name
-                for artifact_name, prec in zip(artifact_names, precached)
-                if not prec
-            ]
-            builders = [
-                self.filtered_builder(
-                    dtype=torch.float, device=self.cuda, item_size=(self.seq_len,)
-                )
-                for _ in new_artifact_names
-            ]
-            for chunk in tqdm.tqdm(builders[0], total=self.cache_cfg.num_chunks):
-                a = chunk.acts.to(self.cuda).to_dense()
-                for mb, i in zip(builders, indices):
-                    mb << a.to_filtered_like_self(a.value[:, :, i].sum(dim=-1), ndim=2)
-            for artifact_name, mb in zip(new_artifact_names, builders):
-                feature_value = mb.value
-                self.artifacts[artifact_name] = feature_value.value
-
-    def batched_top_activations_and_metadatas_for_family(
-        self,
-        families: list[Family],
-        aggregation_method: str = "sum",
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
-        return_str_docs: bool = False,
-        return_acts_sparse: bool = False,
-        return_doc_indices: bool = True,
-        str_metadatas: bool = False,
-    ):
-
-        return self.batched_top_activations_and_metadatas(
-            features=self.get_family_psuedofeature_tensors(
-                families=families, aggregation_method=aggregation_method
-            ),
-            p=p,
-            k=k,
-            metadata_keys=metadata_keys,
-            return_str_docs=return_str_docs,
-            return_acts_sparse=return_acts_sparse,
-            return_doc_indices=return_doc_indices,
-            str_metadatas=str_metadatas,
-        )
-
-    def top_overlapped_feature_family_documents(
-        self,
-        families: list[Family],
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
-        return_str_docs: bool = False,
-        str_metadatas: bool = False,
-    ):
-        if len(families) == 0:
-            return [], [], [], []
-        famfeats = self.get_family_psuedofeature_tensors(families=families)
-        doc_acts = [self.seq_agg_feat(feature=f, agg="sum") for f in famfeats]
-        agg_mask = doc_acts[0].filter.mask.clone()
-        for da in doc_acts[1:]:
-            agg_mask &= da.filter.mask
-        filt_da = [da.mask_by_other(agg_mask, presliced=True) for da in doc_acts]
-        agg_doc_score = filt_da[0].to(self.cuda).clone().to_dense()
-        for da in filt_da[1:]:
-            agg_doc_score *= da.to(self.cuda)
-        assert agg_doc_score.ndim == 1
-        if agg_doc_score.sum() == 0:
-            agg_doc_score = filt_da[0].to(self.cuda).clone().to_dense()
-            for da in filt_da[1:]:
-                agg_doc_score += da.to(self.cuda)
-        agg_doc = FilteredTensor.from_value_and_mask(value=agg_doc_score, mask=agg_mask)
-
-        k = Evaluation._pk_to_k(p, k, agg_doc_score.shape[0])
-        if k == 0:
-            return [], [[] for _ in range(len(families))], [], []
-        topk = agg_doc.value.topk(k, sorted=True)
-        top_outer_indices = agg_doc.externalize_indices(topk.indices.unsqueeze(0))
-        doc_indices = top_outer_indices[0].to(self.cuda)
-        docs, acts, metadatas = self.getDAM(
-            doc_indices,
-            features=famfeats,
-            metadata_keys=metadata_keys,
-            return_str_docs=return_str_docs,
-            str_metadatas=str_metadatas,
-        )
-        return docs, acts, metadatas, doc_indices
-
     def getDAM(
         self,
         doc_indices,
@@ -1531,28 +619,6 @@ class Evaluation:
         )
 
         return docs, acts, metadatas
-
-    def get_families_activations_on_docs(
-        self,
-        families: list[Family],
-        doc_indices: list[int],
-        features: list[int] = [],
-        metadata_keys: list[str] = [],
-        return_str_docs: bool = False,
-        str_metadatas: bool = False,
-    ):
-        doc_indices = torch.tensor(doc_indices, dtype=torch.long, device=self.cuda)
-        print("getting families")
-        print(self.cuda)
-        docs, acts, metadatas = self.getDAM(
-            doc_indices,
-            features=self.get_family_psuedofeature_tensors(families=families)
-            + [self.features[f].to(self.cuda) for f in features],
-            metadata_keys=metadata_keys,
-            return_str_docs=return_str_docs,
-            str_metadatas=str_metadatas,
-        )
-        return docs, acts[: len(families)], metadatas, acts[len(families) :]
 
     def get_docs_and_metadatas(
         self,
@@ -1577,71 +643,6 @@ class Evaluation:
         labels, counts = meta.unique(return_counts=True)
         return torch.stack([labels, counts], dim=0)
 
-    def top_activations_metadata_enrichments(
-        self,
-        *,
-        feature: int | FilteredTensor,
-        metadata_keys: list[str],
-        p: float = None,
-        k: int = None,
-        str_label: bool = False,
-        sort_by: MetadataEnrichmentSortBy = MetadataEnrichmentSortBy.counts,
-    ):
-        docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
-            feature=feature, p=p, k=k, metadata_keys=metadata_keys
-        )
-        r = {}
-        for mdname, md in metadatas.items():
-            assert md.ndim == 1
-            full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
-            labels, mdcat_counts = torch.cat([md, full_lc[0]]).unique(
-                return_counts=True
-            )
-            counts = mdcat_counts - 1
-            assert (labels == full_lc[0]).all()
-            assert counts.shape == labels.shape == full_lc[1].shape
-            proportions = counts / full_lc[1]
-            labels = labels[counts > 0]
-            proportions = proportions[counts > 0]
-            counts = counts[counts > 0]
-            normalized_counts = proportions * self.num_docs / doc_ids.shape[0]
-            scores = normalized_counts.log()
-            if sort_by == TokenEnrichmentSortBy.counts:
-                i = counts.argsort(descending=True)
-            elif sort_by == TokenEnrichmentSortBy.normalized_count:
-                i = normalized_counts.argsort(descending=True)
-            elif sort_by == TokenEnrichmentSortBy.score:
-                i = scores.argsort(descending=True)
-            else:
-                raise ValueError(f"Unknown sort_by {sort_by}")
-            labels = labels[i]
-            counts = counts[i]
-            proportions = proportions[i]
-            normalized_counts = normalized_counts[i]
-            scores = scores[i]
-            r[mdname] = [
-                MetadataEnrichmentLabelResult(
-                    label=label,
-                    count=count,
-                    proportion=proportion,
-                    normalized_count=normalized_count,
-                    score=score,
-                    # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
-                )
-                for label, count, proportion, normalized_count, score in zip(
-                    (
-                        self.metadatas.get(mdname).strlist(labels)
-                        if str_label
-                        else labels.tolist()
-                    ),
-                    counts.tolist(),
-                    proportions.tolist(),
-                    normalized_counts.tolist(),
-                    scores.tolist(),
-                )
-            ]
-        return MetadataEnrichmentResponse(results=r)
-
     def count_token_occurrence(self):
         counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
@@ -1655,62 +656,12 @@ class Evaluation:
             )
         return counts
 
-    def top_activations_token_enrichments(
-        self,
-        *,
-        feature: int | FilteredTensor,
-        p: float = None,
-        k: int = None,
-        mode: TokenEnrichmentMode = "doc",
-        sort_by: TokenEnrichmentSortBy = "count",
-    ):
-        docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
-            feature=feature, p=p, k=k, metadata_keys=[]
-        )
-        docs = docs.to(self.cuda)
-        if mode == TokenEnrichmentMode.doc:
-            seltoks = docs
-        elif mode == TokenEnrichmentMode.max:
-            max_pos = acts.argmax(dim=1)
-            max_top = docs[torch.arange(max_pos.shape[0]), max_pos]
-            seltoks = max_top
-        elif mode == TokenEnrichmentMode.active:
-            active_top = docs[acts > 0]
-            seltoks = active_top
-        elif mode == TokenEnrichmentMode.top:
-            top_threshold = docs[
-                acts > acts.max(dim=-1).values.min(dim=0).values.item()
-            ]
-            seltoks = top_threshold
-        else:
-            raise ValueError(f"Unknown mode {mode}")
-        tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
-        normalized_counts = (counts / seltoks.numel()) / (
-            self.token_occurrence_count.to(self.cuda)[tokens]
-            / (self.num_docs * self.seq_len)
-        )
-        scores = normalized_counts.log()
-        if sort_by == TokenEnrichmentSortBy.counts:
-            i = counts.argsort(descending=True)
-        elif sort_by == TokenEnrichmentSortBy.normalized_count:
-            i = normalized_counts.argsort(descending=True)
-        elif sort_by == TokenEnrichmentSortBy.score:
-            i = scores.argsort(descending=True)
-        else:
-            raise ValueError(f"Unknown sort_by {sort_by}")
-        tokens = tokens[i]
-        counts = counts[i]
-        normalized_counts = normalized_counts[i]
-        scores = scores[i]
-
-        return tokens, counts, normalized_counts, scores
-
     def num_active_docs_for_feature(self, feature_id):
         return self.cached_call._feature_num_active_docs()[feature_id].item()
 
     @property
     def seq_activation_counts(self):
-        return self.cached_call._feature_num_active_tokens()
+        return self.cached_call._feature_num_active_tokens().cpu()
 
     @property
     def seq_activation_probs(self):
@@ -1718,7 +669,7 @@ class Evaluation:
 
     @property
     def doc_activation_counts(self):
-        return self.cached_call._feature_num_active_docs()
+        return self.cached_call._feature_num_active_docs().cpu()
 
     @property
     def doc_activation_probs(self):

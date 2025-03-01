@@ -1,23 +1,18 @@
 import torch.nn as nn
 
-from saeco.initializer import Initializer
-from saeco.components import (
-    L1Penalty,
-    EMAFreqTracker,
-    L2Loss,
-    SparsityPenaltyLoss,
-)
-from saeco.core.reused_forward import ReuseForward
-from saeco.core import Seq
-import saeco.components.features.features as ft
-
 import saeco.components as co
+import saeco.components.features.features as ft
+from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
+from saeco.core import Seq
+from saeco.core.reused_forward import ReuseForward
+
+from saeco.initializer import Initializer
+from saeco.initializer.initializer_config import InitConfig
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.trainer.run_config import RunConfig
+from saeco.trainer.schedule_cfg import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
-from saeco.initializer.initializer_config import InitConfig
-from saeco.configs import RunSchedulingConfig
 
 
 class Config(SweepableConfig):
@@ -62,23 +57,19 @@ def sae(
     return models, losses
 
 
-from saeco.trainer.runner import (
-    TrainingRunner,
-)
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import DataConfig, ModelConfig, ActsDataConfig
-
+from saeco.data import ActsDataConfig, DataConfig, ModelConfig
+from saeco.data.data_config_definitions import gpt_2_block
+from saeco.trainer.runner import TrainingRunner
 
 model_fn = sae
 quick_check = False
 PROJECT = "sae sweeps"
 train_cfg = TrainConfig(
-    data_cfg=DataConfig(
-        model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=not quick_check))
-    ),
+    data_cfg=gpt_2_block(),
     l0_target=25,
     coeffs={
         "sparsity_loss": 4e-3,
@@ -97,7 +88,7 @@ train_cfg = TrainConfig(
         lr_resample_warmup_length=0.3,
         lr_resample_warmup_factor=0.2,
         # targeting_resample_cooldown_period_override=(2_000),
-        targeting_post_resample_cooldown=0.3,
+        targeting_post_resample_step_size_warmup=0.3,
         targeting_post_resample_hiatus=0.4,
         resample_period=(4_000),
         resampling_finished_phase=0.3,
@@ -123,7 +114,7 @@ import tqdm
 
 optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 for i in tqdm.trange(800):
-    x = next(data)
+    x = next(data).cuda()
     y = model(x)
     l = (y - x).pow(2).mean()
     l.backward()

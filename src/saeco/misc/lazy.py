@@ -48,11 +48,16 @@ def debug_enter(self, field, current):
     return lambda: None
 
 
-def defer_to_and_set(field):
+def defer_to_and_set(_field):
     def wrapper(fn):
 
         @functools.wraps(fn)
         def inner(self):
+            if isinstance(_field, str):
+                field = _field
+            else:
+                field = _field()
+                assert isinstance(field, str)
             current = getattr(self, field, None)
             debug_exit = debug_enter(self, field, current)
             if current is None:
@@ -99,3 +104,35 @@ def lazyprop(mth, name=None):
         setattr(self, name, value)
 
     return prop.setter(setter)
+
+
+class LazyProp(property):
+    def __init__(self, mth, name=None):
+        self._propfield = None
+        super().__init__(defer_to_and_set(lambda: self._propfield)(mth))
+
+    def __set_name__(self, owner, name):
+        self._propfield = name
+
+
+from typing import Callable, TypeVar, Any
+
+T = TypeVar("T")
+
+
+class LazyProp(property):
+    def __init__(self, mth: Callable[[Any], T]):
+        self.mth = mth
+        self.propfield = None
+        self.name_override = False
+
+    def __set_name__(self, owner, name):
+        if not self.name_override:
+            self.propfield = f"_{name}"
+
+    def __get__(self, instance, owner) -> T:
+        assert self.propfield is not None
+        if not hasattr(instance, self.propfield):
+            setattr(instance, self.propfield, (res := self.mth(instance)))
+            return res
+        return getattr(instance, self.propfield)

@@ -51,11 +51,29 @@ class Collection(Module):
                 )
 
     def __getitem__(self, key):
-        if isinstance(key, int):
-            return getattr(self, self._collection_names[key])
-        if key not in self._collection_names:
-            raise KeyError(f"{key} not found in {self.__class__.__name__}")
-        return getattr(self, key)
+        if not isinstance(key, slice):
+            if isinstance(key, int):
+                return getattr(self, self._collection_names[key])
+            if key not in self._collection_names:
+                raise KeyError(f"{key} not found in {self.__class__.__name__}")
+            return getattr(self, key)
+
+        assert key.step is None
+        if isinstance(key.start, int) or isinstance(key.stop, int):
+            items = self._collection.items()[key]
+        elif isinstance(key.start, str) or isinstance(key.stop, str):
+            numerical_indices = [
+                list(self._collection.keys()).index(k) if isinstance(k, str) else k
+                for k in (key.start, key.stop)
+            ]
+            items = self._collection.items()[
+                numerical_indices[0] : numerical_indices[1]
+            ]
+        else:
+            raise ValueError(
+                "key.start and key.stop must be of the same type (int or str)"
+            )
+        return self.__class__(**{k: v for k, v in items})
 
     # def __getattr__(self, key):
     #     if key in super().__getattr__("_collection"):

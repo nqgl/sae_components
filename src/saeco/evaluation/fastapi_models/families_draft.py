@@ -90,6 +90,11 @@ class FamilyTopActivatingExamplesQuery(FilterableQuery):
     return_str_metadatas: bool = True
 
 
+class SetFamilyLabelRequest(FilterableQuery):
+    family: FamilyRef
+    label: str
+
+
 class TopFamilyOverlappingExamplesResponseDoc(BaseModel):
     doc: list[str] | list[int]
     metadatas: list[int | str]

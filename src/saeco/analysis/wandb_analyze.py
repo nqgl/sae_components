@@ -1,24 +1,25 @@
 # %%
+import asyncio
+import os
+
+from typing import Any
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import polars as pl
+import seaborn as sns
 import wandb
 import wandb.apis
+import wandb.apis.public as wapublic
 import wandb.data_types
 import wandb.util
+from saeco.analysis.run_history import RunHistories
 from saeco.misc import lazycall
-import asyncio
 
 # from wandb.data_types
 # from wandb.wandb_run import Run
-from wandb.apis.public import Run, Sweep, Runs
-import wandb.apis.public as wapublic
-
-from typing import Any
-import os
-import pandas as pd
-import numpy as np
-import polars as pl
-import seaborn as sns
-import matplotlib.pyplot as plt
-from saeco.analysis.run_history import RunHistories
+from wandb.apis.public import Run, Runs, Sweep
 
 r: Run
 histories = RunHistories()
@@ -204,11 +205,23 @@ class Sweep:
     def __init__(self, sweep_path):
         self.sweep_path = sweep_path
         self.sweep: wapublic.Sweep = api.sweep(sweep_path)
+        self.sweep.load(force=True)
 
+        len(list(self.sweep.runs))
         self.full_cfg_key = "full_cfg"
-        self.value_targets = [ValueTarget("cache/L2_loss")]
+        self.value_targets = [
+            ValueTarget("cache/L2_loss"),
+            ValueTarget("eval/L2_loss"),
+            ValueTarget("cache/L0"),
+            ValueTarget("eval/L0"),
+            ValueTarget("cache/L1"),
+            ValueTarget("eval/L1"),
+            ValueTarget("recons/no_bos/nats_lost"),
+            ValueTarget("recons/with_bos/nats_lost"),
+        ]
         # self.sweept_fields: dict[list[str], dict[Any, set[Run]]] = {}
         self.prev_avg_min = 0
+        self.top_level_ignore_keys = ["pod_info"]
         # df = self.df
         # self.add_target_history()
         # self.add_target_averages()
@@ -224,6 +237,8 @@ class Sweep:
             for k, v in d.items():
                 if k == self.full_cfg_key:
                     assert prefix == []
+                    continue
+                if k in self.top_level_ignore_keys and prefix == []:
                     continue
                 if isinstance(v, list):
                     v = tuple(v)
@@ -247,10 +262,10 @@ class Sweep:
 
     @property
     def runs(self) -> list[wapublic.Run]:
-        return self.sweep.runs
+        return list(self.sweep.runs)
 
     @property
-    @lazycall
+    # @lazycall
     def run_sweep_values(self) -> dict[Run, dict[list[str], Any]]:
         run_sweep_values = {}
         for k, vd in self.sweep_cfg.items():
@@ -269,19 +284,53 @@ class Sweep:
     @property
     @lazycall
     def keys(self) -> list[SweepKey]:
-        return [SweepKey(k, list(dv.keys())) for k, dv in self.sweep_cfg.items()]
+        return [SweepKey(k, list(dv.keys())) for k, dv in self.sweep_cfg.items()] + [
+            SweepKey("__NULLKEY", [1])
+        ]
 
     @property
     @lazycall
     def df(self):
-        return pd.DataFrame(
+        d = pd.DataFrame(
             [
-                {**run.summary, "run": run, **self.run_sweep_values[run]}
+                {
+                    **run.summary,
+                    "run": run,
+                    **self.run_sweep_values[run],
+                    "__NULLKEY": 1,
+                }
                 # 2
                 for i, run in enumerate(self.runs)
                 # for run in runs
             ]
         )
+        d = pd.DataFrame(
+            [
+                {
+                    **run.summary,
+                    "run": run,
+                    **self.run_sweep_values[run],
+                    "__NULLKEY": 1,
+                }
+                # 2
+                for i, run in enumerate(self.runs)
+                # for run in runs
+            ]
+        )
+        d = pd.DataFrame(
+            [
+                {
+                    **run.summary,
+                    "run": run,
+                    **self.run_sweep_values[run],
+                    "__NULLKEY": 1,
+                }
+                # 2
+                for i, run in enumerate(self.runs)
+                # for run in runs
+            ]
+        )
+        return d
 
     def add_target_averages(self, min_step=None, force=False):
         # if "history" not in self.df.columns:
@@ -328,6 +377,11 @@ class Sweep:
     def add_target_history(self):
         print()
         # self.add_target_history_async()
+        self.sweep.runs
+        # self.sweep.load(force=True)
+        len({k.id: 0 for k in self.sweep.runs})
+        len({k.id: 0 for k in self.runs})
+        self.sweep.runs
         histories.get_runs(self.runs, [vt.key for vt in self.value_targets])
         self.df["history"] = self.df.apply(self._get_target_history, axis=1)
         print()
@@ -635,7 +689,7 @@ class SweepAnalysis:
 
     # def graph(self):
 
-    def heatmap(self, target=None, style=True):
+    def heatmap(self, target=None, style=True, color_axis=None):
         if target is None:
             return self.heatmap(self.sweep.value_targets[0])
         # df = df if df is not None else self.df
@@ -652,7 +706,7 @@ class SweepAnalysis:
         # )
         if not style:
             return piv
-        return piv.style.background_gradient(cmap=self.cmap, axis=None)
+        return piv.style.background_gradient(cmap=self.cmap, axis=color_axis)
 
 
 # sa = SweepAnalysis(sw, sks)

@@ -1,8 +1,9 @@
-from saeco.data.dataset import DataConfig
+from saeco.data.data_cfg import DataConfig
 from saeco.misc import lazycall
-from saeco.sweeps import SweepableConfig, Swept
-from saeco.trainer.OptimConfig import get_optim_cls
-from saeco.trainer.schedule_cfg import RunSchedulingConfig
+from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
+from .OptimConfig import get_optim_cls
+from .schedule_cfg import RunSchedulingConfig
 
 
 from pydantic import Field
@@ -11,9 +12,7 @@ from pydantic import Field
 class TrainConfig(SweepableConfig):
     data_cfg: DataConfig = Field(default_factory=DataConfig)
     wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
-    coeffs: dict[str, float | Swept[float]] = Field(
-        default_factory=lambda: dict(sparsity_loss=1e-3)
-    )
+    coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
     # coeffs: Coeffs = Field(default_factory=Coeffs)
     l0_targeter_type: str = "gentle_basic"
     l0_target: float | None = None

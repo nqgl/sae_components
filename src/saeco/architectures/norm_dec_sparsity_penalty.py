@@ -13,6 +13,7 @@ from saeco.components import (
 from saeco.core.reused_forward import ReuseForward
 from saeco.core import Seq
 import saeco.components.features.features as ft
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.normalizers import GNConfig
@@ -66,7 +67,7 @@ def sae(
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.data import DataConfig, ModelConfig, ActsDataConfig
-from saeco.sweeps import Swept, do_sweep
+from saeco.sweeps import do_sweep
 
 
 model_fn = sae
@@ -81,7 +82,7 @@ train_cfg = TrainConfig(
         run_length=50_000,
         resample_period=50_000,
         targeting_post_resample_hiatus=0,
-        targeting_post_resample_cooldown=0.2,
+        targeting_post_resample_step_size_warmup=0.2,
         # resample_delay=0.69,
     ),
     l0_target=25,

@@ -14,11 +14,49 @@ from saeco.components.losses import (
 )
 from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
 from saeco.core import Cache
-from saeco.trainer.normalizers import ConstL2Normalizer, Normalized, Normalizer
-from saeco.trainer.train_cache import TrainCache
+from .normalizers import ConstL2Normalizer, Normalized, Normalizer
+from .train_cache import TrainCache
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.architecture.architecture import SAE
+
+from functools import wraps
+
+
+def make_cache_optional(fn):
+    @wraps(fn)
+    def wrapper(self, *args, cache: TrainCache | None = None, **kwargs):
+        made_cache = False
+        if cache is None:
+            cache = TrainCache()
+            made_cache = True
+
+        out = fn(self, *args, cache=cache, **kwargs)
+
+        if made_cache:
+            cache.destruct()
+            del cache
+        return out
+
+    return wrapper
 
 
 class Trainable(cl.Module):
+    """
+    current responsibilities:
+    normalization:
+        this handles normalization for both model io
+        model losses in particular
+        holds and can create the normalizer
+         - not responsible for priming the normalizer
+    sets up the resampling and holds the resampler
+    losses/metrics:
+        generate the total loss from all losses
+    creates cache if no cache is provided (operability with external code)
+
+
+    """
 
     losses: dict[Loss]
     model: cl.Module
@@ -27,7 +65,7 @@ class Trainable(cl.Module):
 
     def __init__(
         self,
-        models: list[cl.Module],
+        models: list["SAE"],
         losses: Optional[dict[str, Loss]] = None,
         extra_losses: Optional[dict[str, Loss]] = None,
         metrics: Optional[dict[str, Loss]] = None,
@@ -65,7 +103,8 @@ class Trainable(cl.Module):
             }
         )
         self.model = self.normalizer.io_normalize(models[0])
-
+        self.encode_only = self.normalizer.input_normalize(models[0].encoder)
+        self.decode_only = self.normalizer.output_denormalize(models[0].decoder)
         if resampler:
             self.resampler = resampler
         elif resampler is None:
@@ -96,25 +135,27 @@ class Trainable(cl.Module):
         assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
         return loss
 
-    def forward(self, x: torch.Tensor, cache: Cache = None) -> torch.Tensor:
+    def rearrange(self, x: torch.Tensor):
         shape = None
         if x.ndim == 3:
             shape = x.shape
             x = einops.rearrange(x, "doc seq data -> (doc seq) data")
+        elif x.ndim != 2:
+            raise NotImplementedError
+        return x, shape
 
-        made_cache = False
-        if cache is None:
-            cache = TrainCache()
-            made_cache = True
+    def dearrange(self, x: torch.Tensor, shape: tuple[int, int]):
+        if shape is None:
+            return x
+        return einops.rearrange(
+            x, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
+        )
+
+    @make_cache_optional
+    def forward(self, x: torch.Tensor, *, cache: Cache) -> torch.Tensor:
+        x, shape = self.rearrange(x)
         out = self.model(x, cache=cache)
-        if made_cache:
-            cache.destruct()
-            del cache
-        if shape is not None:
-            out = einops.rearrange(
-                out, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
-            )
-        return out
+        return self.dearrange(out, shape)
 
     def get_losses_and_metrics_names(self) -> list[str]:
         return (
@@ -154,15 +195,25 @@ class Trainable(cl.Module):
     def make_cache(self) -> TrainCache:
         return TrainCache()
 
-    def get_acts(self, x, cache: TrainCache = None):
-        made_cache = False
-        if cache is None:
-            cache = self.make_cache()
-            made_cache = True
+    @make_cache_optional
+    def get_acts(self, x, cache: TrainCache = None, pre_acts=False):
         cache.acts = ...
+        if pre_acts:
+            cache.pre_acts = ...
         cache(self)(x)
         acts = cache.acts
-        if made_cache:
-            cache.destruct()
-            del cache
+        if pre_acts:
+            preacts = cache.pre_acts
+        if pre_acts:
+            return acts, preacts
         return acts
+
+    @make_cache_optional
+    def encode(self, x, cache: TrainCache = None):
+        x, shape = self.rearrange(x)
+        return self.dearrange(cache(self).encode_only(x), shape)
+
+    @make_cache_optional
+    def decode(self, x, cache: TrainCache = None):
+        x, shape = self.rearrange(x)
+        return self.dearrange(cache(self).decode_only(x), shape)

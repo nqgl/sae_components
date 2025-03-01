@@ -1,12 +1,6 @@
 from functools import cache, cached_property
 from pathlib import Path
-from typing import TypeVar
 
-from saeco.architectures.outdated.gate_hierarch import (
-    HGatesConfig,
-    hierarchical_softaux,
-    HierarchicalSoftAuxConfig,
-)
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.initializer import Initializer
 from saeco.initializer.initializer_config import InitConfig
@@ -120,7 +114,7 @@ class TrainingRunner:
             self.cfg.train_cfg,
             run_cfg=self.cfg,
             model=self.trainable,
-            wandb_run_label=self.name,
+            run_name=self.name,
             reload_info=ModelReloadInfo.from_model_fn(self.model_fn),
         )
         # trainer.post_step()

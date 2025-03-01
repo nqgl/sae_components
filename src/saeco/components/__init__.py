@@ -14,3 +14,5 @@ from .metrics.metrics import Metrics
 from .features.features import EncoderBias
 from . import ops
 from ..misc.utils import useif
+from .components.if_training import IfTraining
+from .components.mlp import MLP, FeedForward

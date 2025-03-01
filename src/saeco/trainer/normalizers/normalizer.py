@@ -31,6 +31,21 @@ class Normalizer(cl.Module, ABC):
     def input_normalize(self, module) -> "NormalizedInputs":
         return NormalizedInputs(model=module, normalizer=self)
 
+    def output_denormalize(self, module) -> "DeNormalizedOutputs":
+        return DeNormalizedOutputs(model=module, normalizer=self)
+
+    def get_denormalizer(self):
+        return DeNormalizer(self)
+
+
+class DeNormalizer(cl.Module):
+    def __init__(self, normalizer: Normalizer):
+        super().__init__()
+        self.normalizer = normalizer
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        return self.normalizer.invert(x, cache=cache, **kwargs)
+
 
 class Normalized(cl.Module):
     model: cl.Module
@@ -52,10 +67,42 @@ class NormalizedIO(Normalized):
         )
 
 
+# class NormalizedIO2(Normalized):
+#     def __init__(
+#         self,
+#         model: cl.Module,
+#         normalizer: Normalizer,
+#         normalize_in=True,
+#         denormalize_out=True,
+#     ):
+#         super().__init__(model, normalizer)
+#         self.normalize_in = normalize_in
+#         self.denormalize_out = denormalize_out
+
+
+#     def forward(self, x, *, cache: cl.Cache, **kwargs):
+#         if self.normalize_in:
+#             x = self.normalizer(x, cache=cache["normalization"])
+#         if self.denormalize_out:
+#             return self._normalizer.invert(
+#                 self.model(x, cache=cache["normalized"]),
+#                 cache=cache["normalization"],
+#             )
+#         else:
+#             return self.model(x, cache=cache["normalized"])
+
+
 class NormalizedInputs(Normalized):
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         x_normed = self.normalizer(x, cache=cache["normalization"])
         return self.model(x_normed, cache=cache["normalized"])
+
+
+class DeNormalizedOutputs(Normalized):
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        return self._normalizer.invert(
+            self.model(x, cache=cache["normalized"]), cache=cache["normalization"]
+        )
 
 
 class AffineNormalizer(Normalizer):
@@ -428,6 +475,41 @@ class GeneralizedNormalizer(Normalizer):
         if self.cfg.std_e == Aggregation.BATCH_AVG:
             return self.elementwise_std(x)
         return torch.abs(self._std_e) + 1e-07
+
+
+class StaticInvertibleGeneralizedNormalizer(GeneralizedNormalizer):
+    def __init__(self, init, cfg: GNConfig, eps=1e-7):
+
+        static_aggs = (
+            Aggregation.DONTUSE,
+            Aggregation.PRIMED,
+            Aggregation.RUNNING_AVG,
+            Aggregation.LEARNED,
+        )
+
+        static_saggs = (
+            SAggregation.DONTUSE,
+            SAggregation.PRIMED,
+        )
+        assert (
+            cfg.mu_e in static_aggs
+        ), f"{cfg.mu_e} is not a static aggregation but is being used with a static-invertible normalizer"
+        assert (
+            cfg.std_e in static_aggs
+        ), f"{cfg.std_e} is not a static aggregation but is being used with a static-invertible normalizer"
+        assert (
+            cfg.mu_s in static_saggs
+        ), f"{cfg.mu_s} is not a static aggregation but is being used with a static-invertible normalizer"
+        assert (
+            cfg.std_s in static_saggs
+        ), f"{cfg.std_s} is not a static aggregation but is being used with a static-invertible normalizer"
+
+        super().__init__(init, cfg, eps)
+
+    def invert(self, x, *, cache: cl.Cache, **kwargs):
+        return x * (self.std_s(None) * self.std_e(None)) + (
+            self.mu_s(None) + self.mu_e(None)
+        )
 
 
 def main():

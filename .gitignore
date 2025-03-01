@@ -9,3 +9,6 @@ models-from-remote/
 *.bin
 *.metadata
 *.json
+*.safetensors
+testdata/
+.vscode/

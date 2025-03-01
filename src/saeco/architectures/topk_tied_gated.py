@@ -20,6 +20,7 @@ from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 import saeco.core as cl
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 from saeco.trainer import RunSchedulingConfig
@@ -27,7 +28,7 @@ from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.data import DataConfig, ModelConfig, ActsDataConfig
-from saeco.sweeps import Swept, do_sweep
+from saeco.sweeps import do_sweep
 
 from saeco.architectures.prolu.prolu import ProLUConfig, PProLU, thresh_from_bwd
 from torch.cuda.amp import custom_bwd, custom_fwd
@@ -274,7 +275,7 @@ train_cfg = TrainConfig(
         run_length=50_000,
         resample_period=10_000,
         targeting_post_resample_hiatus=0,
-        targeting_post_resample_cooldown=0.5,
+        targeting_post_resample_step_size_warmup=0.5,
         lr_resample_warmup_factor=0.3,
         targeting_delay=0,
         # resample_delay=0.69,
