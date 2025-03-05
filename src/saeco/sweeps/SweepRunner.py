@@ -1,4 +1,3 @@
-from saeco.architecture.arch_reload_info import ArchRef
 from saeco.mlog import mlog
 
 

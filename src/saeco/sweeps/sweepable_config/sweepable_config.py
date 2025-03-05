@@ -20,7 +20,7 @@ from typing_extensions import dataclass_transform
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
-from saeco.sweeps.sweepable_config.shared_fns import has_sweep
+from saeco.sweeps.sweepable_config.has_sweep import has_sweep
 
 from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Op, Val
 from types import UnionType, GenericAlias

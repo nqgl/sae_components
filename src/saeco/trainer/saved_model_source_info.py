@@ -4,12 +4,17 @@ import torch
 import inspect
 import importlib
 
+from typing_extensions import deprecated
+
 
 def get_src(fn):
     module = importlib.import_module(fn.__module__)
     return inspect.getsource(module)
 
 
+@deprecated(
+    "Deprecated as part of migration to Architecture. ArchReloadInfo replaces this functionality"
+)
 class ModelReloadInfo(BaseModel):
     module: str
     fn_name: str

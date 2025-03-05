@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Protocol
 
 import wandb
-from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
 
 

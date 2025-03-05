@@ -1,7 +1,7 @@
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
-from saeco.sweeps.sweepable_config.shared_fns import has_sweep
+from saeco.sweeps.sweepable_config.has_sweep import has_sweep
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel, Field

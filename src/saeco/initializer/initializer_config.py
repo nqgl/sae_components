@@ -1,4 +1,3 @@
-from saeco.misc.lazy import lazyprop
 from saeco.sweeps import SweepableConfig
 
 

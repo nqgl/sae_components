@@ -8,51 +8,21 @@ from pathlib import Path
 from typing import Protocol, Generator
 from pydantic import BaseModel
 import time
-import wandb
 from saeco.architecture.arch_reload_info import ArchClassRef, ArchRef
-from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
 from attrs import define, field
 from saeco.mlog import mlog
 from saeco.architecture import Architecture
 from .SweepRunner import SweepRunner
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic
 from typing_extensions import TypeVar
+import json
 
 if TYPE_CHECKING:
     from ezpod import Pods
 
 
-class SweepFile(Protocol):
-    PROJECT: str
-    cfg: SweepableConfig
-
-    def run(self, cfg: SweepableConfig): ...
-
-
-from typing import Generic
-import json
-
 T = TypeVar("T", default=SweepableConfig)
-
-
-# class SweepData2(BaseModel, Generic[T]):
-#     arch_class_ref: ArchClassRef
-#     root_config: T
-#     sweep_id: str
-
-#     @classmethod
-#     def load(cls, path: Path) -> "SweepData":
-#         data = json.loads(path.read_text())
-#         arch_cls_ref = ArchClassRef.model_validate(data["arch_class_ref"])
-#         arch_cls = arch_cls_ref.get_arch_class()
-#         return cls[arch_cls.get_config_class()].model_validate(data)
-
-#     def save(self, path: Path | None):
-#         if path is None:
-#             path = Path(f"sweeprefs/{self.sweep_id}.json")
-#         path.write_text(self.model_dump_json())
-#         return path
 
 
 class SweepData(BaseModel, Generic[T]):
