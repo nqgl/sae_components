@@ -171,6 +171,12 @@ class SweepVar(SweepExpression[T]):
 
     @property
     def generic_type(self):
+        try:  # take explicitly designated type if one is given
+            t = super().generic_type
+        except:
+            t = None
+        if t is not None:
+            return t
         assert len(self.values) > 0
         types = {type(v) for v in self.values}
         if len(types) == 1:
