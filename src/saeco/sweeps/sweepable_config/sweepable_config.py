@@ -107,7 +107,7 @@ def Sweepable(t, name=None):
     # ]
     from .sweep_expressions import Op
 
-    return Union[Op[t], Swept[t], t]
+    return Union[Op[s_t], Swept[s_t], s_t]
 
 
 @dataclass_transform(
@@ -274,6 +274,17 @@ def _instantiate_sweepexpressions(target, obj: "SweepableConfig", swept_vars):
         # acc_path(target, path[:-1])
 
 
+def _get_sweep_expression_instantiations_dict(
+    obj: "SweepableConfig", swept_vars
+) -> dict:
+    paths = obj.to_swept_nodes().get_paths_to_sweep_expressions()
+    d = {}
+    for path in paths:
+        t: SweepExpression = acc_path(obj, path)
+        d["/".join(path)] = t.evaluate(swept_vars)
+    return d
+
+
 def fix_paramize(d):
     if not isinstance(d, dict):
         return d
@@ -312,12 +323,10 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
         return d
 
     def from_selective_sweep(self, sweep: dict):
-        # mydict = self.model_dump()
-        # _merge_dicts_left(mydict, sweep)
         sweep = sweep.copy()
         print("sweep", sweep)
-        copy = self.model_copy(deep=True)
-        p = _get_sweepvars(copy)
+        self_copy = self.model_copy(deep=True)  # I think this is no longer needed
+        p = _get_sweepvars(self_copy)
         var_data = sweep.pop("sweep_vars")
         if not p:
             #     # sv_dict = {var.name: var for var in p}
@@ -326,18 +335,27 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
             # else:
             print("no sweep vars?")
             print("self paths", self.to_swept_nodes().get_paths_to_sweep_expressions())
-            print("copy paths", copy.to_swept_nodes().get_paths_to_sweep_expressions())
+            print(
+                "copy paths",
+                self_copy.to_swept_nodes().get_paths_to_sweep_expressions(),
+            )
 
             assert "sweep_vars" not in sweep or sweep["sweep_vars"] == {}, (
                 self.to_swept_nodes().get_paths_to_sweep_expressions(),
-                copy.to_swept_nodes().get_paths_to_sweep_expressions(),
+                self_copy.to_swept_nodes().get_paths_to_sweep_expressions(),
                 sweep["sweep_vars"],
             )
-        mydict2 = copy.model_dump()
-        _merge_dicts_left2(mydict2, sweep, copy)
-        _instantiate_sweepexpressions(mydict2, copy, var_data)
-        # mydict2["train_cfg"]["data_cfg"]
-        return copy.model_validate(mydict2)
+        instantiate_dump = self_copy.model_dump()
+        _merge_dicts_left2(instantiate_dump, sweep, self_copy)
+        _instantiate_sweepexpressions(instantiate_dump, self_copy, var_data)
+        return self_copy.model_validate(instantiate_dump)
+
+    def get_sweepexpression_instantiations(self, sweep: dict):
+        p = _get_sweepvars(self)
+        if not p or "sweep_vars" not in sweep:
+            return {}
+        var_data = sweep.get("sweep_vars")
+        return _get_sweep_expression_instantiations_dict(self, var_data)
 
     def random_sweep_inst_dict(self):
         d = _to_randomly_selected_dict(self)
