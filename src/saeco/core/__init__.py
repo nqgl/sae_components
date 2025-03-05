@@ -1,10 +1,5 @@
 from .module import Module
 from .cache import Cache
-from .cache_layer import (
-    CacheLayer,
-    CacheLayerConfig,
-    CacheProcLayer,
-)
 from .collections import Parallel, Seq, Router, ResidualSeq
 from . import collections
 from .pass_through import PassThroughModule

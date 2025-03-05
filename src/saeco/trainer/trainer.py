@@ -10,9 +10,8 @@ from torch.amp import GradScaler
 
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from saeco.core import Cache
-from saeco.data.model_cfg import ModelConfig
 from saeco.data.tokens_data import TokensData
-from .OptimConfig import get_optim_cls, OptimConfig
+from .OptimConfig import get_optim_cls
 from .call_training_hooks import (
     do_pre_forward,
     do_post_forward,
