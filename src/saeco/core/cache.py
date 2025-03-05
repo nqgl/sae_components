@@ -426,12 +426,20 @@ class Cache:
                 nex.extend(c._subcaches.values())
         return l
 
-    def _search_children(self, attr):
-        l = []
-        for k, v in self._subcaches.items():
-            if v._has(attr):
-                l.append(v)
-        return l
+    def find_singular(self, attr: str):
+        l = self.search(attr)
+        if len(l) != 1:
+            raise ValueError(
+                f"found {len(l)} caches with attr {attr}. expected exactly one."
+            )
+        return getattr(l[0], attr)
+
+    # def _search_children(self, attr):
+    #     l = []
+    #     for k, v in self._subcaches.items():
+    #         if v._has(attr):
+    #             l.append(v)
+    #     return l
 
     @property
     def _ancestor(self):
