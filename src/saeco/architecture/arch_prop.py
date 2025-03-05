@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from functools import cached_property
 from collections import defaultdict
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, TypeVar, Generic, overload
 import types
 
 if TYPE_CHECKING:
@@ -9,6 +9,8 @@ if TYPE_CHECKING:
 
 _fields_dict = defaultdict(dict)  # (cls -> (field_categ_name -> field_name/names))
 _missing_name = set()
+_T = TypeVar("_T")
+_C = TypeVar("_C")
 
 
 def _getfields(cls: type, FIELD_NAME):
@@ -45,13 +47,19 @@ def hasfield(cls: type, FIELD_NAME):
     return FIELD_NAME in cls_d
 
 
-class arch_prop(cached_property):
-    COLLECTED_FIELD_NAME = ...
+class arch_prop(cached_property, Generic[_T]):
+    # COLLECTED_FIELD_NAME = ...
     COLLECTED_FIELD_SINGULAR = False
 
-    def __init__(self, func: Callable[[Any], Any]) -> None:
+    def __init__(self, func: Callable[[Any], _T]) -> None:
         super().__init__(func)
         _missing_name.add(self)
+
+    @overload
+    def __get__(self, instance: None, owner: Any = ...) -> "arch_prop[_T]": ...
+
+    @overload
+    def __get__(self, instance: _C, owner: Any = ...) -> _T: ...
 
     def __get__(self, instance: "Architecture", owner=None):
         return super().__get__(instance, owner)
@@ -93,7 +101,40 @@ class arch_prop(cached_property):
         return {f: getattr(inst, f) for f in fields}
 
 
-class _model_prop_base(arch_prop):
+class loss_prop(arch_prop[_T]):
+    @overload
+    def __get__(self, instance: None, owner: Any = ...) -> "loss_prop[_T]": ...
+
+    @overload
+    def __get__(self, instance: _C, owner: Any = ...) -> _T: ...
+
+    def __get__(self, instance, owner=None):
+        return super().__get__(instance, owner)
+
+
+class component(arch_prop[_T]):
+    @overload
+    def __get__(self, instance: None, owner: Any = ...) -> "component[_T]": ...
+
+    @overload
+    def __get__(self, instance: _C, owner: Any = ...) -> _T: ...
+
+    def __get__(self, instance, owner=None):
+        return super().__get__(instance, owner)
+
+
+class metric_prop(arch_prop[_T]):
+    @overload
+    def __get__(self, instance: None, owner: Any = ...) -> "metric_prop[_T]": ...
+
+    @overload
+    def __get__(self, instance: _C, owner: Any = ...) -> _T: ...
+
+    def __get__(self, instance, owner=None):
+        return super().__get__(instance, owner)
+
+
+class _model_prop_base(arch_prop[_T]):
     """
     Base class for model_prop and aux_model_prop.
     Adds on top of arch_prop: methods for attaching losses and metrics to a model.
@@ -122,25 +163,29 @@ class _model_prop_base(arch_prop):
         return metric_prop(_metric)
 
 
-class loss_prop(arch_prop):
-    def __get__(self, instance, owner=None):
-        return super().__get__(instance, owner)
-
-
-class metric_prop(arch_prop):
-    def __get__(self, instance, owner=None):
-        return super().__get__(instance, owner)
-
-
-class model_prop(_model_prop_base):
+class model_prop(_model_prop_base[_T]):
     COLLECTED_FIELD_SINGULAR = True
 
+    @overload
+    def __get__(self, instance: None, owner: Any = ...) -> "model_prop[_T]": ...
+
+    @overload
+    def __get__(self, instance: _C, owner: Any = ...) -> _T: ...
+
     def __get__(self, instance, owner=None):
         return super().__get__(instance, owner)
 
+    loss = loss_prop
 
-class aux_model_prop(_model_prop_base):
+
+class aux_model_prop(_model_prop_base[_T]):
     COLLECTED_FIELD_SINGULAR = False
+
+    @overload
+    def __get__(self, instance: None, owner: Any = ...) -> "aux_model_prop[_T]": ...
+
+    @overload
+    def __get__(self, instance: _C, owner: Any = ...) -> _T: ...
 
     def __get__(self, instance, owner=None):
         return super().__get__(instance, owner)
