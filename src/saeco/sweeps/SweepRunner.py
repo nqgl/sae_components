@@ -19,23 +19,41 @@ class SweepRunner:
     sweep_hash: str | None = field(default=None)
 
     def run_sweep(self):
+        run_name = f"{self.sweep_data.root_arch_ref.class_ref.cls_name}"
+        if self.sweep_index is not None:
+            run_name = f"{run_name}_{self.sweep_index}"
+        run_name = f"{self.sweep_id}:{run_name}"
+
         with mlog.enter(
-            arch_ref=self.sweep_data.root_arch_ref, project=self.sweep_data.project
+            arch_ref=self.sweep_data.root_arch_ref,
+            project=self.sweep_data.project,
+            run_name=run_name,
         ):
-            print("run_sweep entered")
 
             arch = self.sweep_data.root_arch_ref.load_arch()
-            arch.instantiate(mlog.config())
+            cfg = mlog.config()
+            arch.instantiate(cfg)
             mlog.update_config(full_cfg=arch.run_cfg.model_dump())
-            # mlog.update_config(sweep=self.sweep_data)
+            self.log_sweep_info(cfg)
             arch.run_training()
         return arch
+
+    def log_sweep_info(self, cfg: SweepableConfig):
+        mlog.log_sweep(
+            cfg,
+            sweep_data=self.sweep_data,
+            sweep_index=self.sweep_index,
+            sweep_hash=self.sweep_hash,
+        )
 
     def run_random_instance(self):
         arch = self.sweep_data.root_arch_ref.load_arch()
         cfg: SweepableConfig = self.sweep_data.root_arch_ref.config
         arch.instantiate(cfg.to_swept_nodes().random_selection())
-        with mlog.enter(arch_ref=self.sweep_data.root_arch_ref):
+        with mlog.enter(
+            arch_ref=self.sweep_data.root_arch_ref,
+            run_name=self.sweep_data.root_arch_ref.class_ref.cls_name,
+        ):
             mlog.update_config(full_cfg=arch.run_cfg.model_dump())
             arch.run_training()
         return arch
