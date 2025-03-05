@@ -23,9 +23,31 @@ def find_and_call_attr_on_modules(module: nn.Module, attr: str, *args, **kwargs)
     return {m: fn(*args, **kwargs) for fn, m in fns.items()}
 
 
-def do_post_backward(module: nn.Module):
+def do_post_backward(module: nn.Module, cache=None):
     find_and_call_attr_on_modules(module, "post_backward_hook")
+    if cache is not None:
+        find_and_call_attr_on_modules(
+            module, "post_backward_hook_with_cache", cache=cache
+        )
 
 
-def do_post_step(module: nn.Module):
+def do_post_step(module: nn.Module, cache=None):
     find_and_call_attr_on_modules(module, "post_step_hook")
+    if cache is not None:
+        find_and_call_attr_on_modules(module, "post_step_hook_with_cache", cache=cache)
+
+
+def do_pre_forward(module: nn.Module, cache=None):
+    find_and_call_attr_on_modules(module, "pre_forward_hook")
+    if cache is not None:
+        find_and_call_attr_on_modules(
+            module, "pre_forward_hook_with_cache", cache=cache
+        )
+
+
+def do_post_forward(module: nn.Module, cache=None):
+    find_and_call_attr_on_modules(module, "post_forward_hook")
+    if cache is not None:
+        find_and_call_attr_on_modules(
+            module, "post_forward_hook_with_cache", cache=cache
+        )
