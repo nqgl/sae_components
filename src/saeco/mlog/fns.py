@@ -1,5 +1,4 @@
 import os
-from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -258,15 +257,3 @@ def get_logger() -> Logger | NeptuneLogger:
         return WandbLogger()
     else:
         return NoOpLogger()
-
-
-# logger_instance = get_logger()
-# if CUSTOM_SWEEP:
-#     logger_instance = CustomSweeper(logger_instance)
-
-
-# @contextmanager
-# def enter(project=None, config=None, run_name=None):
-#     logger_instance.init(project=project, config=config, run_name=run_name)
-#     yield
-#     logger_instance.finish()

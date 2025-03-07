@@ -6,7 +6,6 @@ from saeco.architecture.arch_reload_info import ArchStoragePaths
 
 
 class CachingConfig(BaseModel):
-    model_name: str | None = None
     model_path: ArchStoragePaths | None = None
     docs_per_chunk: int = 100
     num_chunks: int = 30
