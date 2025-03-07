@@ -176,7 +176,7 @@ if TYPE_CHECKING:
 class CustomSweeper(Logger):
     root_config: SweepableConfig
 
-    def __init__(self, prev_logger: Logger):
+    def __init__(self, prev_logger: NeptuneLogger):
         # self._config: SweepableConfig = None
         self.root_config: SweepableConfig = SweepableConfig()
         self._sweep_inst_config = None
@@ -207,21 +207,41 @@ class CustomSweeper(Logger):
         sweep_hash,
         project=None,
     ):
-        # assert self.sweep_data is None and self._config is None
-        # self.sweep_data = sweep_data
         self.root_config: SweepableConfig = sweep_data.root_arch_ref.config
-        sweep_instance_selective = (
+        selective_instance_sweep_dict = (
             self.root_config.to_swept_nodes().select_instance_by_index(sweep_index)
         )
         cfg: SweepableConfig = self.root_config.from_selective_sweep(
-            sweep_instance_selective
+            selective_instance_sweep_dict
         )
         assert cfg.get_hash() == sweep_hash, f"{cfg.get_hash()} != {sweep_hash}"
-        self._sweep_inst_config = sweep_instance_selective
+        self._sweep_inst_config = selective_instance_sweep_dict
         if project:
             self.prev_logger.project = project
 
         function()
+
+    def log_sweep(
+        self,
+        selective_instance_sweep_dict: dict,
+        sweep_data: "SweepData",
+        sweep_index,
+        sweep_hash,
+    ):
+        selective_instance_sweep_dict = selective_instance_sweep_dict.copy()
+
+        self.prev_logger.update_namespace(
+            "sweep",
+            {
+                "swept": selective_instance_sweep_dict,
+                "sweep_id": sweep_data.sweep_id,
+                "sweep_index": sweep_index,
+                "sweep_hash": sweep_hash,
+                "sweep_expressions": self.root_config.get_sweepexpression_instantiations(
+                    selective_instance_sweep_dict
+                ),
+            },
+        )
 
     def config_get(self):
         return self._sweep_inst_config

@@ -123,14 +123,14 @@ class Trainable(cl.Module):
     def loss(self, x, *, cache: TrainCache, y=None, coeffs={}):
         coeffs = dict(coeffs)
         loss = 0
-        for k, L in self.losses.items():
-            m = L(x, y=y, cache=cache[k])
-            setattr(cache, k, m)
-            loss += m * coeffs.pop(k, 1)
+        for key, loss_fn in self.losses.items():
+            m = loss_fn(x, y=y, cache=cache[key])
+            setattr(cache, key, m)
+            loss += m * coeffs.pop(key, 1)
         cache.loss = loss.item()
-        for k, L in self.metrics.items():
-            m = L(x, y=y, cache=cache[k]) * coeffs.pop(k, 1)
-            setattr(cache, k, m)
+        for key, metric_fn in self.metrics.items():
+            m = metric_fn(x, y=y, cache=cache[key]) * coeffs.pop(key, 1)
+            setattr(cache, key, m)
 
         assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
         return loss

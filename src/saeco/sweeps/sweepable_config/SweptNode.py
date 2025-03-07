@@ -1,8 +1,8 @@
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
-from saeco.sweeps.sweepable_config.shared_fns import has_sweep
-from typing import TYPE_CHECKING, TypeVar
+from saeco.sweeps.sweepable_config.has_sweep import has_sweep
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -166,7 +166,7 @@ class SweptNode(BaseModel):
     def alphabetize_dict(cls, d: dict[str, T]) -> dict[str, T]:
         return {k: v for k, v in sorted(d.items(), key=lambda x: x[0])}
 
-    def select_instance_by_index(self, i, sweep_vars=None):
+    def select_instance_by_index(self, i, sweep_vars=None) -> dict[str, Any]:
         if not 0 <= i < self.swept_combinations_count_including_vars():
             raise IndexError("i should be less than the number of combinations")
         if sweep_vars is None:

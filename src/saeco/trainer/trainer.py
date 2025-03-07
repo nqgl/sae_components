@@ -10,17 +10,20 @@ from torch.amp import GradScaler
 
 from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from saeco.core import Cache
-from saeco.data.model_cfg import ModelConfig
 from saeco.data.tokens_data import TokensData
-from .OptimConfig import get_optim_cls, OptimConfig
-from .post_backward_normalization import do_post_backward, do_post_step
+from .OptimConfig import get_optim_cls
+from .call_training_hooks import (
+    do_pre_forward,
+    do_post_forward,
+    do_post_backward,
+    do_post_step,
+)
 from .train_cache import TrainCache
 from .train_config import TrainConfig
 from .trainable import Trainable
 from .l0targeter import L0Targeter, TARGETER_TYPES
 from .recons import get_recons_loss
 from .run_config import RunConfig
-from .saved_model_source_info import ModelReloadInfo
 from saeco.mlog import mlog
 
 # torch.multiprocessing.set_start_method("spawn")
@@ -133,11 +136,17 @@ class Trainer:
     def subject_model(self):
         return self.cfg.data_cfg.model_cfg.model
 
-    def post_backward(self):
-        do_post_backward(self.trainable)
+    def pre_forward(self, cache):
+        do_pre_forward(self.trainable, cache)
 
-    def post_step(self):
-        do_post_step(self.trainable)
+    def post_forward(self, cache):
+        do_post_forward(self.trainable, cache)
+
+    def post_backward(self, cache=None):
+        do_post_backward(self.trainable, cache)
+
+    def post_step(self, cache=None):
+        do_post_step(self.trainable, cache)
 
     def log(self, d):
         # if wandb.run is not None:
@@ -262,7 +271,6 @@ class Trainer:
 
             cache = self.get_cache()
             self.trainstep(x, cache)
-
             self.full_log(cache)
             self.t += 1
             cache.destruct()
@@ -297,28 +305,30 @@ class Trainer:
             )
         return self._nullcontext()
 
-    def handle_backward(self, loss):
+    def handle_backward(self, loss, cache):
         if self.cfg.use_autocast:
             self.gradscaler.scale(loss).backward()
         else:
             loss.backward()
-        self.post_backward()
+        self.post_backward(cache)
 
-    def handle_step(self):
+    def handle_step(self, cache):
         if self.cfg.use_autocast:
             self.gradscaler.step(self.optim)
             self.gradscaler.update()
         else:
             self.optim.step()
         self.lr_scheduler.step()
-        self.post_step()
+        self.post_step(cache)
 
     def trainstep(self, x, cache: Cache):
+        self.pre_forward(cache)
         with self.cast():
             loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
             self.proc_cache_after_forward(cache)
-        self.handle_backward(loss)
-        self.handle_step()
+        self.post_forward(cache)
+        self.handle_backward(loss, cache)
+        self.handle_step(cache)
 
     def eval_step(self, x):
         if self.cfg.use_averaged_model:

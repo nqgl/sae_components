@@ -5,13 +5,9 @@ from typing import Optional
 import torch.nn as nn
 from torch import Tensor
 
-
+from functools import cached_property
 from abc import abstractmethod
 from saeco.components.features.features_param import FeaturesParam
-
-
-# @property
-# def features_grad(self) -> Optional[Tensor]: ...
 
 
 class LinWeights(WrapsModule):
@@ -52,12 +48,8 @@ class LinWeights(WrapsModule):
         return self
 
 
-from saeco.misc import lazycall, lazyprop
-
-
 class LinDecoder(LinWeights):
-    @property
-    @lazycall
+    @cached_property
     def features(self) -> dict[str, FeaturesParam]:
         return {
             "weight": FeaturesParam(self.get_weight(), feature_index=1, fptype="dec")
@@ -73,8 +65,7 @@ class LinDecoder(LinWeights):
 
 
 class LinEncoder(LinWeights):
-    @property
-    @lazycall
+    @cached_property
     def features(self) -> dict[str, FeaturesParam]:
         d = {
             "weight": FeaturesParam(self.get_weight(), feature_index=0, fptype="enc"),
@@ -90,8 +81,7 @@ class LongEncoder(LinWeights):  # TODO wip
         self.split = split
         self.bfs = bfs
 
-    @property
-    @lazycall
+    @cached_property
     def features(self) -> dict[str, FeaturesParam]:
 
         d = {

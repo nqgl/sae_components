@@ -8,50 +8,21 @@ from pathlib import Path
 from typing import Protocol, Generator
 from pydantic import BaseModel
 import time
-import wandb
 from saeco.architecture.arch_reload_info import ArchClassRef, ArchRef
-from saeco.misc import lazyprop
 from saeco.sweeps.sweepable_config import SweepableConfig
 from attrs import define, field
 from saeco.mlog import mlog
 from saeco.architecture import Architecture
 from .SweepRunner import SweepRunner
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic
+from typing_extensions import TypeVar
+import json
 
 if TYPE_CHECKING:
     from ezpod import Pods
 
 
-class SweepFile(Protocol):
-    PROJECT: str
-    cfg: SweepableConfig
-
-    def run(self, cfg: SweepableConfig): ...
-
-
-from typing import TypeVar, Generic
-import json
-
-T = TypeVar("T", bound=SweepableConfig)
-
-
-# class SweepData2(BaseModel, Generic[T]):
-#     arch_class_ref: ArchClassRef
-#     root_config: T
-#     sweep_id: str
-
-#     @classmethod
-#     def load(cls, path: Path) -> "SweepData":
-#         data = json.loads(path.read_text())
-#         arch_cls_ref = ArchClassRef.model_validate(data["arch_class_ref"])
-#         arch_cls = arch_cls_ref.get_arch_class()
-#         return cls[arch_cls.get_config_class()].model_validate(data)
-
-#     def save(self, path: Path | None):
-#         if path is None:
-#             path = Path(f"sweeprefs/{self.sweep_id}.json")
-#         path.write_text(self.model_dump_json())
-#         return path
+T = TypeVar("T", default=SweepableConfig)
 
 
 class SweepData(BaseModel, Generic[T]):
@@ -91,7 +62,19 @@ class SweepData(BaseModel, Generic[T]):
             arch_ref.class_ref.get_arch_class().get_config_class()
         ].model_validate_json(path.read_text())
 
+    def get_sweep_number(self, name: str = "") -> int:
+        proj = Path(f"./sweeprefs/{self.project}")
+        num = len(list(proj.glob(f"{name}*.sweepdata")))
+
+        while Path(f"./sweeprefs/{self.project}/{name}{num}.sweepdata").exists():
+            num += 1
+        return num
+
     def save(self, path: Path | None):
+        if self.sweep_id is None:
+            self.sweep_id = self.get_sweep_number()
+        elif not any([c.isnumeric() for c in self.sweep_id]):
+            self.sweep_id += str(self.get_sweep_number(self.sweep_id))
         if path is None:
             path = Path(f"./sweeprefs/{self.project}/{self.sweep_id}.sweepdata")
             if path.exists():
@@ -115,17 +98,23 @@ class SweepManager:
     def cfg(self):
         return self.arch.run_cfg
 
-    def initialize_sweep(self, project=None, custom_sweep=False):
+    def initialize_sweep(
+        self, project=None, custom_sweep=True, run_type_str: str = "sweep"
+    ):
         assert self.sweep_data is None and self.sweep_data_path is None
-        if self.cfg.is_concrete():
+        if self.cfg.is_concrete() and not custom_sweep:
             raise ValueError(
                 "tried to initialize sweep on a config with no swept fields"
             )
         if custom_sweep:
-            import datetime
+            sweep_id = run_type_str
+            # import datetime
 
-            sweep_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            # sweep_id = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            # if run_type_str:
+            #     sweep_id = f"{run_type_str}_{sweep_id}"
         else:
+            assert not run_type_str
             sweep_id = mlog.create_sweep(self.cfg.to_swept_nodes(), project=project)
         self.sweep_data = SweepData.from_arch_and_id(
             self.arch, sweep_id, project=project
@@ -133,11 +122,27 @@ class SweepManager:
         self.sweep_data_path = self.sweep_data.save(None)
 
     def rand_run_no_agent(self):
-        arch_ref = ArchRef.from_arch(self.arch)
-        sweeprunner = SweepRunner(arch_ref)
+        if not self.sweep_data:
+            self.initialize_sweep(custom_sweep=True, run_type_str="rand")
+        sweeprunner = SweepRunner(self.sweep_data)
         return sweeprunner.run_random_instance()
 
+    def run_local_inst_by_index(self, index: int):
+        if not self.sweep_data:
+            self.initialize_sweep(custom_sweep=True, run_type_str="indexed_single")
+
+        cfg: SweepableConfig = self.sweep_data.root_arch_ref.config
+        cfg_nodes = cfg.to_swept_nodes()
+        cfg_i = cfg_nodes.select_instance_by_index(index)
+        inst_cfg = cfg.from_selective_sweep(cfg_i)
+        cfg_hash = inst_cfg.get_hash()
+        sweeprunner = SweepRunner(
+            self.sweep_data, sweep_index=index, sweep_hash=cfg_hash
+        )
+        return sweeprunner.start_sweep_agent()  # is this right?
+
     def local_sweep(self):
+        assert False, "method needs update on sweeprunner init"
         arch_ref = ArchRef.from_arch(self.arch)
         sweeprunner = SweepRunner(arch_ref, self.sweep_data.sweep_id)
         return sweeprunner.start_sweep_agent()

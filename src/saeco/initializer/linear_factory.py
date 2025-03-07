@@ -2,7 +2,8 @@ from saeco.core.basic_ops import Sub
 import torch
 from typing import Optional
 import torch.nn as nn
-from saeco.misc.lazy import lazyprop, lazycall
+from functools import cached_property
+from saeco.misc import lazycall
 
 
 class DetachedLinear(nn.Module):

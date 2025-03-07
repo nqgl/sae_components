@@ -3,7 +3,7 @@ import asyncio
 import os
 
 from typing import Any
-
+from functools import cached_property
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -15,7 +15,6 @@ import wandb.apis.public as wapublic
 import wandb.data_types
 import wandb.util
 from saeco.analysis.run_history import RunHistories
-from saeco.misc import lazycall
 
 # from wandb.data_types
 # from wandb.wandb_run import Run
@@ -228,8 +227,7 @@ class Sweep:
 
     # def __getitem__(self, key):sk1 = SweepKey("a", [11,12,13])
 
-    @property
-    @lazycall
+    @cached_property
     def sweep_cfg(self) -> dict[list[str], dict[Any, set[Run]]]:
         swept_values = {}
 
@@ -276,20 +274,17 @@ class Sweep:
                     run_sweep_values[run][k] = v
         return run_sweep_values
 
-    @property
-    @lazycall
+    @cached_property
     def sweep_keys(self):
         return list(self.sweep_cfg.keys())
 
-    @property
-    @lazycall
+    @cached_property
     def keys(self) -> list[SweepKey]:
         return [SweepKey(k, list(dv.keys())) for k, dv in self.sweep_cfg.items()] + [
             SweepKey("__NULLKEY", [1])
         ]
 
-    @property
-    @lazycall
+    @cached_property
     def df(self):
         d = pd.DataFrame(
             [

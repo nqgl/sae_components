@@ -5,8 +5,9 @@
 		}
 	],
 	"settings": {
-		"python.languageServer": "Default",
-		"windsurfPyright.disableLanguageServices": false,
-		"workbench.settings.enableNaturalLanguageSearch": false
+		"python.languageServer": "Pylance",
+		"windsurfPyright.disableLanguageServices": true,
+		"workbench.settings.enableNaturalLanguageSearch": false,
+		"python.analysis.inlayHints.variableTypes": false
 	}
 }

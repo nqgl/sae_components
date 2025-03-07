@@ -1,5 +1,5 @@
 import functools
-
+from typing_extensions import deprecated
 
 DEBUGGING = False
 DEBUG_INDENT = 0
@@ -73,66 +73,7 @@ def defer_to_and_set(_field):
 
 
 def lazycall(mth, name=None):
-    """
-    @lazyprop
-    def field(self):
-        return x
-
-    is equivalent to:
-    @property
-    def field(self):
-        if self._field is None:
-            self._field = x
-        return self._field
-    """
     if isinstance(mth, str):
         return lambda x: lazycall(x, name=mth)
     name = name or f"_{mth.__name__}"
     return defer_to_and_set(name)(mth)
-
-
-@functools.wraps(property)
-def lazyprop(mth, name=None):
-
-    if isinstance(mth, str):
-        return lambda x: lazyprop(x, name=mth)
-    prop = property(lazycall(mth, name=name))
-
-    name = name or f"_{mth.__name__}"
-
-    def setter(self, value):
-        setattr(self, name, value)
-
-    return prop.setter(setter)
-
-
-class LazyProp(property):
-    def __init__(self, mth, name=None):
-        self._propfield = None
-        super().__init__(defer_to_and_set(lambda: self._propfield)(mth))
-
-    def __set_name__(self, owner, name):
-        self._propfield = name
-
-
-from typing import Callable, TypeVar, Any
-
-T = TypeVar("T")
-
-
-class LazyProp(property):
-    def __init__(self, mth: Callable[[Any], T]):
-        self.mth = mth
-        self.propfield = None
-        self.name_override = False
-
-    def __set_name__(self, owner, name):
-        if not self.name_override:
-            self.propfield = f"_{name}"
-
-    def __get__(self, instance, owner) -> T:
-        assert self.propfield is not None
-        if not hasattr(instance, self.propfield):
-            setattr(instance, self.propfield, (res := self.mth(instance)))
-            return res
-        return getattr(instance, self.propfield)

@@ -86,3 +86,18 @@ class mlog:
             cuda_version=os.environ.get("CUDA_VERSION", None),
             pytorch_version=os.environ.get("PYTORCH_VERSION", None),
         )
+
+    @classmethod
+    def log_sweep(
+        cls,
+        selective_instance_sweep_dict,
+        sweep_data: "SweepData",
+        sweep_index,
+        sweep_hash,
+    ):
+        cls.logger_instance.log_sweep(
+            selective_instance_sweep_dict=selective_instance_sweep_dict,
+            sweep_data=sweep_data,
+            sweep_index=sweep_index,
+            sweep_hash=sweep_hash,
+        )

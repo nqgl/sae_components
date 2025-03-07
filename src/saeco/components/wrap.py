@@ -136,7 +136,7 @@ def main():
         def post_backward_hook(self):
             print("Bwm")
 
-    from saeco.trainer.post_backward_normalization import do_post_backward
+    from saeco.trainer.call_training_hooks import do_post_backward
 
     a = cl.Seq(
         Add(nn.Parameter(torch.tensor(1.0))),
