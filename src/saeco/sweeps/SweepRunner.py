@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 @define
 class SweepRunner:
     sweep_data: "SweepData"
-    sweep_id: str | None = field(default=None)
     sweep_index: int | None = field(default=None)
     sweep_hash: str | None = field(default=None)
 
@@ -21,8 +20,7 @@ class SweepRunner:
         run_name = f"{self.sweep_data.root_arch_ref.class_ref.cls_name}"
         if self.sweep_index is not None:
             run_name = f"{run_name}_{self.sweep_index}"
-        run_name = f"{self.sweep_id}:{run_name}"
-
+        run_name = f"{self.sweep_data.sweep_id}:{run_name}"
         with mlog.enter(
             arch_ref=self.sweep_data.root_arch_ref,
             project=self.sweep_data.project,
