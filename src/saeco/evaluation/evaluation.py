@@ -51,7 +51,6 @@ from .storage.stored_metadata import Filters, Metadatas, Artifacts
 from .named_filter import NamedFilter
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
-from .utils import fwad_safe_sdp
 
 
 @define
@@ -153,7 +152,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             if not name.exists():
                 name = Path.home() / "workspace" / "cached_sae_acts" / name
         saved = SavedActs.from_path(name)
-        inst = cls.from_model_path(saved.cfg.model_name)
+        inst = cls.from_model_path(saved.cfg.model_path)
         inst.saved_acts = saved
         return inst
 
@@ -296,9 +295,9 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         return self.tokenizer.vocab_size
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
-        if caching_cfg.model_name is None:
-            caching_cfg.model_name = self.model_path
-        assert caching_cfg.model_name == self.model_path
+        if caching_cfg.model_path is None:
+            caching_cfg.model_path = self.model_path
+        assert caching_cfg.model_path == self.model_path
         acts_cacher = ActsCacher.from_cache_and_runner(
             caching_config=caching_cfg, architecture=self.architecture
         )

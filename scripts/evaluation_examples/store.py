@@ -1,14 +1,7 @@
-import nnsight
-import saeco.core as cl
-import torch
 from context import model_name, storage_name
 
 from saeco.evaluation.evaluation import Evaluation
 from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.trainer import Trainable
-from saeco.trainer.runner import TrainingRunner
-from saeco.trainer.train_cache import TrainCache
-from torch import Tensor
 
 
 root_eval = Evaluation.from_model_path(model_name)
