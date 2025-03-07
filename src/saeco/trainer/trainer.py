@@ -1,16 +1,15 @@
 from contextlib import contextmanager
-from typing import Optional, Protocol, runtime_checkable
 
 import torch
 import torch.utils
 import tqdm
-import wandb
-from schedulefree import AdamWScheduleFree, ScheduleFreeWrapper
+
+from schedulefree import AdamWScheduleFree
 from torch.amp import GradScaler
 
-from saeco.components.losses import L2Loss, SparsityPenaltyLoss
 from saeco.core import Cache
 from saeco.data.tokens_data import TokensData
+from saeco.misc.paths import SAVED_MODELS_DIR
 from .OptimConfig import get_optim_cls
 from .call_training_hooks import (
     do_pre_forward,
@@ -21,7 +20,7 @@ from .call_training_hooks import (
 from .train_cache import TrainCache
 from .train_config import TrainConfig
 from .trainable import Trainable
-from .l0targeter import L0Targeter, TARGETER_TYPES
+from .l0targeter import TARGETER_TYPES
 from .recons import get_recons_loss
 from .run_config import RunConfig
 from saeco.mlog import mlog
@@ -35,10 +34,8 @@ class Trainer:
         cfg: TrainConfig,
         run_cfg: RunConfig,
         model: Trainable,
-        run_name=None,
         optim: torch.optim.Optimizer | None = None,
         save_callback=None,
-        **kwargs,
     ):
         self.cfg: TrainConfig = cfg
         self.run_cfg: RunConfig = run_cfg
@@ -85,7 +82,6 @@ class Trainer:
             self.optim = LARS(self.optim)
             assert optim is None or not isinstance(optim, LARS)
 
-        self.namestuff = run_name
         self.llm_val_tokens = TokensData(
             self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
         ).get_tokens()
@@ -149,7 +145,6 @@ class Trainer:
         do_post_step(self.trainable, cache)
 
     def log(self, d):
-        # if wandb.run is not None:
         mlog.log(d, step=self.t + self.log_t_offset)
 
     def coeffs(self):
@@ -204,15 +199,13 @@ class Trainer:
             return qbuf()
         return buf
 
-    def get_cache(self):
-        c = TrainCache()
-        c._watch(self.trainable.get_losses_and_metrics_names())
-        c.trainer = ...
-        c.trainer = self
-        c.trainstep = self.t
-        # for k in self.model.get_losses_and_metrics_names():
-        # setattr(c, k, ...)
-        return c
+    def make_cache(self):
+        cache = TrainCache()
+        cache._watch(self.trainable.get_losses_and_metrics_names())
+        cache.trainer = ...
+        cache.trainer = self
+        cache.trainstep = self.t
+        return cache
 
     def train(self, buffer=None, num_steps=None):
         try:
@@ -236,10 +229,6 @@ class Trainer:
         #         config=self.run_cfg.model_dump(),
         #         reinit=True,
         #     )
-        if wandb.run is not None:
-            if self.namestuff is not None:
-                lars = "(lars)" if self.cfg.use_lars else ""
-                wandb.run.name = f"{lars}{self.namestuff}[{self.cfg.l0_target}]-{wandb.run.name.split('-')[-1]}"
 
         # if self.cfg.use_schedulefree:
         #     self.optim.train()
@@ -269,7 +258,7 @@ class Trainer:
                 self.eval_step(x)
                 self.trainable.train()
 
-            cache = self.get_cache()
+            cache = self.make_cache()
             self.trainstep(x, cache)
             self.full_log(cache)
             self.t += 1
@@ -335,7 +324,7 @@ class Trainer:
             model = self.averaged_model.module
         else:
             model = self.trainable
-        cache = self.get_cache()
+        cache = self.make_cache()
         with torch.no_grad():
             with self.cast():
                 loss = model.loss(x, cache=cache, coeffs=self.coeffs())
@@ -372,40 +361,32 @@ class Trainer:
                 excluded=["act_metrics_name"],
             )
         )
-        if wandb.run is None and self.t % 25 == 0:
+        # if wandb.run is None and self.t % 25 == 0:
 
-            d = cache.logdict(
-                exclude_contains=["normalization/mu", "normalization/std"],
-                excluded=["act_metrics_name"],
-            )
-            n = ["L2_loss", "L2_aux_loss", "sparsity_loss", "l0", "L0"]
-            for key in n:
-                k = f"cache/{key}"
-                if k in d:
-                    print(f"{k}: {d[k]}")
+        #     d = cache.logdict(
+        #         exclude_contains=["normalization/mu", "normalization/std"],
+        #         excluded=["act_metrics_name"],
+        #     )
+        #     n = ["L2_loss", "L2_aux_loss", "sparsity_loss", "l0", "L0"]
+        #     for key in n:
+        #         k = f"cache/{key}"
+        #         if k in d:
+        #             print(f"{k}: {d[k]}")
 
     def eval_log(self, cache: Cache):
-        d = {
-            k: v
-            for (k, v) in cache.logdict(name="eval").items()
-            if len(k.split("/")) <= 2
-        }
-        # if wandb.run is not None:
-        self.log(d)
+        self.log(
+            {
+                k: v
+                for (k, v) in cache.logdict(name="eval").items()
+                if len(k.split("/")) <= 2
+            }
+        )
 
     def save(self):
-        from pathlib import Path
-
-        save_dir = Path.home() / "workspace/saved_models/"
-        if wandb.run:
-            if wandb.run.project:
-                save_dir /= wandb.run.project
-            if wandb.run.sweep_id:
-                save_dir /= f"sweep{wandb.run.sweep_id}"
-            name = f"{wandb.run.name}/{self.t}"
-        else:
-            name = f"{self.namestuff}/{self.t}"
-        savename = save_dir / name
+        save_dir = SAVED_MODELS_DIR
+        name = mlog.get_run_name()
+        sweep_name, run_name = name.split(":")
+        savename = save_dir / sweep_name / run_name / str(self.t)
 
         if self.cfg.use_averaged_model:
             self.save_callback(
@@ -415,14 +396,3 @@ class Trainer:
             )
         else:
             self.save_callback(savename, save_weights=True, trainable=self.trainable)
-        # cfg_path = savename.with_suffix(".json")
-        # model_path = savename.with_suffix(".pt")
-        # reload_info = savename.with_suffix(".reload_info.json")
-        # assert (not cfg_path.exists()) and (not model_path.exists())
-        # cfg_path.parent.mkdir(exist_ok=True, parents=True)
-        # if averaged:
-        #     torch.save(self.averaged_model.state_dict(), model_path)
-        # else:
-        #     torch.save(self.trainable.state_dict(), model_path)
-        # cfg_path.write_text(self.run_cfg.model_dump_json())
-        # reload_info.write_text(self.reload_info.model_dump_json())

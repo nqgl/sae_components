@@ -16,7 +16,7 @@ from saeco.components.resampling import AnthResampler, RandomResampler, Resample
 from saeco.core import Cache
 from .normalizers import ConstL2Normalizer, Normalized, Normalizer
 from .train_cache import TrainCache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from saeco.architecture.architecture import SAE
@@ -24,12 +24,20 @@ if TYPE_CHECKING:
 from functools import wraps
 
 
+@runtime_checkable
+class GeneratesCache(Protocol):
+    def make_cache(self) -> Cache: ...
+
+
 def make_cache_optional(fn):
     @wraps(fn)
     def wrapper(self, *args, cache: TrainCache | None = None, **kwargs):
         made_cache = False
         if cache is None:
-            cache = TrainCache()
+            if isinstance(self, GeneratesCache):
+                cache = self.make_cache()
+            else:
+                cache = TrainCache()
             made_cache = True
 
         out = fn(self, *args, cache=cache, **kwargs)
@@ -112,13 +120,6 @@ class Trainable(cl.Module):
             self.resampler.assign_model(self.model)
         else:
             self.resampler = None
-
-    def _normalizeIO(mth):
-        def wrapper(self, x: torch.Tensor, *, cache: TrainCache, **kwargs):
-            x = self.normalizer(x)
-            return mth(self, x, cache=cache, **kwargs)
-
-        return wrapper
 
     def loss(self, x, *, cache: TrainCache, y=None, coeffs={}):
         coeffs = dict(coeffs)

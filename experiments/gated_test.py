@@ -7,60 +7,35 @@ from saeco.data.data_config_definitions import (
     gemma_2_2b_openwebtext_fp32,
     gemma_2_2b_openwebtext_bf16,
 )
-from saeco.data.generation_config import DataGenerationProcessConfig
-from saeco.data.split_config import SplitConfig
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.sweeps.sweepable_config.sweep_expressions import (
-    SweepVar,
-    Var,
-)
 from saeco.trainer.run_config import RunConfig
+from saeco.architectures.gated.arch import GatedConfig, Gated
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.sweep_expressions import Val
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig
 
-import sys
-import os
-from typing import TYPE_CHECKING
-
-from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
-
 PROJECT = "sae sweeps"
 
-
-# var = SweepVar(1, 2, 3, name="var")
-import saeco.core as cl
-
-
-def acts_modifier(cache, acts):
-    return acts + 1
-
-
-cache = cl.Cache()
-cache.register_write_callback("acts", acts_modifier)
-
-batch_size_mult_var = SweepVar(1, 2, 3, name="batch_size_mult")
-cfg = RunConfig[VanillaConfig](
+cfg = RunConfig[GatedConfig](
     train_cfg=TrainConfig(
+        # data_cfg=gemma_2_2b_openwebtext_bf16(17),
         data_cfg=gpt_2_block(),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=Val(50_000) // batch_size_mult_var,
-            resample_period=Val(8_000) // batch_size_mult_var,
-            lr_cooldown_length=0.5,
+            run_length=48_000,
+            resample_period=9_000,
+            lr_cooldown_length=0.3,
             lr_warmup_length=500,
         ),
         #
-        batch_size=batch_size_mult_var * 4096,
+        batch_size=4096 * 2,
         optim="Adam",
-        lr=1e-3,
+        lr=Swept(1e-4, 3e-4, 1e-3, 2e-3),
         betas=(0.9, 0.997),
         #
         use_autocast=True,
@@ -78,19 +53,25 @@ cfg = RunConfig[VanillaConfig](
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
-        expected_biases=1,
+        expected_biases=2,
     ),
     #
     init_cfg=InitConfig(d_data=768, dict_mult=8),
-    arch_cfg=VanillaConfig(pre_bias=Swept(True, False)),
+    arch_cfg=GatedConfig(),
 )
-g = VanillaSAE(cfg)
+# from transformers import Gemma2ForCausalLM
+
+# import saeco.data.model_cfg as mc
+
+# # mc.MODEL_FN_CALLABLE_OVERRIDE = Gemma2ForCausalLM.from_pretrained
+g = Gated(cfg)
+
+
 sweep_manager = g.get_sweep_manager()
-sweep_manager.initialize_sweep()
-sweep_manager.run_sweep_on_pods_with_monitoring(
-    2, purge_after=False, keep_after=True, challenge_file=None
+sweep_manager.initialize_sweep(project="sweeping-test-gated", custom_sweep=True)
+sweep_manager.run_manual_sweep_with_monitoring(
+    cfg.to_swept_nodes().swept_combinations_count_including_vars(),
+    purge_after=True,
+    setup_min=8,
+    prefix_vars="USE_NEPTUNE=true ",
 )
-
-
-g = VanillaSAE(cfg)
-g.run_training()

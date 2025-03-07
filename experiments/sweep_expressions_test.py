@@ -26,7 +26,7 @@ import sys
 import os
 from typing import TYPE_CHECKING
 
-from saeco.architectures.vanilla import Config, VanillaSAE
+from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 
 PROJECT = "sae sweeps"
 
@@ -39,14 +39,14 @@ val50k = Val(value=50_000)
 val50k.generic_type
 print()
 raw_schedule_cfg = RunSchedulingConfig(
-    run_length=Val[int](value=50_000) // batch_size_mult_var,
+    run_length=Val[int](value=500) // batch_size_mult_var,
     resample_period=Val[int](value=8_000) // batch_size_mult_var,
     lr_cooldown_length=0.3,
     lr_warmup_length=2000,
 )
 dictval = Val[dict[int, int]](value={1: 22, 2: 33, 3: 55})
 
-cfg = RunConfig[Config](
+cfg = RunConfig[VanillaConfig](
     train_cfg=TrainConfig(
         data_cfg=gpt_2_block(),
         raw_schedule_cfg=raw_schedule_cfg,
@@ -75,7 +75,7 @@ cfg = RunConfig[Config](
     ),
     #
     init_cfg=InitConfig(d_data=768, dict_mult=Swept(*[2**i for i in range(2, 4)])),
-    arch_cfg=Config(),
+    arch_cfg=VanillaConfig(),
 )
 # from transformers import Gemma2ForCausalLM
 
@@ -85,16 +85,25 @@ cfg = RunConfig[Config](
 
 from saeco.sweeps.sweepable_config.SweptNode import check_config_combinations
 
-check_config_combinations(cfg)
 g = VanillaSAE(cfg)
 sweep_manager = g.get_sweep_manager()
 print(sweep_manager.initialize_sweep(project="project2", custom_sweep=True))
 # sweep_manager.rand_run_no_agent()
-# sweep_manager.local_sweep()
+sweep_manager.local_custom_sweep()
 # sweep_manager.get_worker_run_command()
 sweep_manager.get_worker_run_commands_for_manual_sweep()
-sweep_manager.run_manual_sweep_with_monitoring(8, purge_after=True, setup_min=8)
-sweep_manager.run_sweep_on_pods_with_monitoring(8, purge_after=True, setup_min=8)
+
+# with sweep_manager.created_pods(1, keep=False, setup_min=1) as pods:
+#     print("running on remotes")
+#     task = pods.runpy_with_monitor(
+#         sweep_manager.get_worker_run_commands_for_manual_sweep()[0],
+#         purge_after=True,
+#         challenge_file=None,
+#     )
+sweep_manager.run_manual_sweep_with_monitoring(
+    8, purge_after=True, setup_min=8, prefix_vars="USE_NEPTUNE=true "
+)
+# sweep_manager.run_sweep_on_pods_with_monitoring(1, purge_after=True, setup_min=8)
 
 
 sweep_manager.initialize_sweep()

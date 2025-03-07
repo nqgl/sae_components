@@ -30,7 +30,6 @@ from types import GenericAlias
 class GatedConfig(SweepableConfig):
     pre_bias: bool = False
     detach: bool = True
-    # decay_l1_penalty: float =
 
 
 class Gated(Architecture[GatedConfig]):

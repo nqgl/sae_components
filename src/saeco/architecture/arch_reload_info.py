@@ -17,9 +17,6 @@ from saeco.sweeps import SweepableConfig
 MODEL_WEIGHTS_PATH_EXT = ".weights.safetensors"
 AVERAGED_WEIGHTS_PATH_EXT = ".avg_weights.safetensors"
 ARCH_REF_PATH_EXT = ".arch_ref"
-# def get_src(fn):
-#     module = importlib.import_module(fn.__module__)
-#     return inspect.getsource(module)
 
 
 def get_src(obj):
@@ -161,3 +158,10 @@ class ArchStoragePaths(BaseModel):
         arch_ref = ArchRef.open(self.arch_ref)
         arch_inst = arch_ref.load_arch(state_dict=state_dict, device=device)
         return arch_inst
+
+    def exists(self):
+        return (
+            self.arch_ref.exists()
+            or self.model_weights.exists()
+            or self.averaged_weights.exists()
+        )
