@@ -179,6 +179,7 @@ if TYPE_CHECKING:
 class CustomSweeper(Logger):
     root_config: SweepableConfig
 
+    @property
     def __init__(self, prev_logger: NeptuneLogger):
         # self._config: SweepableConfig = None
         self.root_config: SweepableConfig = SweepableConfig()

@@ -105,7 +105,7 @@ class TrainingRunner:
             normalizer.prime_normalizer(self.data)
         return normalizer
 
-    @normalizer.setter
+    # @normalizer.setter
     def normalizer(self, value):
         self._normalizer = value
         self._normalizer.prime_normalizer(self.data)

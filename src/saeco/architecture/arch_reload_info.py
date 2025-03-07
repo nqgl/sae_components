@@ -70,7 +70,10 @@ class ArchRef(BaseModel, Generic[T]):
 
     @classmethod
     def open(cls, path: Path) -> "ArchRef":
-        if cls.__orig_bases__[0].__args__[0] is not T:
+        if (
+            hasattr(cls.__orig_bases__[0], "__args__")
+            and cls.__orig_bases__[0].__args__[0] is not T
+        ):
             raise ValueError("generic type T must not be instantiated")
         return cls.from_json(json.loads(path.read_text()))
 

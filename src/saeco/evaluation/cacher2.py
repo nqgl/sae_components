@@ -8,6 +8,7 @@ import tqdm
 from attrs import define, field
 from jaxtyping import Float, Int
 from torch import Tensor
+from saeco.architecture.architecture import Architecture
 
 from saeco.data import ActsData, DataConfig
 from saeco.data.tokens_data import PermutedDocs
@@ -15,7 +16,6 @@ from saeco.data.tokens_data import PermutedDocs
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
 from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
-from saeco.trainer import Trainable, TrainingRunner
 
 
 def to_token_chunk_yielder(tokens: Tensor, chunk_size: int):
@@ -27,7 +27,7 @@ def to_token_chunk_yielder(tokens: Tensor, chunk_size: int):
 class ActsCacher:
     cfg: CachingConfig
     tokens_source: Iterator
-    model_context: TrainingRunner
+    architecture: Architecture
     acts_data: ActsData
     seq_len: int
     feature_tensors: list[SparseGrowingDiskTensor] | None = field(
@@ -39,17 +39,17 @@ class ActsCacher:
     def from_cache_and_runner(
         cls,
         caching_config: CachingConfig,
-        model_context: TrainingRunner,
+        architecture: Architecture,
         split="val",
     ):
         pd = PermutedDocs(
-            model_context.cfg.train_cfg.data_cfg,
-            split=model_context.cfg.train_cfg.data_cfg.getsplit(split),
+            architecture.run_cfg.train_cfg.data_cfg,
+            split=architecture.run_cfg.train_cfg.data_cfg.getsplit(split),
         )
         cfg = caching_config
         if cfg.exclude_bos_from_storage is None:
             cfg.exclude_bos_from_storage = (
-                model_context.cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first
+                architecture.run_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first
             )
         inst = cls(
             cfg=cfg,
@@ -57,9 +57,9 @@ class ActsCacher:
                 batch_size=caching_config.docs_per_chunk,
                 columns=caching_config.metadatas_from_src_column_names,
             ),
-            model_context=model_context,
-            acts_data=model_context.cfg.train_cfg.data_cfg.acts_data(),
-            seq_len=model_context.cfg.train_cfg.data_cfg.seq_len,
+            architecture=architecture,
+            acts_data=architecture.run_cfg.train_cfg.data_cfg.acts_data(),
+            seq_len=architecture.run_cfg.train_cfg.data_cfg.seq_len,
         )
         return inst
 
@@ -90,11 +90,11 @@ class ActsCacher:
 
     @property
     def d_dict(self) -> int:
-        return self.model_context.cfg.init_cfg.d_dict
+        return self.architecture.run_cfg.init_cfg.d_dict
 
     @property
     def sae_model(self):
-        return self.model_context.trainable
+        return self.architecture.trainable
 
     # @feature_tensors.default
     def _feature_tensors_initializer(self):
