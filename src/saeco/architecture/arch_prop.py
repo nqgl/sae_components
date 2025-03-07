@@ -7,13 +7,15 @@ import types
 if TYPE_CHECKING:
     from .architecture import Architecture
 
-_fields_dict = defaultdict(dict)  # (cls -> (field_categ_name -> field_name/names))
+_fields_dict: dict[type, dict[str, str | list[str]]] = defaultdict(
+    dict
+)  # (cls -> (field_categ_name -> field_name/names))
 _missing_name = set()
 _T = TypeVar("_T")
 _C = TypeVar("_C")
 
 
-def _getfields(cls: type, FIELD_NAME):
+def _getfields(cls: type, FIELD_NAME) -> str | list[str]:
     if not isinstance(cls, type):
         cls = cls.__class__
     cls_d = _fields_dict[cls]
@@ -29,14 +31,14 @@ def _getfields(cls: type, FIELD_NAME):
     return cls_d[FIELD_NAME]
 
 
-def getfields(cls: type, FIELD_NAME):
+def getfields(cls: type, FIELD_NAME) -> str | list[str]:
     try:
         return _getfields(cls, FIELD_NAME)
     except AttributeError:
-        return {}
+        return []
 
 
-def setfield(cls: type, FIELD_NAME, value):
+def setfield(cls: type, FIELD_NAME: str, value: str | list[str]):
     assert isinstance(cls, type)
     cls_d = _fields_dict[cls]
     cls_d[FIELD_NAME] = value
@@ -56,12 +58,14 @@ class arch_prop(cached_property, Generic[_T]):
         _missing_name.add(self)
 
     @overload
-    def __get__(self, instance: None, owner: Any = ...) -> "arch_prop[_T]": ...
+    def __get__(self, instance: None, owner: Any | None = None) -> "arch_prop[_T]": ...
 
     @overload
-    def __get__(self, instance: _C, owner: Any = ...) -> _T: ...
+    def __get__(self, instance: _C, owner: Any | None = None) -> _T: ...
 
-    def __get__(self, instance: "Architecture", owner=None):
+    def __get__(
+        self, instance: "Architecture" | _C, owner: Any | None = None
+    ) -> _T | "arch_prop[_T]":
         return super().__get__(instance, owner)
 
     def __set_name__(self, owner, name):
