@@ -30,6 +30,7 @@ from saeco.architecture import (
     loss_prop,
     model_prop,
     aux_model_prop,
+    SAE,
 )
 
 # torch.backends.cudnn.benchmark = True
@@ -164,17 +165,13 @@ class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
     @model_prop
     def model(self):
         thrlu = Thresholder(self.init, self.cfg.thresh_cfg)
-        return Seq(
-            encoder=cl.ReuseForward(
-                Seq(
-                    **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()),
-                    lin=self.init.encoder,
-                    pre_acts=PreActMetrics(),
-                    nonlinearity=thrlu,
-                    freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
-                )
+        return SAE(
+            encoder_pre=Seq(
+                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()),
+                lin=self.init.encoder,
             ),
-            metrics=co.metrics.ActMetrics(),
+            nonlinearity=thrlu,
+            freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
             penalty=LinearDecayL1Penalty(
                 begin=self.cfg.l1_decay_start,
                 end=self.cfg.l1_decay_end,

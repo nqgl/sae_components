@@ -104,6 +104,7 @@ class NeptuneLogger(Logger):
         self.neptune = neptune
         self.run: neptune.Run | None = None
         self.project = "default-project"
+        self.run_name = None
 
     @classmethod
     def neptune_config_fix(cls, item):
@@ -122,6 +123,7 @@ class NeptuneLogger(Logger):
         import neptune
 
         assert self.run is None
+        self.run_name = run_name
         if project:
             self.project = project
         print("init neptune", self.project, run_name)
@@ -145,6 +147,7 @@ class NeptuneLogger(Logger):
         assert self.run is not None
         self.run.stop()
         self.run = None
+        self.run_name = None
 
     def update_config(self, config_dict):
         self.update_namespace("config", config_dict)
@@ -176,6 +179,7 @@ if TYPE_CHECKING:
 class CustomSweeper(Logger):
     root_config: SweepableConfig
 
+    @property
     def __init__(self, prev_logger: NeptuneLogger):
         # self._config: SweepableConfig = None
         self.root_config: SweepableConfig = SweepableConfig()
@@ -247,7 +251,7 @@ class CustomSweeper(Logger):
         return self._sweep_inst_config
 
 
-def get_logger():
+def get_logger() -> Logger | NeptuneLogger:
     if USE_NEPTUNE:
         return NeptuneLogger()
     elif WANDB:

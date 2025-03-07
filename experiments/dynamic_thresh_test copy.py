@@ -11,7 +11,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig
 
-from saeco.architectures.dynamic_thresh_prolu.model_z_target import (
+from saeco.architectures.dynamic_thresh_prolu.model_zipf import (
     DynamicZipfThreshConfig,
     DynamicThreshSAE,
     ThreshConfig,

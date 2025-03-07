@@ -101,3 +101,7 @@ class mlog:
             sweep_index=sweep_index,
             sweep_hash=sweep_hash,
         )
+
+    @classmethod
+    def get_run_name(cls):
+        return cls.logger_instance.run_name

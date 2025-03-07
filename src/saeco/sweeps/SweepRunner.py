@@ -16,15 +16,18 @@ class SweepRunner:
     sweep_index: int | None = field(default=None)
     sweep_hash: str | None = field(default=None)
 
-    def run_sweep(self):
+    @property
+    def run_name(self):
         run_name = f"{self.sweep_data.root_arch_ref.class_ref.cls_name}"
         if self.sweep_index is not None:
             run_name = f"{run_name}_{self.sweep_index}"
-        run_name = f"{self.sweep_data.sweep_id}:{run_name}"
+        return f"{self.sweep_data.sweep_id}:{run_name}"
+
+    def run_sweep(self):
         with mlog.enter(
             arch_ref=self.sweep_data.root_arch_ref,
             project=self.sweep_data.project,
-            run_name=run_name,
+            run_name=self.run_name,
         ):
 
             arch = self.sweep_data.root_arch_ref.load_arch()
@@ -49,7 +52,7 @@ class SweepRunner:
         arch.instantiate(cfg.to_swept_nodes().random_selection())
         with mlog.enter(
             arch_ref=self.sweep_data.root_arch_ref,
-            run_name=self.sweep_data.root_arch_ref.class_ref.cls_name,
+            run_name=self.run_name,
         ):
             mlog.update_config(full_cfg=arch.run_cfg.model_dump())
             arch.run_training()
@@ -64,14 +67,14 @@ class SweepRunner:
             kwargs = {}
         mlog.start_sweep_agent(self.sweep_data, self.run_sweep, **kwargs)
 
-    def run_local_sweep(self):
-        if self.sweep_index is not None:
-            kwargs = {"sweep_index": self.sweep_index, "sweep_hash": self.sweep_hash}
-            mlog.use_custom_sweep()
+    # def run_local_sweep(self):
+    #     if self.sweep_index is not None:
+    #         kwargs = {"sweep_index": self.sweep_index, "sweep_hash": self.sweep_hash}
+    #         mlog.use_custom_sweep()
 
-        else:
-            kwargs = {}
-        mlog.start_sweep_agent(self.sweep_data, self.run_sweep, **kwargs)
+    #     else:
+    #         kwargs = {}
+    #     mlog.start_sweep_agent(self.sweep_data, self.run_sweep, **kwargs)
 
     @classmethod
     def from_sweepdata(

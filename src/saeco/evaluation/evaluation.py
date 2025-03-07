@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from torch import Tensor
 
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from saeco.architecture.architecture import Architecture
 
 from saeco.data.locations import DATA_DIRS
 from saeco.evaluation.eval_components.coacts import Coactivity
@@ -91,8 +92,8 @@ class BMStorShelf:
 
 @define
 class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
-    model_name: str
-    training_runner: TrainingRunner = field(repr=False)
+    model_path: Path
+    architecture: Architecture = field(repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
@@ -152,14 +153,15 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             if not name.exists():
                 name = Path.home() / "workspace" / "cached_sae_acts" / name
         saved = SavedActs.from_path(name)
-        inst = cls.from_model_name(saved.cfg.model_name)
+        inst = cls.from_model_path(saved.cfg.model_name)
         inst.saved_acts = saved
         return inst
 
     @classmethod
-    def from_model_name(cls, name: str):
-        tr = TrainingRunner.autoload(name)
-        inst = cls(training_runner=tr, model_name=name)
+    def from_model_path(cls, path: Path):
+        path = path if isinstance(path, Path) else Path(path)
+        arch = Architecture.load(path, load_weights=True)
+        inst = cls(architecture=arch, model_path=path)
         return inst
 
     def __attrs_post_init__(self):
@@ -177,8 +179,8 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
                 "Filter already set, create filtered from the root Evaluation"
             )
         return Evaluation(
-            model_name=self.model_name,
-            training_runner=self.training_runner,
+            model_path=self.model_path,
+            architecture=self.architecture,
             saved_acts=self.saved_acts.filtered(filter),
             filter=filter,
             root=self,
@@ -263,11 +265,11 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @property
     def d_dict(self):
-        return self.training_runner.cfg.init_cfg.d_dict
+        return self.architecture.run_cfg.init_cfg.d_dict
 
     @property
     def sae_cfg(self) -> RunConfig:
-        return self.training_runner.cfg
+        return self.architecture.run_cfg
 
     @property
     def cache_cfg(self) -> CachingConfig:
@@ -279,7 +281,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @property
     def sae(self):
-        return self.training_runner.trainable
+        return self.architecture.trainable
 
     @property
     def nnsight_site_name(self):
@@ -295,10 +297,10 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
         if caching_cfg.model_name is None:
-            caching_cfg.model_name = self.model_name
-        assert caching_cfg.model_name == self.model_name
+            caching_cfg.model_name = self.model_path
+        assert caching_cfg.model_name == self.model_path
         acts_cacher = ActsCacher.from_cache_and_runner(
-            caching_config=caching_cfg, model_context=self.training_runner
+            caching_config=caching_cfg, architecture=self.architecture
         )
         if acts_cacher.path.exists():
             if displace_existing:

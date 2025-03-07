@@ -47,7 +47,7 @@ cfg = RunConfig[VanillaConfig](
         expected_biases=1,
     ),
     #
-    init_cfg=InitConfig(d_data=768, dict_mult=32),
+    init_cfg=InitConfig(d_data=768, dict_mult=8),
     arch_cfg=VanillaConfig(
         # And here we sweep across the pre_bias config option
         pre_bias=Swept(True, False),
@@ -56,7 +56,8 @@ cfg = RunConfig[VanillaConfig](
 
 arch = VanillaSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
-sweep_manager.initialize_sweep()
+sweep_manager.rand_run_no_agent()
+# sweep_manager.initialize_sweep()
 
-# this will create 6 remote pods and begin running the grid search on them
-sweep_manager.run_manual_sweep_with_monitoring(new_pods=6)
+# # this will create 6 remote pods and begin running the grid search on them
+# sweep_manager.run_manual_sweep_with_monitoring(new_pods=6)

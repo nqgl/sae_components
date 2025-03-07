@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Callable, TypeVar, Generic
+from typing import Callable, TypeVar, Generic, overload
 from attrs import define, field
 import torch
 from saeco.architecture.arch_reload_info import ArchStoragePaths
@@ -9,9 +9,6 @@ from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
 from saeco.core.cache import Cache
 from saeco.misc.utils import useif
 import inspect
-
-# Assuming these classes are defined or imported from your codebase
-from saeco.trainer import TrainingRunner
 from saeco.core import Module
 from saeco.components.losses import Loss
 from saeco.initializer.initializer import Initializer
@@ -54,21 +51,46 @@ class SAE(cl.Seq):
     penalty: co.Penalty | None
     losses: list[Loss]
 
+    @overload
     def __init__(
         self,
+        *,
+        encoder_pre: cl.Module | None = None,
+        nonlinearity: cl.Module | None = None,
+        decoder: cl.Module = None,
+        act_metrics: ActMetrics = None,
+        preacts: PreActMetrics = None,
+        penalty: co.Penalty | None = ...,
+        freqs: EMAFreqTracker | None = ...,
+    ): ...
+
+    @overload
+    def __init__(
+        self,
+        *,
+        encoder: cl.Module | None = None,
+        decoder: cl.Module = None,
+        act_metrics: ActMetrics = None,
+        preacts: PreActMetrics = None,
+        penalty: co.Penalty | None = ...,
+        freqs: EMAFreqTracker | None = ...,
+    ): ...
+
+    def __init__(
+        self,
+        *,
         encoder_pre: cl.Module | None = None,
         nonlinearity: cl.Module | None = None,
         decoder: cl.Module = None,
         encoder: cl.Module | None = None,
-        acts: ActMetrics = None,  # rename to "metrics"?
-        # when its added to the architecture, if it's an aux model rename the acts
+        act_metrics: ActMetrics = None,
         preacts: PreActMetrics = None,
         penalty: co.Penalty | None = ...,
         freqs: EMAFreqTracker | None = ...,
     ):
         penalty = co.L1Penalty() if penalty is ... else penalty
         freqs = EMAFreqTracker() if freqs is ... else freqs
-        acts = ActMetrics() if acts is None else acts
+        act_metrics = ActMetrics() if act_metrics is None else act_metrics
         preacts = PreActMetrics() if preacts is None else preacts
         # we could seek a preactmetrics on the encoder in the future
         assert (encoder_pre is None) == (nonlinearity is None)
@@ -85,7 +107,7 @@ class SAE(cl.Seq):
             # preacts=preacts,
             # nonlinearity=nonlinearity,
             encoder=encoder,
-            acts=acts,
+            acts=act_metrics,
             **useif(freqs is not None, freqs=freqs),
             **useif(penalty is not None, penalty=penalty),
             decoder=decoder,
@@ -273,16 +295,9 @@ class Architecture(Generic[ArchConfigType]):
             self.run_cfg.train_cfg,
             run_cfg=self.run_cfg,
             model=self.trainable,
-            run_name=self.__class__.__name__,
             save_callback=self.save_to_path,
         )
-        # trainer.post_step()
         return trainer
-
-    # def run(cfg):
-
-    #     tr = TrainingRunner
-    #     tr.trainer.train()
 
     @classmethod
     def get_arch_config_class(cls):
@@ -301,26 +316,18 @@ class Architecture(Generic[ArchConfigType]):
         return RunConfig[cls.get_arch_config_class()]
 
     def save_to_path(
-        self, path: Path | ArchStoragePaths, save_weights=..., averaged_weights=None
+        self,
+        path: Path | ArchStoragePaths,
+        save_weights=...,
+        averaged_weights=None,
     ):
         path = ArchStoragePaths.from_path(path)
         path.path.parent.mkdir(parents=True, exist_ok=True)
 
-        if path.arch_ref.exists():
+        if path.exists():
             self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
             raise ValueError(
-                f"file already existed at {path.arch_ref}, wrote to {path.path.name}_1"
-            )
-
-        elif path.model_weights.exists():
-            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
-            raise ValueError(
-                f"file already existed at {path.model_weights}, wrote to {path.path.name}_1"
-            )
-        elif path.averaged_weights.exists():
-            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
-            raise ValueError(
-                f"file already existed at {path.averaged_weights}, wrote to {path.path.name}_1"
+                f"file already existed at {path}, wrote to {path.path.name}_1"
             )
 
         from .arch_reload_info import ArchClassRef, ArchRef
@@ -379,8 +386,12 @@ class Architecture(Generic[ArchConfigType]):
     #     return inst
 
     @classmethod
-    def load(cls, path: Path | ArchStoragePaths, load_weights=None):
-        return ArchStoragePaths.from_path(path).load_arch(load_weights=load_weights)
+    def load(
+        cls, path: Path | ArchStoragePaths, load_weights=None, averaged_weights=False
+    ):
+        return ArchStoragePaths.from_path(path).load_arch(
+            load_weights=load_weights, averaged_weights=averaged_weights
+        )
 
     def run_training(self):
         self.trainer.train()
