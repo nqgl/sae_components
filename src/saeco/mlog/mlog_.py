@@ -1,31 +1,14 @@
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
-from .fns import get_logger, CustomSweeper
+from .fns import NeptuneCustomLogger
 import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from saeco.sweeps.SweepRunner import SweepRunner
     from saeco.sweeps.newsweeper import SweepData
 
 
-class classproperty(property):
-    def __get__(self, owner_self, owner_cls):
-        return self.fget(owner_cls)
-
-    def setter(self, __fset):
-        raise NotImplementedError
-
-    def __set__(self, owner_self, value):
-        raise NotImplementedError
-
-
 class mlog:
-    logger_instance = get_logger()
-
-    @classmethod
-    def use_custom_sweep(cls):
-        if not isinstance(cls.logger_instance, CustomSweeper):
-            cls.logger_instance = CustomSweeper(cls.logger_instance)
+    logger_instance = NeptuneCustomLogger()
 
     @classmethod
     def init(cls, arch_ref=None, project=None, config=None, run_name=None):

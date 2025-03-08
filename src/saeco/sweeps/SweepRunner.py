@@ -61,7 +61,6 @@ class SweepRunner:
     def start_sweep_agent(self):
         if self.sweep_index is not None:
             kwargs = {"sweep_index": self.sweep_index, "sweep_hash": self.sweep_hash}
-            mlog.use_custom_sweep()
 
         else:
             kwargs = {}
