@@ -206,6 +206,19 @@ class NeptuneCustomLogger:
         self.run = None
         self.run_name = None
 
+    @classmethod
+    def neptune_config_fix(cls, item):
+        from enum import Enum
+
+        if isinstance(item, Enum):
+            return item.value
+        if isinstance(item, dict):
+            return {k: cls.neptune_config_fix(v) for k, v in item.items()}
+        elif isinstance(item, list) or isinstance(item, tuple):
+            return {i: v for i, v in enumerate(item)}
+
+        return item
+
     def update_config(self, config_dict):
         self.update_namespace("config", config_dict)
 
