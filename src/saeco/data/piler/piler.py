@@ -117,7 +117,7 @@ def main():
     rm(testdata)
     testdata.mkdir(parents=True, exist_ok=True)
 
-    p = Piler2(testdata / "piler_test", torch.int64, [None, 16], num_piles=4)
+    p = Piler(testdata / "piler_test", torch.int64, [None, 16], num_piles=4)
     for i in range(400):
         t = torch.arange(32000).reshape(-1, 16)
         p.distribute(t)
@@ -126,7 +126,7 @@ def main():
 
     p.shuffle_piles()
     shuffled = torch.cat(p.piles.values(raw=False))
-    p2 = Piler2(testdata / "piler_test", torch.int64, [None, 16])
+    p2 = Piler(testdata / "piler_test", torch.int64, [None, 16])
     reopened = torch.cat(p2.piles.values(raw=False))
     p.piles[0] == p2.piles[0]
     p.piles.keys()
