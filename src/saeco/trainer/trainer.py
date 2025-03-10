@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from functools import cached_property
 
 import torch
 import torch.utils
@@ -82,9 +83,6 @@ class Trainer:
             self.optim = LARS(self.optim)
             assert optim is None or not isinstance(optim, LARS)
 
-        self.llm_val_tokens = TokensData(
-            self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
-        ).get_tokens()
         self.eval_step_freq = 100
 
         self.gradscaler = GradScaler() if self.cfg.use_autocast else None
@@ -99,6 +97,12 @@ class Trainer:
                     multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.999),
                 )
             )
+
+    @cached_property
+    def llm_val_tokens(self):
+        return TokensData(
+            self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
+        ).get_tokens()
 
     def get_l0_target(self):
         if self.cfg.l0_target is None:
