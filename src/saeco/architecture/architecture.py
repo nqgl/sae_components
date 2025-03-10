@@ -233,6 +233,8 @@ class Architecture(Generic[ArchConfigType]):
         return self._trainable
 
     def make_trainable(self):
+        if not self._instantiated:
+            self.instantiate()
         trainable = Trainable(
             [self._core_model, *self.aux_models],
             losses=self._losses,
