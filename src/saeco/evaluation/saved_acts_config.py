@@ -6,7 +6,8 @@ from saeco.architecture.arch_reload_info import ArchStoragePaths
 
 
 class CachingConfig(BaseModel):
-    model_path: ArchStoragePaths | None = None
+    model_path_str: str | None = None
+    averaged_model_weights: bool = False
     docs_per_chunk: int = 100
     num_chunks: int = 30
     store_sparse: bool = True
@@ -20,6 +21,21 @@ class CachingConfig(BaseModel):
     deferred_blocked_store_feats_block_size: int = 10
     STANDARD_FILE_NAME: ClassVar = "cache_config.json"
     metadatas_from_src_column_names: list[str] = []
+
+    @property
+    def model_path(self) -> Path | None:
+        if self.model_path_str is None:
+            return None
+        return Path(self.model_path_str)
+
+    @model_path.setter
+    def model_path(self, value: str | Path):
+        if isinstance(value, Path):
+            value = str(value)
+        if isinstance(value, str):
+            self.model_path_str = value
+        else:
+            raise ValueError("model_path must be a str or Path")
 
     @property
     def num_docs(self):
