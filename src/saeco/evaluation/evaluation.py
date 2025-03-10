@@ -93,6 +93,7 @@ class BMStorShelf:
 class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     model_path: Path
     architecture: Architecture = field(repr=False)
+    averaged_model_weights: bool = field(default=False, repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
@@ -152,15 +153,22 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             if not name.exists():
                 name = Path.home() / "workspace" / "cached_sae_acts" / name
         saved = SavedActs.from_path(name)
-        inst = cls.from_model_path(saved.cfg.model_path)
+        inst = cls.from_model_path(
+            saved.cfg.model_path, averaged_weights=saved.cfg.averaged_model_weights
+        )
         inst.saved_acts = saved
         return inst
 
     @classmethod
-    def from_model_path(cls, path: Path):
+    def from_model_path(cls, path: Path, averaged_weights: bool = False):
         path = path if isinstance(path, Path) else Path(path)
-        arch = Architecture.load(path, load_weights=True)
-        inst = cls(architecture=arch, model_path=path)
+        arch = Architecture.load(
+            path, load_weights=True, averaged_weights=averaged_weights
+        )
+        inst = cls(
+            architecture=arch, model_path=path, averaged_model_weights=averaged_weights
+        )
+
         return inst
 
     def __attrs_post_init__(self):
@@ -241,7 +249,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             raise NotImplementedError(
                 "Getting metadatas from a filtered Evaluation is TODO and pending some design choices."
             )
-        return Metadatas(self.path, self.cache_cfg)
+        return Metadatas(self.path, cached_config=self.cache_cfg)
 
     @property
     def _root_metadatas(self):
@@ -251,7 +259,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @cached_property
     def artifacts(self) -> Artifacts:
-        return Artifacts(self.path, self.cache_cfg)
+        return Artifacts(self.path, cached_config=self.cache_cfg)
 
     @cached_property
     def filters(self) -> Filters:
@@ -260,7 +268,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
                 "Cannot access filters from a filtered evaluation. If this could be useful though, let me (Glen) know."
             )
 
-        return Filters(self.path, self.cache_cfg)
+        return Filters(self.path, cached_config=self.cache_cfg)
 
     @property
     def d_dict(self):
@@ -298,6 +306,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         if caching_cfg.model_path is None:
             caching_cfg.model_path = self.model_path
         assert caching_cfg.model_path == self.model_path
+        assert caching_cfg.averaged_model_weights == self.averaged_model_weights
         acts_cacher = ActsCacher.from_cache_and_runner(
             caching_config=caching_cfg, architecture=self.architecture
         )

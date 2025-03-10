@@ -116,15 +116,15 @@ class ArchStoragePaths(BaseModel):
 
     @property
     def arch_ref(self):
-        return self.path.with_suffix(ARCH_REF_PATH_EXT)
+        return self.stempath.with_suffix(ARCH_REF_PATH_EXT)
 
     @property
     def model_weights(self):
-        return self.path.with_suffix(MODEL_WEIGHTS_PATH_EXT)
+        return self.stempath.with_suffix(MODEL_WEIGHTS_PATH_EXT)
 
     @property
     def averaged_weights(self):
-        return self.path.with_suffix(AVERAGED_WEIGHTS_PATH_EXT)
+        return self.stempath.with_suffix(AVERAGED_WEIGHTS_PATH_EXT)
 
     @classmethod
     def from_path(cls, path: Path):
@@ -168,3 +168,7 @@ class ArchStoragePaths(BaseModel):
             or self.model_weights.exists()
             or self.averaged_weights.exists()
         )
+
+    @property
+    def stempath(self):
+        return self.path.with_name(self.path.stem.split(".")[0])

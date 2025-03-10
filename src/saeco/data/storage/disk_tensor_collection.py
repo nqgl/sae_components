@@ -96,10 +96,10 @@ class DiskTensorCollection(Generic[DiskTensorType]):
         else:
             return [self.get(name).tensor for name in self.keys()]
 
-    def __class_getitem__(cls, item):
-        tcls = super().__class_getitem__(item)
-        tcls.disk_tensor_cls = item
-        return tcls
+    # def __class_getitem__(cls, item):
+    #     tcls = super().__class_getitem__(item)
+    #     tcls.disk_tensor_cls = item
+    #     return tcls
 
     def __len__(self):
         return len(self.keys())
