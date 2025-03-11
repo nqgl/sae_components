@@ -6,7 +6,6 @@ from typing import List, Union
 import torch
 import tqdm
 
-from saeco.data.storage import DiskTensor, GrowingDiskTensor, DiskTensorCollection
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )

@@ -11,8 +11,6 @@ from torch import Tensor
 
 from .filtered import FilteredTensor
 
-from ..data.storage.disk_tensor_collection import DiskTensorCollection
-
 
 class CachedCalls:
     def __init__(self, raw):

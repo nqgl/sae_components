@@ -1,15 +1,13 @@
 from saeco.data.storage import DiskTensor, GrowingDiskTensor
 
-
-import torch
-from attrs import define
-
+from attrs import define, field
 
 from pathlib import Path
 import torch
-from typing import Generic, TypeVar, Type
+from typing import Generic, ClassVar
+from typing_extensions import TypeVar
 
-DiskTensorType = TypeVar("DiskTensorType", bound="DiskTensor")
+DiskTensorType = TypeVar("DiskTensorType", default=DiskTensor)
 
 
 @define
@@ -17,7 +15,7 @@ class DiskTensorCollection(Generic[DiskTensorType]):
     path: Path
     stored_tensors_subdirectory_name: str = "tensors"
     return_raw: bool = False
-    disk_tensor_cls = DiskTensor  # type: ignore
+    disk_tensor_cls: ClassVar[type[DiskTensorType]] = DiskTensor
 
     @property
     def storage_dir(self) -> Path:
@@ -96,13 +94,16 @@ class DiskTensorCollection(Generic[DiskTensorType]):
         else:
             return [self.get(name).tensor for name in self.keys()]
 
-    # def __class_getitem__(cls, item):
-    #     tcls = super().__class_getitem__(item)
-    #     tcls.disk_tensor_cls = item
-    #     return tcls
-
     def __len__(self):
         return len(self.keys())
+
+    def __class_getitem__(cls, dt_cls: type):
+        class SubClass(super().__class_getitem__(dt_cls)):
+            disk_tensor_cls = dt_cls
+
+        SubClass.__name__ = f"{cls.__name__}[{dt_cls}]"
+
+        return SubClass
 
 
 def main():
