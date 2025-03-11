@@ -22,7 +22,7 @@ from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
 
 from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
-from ..data.storage.disk_tensor_collection import DiskTensorCollection
+
 from saeco.trainer import RunConfig, TrainingRunner
 from ..misc.nnsite import getsite, setsite
 from .cached_artifacts import CachedCalls
