@@ -79,7 +79,10 @@ class ModelConfig(SweepableConfig):
 
     @cached_property
     def tokenizer(self):
-        return AutoTokenizer.from_pretrained(self.model_name)
+        return AutoTokenizer.from_pretrained(
+            self.model_name,
+            cache_dir=DATA_DIRS.CACHE_DIR,
+        )
 
     def _make_raw_model(self):
         get_model_fn = (
