@@ -4,6 +4,7 @@ from pydantic import Field
 
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
+from saeco.data.locations import DATA_DIRS
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -87,11 +88,13 @@ class ModelConfig(SweepableConfig):
         if self.torch_dtype_str is None:
             model = get_model_fn(
                 self.model_name,
+                cache_dir=DATA_DIRS.CACHE_DIR,
                 device_map=self._device,
             )
         else:
             model = get_model_fn(
                 self.model_name,
+                cache_dir=DATA_DIRS.CACHE_DIR,
                 torch_dtype=self.torch_dtype,
                 device_map=self._device,
             )
