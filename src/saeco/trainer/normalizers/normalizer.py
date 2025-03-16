@@ -11,6 +11,8 @@ import saeco.core as cl
 
 
 class Normalizer(cl.Module, ABC):
+    primed: bool
+
     def __init__(self, init):
         super().__init__()
 
