@@ -223,19 +223,12 @@ class Trainer:
 
     def _train(self, buffer=None, num_steps=None):
         if buffer is None:
-            buffer = self.get_databuffer(num_workers=6)
+            buffer = self.cfg.data_cfg.get_queued_databuffer(
+                batch_size=self.cfg.batch_size
+            )
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
         self.post_step()
-        # if wandb.run is None:
-        #     wandb.init(
-        #         **self.cfg.wandb_cfg,
-        #         config=self.run_cfg.model_dump(),
-        #         reinit=True,
-        #     )
-
-        # if self.cfg.use_schedulefree:
-        #     self.optim.train()
 
         if num_steps is not None:
             old_buffer = buffer

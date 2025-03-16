@@ -188,7 +188,7 @@ def gpt_2(block_postfix):
             ),
             model_name="gpt2",
         ),
-        trainsplit=SplitConfig(start=0, end=50, tokens_from_split=200_000_000),
+        trainsplit=SplitConfig(start=0, end=50, tokens_from_split=20_000_000),
         generation_config=DataGenerationProcessConfig(
             # tokens_per_pile=2**25,
             acts_per_pile=2**17,

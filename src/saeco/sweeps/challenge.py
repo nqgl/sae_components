@@ -15,58 +15,14 @@ from saeco.trainer.schedule_cfg import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig
 
 
-class Config(SweepableConfig):
-    pre_bias: bool = False
-    untied: bool = True
-
-
-def sae(
-    init: Initializer,
-    cfg: Config,
-):
-    # init._encoder.add_wrapper(ReuseForward)
-    if cfg.untied:
-        init._decoder.add_wrapper(ft.NormFeatures)
-        init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
-    else:
-        init._decoder.tie_weights(init._encoder)
-
-    def model(enc, penalties, metrics, detach=False):
-        return Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
-            encoder=enc,
-            freqs=EMAFreqTracker(),
-            **penalties,
-            metrics=metrics,
-            decoder=init.decoder.resampled(),
-        )
-
-    model_full = model(
-        enc=Seq(linear=init.encoder.resampled(), relu=nn.ReLU()),
-        penalties=dict(l1=L1Penalty()),
-        metrics=co.metrics.ActMetrics(),
-        detach=False,
-    )
-
-    models = [model_full]
-    losses = dict(
-        L2_loss=L2Loss(model_full),
-        sparsity_loss=SparsityPenaltyLoss(model_full),
-    )
-
-    return models, losses
-
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
 from saeco.data.data_config_definitions import gpt_2_block
-from saeco.trainer.runner import TrainingRunner
+from saeco.architectures.vanilla.vanilla_model import VanillaSAE, VanillaConfig
 
-model_fn = sae
-quick_check = False
 PROJECT = "sae sweeps"
 train_cfg = TrainConfig(
     data_cfg=gpt_2_block(),
@@ -95,42 +51,106 @@ train_cfg = TrainConfig(
         resample_delay=(5_000),
     ),
 )
-acfg = Config(
-    pre_bias=True,
-)
-cfg = RunConfig[Config](
+
+cfg = RunConfig[VanillaConfig](
     train_cfg=train_cfg,
-    arch_cfg=acfg,
+    arch_cfg=VanillaConfig(),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
     ),
     init_cfg=InitConfig(dict_mult=16),
 )
-tr = TrainingRunner(cfg, model_fn=model_fn)
-data = tr.data
-model = tr.trainable
+
+arch = VanillaSAE(cfg)
+
+data = arch.run_cfg.train_cfg.data_cfg.get_databuffer(num_workers=16)
+model = arch.trainable
 import torch
 import tqdm
 
 optim = torch.optim.Adam(model.parameters(), lr=1e-3)
-for i in tqdm.trange(800):
-    x = next(data).cuda()
-    y = model(x)
-    l = (y - x).pow(2).mean()
-    l.backward()
-    optim.step()
-    optim.zero_grad()
+# for i in tqdm.trange(800):
+#     x = next(data).cuda()
+#     y = model(x)
+#     l = (y - x).pow(2).mean()
+#     l.backward()
+#     optim.step()
+#     optim.zero_grad()
+# with torch.no_grad():
+#     q = 0
+#     print("disk + sum task")
+
+#     for i in tqdm.trange(1500):
+#         x = next(data)
+#         q += x
+data = arch.data
+
+for _ in range(3):
+    for i in tqdm.trange(100):
+        x = next(data).cuda()
+        y = model(x)
+        l = (y - x).pow(2).mean()
+        l.backward()
+        optim.step()
+        optim.zero_grad()
 with torch.no_grad():
     q = 0
     print("disk + sum task")
+    for _ in range(3):
+        for i in tqdm.trange(101):
+            x = next(data)
+            q += x
 
-    for i in tqdm.trange(1500):
-        x = next(data)
-        q += x
-
-print("done")
+data = arch.trainer.get_databuffer(num_workers=16, queue_size=128)
 
 
-def run(cfg):
+for _ in range(8):
+    for i in tqdm.trange(100):
+        x = next(data).cuda()
+        y = model(x)
+        l = (y - x).pow(2).mean()
+        l.backward()
+        optim.step()
+        optim.zero_grad()
+with torch.no_grad():
+    q = 0
+    print("disk + sum task")
+    for _ in range(15):
+        for i in tqdm.trange(101):
+            x = next(data)
+            q += x
 
-    tr.trainer.train()
+# data = arch.data
+
+# print("done")
+# for _ in range(8):
+#     for i in tqdm.trange(99):
+#         x = next(data).cuda()
+#         y = model(x)
+#         l = (y - x).pow(2).mean()
+#         l.backward()
+#         optim.step()
+#         optim.zero_grad()
+# with torch.no_grad():
+#     q = 0
+#     print("disk + sum task")
+#     for _ in range(15):
+#         for i in tqdm.trange(88):
+#             x = next(data)
+#             q += x
+
+# for _ in range(8):
+#     for i in tqdm.trange(99):
+#         x = next(data).cuda()
+#         y = model(x)
+#         l = (y - x).pow(2).mean()
+#         l.backward()
+#         optim.step()
+#         optim.zero_grad()
+# with torch.no_grad():
+#     q = 0
+#     print("disk + sum task")
+#     for _ in range(15):
+#         for i in tqdm.trange(88):
+#             x = next(data)
+#             q += x

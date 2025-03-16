@@ -84,9 +84,6 @@ class SweepData(BaseModel, Generic[T]):
         return path
 
 
-import uuid
-
-
 @define
 class SweepManager:
     arch: Architecture
@@ -246,9 +243,38 @@ class SweepManager:
             num_pods = int(input("Enter number of pods: "))
         pods = Pods.All(group=self.ezpod_group)
         pods.make_new_pods(num_pods)
+        pods.EZPOD_MIN_COMPLETE_TO_CONTINUE = setup_min
         pods.sync()
         pods.setup()
-        pods.EZPOD_MIN_COMPLETE_TO_CONTINUE = setup_min
+        try:
+            yield pods
+        finally:
+            if not keep:
+                try:
+                    pods.purge()
+                except Exception as e:
+                    try:
+                        print("pod purge failed, retrying")
+                        time.sleep(10)
+                        Pods.All(group=self.ezpod_group).purge()
+                    except Exception as e:
+                        print(
+                            "failed twice to purge subset of pods, purging all pods in 10 seconds"
+                        )
+                        time.sleep(10)
+                        Pods.All().purge()
+                        raise e
+                    raise e
+
+    @contextmanager
+    def existing_pods(
+        self,
+        keep=True,
+    ) -> Generator["Pods", None, None]:
+        from ezpod import Pods
+
+        pods = Pods.All(group=self.ezpod_group)
+        pods.sync()
         try:
             yield pods
         finally:

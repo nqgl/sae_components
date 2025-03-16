@@ -1,5 +1,5 @@
 def bufferized_iter(it, queue_size=32, getnext=next):
-    print("bufferizing")
+    print("bufferizing", queue_size)
     queue = [getnext(it) for _ in range(queue_size)]
     print("buffer initialized")
 

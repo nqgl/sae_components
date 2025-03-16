@@ -272,5 +272,6 @@ class ActsDataset(torch.utils.data.IterableDataset):
                 nw=nw,
             ),
             queue_size=base_size + offset,
+            # getnext=lambda i: next(i).cuda(non_blocking=True),
             # getnext=lambda i: next(i).share_memory_(),
         )

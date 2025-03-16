@@ -16,6 +16,7 @@ from saeco.data.split_config import SplitConfig
 from saeco.data.piler import Piler
 from saeco.data.tokens_data import TokensData
 from saeco.sweeps import SweepableConfig
+from saeco.data.bufferized_iter import bufferized_iter
 
 
 class DataConfig(SweepableConfig):
@@ -48,6 +49,8 @@ class DataConfig(SweepableConfig):
         default_factory=DataGenerationProcessConfig
     )
     perm_all: bool = False
+    databuffer_num_workers: int = 64
+    databuffer_queue_size: int | None = 128
 
     def idstr(self) -> str:
         seq_len = str(self.seq_len) if self.seq_len is not None else "null"
@@ -108,6 +111,20 @@ class DataConfig(SweepableConfig):
 
     def train_dataset(self, model, batch_size):
         return ActsDataset(ActsData(self, model), self.trainsplit, batch_size)
+
+    def get_queued_databuffer(self, batch_size, num_workers=None, queue_size=None):
+        queue_size = queue_size or self.databuffer_queue_size
+        num_workers = (
+            self.databuffer_num_workers if num_workers is None else num_workers
+        )
+        buf = self.get_databuffer(num_workers=num_workers, batch_size=batch_size)
+        if queue_size is not None:
+            return bufferized_iter(
+                buf,
+                queue_size=queue_size,
+                getnext=lambda b: next(b).cuda(non_blocking=True),
+            )
+        return buf
 
     def get_databuffer(self, num_workers=0, batch_size=4096):
         model = None
