@@ -1,7 +1,7 @@
 from typing import Optional
 import torch
 import torch.nn as nn
-
+from typing_extensions import Self
 from saeco.components.features.features_param import (
     FeaturesParam,
     HasFeatures,
@@ -110,7 +110,7 @@ class Resampler(ABC):
                 target_l1=None,  # self.cfg.freq_balance,
             )
 
-    def assign_model(self, model):
+    def assign_model(self, model: nn.Module) -> Self:
         self.model = model
         return model
 

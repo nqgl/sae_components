@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import Iterable, Protocol
 
 import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
-from unpythonic import box
 
 import saeco.core as cl
 
@@ -27,13 +26,13 @@ class Normalizer(cl.Module, ABC):
     def prime_normalizer(self, buffer, n=100):
         pass
 
-    def io_normalize(self, module) -> "NormalizedIO":
+    def io_normalize(self, module: nn.Module) -> "NormalizedIO":
         return NormalizedIO(model=module, normalizer=self)
 
-    def input_normalize(self, module) -> "NormalizedInputs":
+    def input_normalize(self, module: nn.Module) -> "NormalizedInputs":
         return NormalizedInputs(model=module, normalizer=self)
 
-    def output_denormalize(self, module) -> "DeNormalizedOutputs":
+    def output_denormalize(self, module: nn.Module) -> "DeNormalizedOutputs":
         return DeNormalizedOutputs(model=module, normalizer=self)
 
     def get_denormalizer(self):
@@ -341,7 +340,7 @@ class GeneralizedNormalizer(Normalizer):
         )
 
     @torch.no_grad()
-    def prime_normalizer(self, buffer, n=20):
+    def prime_normalizer(self, buffer: Iterable[Tensor], n: int = 20):
         assert not self.primed
         self.primed = True
         samples = [next(buffer) for _ in range(n)]

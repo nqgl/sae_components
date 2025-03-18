@@ -7,26 +7,24 @@ import torch
 from typing import Generic, ClassVar
 from typing_extensions import TypeVar
 
-DiskTensorType = TypeVar("DiskTensorType", default=DiskTensor)
+DiskTensorType = TypeVar("DiskTensorType", bound=DiskTensor)
 
 
 @define
 class DiskTensorCollection(Generic[DiskTensorType]):
-    path: Path
+    path: Path | None = None
     stored_tensors_subdirectory_name: str = "tensors"
     return_raw: bool = False
-    disk_tensor_cls: ClassVar[type[DiskTensorType]] = DiskTensor
+    disk_tensor_cls: type[DiskTensorType] = DiskTensor
 
     @property
     def storage_dir(self) -> Path:
+        assert self.path is not None
         return self.path / self.stored_tensors_subdirectory_name
 
-    def check_name_create(self, name) -> str:
+    def check_name_create(self, name: str | int) -> str:
         if not isinstance(name, str):
-            if isinstance(name, int):
-                name = str(name)
-            else:
-                raise ValueError(f"Name must be a string or int, got {type(name)}")
+            name = str(name)
         if name in self:
             raise ValueError(f"{name} already exists!")
         return name

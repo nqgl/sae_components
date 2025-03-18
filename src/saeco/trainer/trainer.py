@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from functools import cached_property
+from typing import Iterable
 
 import torch
 import torch.utils
@@ -211,7 +212,9 @@ class Trainer:
         cache.trainstep = self.t
         return cache
 
-    def train(self, buffer=None, num_steps=None):
+    def train(
+        self, buffer: Iterable[torch.Tensor] | None = None, num_steps: int | None = None
+    ):
         try:
             self._train(buffer=buffer, num_steps=num_steps)
         finally:

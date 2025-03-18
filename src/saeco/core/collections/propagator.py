@@ -1,9 +1,11 @@
-from typing import Any, Union
+from typing import Any, Literal, Union, Callable, overload
+from typing_extensions import Self
 from saeco.core.cache import Cache
 from saeco.core.collections.collection import Collection
 from saeco.core.proc_appropriately import proc_appropriately
 from typing import Protocol, runtime_checkable
 from torch import Tensor
+from types import FunctionType, LambdaType
 
 
 @runtime_checkable
@@ -90,7 +92,30 @@ class Propagator(Collection):
                 r = self._reduction(r, v)
         return r
 
-    def reduce(self, f, binary=False, takes_cache=False, binary_initial_value=None):
+    # @overload
+    # def reduce(
+    #     self,
+    #     f: Callable[..., Any],
+    #     binary: Literal[False],
+    #     takes_cache: bool = False,
+    #     binary_initial_value: Any | None = None,
+    # ) -> Self: ...
+    # @overload
+    # def reduce(
+    #     self,
+    #     f: Callable[[Tensor, Tensor], Tensor],
+    #     binary: Literal[True],
+    #     takes_cache: bool = False,
+    #     binary_initial_value: Any | None = None,
+    # ) -> Self: ...
+
+    def reduce(
+        self,
+        f: FunctionType | Callable[..., Any],
+        binary: bool = False,
+        takes_cache: bool = False,
+        binary_initial_value: Any | None = None,
+    ) -> Self:
         self._reduction = f
         self._binary_reduction = binary
         self._binary_reduction_initial_value = binary_initial_value

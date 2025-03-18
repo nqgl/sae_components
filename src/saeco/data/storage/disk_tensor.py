@@ -106,7 +106,9 @@ class DiskTensor:
         )
 
     @classmethod
-    def create(cls, path, shape, dtype):
+    def create(
+        cls, path: Path, shape: torch.Size | tuple[int, ...], dtype: torch.dtype
+    ):
         metadata = DiskTensorMetadata(shape=shape, dtype_str=str(dtype))
 
         inst = cls(path=path, metadata=metadata)

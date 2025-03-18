@@ -59,9 +59,9 @@ class Piler:
         for i in range(self.num_piles):
             self.piles.create(i, self.dtype, self.shape)
 
-    def finalize(self):
-        self.piles.finalize()
-        assert len(self.piles) == self.num_piles
+    # def finalize(self):
+    #     self.piles.finalize()
+    #     assert len(self.piles) == self.num_piles
 
     def distribute(self, t: torch.Tensor, indexer: torch.Tensor | None = None):
         if self.readonly:

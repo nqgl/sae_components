@@ -12,6 +12,8 @@ from saeco.data.split_config import SplitConfig
 from saeco.data.tokens_data import TokensData
 from saeco.misc.nnsite import getsite
 from saeco.misc import str_to_dtype
+import torch.utils
+import torch.utils.data
 
 if TYPE_CHECKING:
     from saeco.data.data_cfg import DataConfig
@@ -250,7 +252,6 @@ class ActsDataset(torch.utils.data.IterableDataset):
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
-
         if self.generate_piles:
             gen_fn = self.acts.pile_generator
         else:
@@ -262,8 +263,16 @@ class ActsDataset(torch.utils.data.IterableDataset):
         )
         id = worker_info.id
         nw = worker_info.num_workers
-        offset = (id % nw) * batches_per_pile // nw
-        base_size = int(4096 / self.batch_size * 8 + 1)
+        assert id % nw == id, (id, nw)
+        if self.acts.cfg.databuffer_worker_offset_mult is None:
+            offset = (id * batches_per_pile) // nw
+        else:
+            offset = id * self.acts.cfg.databuffer_worker_offset_mult
+        base_size = (
+            self.acts.cfg.databuffer_worker_queue_base_size
+            if self.acts.cfg.databuffer_worker_queue_base_size is not None
+            else int(4096 / self.batch_size * 8 + 1)
+        )
         return bufferized_iter(
             gen_fn(
                 self.split,

@@ -5,8 +5,8 @@ import inspect
 import importlib
 from pathlib import Path
 import json
-from typing import TYPE_CHECKING, Generic, TypeVar
-
+from typing import TYPE_CHECKING, Generic, TypeVar, Any
+from typing_extensions import Self
 
 from saeco.trainer.run_config import RunConfig
 
@@ -30,7 +30,7 @@ class ArchClassRef(BaseModel):
     source_backup: str = None
 
     @classmethod
-    def from_arch(cls, arch: "Architecture") -> "ArchClassRef":
+    def from_arch(cls, arch: "Architecture[Any]") -> "ArchClassRef":
         return cls(
             module=arch.__class__.__module__,
             cls_name=arch.__class__.__name__,
@@ -69,16 +69,17 @@ class ArchRef(BaseModel, Generic[T]):
     config: T = Field()
 
     @classmethod
-    def open(cls, path: Path) -> "ArchRef":
+    def open(cls, path: Path) -> Self:
         if (
-            hasattr(cls.__orig_bases__[0], "__args__")
+            hasattr(cls, "__orig_bases__")
+            and hasattr(cls.__orig_bases__[0], "__args__")
             and cls.__orig_bases__[0].__args__[0] is not T
         ):
             raise ValueError("generic type T must not be instantiated")
         return cls.from_json(json.loads(path.read_text()))
 
     @classmethod
-    def from_json(cls, d):
+    def from_json(cls, d: dict):
 
         config_class = (
             ArchClassRef.model_validate(d["class_ref"])
@@ -93,7 +94,7 @@ class ArchRef(BaseModel, Generic[T]):
         return arch_cls(self.config, state_dict=state_dict, device=device)
 
     @classmethod
-    def from_arch(cls, arch: "Architecture") -> "ArchRef":
+    def from_arch(cls, arch: "Architecture[T]") -> "ArchRef[T]":
         return cls(
             class_ref=ArchClassRef.from_arch(arch),
             config=arch.run_cfg,
@@ -127,14 +128,18 @@ class ArchStoragePaths(BaseModel):
         return self.stempath.with_suffix(AVERAGED_WEIGHTS_PATH_EXT)
 
     @classmethod
-    def from_path(cls, path: Path):
+    def from_path(cls, path: Path | Self):
         if isinstance(path, cls):
             return path
         return cls(path=path)
 
     def load_arch(
-        self, load_weights=None, averaged_weights=False, device="cuda", state_dict=None
-    ):
+        self,
+        load_weights: bool | None = None,
+        averaged_weights: bool | None = False,
+        device: str | torch.device = "cuda",
+        state_dict: dict[str, Any] | None = None,
+    ) -> "Architecture[Any]":
         from .arch_reload_info import ArchClassRef, ArchRef
 
         assert load_weights or not averaged_weights
