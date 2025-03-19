@@ -31,7 +31,7 @@ from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
 from .arch_prop import loss_prop, metric_prop, model_prop, aux_model_prop
 import typing
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from saeco.sweeps.newsweeper import SweepData
@@ -55,38 +55,40 @@ class SAE(cl.Seq):
     def __init__(
         self,
         *,
-        encoder_pre: cl.Module | None = None,
-        nonlinearity: cl.Module | None = None,
-        decoder: cl.Module = None,
-        act_metrics: ActMetrics = None,
-        preacts: PreActMetrics = None,
-        penalty: co.Penalty | None = ...,
-        freqs: EMAFreqTracker | None = ...,
+        encoder_pre: Literal[None] = None,
+        nonlinearity: Literal[None] = None,
+        encoder: nn.Module,
+        decoder: nn.Module,
+        act_metrics: ActMetrics | None = None,
+        preacts: PreActMetrics | None = None,
+        penalty: co.Penalty | None | ellipsis = ...,
+        freqs: EMAFreqTracker | None | ellipsis = ...,
     ): ...
 
     @overload
     def __init__(
         self,
         *,
-        encoder: cl.Module | None = None,
-        decoder: cl.Module = None,
-        act_metrics: ActMetrics = None,
-        preacts: PreActMetrics = None,
-        penalty: co.Penalty | None = ...,
-        freqs: EMAFreqTracker | None = ...,
+        encoder_pre: nn.Module,
+        nonlinearity: nn.Module,
+        encoder: Literal[None] = None,
+        decoder: nn.Module,
+        act_metrics: ActMetrics | None = None,
+        preacts: PreActMetrics | None = None,
+        penalty: co.Penalty | None | ellipsis = ...,
+        freqs: EMAFreqTracker | None | ellipsis = ...,
     ): ...
-
     def __init__(
         self,
         *,
-        encoder_pre: cl.Module | None = None,
-        nonlinearity: cl.Module | None = None,
-        decoder: cl.Module = None,
-        encoder: cl.Module | None = None,
-        act_metrics: ActMetrics = None,
-        preacts: PreActMetrics = None,
-        penalty: co.Penalty | None = ...,
-        freqs: EMAFreqTracker | None = ...,
+        encoder_pre: nn.Module | None = None,
+        nonlinearity: nn.Module | None = None,
+        encoder: nn.Module | None = None,
+        decoder: nn.Module | None = None,
+        act_metrics: ActMetrics | None = None,
+        preacts: PreActMetrics | None = None,
+        penalty: co.Penalty | None | ellipsis = ...,
+        freqs: EMAFreqTracker | None | ellipsis = ...,
     ):
         penalty = co.L1Penalty() if penalty is ... else penalty
         freqs = EMAFreqTracker() if freqs is ... else freqs
