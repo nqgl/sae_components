@@ -14,7 +14,7 @@ class L1Penalty(Penalty):
 
 
 class LinearDecayL1Penalty(Penalty):
-    def __init__(self, end, begin=0, begin_scale=1.0, end_scale=0):
+    def __init__(self, end, begin=0, begin_scale=1.0, end_scale: float = 0.0):
         super().__init__()
         self.begin_scale = begin_scale
         self.begin = begin

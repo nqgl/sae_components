@@ -7,7 +7,7 @@ import torch.utils
 import tqdm
 
 from schedulefree import AdamWScheduleFree
-from torch.amp import GradScaler
+from torch.amp.grad_scaler import GradScaler
 
 from saeco.core import Cache
 from saeco.data.tokens_data import TokensData
@@ -28,6 +28,7 @@ from .run_config import RunConfig
 from saeco.mlog import mlog
 
 # torch.multiprocessing.set_start_method("spawn")
+torch.optim.adam.Adam
 
 
 class Trainer:
@@ -36,7 +37,7 @@ class Trainer:
         cfg: TrainConfig,
         run_cfg: RunConfig,
         model: Trainable,
-        optim: torch.optim.Optimizer | None = None,
+        optim: torch.optim.optimizer.Optimizer | None = None,
         save_callback=None,
     ):
         self.cfg: TrainConfig = cfg
@@ -168,7 +169,7 @@ class Trainer:
             if self.cfg.use_averaged_model:
                 self.averaged_model.train()
 
-    def proc_cache_after_forward(self, cache: TrainCache):
+    def proc_cache_after_forward(self, cache: Cache):
         if self.cfg.l0_targeting_enabled and self.cfg.l0_target is not None:
 
             if not self.cfg.schedule.dynamic_adjust(self.t):
@@ -252,7 +253,9 @@ class Trainer:
                 x = x.float()  # TODO maybe cast other direction instead
             self.optim.zero_grad()
             if self.t % self.eval_step_freq == 0 or (
-                self.t > self.cfg.schedule.run_length - 1000 and self.t % 5 == 0
+                self.cfg.schedule.run_length
+                and self.t > self.cfg.schedule.run_length - 1000
+                and self.t % 5 == 0
             ):
                 self.trainable.eval()
                 self.eval_step(x)
@@ -286,16 +289,24 @@ class Trainer:
     def _nullcontext(self, yield_value=None):
         yield yield_value
 
+    @property
+    def train_autocast_dtype(self) -> torch.dtype:
+        dt = self.cfg.data_cfg.model_cfg.acts_cfg.autocast_dtype
+        if not dt or dt == torch.float32:
+            return torch.float16
+        return dt
+
     def cast(self):
         if self.cfg.use_autocast:
             return torch.autocast(
                 device_type="cuda",
-                dtype=self.cfg.data_cfg.model_cfg.acts_cfg.autocast_dtype,
+                dtype=self.train_autocast_dtype,
             )
         return self._nullcontext()
 
     def handle_backward(self, loss, cache):
         if self.cfg.use_autocast:
+            assert self.gradscaler is not None
             self.gradscaler.scale(loss).backward()
         else:
             loss.backward()
@@ -303,6 +314,7 @@ class Trainer:
 
     def handle_step(self, cache):
         if self.cfg.use_autocast:
+            assert self.gradscaler is not None
             self.gradscaler.step(self.optim)
             self.gradscaler.update()
         else:
@@ -310,7 +322,7 @@ class Trainer:
         self.lr_scheduler.step()
         self.post_step(cache)
 
-    def trainstep(self, x, cache: Cache):
+    def trainstep(self, x, cache: TrainCache):
         self.pre_forward(cache)
         with self.cast():
             loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())

@@ -450,14 +450,18 @@ class GeneralizedNormalizer(Normalizer):
             return self._mu_s
         elif self.cfg.mu_s == SAggregation.SAMPLE:
             return self.sample_mean(x)
+        else:
+            raise ValueError(f"Invalid mu_s value: {self.cfg.mu_s}")
 
-    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
+    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"] | float:
         if self.cfg.std_s == SAggregation.DONTUSE:
-            return 1
+            return 1.0
         elif self.cfg.std_s == SAggregation.PRIMED:
             return self._std_s
         elif self.cfg.std_s == SAggregation.SAMPLE:
             return self.sample_std(x)
+        else:
+            raise ValueError(f"Invalid std_s value: {self.cfg.std_s}")
 
     def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
         if self.cfg.mu_e == Aggregation.DONTUSE:

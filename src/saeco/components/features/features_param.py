@@ -7,7 +7,7 @@ from saeco.components.features.optim_reset import (
 import torch
 import torch.nn as nn
 from torch import Tensor
-from typing import Mapping, Optional, Protocol, overload, runtime_checkable
+from typing import Mapping, Optional, Protocol, TypeAlias, overload, runtime_checkable
 
 IndexType = int | list[int]
 
@@ -280,8 +280,28 @@ def get_resampled_params(model: nn.Module):
 #     @property
 #     def features_grad(self) -> Optional[Tensor]: ...
 
+from typing import overload
+from functools import cached_property
+
 
 @runtime_checkable
-class HasFeatures(Protocol):
+class HasFeaturesAttr(Protocol):
+    features: dict[str, FeaturesParam]
+
+
+@runtime_checkable
+class HasFeaturesCachedProperty(Protocol):
+    @cached_property
+    def features(self) -> dict[str, FeaturesParam]: ...
+
+
+@runtime_checkable
+class HasFeaturesProperty(Protocol):
+
     @property
     def features(self) -> dict[str, FeaturesParam]: ...
+
+
+HasFeatures: TypeAlias = (
+    HasFeaturesProperty | HasFeaturesCachedProperty | HasFeaturesAttr
+)
