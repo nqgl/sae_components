@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from saeco.sweeps.newsweeper import SweepData
+from typing_extensions import get_original_bases
 
 
 ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
@@ -61,8 +62,8 @@ class SAE(cl.Seq):
         decoder: nn.Module,
         act_metrics: ActMetrics | None = None,
         preacts: PreActMetrics | None = None,
-        penalty: co.Penalty | None | ellipsis = ...,
-        freqs: EMAFreqTracker | None | ellipsis = ...,
+        penalty: co.Penalty | None = ...,
+        freqs: EMAFreqTracker | None = ...,
     ): ...
 
     @overload
@@ -75,8 +76,8 @@ class SAE(cl.Seq):
         decoder: nn.Module,
         act_metrics: ActMetrics | None = None,
         preacts: PreActMetrics | None = None,
-        penalty: co.Penalty | None | ellipsis = ...,
-        freqs: EMAFreqTracker | None | ellipsis = ...,
+        penalty: co.Penalty | None = ...,
+        freqs: EMAFreqTracker | None = ...,
     ): ...
     def __init__(
         self,
@@ -87,8 +88,8 @@ class SAE(cl.Seq):
         decoder: nn.Module | None = None,
         act_metrics: ActMetrics | None = None,
         preacts: PreActMetrics | None = None,
-        penalty: co.Penalty | None | ellipsis = ...,
-        freqs: EMAFreqTracker | None | ellipsis = ...,
+        penalty: co.Penalty | None = ...,
+        freqs: EMAFreqTracker | None = ...,
     ):
         penalty = co.L1Penalty() if penalty is ... else penalty
         freqs = EMAFreqTracker() if freqs is ... else freqs
@@ -312,9 +313,9 @@ class Architecture(Generic[ArchConfigType]):
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-
-        assert len(cls.__orig_bases__) == 1
-        p = typing.get_args(cls.__orig_bases__[0])
+        bases = get_original_bases(cls)
+        assert len(bases) == 1
+        p = typing.get_args(bases[0])
         assert len(p) == 1
         return p[0]
 
@@ -325,7 +326,7 @@ class Architecture(Generic[ArchConfigType]):
     def save_to_path(
         self,
         path: Path | ArchStoragePaths,
-        save_weights: bool | ellipsis = ...,
+        save_weights: bool = ...,
         averaged_weights: bool | None = None,
     ):
         if isinstance(path, Path):

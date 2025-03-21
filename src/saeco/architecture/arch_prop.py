@@ -130,24 +130,25 @@ class arch_prop(
 class arch_prop_singular(arch_prop[_T]):
     COLLECTED_FIELD_SINGULAR = True
 
-    # @classmethod
-    # def get_from_fields(cls, inst: object) -> _T:
-    #     fields = cls.get_fields(inst.__class__)
-    #     assert cls.COLLECTED_FIELD_SINGULAR
-    #     assert len(fields) == 1
-    #     return getattr(inst, fields[0])
+    @classmethod
+    def get_from_fields(cls, inst: object) -> _T:
+        fields = cls.get_fields(inst.__class__)
+        assert cls.COLLECTED_FIELD_SINGULAR
+        assert len(fields) == 1
+        return getattr(inst, fields[0])
 
 
-if TYPE_CHECKING:
-    Loss_T = TypeVar("Loss_T", bound=Loss)
-    from .architecture import SAE
+import torch.nn as nn
 
-    SAE_T = TypeVar("SAE_T", bound=SAE)
-    from saeco.components.metrics.metrics import Metric
-    import torch.nn as nn
+Loss_T = TypeVar("Loss_T", bound=nn.Module)
 
-    Metric_T = TypeVar("Metric_T", bound=nn.Module)
-    AuxModel_T = TypeVar("AuxModel_T", bound=nn.Module)
+Metric_T = TypeVar("Metric_T", bound=nn.Module)
+# from .architecture import SAE
+
+SAE_T = TypeVar("SAE_T", bound=nn.Module)
+# from saeco.components.metrics.metrics import Metric
+
+AuxModel_T = TypeVar("AuxModel_T", bound=nn.Module)
 
 
 class loss_prop(arch_prop[Loss_T]):
@@ -186,18 +187,19 @@ class _model_prop_base(arch_prop[_T]):
     """
 
     @deprecated("define with loss_prop instead for now")
-    def add_loss(self, loss: Loss) -> None:
+    def add_loss(self, loss: "Loss") -> None:
         raise NotImplementedError
-        # # tries to infer whether this is a method (therefore needing self as the first arg)
-        # # or a Loss constructor
-        # from saeco.components.losses import Loss
 
-        # assert isinstance(loss, Loss)
+    # # tries to infer whether this is a method (therefore needing self as the first arg)
+    # # or a Loss constructor
+    # from saeco.components.losses import Loss
 
-        # def get_loss_object(inst):
-        #     return loss(self.__get__(inst))
+    # assert isinstance(loss, Loss)
 
-        # return loss_prop(get_loss_object)
+    # def get_loss_object(inst):
+    #     return loss(self.__get__(inst))
+
+    # return loss_prop(get_loss_object)
 
     # def add_metric(self, metric):
     #     def _metric(inst):
@@ -206,7 +208,7 @@ class _model_prop_base(arch_prop[_T]):
     #     return metric_prop(_metric)
 
 
-class model_prop(_model_prop_base[SAE_T]):
+class model_prop(arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):
     COLLECTED_FIELD_SINGULAR = True
 
     @overload

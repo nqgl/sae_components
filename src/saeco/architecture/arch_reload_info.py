@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing_extensions import get_original_bases
 
 import torch
 import inspect
@@ -70,12 +71,13 @@ class ArchRef(BaseModel, Generic[T]):
 
     @classmethod
     def open(cls, path: Path) -> Self:
-        if (
-            hasattr(cls, "__orig_bases__")
-            and hasattr(cls.__orig_bases__[0], "__args__")
-            and cls.__orig_bases__[0].__args__[0] is not T
-        ):
-            raise ValueError("generic type T must not be instantiated")
+
+        try:
+            bases = get_original_bases(cls)
+            if hasattr(bases[0], "__args__") and bases[0].__args__[0] is not T:
+                raise ValueError("generic type T must not be instantiated")
+        except AttributeError:
+            pass
         return cls.from_json(json.loads(path.read_text()))
 
     @classmethod
