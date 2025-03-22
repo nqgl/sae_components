@@ -221,7 +221,7 @@ class NormFeaturesMixin:
 class OrthogonalizeFeatureGradsMixin:
     features: dict[str, FeaturesParam]
     t: int
-    _orthogonalize_feature_grads_mixin_featureparameter_name: str | None
+    _orthogonalize_feature_grads_mixin_featureparameter_name: str | None = None
 
     @post_backward_hook
     @torch.no_grad()

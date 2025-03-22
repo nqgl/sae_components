@@ -162,7 +162,7 @@ class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
     def setup(self):
         ft.OrthogonalizeFeatureGradsMixin
         self.init._decoder.mixins.append(ft.OrthogonalizeFeatureGradsMixin)
-        self.init._decoder.mixins.append(ft.make_norm_features_mixin())
+        self.init._decoder.mixins.append(ft.NormFeaturesMixin)
 
     @model_prop
     def model(self):

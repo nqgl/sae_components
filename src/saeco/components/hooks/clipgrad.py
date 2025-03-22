@@ -5,7 +5,7 @@ from saeco.components.type_acc_methods import post_backward_hook
 import torch.nn as nn
 
 
-class ClipGrad(WrapsModule, PostBackwardHook):
+class ClipGrad(WrapsModule):
     def __init__(self, module, max_norm=1):
         super().__init__(module)
         self.max_norm = max_norm
