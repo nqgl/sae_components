@@ -50,47 +50,6 @@ class WrapsModule(cl.Module):
         )
 
 
-def combination(default, new, original):
-    return (set(new) - set(default)).intersection(set(original))
-
-
-class WrapMix:
-    def __new__(cls, module: nn.Module):
-        print("sss")
-        base = module.__class__
-        name = f"{cls.__name__}<{module.__class__.__name__}>"
-        # instance = super().__new__(cls)
-        # module.__class__ =
-        #
-        # type(name, (cls, base), {})
-        # new = object.__new__(type(name, (cls, base), {}))
-        new = super().__new__(cls)
-        new.__class__ = type(name, (cls, base), module.__dict__)
-        # new.__dict__.update(module.__dict__)
-        # print("sss")
-        # default = set(nn.Module().__dict__.keys())
-        # new = set(nn.Module().__dict__.keys())
-
-        # n = 0
-        # while hasattr(module, f"extra_methods{n}"):
-        #     n += 1
-        nn.Module.__init__(new)
-        return new
-
-    def __init__(self, module):
-        # self.module = module
-        self.wrapped = module
-
-
-class Mix(nn.Module):
-    def __new__(cls, module):
-        name = "{module.__class__.__name__}<{cls.__name__}>"
-        instance = super().__new__(cls)
-        d = instance.__dict__
-        d.update(module.__dict__)
-        return type(name, (cls, module.__class__), d)()
-
-
 def main():
     import saeco.core as cl
     from saeco.core.basic_ops import Add, Mul, Neg, Sub
