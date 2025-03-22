@@ -13,7 +13,7 @@ from saeco.initializer import InitConfig
 
 from saeco.architectures.dynamic_thresh_prolu.model_zipf import (
     DynamicZipfThreshConfig,
-    DynamicThreshSAE,
+    DynamicZipfThreshSAE,
     ThreshConfig,
 )
 
@@ -59,7 +59,7 @@ cfg = RunConfig[DynamicZipfThreshConfig](
     ),
 )
 
-arch = DynamicThreshSAE(cfg)
+arch = DynamicZipfThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
 sweep_manager.initialize_sweep()
 sweep_manager.rand_run_no_agent()

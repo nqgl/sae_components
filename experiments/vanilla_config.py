@@ -82,7 +82,7 @@ cfg = RunConfig[VanillaConfig](
     ),
     #
     init_cfg=InitConfig(d_data=768, dict_mult=8),
-    arch_cfg=VanillaConfig(pre_bias=Swept(True, False)),
+    arch_cfg=VanillaConfig(pre_bias=Swept[bool](True, False)),
 )
 g = VanillaSAE(cfg)
 sweep_manager = g.get_sweep_manager()

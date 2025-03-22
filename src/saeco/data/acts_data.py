@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 
 
 class ActsData:
+    """
+    Generates, stores, and loads activations
+    """
+
     def __init__(self, cfg: "DataConfig", model: LanguageModel | None):
         self.cfg = cfg
         self.model = model
@@ -242,6 +246,10 @@ class ActsData:
 
 
 class ActsDataset(torch.utils.data.IterableDataset):
+    """
+    IterableDataset for activations
+    """
+
     def __init__(
         self, acts: ActsData, split: SplitConfig, batch_size, generate_piles=False
     ):

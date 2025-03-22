@@ -49,10 +49,10 @@ class DataConfig(SweepableConfig):
         default_factory=DataGenerationProcessConfig
     )
     perm_all: bool = False
-    databuffer_num_workers: int = 64
+    databuffer_num_workers: int = 8
     databuffer_queue_size: int | None = 128
-    databuffer_worker_queue_base_size: int | None = None
-    databuffer_worker_offset_mult: int | None = None
+    databuffer_worker_queue_base_size: int | None = 1
+    databuffer_worker_offset_mult: int | None = 0
 
     def idstr(self) -> str:
         seq_len = str(self.seq_len) if self.seq_len is not None else "null"

@@ -112,7 +112,7 @@ class Thresholder(cl.Module):
             thresh_values=ft.FeaturesParam(
                 self.thresh_values,
                 feature_index=0,
-                fptype="bias",
+                feature_parameter_type="bias",
                 reset_optim_on_resample=False,
             )
         )

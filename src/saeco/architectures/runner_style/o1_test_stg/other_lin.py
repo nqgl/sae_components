@@ -50,10 +50,16 @@ class OtherLinear(ft.LinWeights):
     def features(self):
         return {
             "weight": RandResampledFP(
-                self.get_weight(), self.weight_param_index, fptype="other"
+                self.get_weight(),
+                self.weight_param_index,
+                feature_parameter_type="other",
             ),
             **(
-                {"bias": ft.FeaturesParam(self.get_bias(), 0, fptype="bias")}
+                {
+                    "bias": ft.FeaturesParam(
+                        self.get_bias(), 0, feature_parameter_type="bias"
+                    )
+                }
                 if self.bias is not None
                 else {}
             ),
