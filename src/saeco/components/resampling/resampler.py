@@ -16,11 +16,7 @@ from saeco.components.resampling.freq_tracker.freq_tracker import (
 )
 from .freq_tracker import FreqTracker
 from saeco.components.features import (
-    LinDecoder,
-    LinEncoder,
-    EncoderBias,
     Resamplable,
-    ResampledWeight,
 )
 
 

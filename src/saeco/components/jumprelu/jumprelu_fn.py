@@ -211,6 +211,6 @@ class JumpReLU(cl.Module):
             thresh=FeaturesParam(
                 self.thresh,
                 feature_index=0,
-                fptype="bias",
+                feature_parameter_type="bias",
             )
         )

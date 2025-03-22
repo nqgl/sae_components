@@ -14,7 +14,12 @@ from saeco.components.losses import (
 )
 from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
 from saeco.core import Cache
-from .normalizers import ConstL2Normalizer, Normalized, Normalizer
+from .normalizers import (
+    ConstL2Normalizer,
+    Normalized,
+    Normalizer,
+    GeneralizedNormalizer,
+)
 from .train_cache import TrainCache
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -22,6 +27,7 @@ if TYPE_CHECKING:
     from saeco.architecture.architecture import SAE
 
 from functools import wraps
+from typing import Mapping
 
 
 @runtime_checkable
@@ -31,7 +37,7 @@ class GeneratesCache(Protocol):
 
 def make_cache_optional(fn):
     @wraps(fn)
-    def wrapper(self, *args, cache: TrainCache | None = None, **kwargs):
+    def wrapper(self, *args, cache: Cache | None = None, **kwargs):
         made_cache = False
         if cache is None:
             if isinstance(self, GeneratesCache):
@@ -66,32 +72,29 @@ class Trainable(cl.Module):
 
     """
 
-    losses: dict[Loss]
+    losses: nn.ModuleDict | dict[str, Loss]
     model: cl.Module
-    models: list[cl.Module]
+    models: list[cl.Module] | nn.ModuleList
     normalizer: Normalizer
 
     def __init__(
         self,
         models: list["SAE"],
-        losses: Optional[dict[str, Loss]] = None,
+        resampler: Resampler,
+        losses: dict[str, Loss],
+        normalizer: Normalizer,
         extra_losses: Optional[dict[str, Loss]] = None,
         metrics: Optional[dict[str, Loss]] = None,
-        normalizer: Optional[Normalizer] = None,
-        resampler: Optional[Resampler | bool] = None,
     ):
         super().__init__()
-        self.normalizer = normalizer or ConstL2Normalizer()
+        self.normalizer = normalizer
         assert not any(
             isinstance(m, Normalized) for m in list(losses.values()) + models
         ), "models and losses should not be normalized, the Trainable object is responsible for normalization."
         self.models = nn.ModuleList(models)
         model = models[0]
-        losses = losses or {
-            "L2_loss": L2Loss(model),
-            "sparsity_loss": SparsityPenaltyLoss(model),
-        }
         assert extra_losses is None or losses is None
+
         self.losses = nn.ModuleDict(
             {
                 **{
@@ -113,24 +116,22 @@ class Trainable(cl.Module):
         self.model = self.normalizer.io_normalize(models[0])
         self.encode_only = self.normalizer.input_normalize(models[0].encoder)
         self.decode_only = self.normalizer.output_denormalize(models[0].decoder)
-        if resampler:
-            self.resampler = resampler
-        elif resampler is None:
-            self.resampler = AnthResampler()
-            self.resampler.assign_model(self.model)
-        else:
-            self.resampler = None
+        self.resampler = resampler
 
-    def loss(self, x, *, cache: TrainCache, y=None, coeffs={}):
+    @property
+    def losses_d(self) -> dict[str, Loss]:
+        return self.losses  # type: ignore
+
+    def loss(self, x, *, cache: Cache, y=None, coeffs: dict[str, float] = {}):
         coeffs = dict(coeffs)
         loss = 0
-        for key, loss_fn in self.losses.items():
+        for key, loss_fn in self.losses_d.items():
             m = loss_fn(x, y=y, cache=cache[key])
             setattr(cache, key, m)
-            loss += m * coeffs.pop(key, 1)
+            loss += m * coeffs.pop(key, 1.0)
         cache.loss = loss.item()
         for key, metric_fn in self.metrics.items():
-            m = metric_fn(x, y=y, cache=cache[key]) * coeffs.pop(key, 1)
+            m = metric_fn(x, y=y, cache=cache[key]) * coeffs.pop(key, 1.0)
             setattr(cache, key, m)
 
         assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
@@ -153,7 +154,7 @@ class Trainable(cl.Module):
         )
 
     @make_cache_optional
-    def forward(self, x: torch.Tensor, *, cache: Cache) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, *, cache: TrainCache) -> torch.Tensor:
         x, shape = self.rearrange(x)
         out = self.model(x, cache=cache)
         return self.dearrange(out, shape)
@@ -193,11 +194,11 @@ class Trainable(cl.Module):
         ), f"param_groups did not cover all parameters"
         return groups
 
-    def make_cache(self) -> TrainCache:
+    def make_cache(self) -> Cache:
         return TrainCache()
 
     @make_cache_optional
-    def get_acts(self, x, cache: TrainCache = None, pre_acts=False):
+    def get_acts(self, x, cache: Cache = None, pre_acts=False):
         cache.acts = ...
         if pre_acts:
             cache.pre_acts = ...
@@ -210,11 +211,11 @@ class Trainable(cl.Module):
         return acts
 
     @make_cache_optional
-    def encode(self, x, cache: TrainCache = None):
+    def encode(self, x, cache: Cache = None):
         x, shape = self.rearrange(x)
         return self.dearrange(cache(self).encode_only(x), shape)
 
     @make_cache_optional
-    def decode(self, x, cache: TrainCache = None):
+    def decode(self, x, cache: Cache = None):
         x, shape = self.rearrange(x)
         return self.dearrange(cache(self).decode_only(x), shape)

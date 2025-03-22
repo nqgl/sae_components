@@ -117,7 +117,7 @@ class Thresholder(cl.Module):
             thresh_values=ft.FeaturesParam(
                 self.thresh_values,
                 feature_index=0,
-                fptype="bias",
+                feature_parameter_type="bias",
                 reset_optim_on_resample=False,
             )
         )
@@ -160,7 +160,9 @@ class Thresholder(cl.Module):
 
 class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
     def setup(self):
-        pass
+        ft.OrthogonalizeFeatureGradsMixin
+        self.init._decoder.mixins.append(ft.OrthogonalizeFeatureGradsMixin)
+        self.init._decoder.mixins.append(ft.make_norm_features_mixin())
 
     @model_prop
     def model(self):
@@ -177,11 +179,7 @@ class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
                 end=self.cfg.l1_decay_end,
                 end_scale=self.cfg.l1_end_scale,
             ),
-            decoder=ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(
-                    self.init.decoder,
-                ),
-            ),
+            decoder=self.init.decoder,
         )
 
     @loss_prop

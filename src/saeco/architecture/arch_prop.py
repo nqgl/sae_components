@@ -31,7 +31,7 @@ def _getfields(cls: type, FIELD_NAME: type["arch_prop[Any]"]) -> list[str]:
             if c == cls or c is object:
                 continue
             try:
-                return getfields(c, FIELD_NAME)
+                return _getfields(c, FIELD_NAME)
             except AttributeError:
                 pass
         raise AttributeError(FIELD_NAME)

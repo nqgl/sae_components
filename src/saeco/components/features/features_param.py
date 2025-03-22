@@ -77,7 +77,7 @@ class FeaturesParam:
         self,
         param: nn.Parameter,
         feature_index,
-        fptype: Optional[FeatureParamType] = None,
+        feature_parameter_type: Optional[FeatureParamType] = None,
         resampled=True,
         reset_optim_on_resample=True,
     ):
@@ -86,7 +86,9 @@ class FeaturesParam:
         self.feature_index = feature_index
         self.field_handlers = None
         self.resampled = resampled
-        self.type: Optional[FeatureParamType] = fptype and FeatureParamType(fptype)
+        self.type: Optional[FeatureParamType] = (
+            feature_parameter_type and FeatureParamType(feature_parameter_type)
+        )
         self.resampler_cfg = None
         self.reset_optim_on_resample = reset_optim_on_resample
 
@@ -123,6 +125,7 @@ class FeaturesParam:
     def reverse_transform(self, tensor: Tensor) -> Tensor:
         return self.features_transform(tensor)
 
+    FPTYPES: type[FeatureParamType] = FeatureParamType
     # def reset_optim_features(self, optim, feat_mask, new_directions=None):
     #     try:
     #         from torchlars import LARS

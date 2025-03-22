@@ -103,13 +103,14 @@ class Tied:
 
 
 class LinearFactory:
-    def __init__(self, d_in, d_out, bias=True, wrappers=[]):
+    def __init__(self, d_in, d_out, bias=True, wrappers=[], mixins: list = []):
         self.d_in = d_in
         self.d_out = d_out
         self._bias = bias
         self._linear = None
         self._linear_raw = None
         self.wrappers = wrappers
+        self.mixins = mixins
         self._weight_tie: Optional[Tied] = None
         self._bias_tie: Optional[Tied] = None
 
@@ -135,8 +136,18 @@ class LinearFactory:
             raise ValueError("Cannot add wrappers after linear has been created")
         self.wrappers.append(wrapper)
 
-    def make_new(self):
-        lin = nn.Linear(self.d_in, self.d_out, bias=self.bias)
+    @property
+    def linear_cls(self) -> type[nn.Linear]:
+        if len(self.mixins) == 0:
+            return nn.Linear
+
+        class LinearMixed(*self.mixins, nn.Linear):
+            pass
+
+        return LinearMixed
+
+    def make_new(self) -> nn.Linear:
+        lin = self.linear_cls(self.d_in, self.d_out, bias=self.bias)
         if self._weight_tie is not None:
             self._weight_tie(lin)
         if self.bias and self._bias_tie is not None:

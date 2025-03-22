@@ -199,15 +199,15 @@ class Architecture(Generic[ArchConfigType]):
 
     @cached_property
     def _core_model(self) -> SAE:
-        return model_prop[SAE].get_from_fields(self)
+        return model_prop.get_from_fields(self)
 
     @cached_property
     def _losses(self) -> dict[str, Loss]:
-        return loss_prop[Loss].get_from_fields(self)
+        return loss_prop.get_from_fields(self)
 
     @cached_property
-    def _metrics(self):
-        return metric_prop[nn.Module].get_from_fields(self)
+    def _metrics(self) -> dict[str, nn.Module]:
+        return metric_prop.get_from_fields(self)
 
     @cached_property
     def aux_models(self) -> list[SAE]:

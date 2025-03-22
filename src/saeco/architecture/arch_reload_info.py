@@ -9,7 +9,6 @@ import json
 from typing import TYPE_CHECKING, Generic, TypeVar, Any
 from typing_extensions import Self
 
-from saeco.trainer.run_config import RunConfig
 
 if TYPE_CHECKING:
     from .architecture import Architecture

@@ -28,7 +28,6 @@ from .run_config import RunConfig
 from saeco.mlog import mlog
 
 # torch.multiprocessing.set_start_method("spawn")
-torch.optim.adam.Adam
 
 
 class Trainer:
@@ -37,7 +36,7 @@ class Trainer:
         cfg: TrainConfig,
         run_cfg: RunConfig,
         model: Trainable,
-        optim: torch.optim.optimizer.Optimizer | None = None,
+        optim: torch.optim.Optimizer | None = None,
         save_callback=None,
     ):
         self.cfg: TrainConfig = cfg
