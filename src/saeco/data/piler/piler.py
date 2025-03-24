@@ -76,15 +76,15 @@ class Piler:
             i = indexer
         trng = tqdm.trange(self.num_piles, leave=False)
         trng.set_description(f"Distributing {t.shape[0]}")
-        for pile in trng:
-            self.piles.get(pile).append(t[i == pile])
+        for pile_idx in trng:
+            self.piles.get(pile_idx).append(t[i == pile_idx])
         return i
 
-    def shuffle_piles(self):
+    def shuffle_piles(self, perms: list[torch.Tensor] | None = None):
         # tqdm.tqdm.write("Shuffling piles")
         if self.readonly:
             raise ValueError("Cannot write to a readonly Piler")
-        self.piles.shuffle_then_finalize()
+        self.piles.shuffle_then_finalize(perms=perms)
 
     def __getitem__(self, i):
         if isinstance(i, int):

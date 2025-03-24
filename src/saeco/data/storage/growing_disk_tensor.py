@@ -10,10 +10,14 @@ from .disk_tensor import DiskTensor, DiskTensorMetadata
 #     cat_axis: int
 
 
+class UnsetCatAxis:
+    pass
+
+
 @define
 class GrowingDiskTensor(DiskTensor):
-    cat_axis: int | None = None
-    storage_len: int = 2**14
+    cat_axis: int = field(init=True, default=UnsetCatAxis)
+    storage_len: int | None = 2**14
 
     def resize(self, new_len, truncate=False):
         if "9999" in self.path.name:
@@ -40,6 +44,12 @@ class GrowingDiskTensor(DiskTensor):
             print("done resizing to ", new_len)
 
     @property
+    def cat_len(self) -> int:
+        l = self.metadata.shape[self.cat_axis]
+        assert l is not None
+        return l
+
+    @property
     def valid_tensor(self):
         written_slice = [slice(None)] * self.cat_axis + [
             slice(None, self.metadata.shape[self.cat_axis])
@@ -50,12 +60,19 @@ class GrowingDiskTensor(DiskTensor):
         self.resize(self.metadata.shape[self.cat_axis], truncate=True)
         super().finalize()
 
-    def shuffle_then_finalize(self, shuffle_axis: int | None = None):
+    def shuffle_then_finalize(
+        self, shuffle_axis: int | None = None, perm: torch.Tensor | None = None
+    ):
         if shuffle_axis is None:
             shuffle_axis = self.cat_axis
         self.resize(self.metadata.shape[self.cat_axis], truncate=True)
+        if perm is None:
+            perm = torch.randperm(self.tensor.shape[shuffle_axis])
+        else:
+            assert len(perm) == self.tensor.shape[shuffle_axis] and len(perm.shape) == 1
         self.tensor[:] = self.tensor.index_select(
-            shuffle_axis, torch.randperm(self.tensor.shape[shuffle_axis])
+            shuffle_axis,
+            perm,
         )
         super().finalize()
 

@@ -15,7 +15,7 @@ class DiskTensorCollection(Generic[DiskTensorType]):
     path: Path | None = None
     stored_tensors_subdirectory_name: str = "tensors"
     return_raw: bool = False
-    disk_tensor_cls: type[DiskTensorType] = DiskTensor
+    disk_tensor_cls: ClassVar[type] = DiskTensor
 
     @property
     def storage_dir(self) -> Path:

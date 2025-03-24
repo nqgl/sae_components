@@ -32,18 +32,25 @@ class GrowingDiskTensorCollectionMetadata(BaseModel):
         return cls.model_validate_json(metadata_path.read_text())
 
 
+from attrs import Factory
+
+
+def _metadata_default(
+    self: "GrowingDiskTensorCollection",
+) -> GrowingDiskTensorCollectionMetadata:
+    return GrowingDiskTensorCollectionMetadata.load_from_dir(
+        self.storage_dir, assert_exists=False
+    )
+
+
 @define
 class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
-    metadata: GrowingDiskTensorCollectionMetadata = field()
+    metadata: GrowingDiskTensorCollectionMetadata = field(
+        default=Factory(_metadata_default, takes_self=True)
+    )
     cache: dict[str, GrowingDiskTensor] = field(factory=dict)
 
-    @metadata.default
-    def _metadata_default(self) -> GrowingDiskTensorCollectionMetadata:
-        return GrowingDiskTensorCollectionMetadata.load_from_dir(
-            self.storage_dir, assert_exists=False
-        )
-
-    def get(self, name: str) -> GrowingDiskTensor:
+    def get(self, name: str | int) -> GrowingDiskTensor:
         if isinstance(name, int):
             name = str(name)
         assert isinstance(name, str)
@@ -59,7 +66,7 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
         raise ValueError("Cannot set items in a growing collection")
 
     def create(
-        self, name: str, dtype: torch.dtype, shape: torch.Size
+        self, name: str | int, dtype: torch.dtype, shape: torch.Size
     ) -> GrowingDiskTensor:
         if self.finalized:
             raise ValueError("Collection is finalized, cannot create new tensors")
@@ -70,16 +77,18 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
     def keys(self):
         return sorted(list(set(self.cache.keys()) | set(super().keys())))
 
-    def shuffle_then_finalize(self):
+    def shuffle_then_finalize(self, perms: list[torch.Tensor] | None = None):
         if any([(f := self.get(name)).finalized for name in self.keys()]):
             raise ValueError(
                 f"Cannot shuffle finalized tensors: tensor {f} is finalized"
             )
         tkeys = tqdm.tqdm(self.keys())
         tkeys.set_description("Shuffling")
-        for name in tkeys:
+        if perms is not None:
+            assert len(perms) == len(self.keys())
+        for i, name in enumerate(tkeys):
             dt = self.get(name)
-            dt.shuffle_then_finalize()
+            dt.shuffle_then_finalize(perm=perms[i] if perms is not None else None)
         self.metadata.finalized = True
         self.metadata.save(self.storage_dir)
 
