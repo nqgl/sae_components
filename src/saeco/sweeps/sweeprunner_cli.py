@@ -15,7 +15,12 @@ def start(sweepdata_path: str, sweep_index: int | None, sweep_hash: str | None):
     Args:
         sweepdata_path: Path to the sweep data file
     """
-    sweep_data = SweepData.load(Path(sweepdata_path))
+    print("cwd", Path.cwd())
+    try:
+        path = Path.cwd() / sweepdata_path
+    except ValueError:
+        path = Path(sweepdata_path)
+    sweep_data = SweepData.load(path)
     worker = SweepRunner.from_sweepdata(
         sweep_data, sweep_index=sweep_index, sweep_hash=sweep_hash
     )
