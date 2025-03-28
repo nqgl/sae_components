@@ -6,7 +6,7 @@ import click
 
 
 @click.command()
-@click.argument("sweepdata_path", type=click.Path(exists=True))
+@click.argument("sweepdata_path", type=click.Path())
 @click.option("--sweep-index", type=int, default=None)
 @click.option("--sweep-hash", type=str, default=None)
 def start(sweepdata_path: str, sweep_index: int | None, sweep_hash: str | None):
