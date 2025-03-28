@@ -2,7 +2,16 @@ import abc
 from collections.abc import Callable
 from functools import cached_property
 from collections import defaultdict
-from typing import Any, TYPE_CHECKING, Literal, Protocol, TypeVar, Generic, overload
+from typing import (
+    Any,
+    TYPE_CHECKING,
+    Literal,
+    Protocol,
+    TypeVar,
+    Generic,
+    overload,
+    runtime_checkable,
+)
 import types
 from typing_extensions import Self, deprecated, override
 
@@ -64,6 +73,18 @@ class Singular(Protocol):
     COLLECTED_FIELD_SINGULAR: Literal[True] = True
 
 
+@runtime_checkable
+class Instantiable(Protocol):
+    _instantiated: bool
+
+    def instantiate(self, inst_cfg: dict[str, Any] | None = None): ...
+
+
+@runtime_checkable
+class SetupComplete(Protocol):
+    _setup_complete: Literal[True] = True
+
+
 class arch_prop(
     cached_property[_T],
     # Generic[_T],
@@ -82,6 +103,13 @@ class arch_prop(
     def __get__(self, instance: object, owner: type[Any] | None = None) -> _T: ...
 
     def __get__(self, instance: object | None, owner: Any | None = None) -> _T | Self:
+        if instance is not None:
+            assert isinstance(instance, Instantiable) and isinstance(
+                instance, SetupComplete
+            )
+            if not instance._instantiated:
+                instance.instantiate()
+            assert instance._instantiated and instance._setup_complete
         return super().__get__(instance, owner)
 
     def __set_name__(self, owner: type, name: str) -> None:
