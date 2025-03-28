@@ -40,9 +40,11 @@ class ArchClassRef(BaseModel):
     def get_arch_class(self, assert_unchanged: bool = False):
         module = importlib.import_module(self.module)
         arch_cls = getattr(module, self.cls_name)
-        from .architecture import Architecture
+        from .architecture import Architecture, ArchitectureBase
 
-        assert issubclass(arch_cls, Architecture)
+        assert issubclass(arch_cls, Architecture) or issubclass(
+            arch_cls, ArchitectureBase
+        )
         if get_src(arch_cls) != self.source_backup:
             print(
                 """
