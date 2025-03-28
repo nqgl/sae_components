@@ -77,7 +77,7 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
     def keys(self):
         return sorted(list(set(self.cache.keys()) | set(super().keys())))
 
-    def shuffle_then_finalize(self, perms: list[torch.Tensor] | None = None):
+    def shuffle_then_finalize(self, perms: dict[str, torch.Tensor] | None = None):
         if any([(f := self.get(name)).finalized for name in self.keys()]):
             raise ValueError(
                 f"Cannot shuffle finalized tensors: tensor {f} is finalized"
@@ -86,9 +86,9 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
         tkeys.set_description("Shuffling")
         if perms is not None:
             assert len(perms) == len(self.keys())
-        for i, name in enumerate(tkeys):
+        for name in tkeys:
             dt = self.get(name)
-            dt.shuffle_then_finalize(perm=perms[i] if perms is not None else None)
+            dt.shuffle_then_finalize(perm=perms[name] if perms is not None else None)
         self.metadata.finalized = True
         self.metadata.save(self.storage_dir)
 

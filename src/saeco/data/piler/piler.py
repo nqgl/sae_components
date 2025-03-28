@@ -80,7 +80,7 @@ class Piler:
             self.piles.get(pile_idx).append(t[i == pile_idx])
         return i
 
-    def shuffle_piles(self, perms: list[torch.Tensor] | None = None):
+    def shuffle_piles(self, perms: dict[str, torch.Tensor] | None = None):
         # tqdm.tqdm.write("Shuffling piles")
         if self.readonly:
             raise ValueError("Cannot write to a readonly Piler")
