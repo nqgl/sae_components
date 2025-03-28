@@ -103,8 +103,15 @@ class ActsData:
                     ):
                         acts_module = getsite(model, self.cfg.model_cfg.acts_cfg.site)
                         acts = acts_module.save()
-                        acts_module.stop()
-                    acts_list.append(acts.value)
+                        # stopsite = getsite(
+                        #     model,
+                        #     self.cfg.model_cfg.acts_cfg.site.replace("input", "output"),
+                        # )
+                        # stopsite.stop()
+                        # TODO: add back stopping when available
+                    if not isinstance(acts, torch.Tensor):
+                        raise ValueError(f"acts is not a torch.Tensor: {type(acts)}")
+                    acts_list.append(acts)
         acts = torch.cat(acts_list, dim=0)
         if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
             acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
