@@ -118,9 +118,11 @@ class SweepManager:
         )
         self.sweep_data_path = self.sweep_data.save(None)
 
-    def rand_run_no_agent(self):
+    def rand_run_no_agent(self, project: str | None = None):
         if not self.sweep_data:
-            self.initialize_sweep(custom_sweep=True, run_type_str="rand")
+            self.initialize_sweep(
+                custom_sweep=True, run_type_str="rand", project=project
+            )
         sweeprunner = SweepRunner(self.sweep_data)
         return sweeprunner.run_random_instance()
 
@@ -165,7 +167,7 @@ class SweepManager:
             if not self.sweep_data_path.is_absolute()
             else self.sweep_data_path.relative_to(Path.cwd())
         )
-        return f"src/saeco/sweeps/sweeprunner_cli.py {path} {extra_args}"
+        return f"-m saeco.sweeps.sweeprunner_cli {path} {extra_args}"
 
     def get_worker_run_commands_for_manual_sweep(self):
         root = self.arch.run_cfg

@@ -405,10 +405,10 @@ class Architecture(Generic[ArchConfigType]):
     def run_training(self):
         self.trainer.train()
 
-    def get_sweep_manager(self):
+    def get_sweep_manager(self, ezpod_group=None):
         from saeco.sweeps.newsweeper import SweepManager
 
-        return SweepManager(self)
+        return SweepManager(self, ezpod_group=ezpod_group)
 
 
 # ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
@@ -501,36 +501,36 @@ class ArchitectureBase(Generic[ArchConfigType]):
     def get_config_class(cls):
         return RunConfig[cls.get_arch_config_class()]
 
-    # def save_to_path(
-    #     self,
-    #     path: Path | ArchStoragePaths,
-    #     save_weights: bool = ...,
-    #     averaged_weights: bool | None = None,
-    # ):
-    #     if isinstance(path, Path):
-    #         path = ArchStoragePaths.from_path(path)
-    #     path.path.parent.mkdir(parents=True, exist_ok=True)
+    def save_to_path(
+        self,
+        path: Path | ArchStoragePaths,
+        save_weights: bool = ...,
+        averaged_weights: bool | None = None,
+    ):
+        if isinstance(path, Path):
+            path = ArchStoragePaths.from_path(path)
+        path.path.parent.mkdir(parents=True, exist_ok=True)
 
-    #     if path.exists():
-    #         self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
-    #         raise ValueError(
-    #             f"file already existed at {path}, wrote to {path.path.name}_1"
-    #         )
+        if path.exists():
+            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
+            raise ValueError(
+                f"file already existed at {path}, wrote to {path.path.name}_1"
+            )
 
-    #     from .arch_reload_info import ArchClassRef, ArchRef
+        from .arch_reload_info import ArchClassRef, ArchRef
 
-    #     arch_ref = ArchRef.from_arch(self)
+        arch_ref = ArchRef.from_arch(self)
 
-    #     path.arch_ref.write_text(arch_ref.model_dump_json())
-    #     if save_weights is True or (
-    #         save_weights is ... and self._trainable is not None
-    #     ):
-    #         if self._trainable is None:
-    #             raise ValueError("trainable is None but attempted to save weights")
-    #         torch.save(self._trainable.state_dict(), path.model_weights)  # type: ignore
-    #     if averaged_weights is not None:
-    #         torch.save(averaged_weights, path.averaged_weights)  # type: ignore
-    #     return path
+        path.arch_ref.write_text(arch_ref.model_dump_json())
+        if save_weights is True or (
+            save_weights is ... and self._trainable is not None
+        ):
+            if self._trainable is None:
+                raise ValueError("trainable is None but attempted to save weights")
+            torch.save(self._trainable.state_dict(), path.model_weights)  # type: ignore
+        if averaged_weights is not None:
+            torch.save(averaged_weights, path.averaged_weights)  # type: ignore
+        return path
 
     @classmethod
     def load(
@@ -538,7 +538,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
         path: Path | ArchStoragePaths,
         load_weights: bool | None = None,
         averaged_weights: bool | None = False,
-    ):
+    ) -> "ArchitectureBase":
         return ArchStoragePaths.from_path(path).load_arch(
             load_weights=load_weights, averaged_weights=averaged_weights
         )
@@ -546,7 +546,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
     @abstractmethod
     def run_training(self): ...
 
-    def get_sweep_manager(self):
+    def get_sweep_manager(self, ezpod_group=None):
         from saeco.sweeps.newsweeper import SweepManager
 
-        return SweepManager(self)
+        return SweepManager(self, ezpod_group=ezpod_group)
