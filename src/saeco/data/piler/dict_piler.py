@@ -1,5 +1,3 @@
-# thanks to https://discuss.pytorch.org/t/torch-save-like-open-mode-a/137114
-# for code snippets and setting me on the right path
 from pathlib import Path
 from typing import List, Sequence, Union, cast
 
@@ -12,8 +10,6 @@ from saeco.data.storage.growing_disk_tensor_collection import (
 from attrs import define
 from saeco.data.piler import Piler
 
-# path = Path("data/table_test.h5")
-# t = torch.arange(32).reshape(2, 16)
 
 from typing import overload
 
@@ -150,6 +146,7 @@ class DictPiler:
     def batch_generator(
         self,
         batch_size,
+        yield_dicts: bool = False,
         id=None,
         nw=None,
     ):
@@ -162,7 +159,11 @@ class DictPiler:
         for p in range(id % nw, self.num_piles, nw):
             pile = self[p]
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-                yield pile[i : i + batch_size]
+                yield (
+                    pile[i : i + batch_size].data
+                    if yield_dicts
+                    else pile[i : i + batch_size]
+                )
             spare = pile[len(pile) // batch_size * batch_size :]
             if len(spare) > 0:
                 spares.append(spare)
@@ -172,7 +173,11 @@ class DictPiler:
                     for i in range(
                         0, len(consolidated) // batch_size * batch_size, batch_size
                     ):
-                        yield consolidated[i : i + batch_size]
+                        yield (
+                            consolidated[i : i + batch_size].data
+                            if yield_dicts
+                            else consolidated[i : i + batch_size]
+                        )
                     spare = consolidated[len(consolidated) // batch_size * batch_size :]
                     spares = [spare]
                     nspare = len(spare)
@@ -197,7 +202,9 @@ class PilerDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
-            gen = self.piler.batch_generator(self.batch_size)
+            gen = self.piler.batch_generator(
+                self.batch_size, yield_dicts=self.converter is None
+            )
 
         else:
             id = worker_info.id
@@ -206,6 +213,7 @@ class PilerDataset(torch.utils.data.IterableDataset):
 
             gen = self.piler.batch_generator(
                 batch_size=self.batch_size,
+                yield_dicts=self.converter is None,
                 id=id,
                 nw=nw,
             )
