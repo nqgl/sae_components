@@ -2,6 +2,7 @@ from abc import ABCMeta
 
 import torch
 import torch.nn as nn
+from typing import Any
 
 import saeco.core as cl
 
@@ -37,14 +38,14 @@ class WrapsModule(cl.Module):
         kwargs.pop("cache", None)
         return self.wrapped(*args, **kwargs)
 
-    def __getattr__(self, name: str) -> torch.Any:
+    def __getattr__(self, name: str) -> Any:
         try:
             return super().__getattr__(name)
         except AttributeError:
             return getattr(super().__getattr__("wrapped"), name)
 
     @classmethod
-    def __instancecheck__(cls: ABCMeta, instance: torch.Any) -> bool:
+    def __instancecheck__(cls: ABCMeta, instance: Any) -> bool:
         return super().__instancecheck__(instance) or (
             isinstance(instance, WrapsModule) and isinstance(instance.wrapped, cls)
         )

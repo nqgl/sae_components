@@ -4,6 +4,7 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 
 from saeco.components.penalties import Penalty
 from saeco.components.jumprelu.kernels_fns import rect
+from typing import Any
 
 # import saeco.core as cl
 
@@ -31,7 +32,7 @@ class H_z_minus_thresh_fn(torch.autograd.Function):
         return None, thresh_grad, None, None
 
     @staticmethod
-    def jvp(ctx: torch.Any, *grad_inputs: torch.Any) -> torch.Any:
+    def jvp(ctx: Any, *grad_inputs: Any) -> Any:
         return torch.zeros_like(ctx.z)
 
 
@@ -108,7 +109,7 @@ class JumpReLU_fn(torch.autograd.Function):
         return z_grad, thresh_grad, None, None
 
     @staticmethod
-    def jvp(ctx: torch.Any, grad_in_z, grad_in_thresh, *etc: torch.Any) -> torch.Any:
+    def jvp(ctx: Any, grad_in_z, grad_in_thresh, *etc: Any) -> Any:
 
         return torch.where(ctx.gate, grad_in_z, 0)
 
