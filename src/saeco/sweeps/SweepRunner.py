@@ -1,10 +1,10 @@
-from saeco.mlog import mlog
-
+from typing import TYPE_CHECKING
 
 from attrs import define, field
 
+from saeco.mlog import mlog
+
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from saeco.sweeps.newsweeper import SweepData
@@ -38,6 +38,13 @@ class SweepRunner:
             arch.run_training()
         return arch
 
+    def run_sweep_dont_enter(self):
+        arch = self.sweep_data.root_arch_ref.load_arch()
+        cfg = mlog.config()
+        arch.instantiate(cfg)
+        arch.run_training()
+        return arch
+
     def log_sweep_info(self, cfg: SweepableConfig):
         mlog.log_sweep(
             cfg,
@@ -53,6 +60,7 @@ class SweepRunner:
         with mlog.enter(
             arch_ref=self.sweep_data.root_arch_ref,
             run_name=self.run_name,
+            project=self.sweep_data.project,
         ):
             mlog.update_config(full_cfg=arch.run_cfg.model_dump())
             arch.run_training()
