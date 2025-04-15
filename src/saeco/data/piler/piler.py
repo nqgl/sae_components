@@ -5,11 +5,11 @@ from typing import List, Union
 
 import torch
 import tqdm
-
+from attrs import define
+import asyncio
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
-from attrs import define
 
 
 # path = Path("data/table_test.h5")
@@ -21,15 +21,17 @@ class Piler:
         self,
         path: Union[str, Path],
         dtype,
-        fixed_shape=None,
-        shape=None,
-        num_piles=None,
+        fixed_shape: list[int] | None = None,
+        shape: list[int] | None = None,
+        num_piles: int | None = None,
     ):
         if isinstance(path, str):
             path = Path(path)
-        assert (fixed_shape is None) != (shape is None)
         if shape is None:
+            assert fixed_shape is not None
             shape = [0] + list(fixed_shape)
+        else:
+            assert fixed_shape is None
         self.path = path
         self.readonly = num_piles is None
         # if num_piles is None:
@@ -57,7 +59,7 @@ class Piler:
 
     def initialize(self):
         for i in range(self.num_piles):
-            self.piles.create(i, self.dtype, self.shape)
+            self.piles.create(i, self.dtype, torch.Size(self.shape))
 
     # def finalize(self):
     #     self.piles.finalize()
@@ -80,6 +82,49 @@ class Piler:
             self.piles.get(pile_idx).append(t[i == pile_idx])
         return i
 
+    def distribute_async(self, t: torch.Tensor, indexer: torch.Tensor | None = None):
+        return asyncio.run(self._async_distribute(t, indexer))
+
+    async def _async_distribute(
+        self, t: torch.Tensor, indexer: torch.Tensor | None = None
+    ):
+        if self.readonly:
+            raise ValueError("Cannot write to a readonly Piler")
+        if t.dtype != self.dtype:
+            raise ValueError(
+                f"Tensor dtype {t.dtype} does not match Piler dtype {self.dtype}"
+            )
+        # Compute indexer tensor if not provided
+        if indexer is None:
+            i = torch.randint(0, self.num_piles, [t.shape[0]])
+        else:
+            i = indexer
+
+        # Create an async wrapper for a single pile append.
+        async def append_to_pile(pile_idx: int):
+            # Get the corresponding pile and data for it.
+            pile = self.piles.get(pile_idx)
+            data_to_append = t[i == pile_idx]
+            # Offload the blocking append call to a worker thread.
+            await asyncio.to_thread(pile.append, data_to_append)
+
+        # Use tqdm for progress - note that tqdm is not asynchronous but
+        # we can still update it as long as the loop scheduling is done in the main thread.
+        # Prepare tasks and attach a simple progress counter.
+        tasks = []
+        for pile_idx in range(self.num_piles):
+            tasks.append(asyncio.create_task(append_to_pile(pile_idx)))
+
+        # Optionally, you can monitor task completion via tqdm:
+        for f in tqdm.tqdm(
+            asyncio.as_completed(tasks),
+            total=len(tasks),
+            desc=f"Distributing {t.shape[0]}",
+        ):
+            await f
+
+        return i
+
     def shuffle_piles(self, perms: dict[str, torch.Tensor] | None = None):
         # tqdm.tqdm.write("Shuffling piles")
         if self.readonly:
@@ -95,9 +140,9 @@ class Piler:
             piles = [self.piles[j] for j in self.piles.keys()[i]]
         else:
             piles = self.piles[i]
-        if len(piles) == 1:
+        if isinstance(piles, list) and len(piles) == 1:
             return piles[0]
-        return torch.cat(piles)
+        return torch.cat(piles)  # type: ignore
 
 
 def main():

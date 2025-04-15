@@ -1,17 +1,16 @@
 from pathlib import Path
-from typing import List, Sequence, Union, cast
+
+from typing import cast, List, overload, Sequence, Union
 
 import torch
 import tqdm
+from attrs import define
+
+from saeco.data.piler import Piler
 
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
-from attrs import define
-from saeco.data.piler import Piler
-
-
-from typing import overload
 
 
 @define
@@ -72,9 +71,10 @@ class DictPiler:
         dtypes: dict[str, torch.dtype],
         fixed_shapes: dict[str, torch.Size] | dict[str, Sequence[int]],
         num_piles=None,
+        use_async_distribute: bool = True,
     ):
         self.keys = set(dtypes.keys())
-
+        self.use_async_distribute = use_async_distribute
         assert fixed_shapes is None or self.keys == set(fixed_shapes.keys())
         if isinstance(path, str):
             path = Path(path)
@@ -121,8 +121,12 @@ class DictPiler:
             i = indexer
         assert all(t.shape[0] == i.shape[0] for t in tensors.values())
         assert self.keys == set(tensors.keys())
-        for k, t in tensors.items():
-            self.pilers[k].distribute(t, i)
+        if self.use_async_distribute:
+            for k, t in tensors.items():
+                self.pilers[k].distribute_async(t, i)
+        else:
+            for k, t in tensors.items():
+                self.pilers[k].distribute(t, i)
         return i
 
     def shuffle_piles(self):
@@ -210,7 +214,7 @@ class PilerDataset(torch.utils.data.IterableDataset):
             id = worker_info.id
             nw = worker_info.num_workers
             assert id % nw == id, (id, nw)
-
+            print("worker", id, nw, worker_info)
             gen = self.piler.batch_generator(
                 batch_size=self.batch_size,
                 yield_dicts=self.converter is None,
@@ -224,6 +228,7 @@ class PilerDataset(torch.utils.data.IterableDataset):
 
 def main():
     test_path = Path("testdata")
+    test_path.mkdir(exist_ok=True)
     dp = DictPiler(
         test_path,
         {"a": torch.int64, "b": torch.int64},
