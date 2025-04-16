@@ -168,11 +168,17 @@ class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
     def model(self):
         thrlu = Thresholder(self.init, self.cfg.thresh_cfg)
         return SAE(
-            encoder_pre=Seq(
-                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()),
-                lin=self.init.encoder,
+            encoder=torch.compile(
+                Seq(
+                    encoder_pre=Seq(
+                        **useif(
+                            self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()
+                        ),
+                        lin=self.init.encoder,
+                    ),
+                    nonlinearity=thrlu,
+                )
             ),
-            nonlinearity=thrlu,
             freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
             penalty=LinearDecayL1Penalty(
                 begin=self.cfg.l1_decay_start,
