@@ -7,6 +7,8 @@ import torch
 from typing import Generic, ClassVar
 from typing_extensions import TypeVar
 
+from saeco.data.storage.compressed_safetensors import CompressionType
+
 DiskTensorType = TypeVar("DiskTensorType", bound=DiskTensor)
 
 
@@ -29,21 +31,30 @@ class DiskTensorCollection(Generic[DiskTensorType]):
             raise ValueError(f"{name} already exists!")
         return name
 
-    def create(self, name: str, dtype: torch.dtype, shape: list[int]) -> DiskTensorType:
+    def create(
+        self,
+        name: str,
+        dtype: torch.dtype,
+        shape: list[int],
+        compression: CompressionType = CompressionType.NONE,
+    ) -> DiskTensorType:
         name = self.check_name_create(name)
         path = self.storage_dir / name
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             raise ValueError(f"Metadata already exists at {path}")
+        self.disk_tensor_cls: type[DiskTensorType]
         return self.disk_tensor_cls.create(
             path=path,
-            shape=shape,
+            shape=tuple(shape),
             dtype=dtype,
+            compression=compression,
         )
 
     def get(self, name: str | int) -> DiskTensorType:
         if isinstance(name, int):
             name = str(name)
+
         return self.disk_tensor_cls.open(self.storage_dir / name)
 
     def __getitem__(self, name: str | int) -> torch.Tensor | DiskTensorType:

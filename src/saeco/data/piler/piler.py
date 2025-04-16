@@ -7,6 +7,7 @@ import torch
 import tqdm
 from attrs import define
 import asyncio
+from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
@@ -24,6 +25,7 @@ class Piler:
         fixed_shape: list[int] | None = None,
         shape: list[int] | None = None,
         num_piles: int | None = None,
+        compress: bool = False,
     ):
         if isinstance(path, str):
             path = Path(path)
@@ -45,6 +47,9 @@ class Piler:
 
         self.dtype = dtype
         self.shape = shape
+        self.compression_type = (
+            CompressionType.NONE if not compress else CompressionType.ZSTD
+        )
         if not self.path.exists():
             self.path.mkdir(parents=True)
         self.piles = GrowingDiskTensorCollection(
@@ -59,7 +64,9 @@ class Piler:
 
     def initialize(self):
         for i in range(self.num_piles):
-            self.piles.create(i, self.dtype, self.shape)
+            self.piles.create(
+                i, self.dtype, self.shape, compression=self.compression_type
+            )
 
     # def finalize(self):
     #     self.piles.finalize()

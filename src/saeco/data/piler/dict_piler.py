@@ -1,6 +1,8 @@
+from enum import Enum
 from pathlib import Path
 
 from typing import cast, List, overload, Sequence, Union
+from pydantic import BaseModel
 
 import torch
 import tqdm
@@ -11,6 +13,7 @@ from saeco.data.piler import Piler
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
+from saeco.data.storage.compressed_safetensors import CompressionType
 
 
 @define
@@ -64,6 +67,12 @@ class DictBatch:
         )
 
 
+class DictPilerMetadata(BaseModel):
+    dtypes: dict[str, str]
+    fixed_shapes: dict[str, list[int]]
+    compression: CompressionType = CompressionType.NONE
+
+
 class DictPiler:
     def __init__(
         self,
@@ -72,6 +81,7 @@ class DictPiler:
         fixed_shapes: dict[str, torch.Size] | dict[str, Sequence[int]],
         num_piles=None,
         use_async_distribute: bool = True,
+        compress: bool = False,
     ):
         self.keys = set(dtypes.keys())
         self.use_async_distribute = use_async_distribute
@@ -81,23 +91,18 @@ class DictPiler:
 
         shapes = {k: [0] + list(v) for k, v in fixed_shapes.items()}
         self.path = path
-        self.readonly = num_piles is None
-        # if num_piles is None:
-        #     g = path.glob("pile*")
-        #     num_piles = len(list(g))
-        #     assert num_piles > 0
-        # else:
-        #     path.mkdir(parents=True)
-        #     g = path.glob("pile*")
-        #     assert len(list(g)) == 0
-
+        self.readonly = num_piles is None  # TODO: Do this a better way.
         self.dtypes = dtypes
         self.shapes = shapes
         if not self.path.exists():
             self.path.mkdir(parents=True)
         self.pilers = {
             k: Piler(
-                self.path / k, dtype=dtypes[k], shape=shapes[k], num_piles=num_piles
+                self.path / k,
+                dtype=dtypes[k],
+                shape=shapes[k],
+                num_piles=num_piles,
+                compress=compress,
             )
             for k in self.keys
         }
