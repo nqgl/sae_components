@@ -59,6 +59,7 @@ class Piler:
         if num_piles is None:
             self.num_piles = len(self.piles)
         else:
+            assert len(self.piles) == 0
             self.num_piles = num_piles
         if not self.readonly and len(self.piles) == 0:
             self.initialize()
@@ -110,7 +111,7 @@ class Piler:
 
         # Create an async wrapper for a single pile append.
         sem = asyncio.Semaphore(
-            int(os.environ.get("SAECO_ASYNC_DISTRIBUTE_WORKERS", 256))
+            int(os.environ.get("SAECO_ASYNC_DISTRIBUTE_WORKERS", 4096))
         )
 
         async def append_to_pile(pile_idx: int):
