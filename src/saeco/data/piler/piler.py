@@ -1,5 +1,6 @@
 # thanks to https://discuss.pytorch.org/t/torch-save-like-open-mode-a/137114
 # for code snippets and setting me on the right path
+import os
 from pathlib import Path
 from typing import List, Union
 
@@ -108,12 +109,17 @@ class Piler:
             i = indexer
 
         # Create an async wrapper for a single pile append.
+        sem = asyncio.Semaphore(
+            int(os.environ.get("SAECO_ASYNC_DISTRIBUTE_WORKERS", 256))
+        )
+
         async def append_to_pile(pile_idx: int):
-            # Get the corresponding pile and data for it.
-            pile = self.piles.get(pile_idx)
-            data_to_append = t[i == pile_idx]
-            # Offload the blocking append call to a worker thread.
-            await asyncio.to_thread(pile.append, data_to_append)
+            async with sem:
+                # Get the corresponding pile and data for it.
+                pile = self.piles.get(pile_idx)
+                data_to_append = t[i == pile_idx]
+                # Offload the blocking append call to a worker thread.
+                await asyncio.to_thread(pile.append, data_to_append)
 
         # Use tqdm for progress - note that tqdm is not asynchronous but
         # we can still update it as long as the loop scheduling is done in the main thread.
