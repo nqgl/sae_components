@@ -59,7 +59,7 @@ class Piler:
 
     def initialize(self):
         for i in range(self.num_piles):
-            self.piles.create(i, self.dtype, torch.Size(self.shape))
+            self.piles.create(i, self.dtype, self.shape)
 
     # def finalize(self):
     #     self.piles.finalize()

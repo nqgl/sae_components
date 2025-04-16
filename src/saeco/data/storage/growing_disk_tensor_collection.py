@@ -66,7 +66,7 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
         raise ValueError("Cannot set items in a growing collection")
 
     def create(
-        self, name: str | int, dtype: torch.dtype, shape: torch.Size
+        self, name: str | int, dtype: torch.dtype, shape: list[int]
     ) -> GrowingDiskTensor:
         if self.finalized:
             raise ValueError("Collection is finalized, cannot create new tensors")

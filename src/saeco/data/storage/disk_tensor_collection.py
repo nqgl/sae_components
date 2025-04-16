@@ -29,9 +29,7 @@ class DiskTensorCollection(Generic[DiskTensorType]):
             raise ValueError(f"{name} already exists!")
         return name
 
-    def create(
-        self, name: str, dtype: torch.dtype, shape: torch.Size
-    ) -> DiskTensorType:
+    def create(self, name: str, dtype: torch.dtype, shape: list[int]) -> DiskTensorType:
         name = self.check_name_create(name)
         path = self.storage_dir / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +46,7 @@ class DiskTensorCollection(Generic[DiskTensorType]):
             name = str(name)
         return self.disk_tensor_cls.open(self.storage_dir / name)
 
-    def __getitem__(self, name: str | int):
+    def __getitem__(self, name: str | int) -> torch.Tensor | DiskTensorType:
         disk_tensor = self.get(name)
         if self.return_raw:
             return disk_tensor

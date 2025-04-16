@@ -98,7 +98,7 @@ class GrowingDiskTensor(DiskTensor):
         if initial_nnz is None:
             initial_nnz = 2**15
         else:
-            shape = shape.copy()
+            shape = list(shape)
             shape[cat_axis] = None
         cat_len = shape[cat_axis] or int(
             initial_nnz
