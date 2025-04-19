@@ -12,3 +12,4 @@ datasets
 transformers
 torchlars
 neptune
+neptune-scale

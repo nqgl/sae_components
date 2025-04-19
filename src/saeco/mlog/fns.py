@@ -6,6 +6,7 @@ if TYPE_CHECKING:
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+from .neptune_scale_metric_logger import NeptuneScaleMetricLogger
 
 
 class NeptuneLogger:
@@ -287,3 +288,48 @@ class NeptuneCustomLogger:
 
     def config_get(self):
         return self._sweep_inst_config
+
+
+import neptune_scale
+
+
+class NeptuneScaleLogger(NeptuneCustomLogger):
+    run: neptune_scale.Run | None
+
+    @property
+    def runlogger(self):
+        if self.run is None:
+            return None
+        return NeptuneScaleMetricLogger(self.run, "")
+
+    def init(self, project=None, config=None, run_name=None):
+        import neptune_scale
+
+        assert self.run is None
+        self.run_name = run_name
+        if project:
+            self.project = project
+        self.run = neptune_scale.Run(
+            project=self.project,
+            # experiment_name=run_name,
+        )
+
+        if config:
+            self.update_config(config)
+
+    def log(self, data, step=None):
+        for key, value in data.items():
+            key = "/".join((ks := key.split("/"))[:-1] + [f"{ks[-1]}_"])
+            if step is not None:
+                self.runlogger[key].log_metric(value, step=step)
+            else:
+                self.runlogger[key] = value
+
+    def finish(self):
+        assert self.run is not None
+        self.run.close()
+        self.run = None
+        self.run_name = None
+
+    def update_namespace(self, namespace, data: dict):
+        self.runlogger[namespace] = data
