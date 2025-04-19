@@ -12,17 +12,23 @@ import click
 @click.option(
     "--distributed-skip-log", type=bool, default=False, is_flag=True, flag_value=True
 )
+@click.option(
+    "--neptune-scale", type=bool, default=False, is_flag=True, flag_value=True
+)
 def start(
     sweepdata_path: str,
     sweep_index: int | None,
     sweep_hash: str | None,
     distributed_skip_log: bool,
+    neptune_scale: bool,
 ):
     """Run a sweep using the specified sweep data file.
 
     Args:
         sweepdata_path: Path to the sweep data file
     """
+    if neptune_scale:
+        mlog.use_neptune_scale()
     print("cwd", Path.cwd())
     try:
         path = Path.cwd() / sweepdata_path
