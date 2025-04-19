@@ -309,8 +309,11 @@ class NeptuneScaleLogger(NeptuneCustomLogger):
         self.run_name = run_name
         if project:
             self.project = project
+
         self.run = neptune_scale.Run(
             project=self.project,
+            run_id=run_name,
+            experiment_name=run_name.split(":")[0] if ":" in run_name else run_name,
             # experiment_name=run_name,
         )
 
