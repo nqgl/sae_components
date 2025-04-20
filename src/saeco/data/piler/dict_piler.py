@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 import torch
 import tqdm
-from attrs import define
+from attrs import define, field
 
 from saeco.data.piler import Piler
 
@@ -71,9 +71,80 @@ class DictPilerMetadata(BaseModel):
     dtypes: dict[str, str]
     fixed_shapes: dict[str, list[int]]
     compression: CompressionType = CompressionType.NONE
+    keys: set[str]
 
 
+@define
 class DictPiler:
+    metadata: DictPilerMetadata
+    pilers: dict[str, Piler]
+    use_async_distribute: bool = True # this is a flag just bc it's a new/experimental feature  
+    readonly: bool = False
+    @classmethod
+    def create(
+        cls,
+        path: Union[str, Path],
+        dtypes: dict[str, torch.dtype],
+        fixed_shapes: dict[str, torch.Size] | dict[str, Sequence[int]],
+        num_piles=None,
+        use_async_distribute: bool = True,
+        compress: bool = False,
+    ):
+        keys = set(dtypes.keys())
+        assert fixed_shapes is None or keys == set(fixed_shapes.keys())
+        if isinstance(path, str):
+            path = Path(path)
+        if path.exists():
+            raise ValueError(f"folder already exists at {path}")
+        path.mkdir(parents=True)
+        shapes = {k: [0] + list(v) for k, v in fixed_shapes.items()}
+        metadata = DictPilerMetadata(
+            dtypes...,
+            fixed_shapes=shapes,
+            compression=CompressionType.ZSTD if compress else CompressionType.ZSTD,
+            keys=keys,
+        )
+        pilers = {
+            k: Piler(
+                self.path / k,
+                dtype=dtypes[k],
+                shape=shapes[k],
+                num_piles=num_piles,
+                compress=compress,
+            )
+            for k in self.keys
+        }
+        # check if folder at path exists already, if so raise error
+        # other sanity checks from the old __init__
+        # store relevant data in the metadata, immediately store it in the path
+
+        
+            if num_piles is None:
+                assert all(
+                    p.num_piles == self.pilers[next(iter(self.keys))].num_piles
+                    for p in self.pilers.values()
+                )
+                self.num_piles = self.pilers[next(iter(self.keys))].num_piles
+            else:
+                self.num_piles = num_piles
+
+
+    @classmethod
+    def get_metadata_path(cls, path: Union[str, Path]):
+        if isinstance(path, str):
+            path = Path(path)
+        return path / "dictpiler_metadata.json"
+    @classmethod
+    def open(cls, path: Union[str, Path],
+             # we could allow options to be passed in here and then assert that they match the properties of the opened piler
+             # not sure that's necessary though
+             ):
+        metadata_path = cls.get_metadata_path(path)
+        if not metadata_path.exists():
+            raise ValueError(f"Piler metadata not found at {metadata_path}")
+        metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
+
+
     def __init__(
         self,
         path: Union[str, Path],
@@ -90,30 +161,33 @@ class DictPiler:
             path = Path(path)
 
         shapes = {k: [0] + list(v) for k, v in fixed_shapes.items()}
-        self.path = path
-        self.readonly = num_piles is None  # TODO: Do this a better way.
-        self.dtypes = dtypes
-        self.shapes = shapes
-        if not self.path.exists():
-            self.path.mkdir(parents=True)
-        self.pilers = {
-            k: Piler(
-                self.path / k,
-                dtype=dtypes[k],
-                shape=shapes[k],
-                num_piles=num_piles,
-                compress=compress,
-            )
-            for k in self.keys
-        }
-        if num_piles is None:
-            assert all(
-                p.num_piles == self.pilers[next(iter(self.keys))].num_piles
-                for p in self.pilers.values()
-            )
-            self.num_piles = self.pilers[next(iter(self.keys))].num_piles
-        else:
-            self.num_piles = num_piles
+        self.path = path 
+        self.readonly = num_piles is None  # TODO: will be determined by whether called open vs create
+        self.dtypes = dtypes # TODO @gavin  here this could be retrieved from the metadata as a property.
+                    # eg the property would access self.metadata.dtypes. If its actually important that the values be dtypes,
+                    # can do the conversion in the property -- there's a str_to_dtype functions somewhere in misc
+        from saeco.misc import str_to_dtype # yeah there it is
+        
+        # if not self.path.exists():
+            
+        # self.pilers = {
+        #     k: Piler(
+        #         self.path / k,
+        #         dtype=dtypes[k],
+        #         shape=shapes[k],
+        #         num_piles=num_piles,
+        #         compress=compress,
+        #     )
+        #     for k in self.keys
+        # }
+        # if num_piles is None: 
+        #     assert all(
+        #         p.num_piles == self.pilers[next(iter(self.keys))].num_piles
+        #         for p in self.pilers.values()
+        #     )
+        #     self.num_piles = self.pilers[next(iter(self.keys))].num_piles
+        # else:
+        #     self.num_piles = num_piles
 
     def distribute(
         self, tensors: dict[str, torch.Tensor], indexer: torch.Tensor | None = None
