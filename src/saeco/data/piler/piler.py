@@ -16,12 +16,14 @@ from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
 
+from saeco.misc import str_to_dtype
+
 
 class PilerMetadata(BaseModel):
     dtype: str
     fixed_shape: list[int]
     compression: CompressionType = CompressionType.NONE
-    num_piles: int | None
+    num_piles: int
 
 
 @define
@@ -73,7 +75,7 @@ class Piler:
             piles=piles,
         )
 
-        Piler.get_metadata_path(path).write_text(metadata.model_dump_json())
+        cls.get_metadata_path(path).write_text(metadata.model_dump_json())
 
         return piler
 
@@ -81,21 +83,26 @@ class Piler:
     def open(cls, path: str | Path):
         if isinstance(path, str):
             path = Path(path)
+        metadata_path = cls.get_metadata_path(path)
 
-        metadata = PilerMetadata.model_validate_json(
-            Piler.get_metadata_path(path).read_text()
+        if not metadata_path.exists():
+            raise ValueError(f"Piler metadata not found at {metadata_path}")
+
+        metadata = PilerMetadata.model_validate_json(metadata_path.read_text())
+
+        gdtc = GrowingDiskTensorCollection(
+            path, stored_tensors_subdirectory_name="piles"
         )
 
-        piler = Piler(
-            metadata,
-            path,
-            readonly=True,
-            piles=GrowingDiskTensorCollection(
-                path, stored_tensors_subdirectory_name="piles"
-            ),
-        )
+        assert len(gdtc) == metadata.num_piles
+
+        piler = Piler(metadata, path, readonly=True, piles=gdtc)
 
         return piler
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return str_to_dtype(self.metadata.dtype)
 
     @classmethod
     def get_metadata_path(cls, path: Union[str, Path]):
