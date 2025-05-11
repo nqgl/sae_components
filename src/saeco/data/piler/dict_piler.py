@@ -103,7 +103,9 @@ class DictPiler:
         compress: bool = False,
     ):
         keys = set(dtypes.keys())
-        assert fixed_shapes is None or keys == set(fixed_shapes.keys())
+
+        if keys != set(fixed_shapes.keys()):
+            raise ValueError("Non-matching keys in dtypes and fixed_shapes")
 
         dtypes = {
             k: str(v) if isinstance(v, torch.dtype) else v for k, v in dtypes.items()
@@ -115,8 +117,6 @@ class DictPiler:
         if path.exists():
             raise ValueError(f"folder already exists at {path}")
         path.mkdir(parents=True)
-
-        shapes = {k: [0] + list(v) for k, v in fixed_shapes.items()}
 
         metadata = DictPilerMetadata(
             keys=keys,
