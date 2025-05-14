@@ -208,7 +208,7 @@ class NeptuneCustomLogger:
         self.run_name = None
 
     @classmethod
-    def neptune_config_fix(cls, item):
+    def _neptune_config_fix(cls, item):
         from enum import Enum
 
         if isinstance(item, Enum):
@@ -217,14 +217,19 @@ class NeptuneCustomLogger:
             return {k: cls.neptune_config_fix(v) for k, v in item.items()}
         elif isinstance(item, list) or isinstance(item, tuple):
             return {i: v for i, v in enumerate(item)}
-
         return item
+
+    @classmethod
+    def neptune_config_fix(cls, item):
+        from .neptune_scale_metric_logger import stringify_unsupported
+
+        return stringify_unsupported(cls._neptune_config_fix(item))
 
     def update_config(self, config_dict):
         self.update_namespace("config", config_dict)
 
     def update_namespace(self, namespace, data: dict):
-        if self.run.exists(namespace):
+        if self.run is not None and self.run.exists(namespace):
             data = {**self.run[namespace].fetch(), **data}
         self.run[namespace].assign(self.neptune_config_fix(data))
 
