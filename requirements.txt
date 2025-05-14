@@ -13,3 +13,4 @@ transformers
 torchlars
 neptune
 neptune-scale
+zstd

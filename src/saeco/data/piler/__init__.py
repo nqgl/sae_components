@@ -1,1 +1,1 @@
-from .piler import Piler
+from .piler import Piler, PilerMetadata

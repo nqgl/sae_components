@@ -2,22 +2,32 @@ from enum import Enum
 from pathlib import Path
 
 from typing import cast, List, overload, Sequence, Union
-from pydantic import BaseModel
 
 import torch
 import tqdm
 from attrs import define, field
+from pydantic import BaseModel
 
-from saeco.data.piler import Piler
+from saeco.data.piler import Piler, PilerMetadata
+from saeco.data.storage.compressed_safetensors import CompressionType
 
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
-from saeco.data.storage.compressed_safetensors import CompressionType
 
 
 @define
 class DictBatch:
+    """
+        Represents a batch of data from multiple locations in a model, all aligned to the
+    same activation tokens/inference steps.
+
+        Indexing with a string returns the tensor associated with that key (location).
+
+        Indexing with an integer, slice, list of indices, or a torch.Tensor applies the
+        indexing operation to each tensor in the batch, returning a new DictBatch.
+    """
+
     data: dict[str, torch.Tensor]
 
     @overload
@@ -68,138 +78,133 @@ class DictBatch:
 
 
 class DictPilerMetadata(BaseModel):
-    dtypes: dict[str, str]
-    fixed_shapes: dict[str, list[int]]
-    compression: CompressionType = CompressionType.NONE
     keys: set[str]
 
 
 @define
 class DictPiler:
     metadata: DictPilerMetadata
+    piler_metadata: PilerMetadata
     pilers: dict[str, Piler]
-    use_async_distribute: bool = True # this is a flag just bc it's a new/experimental feature  
+    path: Path
+    use_async_distribute: bool = (
+        True  # this is a flag just bc it's a new/experimental feature
+    )
     readonly: bool = False
+
     @classmethod
     def create(
         cls,
         path: Union[str, Path],
-        dtypes: dict[str, torch.dtype],
+        dtypes: dict[str, torch.dtype] | dict[str, str],
         fixed_shapes: dict[str, torch.Size] | dict[str, Sequence[int]],
-        num_piles=None,
+        num_piles: int,
         use_async_distribute: bool = True,
         compress: bool = False,
     ):
         keys = set(dtypes.keys())
-        assert fixed_shapes is None or keys == set(fixed_shapes.keys())
+
+        if keys != set(fixed_shapes.keys()):
+            raise ValueError("Non-matching keys in dtypes and fixed_shapes")
+
+        dtypes = {
+            k: str(v) if isinstance(v, torch.dtype) else v for k, v in dtypes.items()
+        }
+
         if isinstance(path, str):
             path = Path(path)
+
         if path.exists():
             raise ValueError(f"folder already exists at {path}")
         path.mkdir(parents=True)
-        shapes = {k: [0] + list(v) for k, v in fixed_shapes.items()}
+
         metadata = DictPilerMetadata(
-            dtypes...,
-            fixed_shapes=shapes,
-            compression=CompressionType.ZSTD if compress else CompressionType.ZSTD,
             keys=keys,
         )
+
         pilers = {
-            k: Piler(
-                self.path / k,
-                dtype=dtypes[k],
-                shape=shapes[k],
-                num_piles=num_piles,
-                compress=compress,
+            k: Piler.create(
+                path / k,
+                dtypes[k],
+                fixed_shapes[k],
+                num_piles,
+                compress,
             )
-            for k in self.keys
+            for k in keys
         }
-        # check if folder at path exists already, if so raise error
-        # other sanity checks from the old __init__
-        # store relevant data in the metadata, immediately store it in the path
 
-        
-            if num_piles is None:
-                assert all(
-                    p.num_piles == self.pilers[next(iter(self.keys))].num_piles
-                    for p in self.pilers.values()
-                )
-                self.num_piles = self.pilers[next(iter(self.keys))].num_piles
-            else:
-                self.num_piles = num_piles
+        first_piler = next(iter(pilers.values()))
 
+        dict_piler = DictPiler(
+            metadata,
+            first_piler.metadata,
+            pilers,
+            path,
+            use_async_distribute,
+            False,
+        )
+
+        cls.get_metadata_path(path).write_text(metadata.model_dump_json())
+
+        return dict_piler
+
+    @classmethod
+    def open(
+        cls,
+        path: Union[str, Path],
+        use_async_distribute: bool = True,
+        # we could allow options to be passed in here and then assert that they match the properties of the opened piler
+        # not sure that's necessary though
+    ):
+        metadata_path = cls.get_metadata_path(path)
+
+        if not metadata_path.exists():
+            raise ValueError(f"DictPiler metadata not found at {metadata_path}")
+
+        metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
+
+        pilers = {k: Piler.open(path / k) for k in metadata.keys}
+
+        first_piler = next(iter(pilers.values()))
+
+        assert all(
+            first_piler.metadata.num_piles == piler.metadata.num_piles
+            and first_piler.metadata.dtype == piler.metadata.dtype
+            and first_piler.metadata.compression == piler.metadata.compression
+            and first_piler.metadata.fixed_shape == piler.metadata.fixed_shape
+            for piler in pilers.values()
+        )
+
+        dict_piler = DictPiler(
+            metadata,
+            first_piler.metadata,
+            pilers,
+            path,
+            use_async_distribute,
+            readonly=True,
+        )
+
+        return dict_piler
 
     @classmethod
     def get_metadata_path(cls, path: Union[str, Path]):
         if isinstance(path, str):
             path = Path(path)
         return path / "dictpiler_metadata.json"
-    @classmethod
-    def open(cls, path: Union[str, Path],
-             # we could allow options to be passed in here and then assert that they match the properties of the opened piler
-             # not sure that's necessary though
-             ):
-        metadata_path = cls.get_metadata_path(path)
-        if not metadata_path.exists():
-            raise ValueError(f"Piler metadata not found at {metadata_path}")
-        metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
-
-
-    def __init__(
-        self,
-        path: Union[str, Path],
-        dtypes: dict[str, torch.dtype],
-        fixed_shapes: dict[str, torch.Size] | dict[str, Sequence[int]],
-        num_piles=None,
-        use_async_distribute: bool = True,
-        compress: bool = False,
-    ):
-        self.keys = set(dtypes.keys())
-        self.use_async_distribute = use_async_distribute
-        assert fixed_shapes is None or self.keys == set(fixed_shapes.keys())
-        if isinstance(path, str):
-            path = Path(path)
-
-        shapes = {k: [0] + list(v) for k, v in fixed_shapes.items()}
-        self.path = path 
-        self.readonly = num_piles is None  # TODO: will be determined by whether called open vs create
-        self.dtypes = dtypes # TODO @gavin  here this could be retrieved from the metadata as a property.
-                    # eg the property would access self.metadata.dtypes. If its actually important that the values be dtypes,
-                    # can do the conversion in the property -- there's a str_to_dtype functions somewhere in misc
-        from saeco.misc import str_to_dtype # yeah there it is
-        
-        # if not self.path.exists():
-            
-        # self.pilers = {
-        #     k: Piler(
-        #         self.path / k,
-        #         dtype=dtypes[k],
-        #         shape=shapes[k],
-        #         num_piles=num_piles,
-        #         compress=compress,
-        #     )
-        #     for k in self.keys
-        # }
-        # if num_piles is None: 
-        #     assert all(
-        #         p.num_piles == self.pilers[next(iter(self.keys))].num_piles
-        #         for p in self.pilers.values()
-        #     )
-        #     self.num_piles = self.pilers[next(iter(self.keys))].num_piles
-        # else:
-        #     self.num_piles = num_piles
 
     def distribute(
         self, tensors: dict[str, torch.Tensor], indexer: torch.Tensor | None = None
     ):
         if indexer is None:
             i = torch.randint(
-                0, self.num_piles, [tensors[next(iter(self.keys))].shape[0]]
+                0,
+                self.piler_metadata.num_piles,
+                [tensors[next(iter(self.metadata.keys))].shape[0]],
             )
         else:
             i = indexer
         assert all(t.shape[0] == i.shape[0] for t in tensors.values())
-        assert self.keys == set(tensors.keys())
+        assert self.metadata.keys == set(tensors.keys())
         if self.use_async_distribute:
             for k, t in tensors.items():
                 self.pilers[k].distribute_async(t, i)
@@ -209,7 +214,6 @@ class DictPiler:
         return i
 
     def shuffle_piles(self):
-        # tqdm.tqdm.write("Shuffling piles")
         if self.readonly:
             raise ValueError("Cannot write to a readonly Piler")
         i = iter(self.pilers.values())
@@ -221,7 +225,7 @@ class DictPiler:
             p.shuffle_piles(perms)
 
     def __getitem__(self, i) -> DictBatch:
-        data = {k: self.pilers[k][i] for k in self.keys}
+        data = {k: self.pilers[k][i] for k in self.metadata.keys}
         assert isinstance(data, dict)
         assert all(isinstance(v, torch.Tensor) for v in data.values())
         return DictBatch(data=cast(dict[str, torch.Tensor], data))
@@ -239,7 +243,7 @@ class DictPiler:
 
         spares: list[DictBatch] = []
         nspare = 0
-        for p in range(id % nw, self.num_piles, nw):
+        for p in range(id % nw, self.piler_metadata.num_piles, nw):
             pile = self[p]
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                 yield (
@@ -307,8 +311,7 @@ class PilerDataset(torch.utils.data.IterableDataset):
 
 def main():
     test_path = Path("testdata")
-    test_path.mkdir(exist_ok=True)
-    dp = DictPiler(
+    dp = DictPiler.create(
         test_path,
         {"a": torch.int64, "b": torch.int64},
         fixed_shapes={"a": [16], "b": [16, 16]},
