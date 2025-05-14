@@ -159,8 +159,7 @@ class Cache:
     def _name(self):
         if self._subcache_index is None:
             return "root"
-        n = self._subcache_index
-        return f"{self._parent._name}.{n}"
+        return f"{self._parent._name}.{self._subcache_index}"
 
     def _watch(self, _name: str | list[str]):
         if isinstance(_name, list):
