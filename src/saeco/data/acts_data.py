@@ -86,6 +86,8 @@ class ActsData:
         batched_kwargs={},
     ):
         assert isinstance(tokens, torch.Tensor)
+
+        ### CURRENT
         acts_list = []
         with self.autocast_context():
             with torch.inference_mode():
@@ -113,6 +115,39 @@ class ActsData:
                         raise ValueError(f"acts is not a torch.Tensor: {type(acts)}")
                     acts_list.append(acts)
         acts = torch.cat(acts_list, dim=0)
+        ### END CURRENT
+
+        # ### FUTURE
+
+        # acts_dict = {site: [] for site in self.cfg.model_cfg.acts_cfg.sites}
+        # with self.autocast_context():
+        #     with torch.inference_mode():
+        #         trng = tqdm.trange(0, tokens.shape[0], llm_batch_size, leave=False)
+        #         trng.set_description(f"Tracing {tokens.shape[0]}")
+        #         for i in trng:
+        #             batch_kwargs = {
+        #                 k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
+        #             }
+        #             model = self.model
+        #             d = {}
+        #             with model.trace(
+        #                 tokens[i : i + llm_batch_size],
+        #                 **self.cfg.model_cfg.model_kwargs,
+        #                 **batch_kwargs,
+        #             ):
+        #                 for site in self.cfg.model_cfg.acts_cfg.sites:
+        #                     acts_module = getsite(model, site)
+        #                     acts = acts_module.save()
+        #                     d[site] = acts
+
+        #             for site in self.cfg.model_cfg.acts_cfg.sites:
+        #                 acts_dict[site].append(d[site])
+
+        # acts = {}
+        # for site in self.cfg.model_cfg.acts_cfg.sites:
+        #     acts[site] = torch.cat(acts_dict[site], dim=0)
+        # ### END FUTURE
+
         if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
             acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
         toks_re = tokens
