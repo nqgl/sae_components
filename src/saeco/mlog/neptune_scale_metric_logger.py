@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any, overload
 
 import neptune_scale
+import torch
 
 
 @overload
@@ -49,14 +50,23 @@ def stringify_unsupported(d, parent_key: str = "", sep: str = "/"):
             if isinstance(v, (dict, list, tuple, set)):
                 items |= stringify_unsupported(v, new_key, sep=sep)
             else:
-                items[new_key] = v if type(v) in SUPPORTED_DATATYPES else str(v)
+
+                items[new_key] = (
+                    v
+                    if type(v) in SUPPORTED_DATATYPES
+                    else (v.item() if isinstance(v, torch.Tensor) else str(v))
+                )
     elif isinstance(d, (list, tuple, set)):
         for i, v in enumerate(d):
             new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
             if isinstance(v, (dict, list, tuple, set)):
                 items.update(stringify_unsupported(v, new_key, sep=sep))
             else:
-                items[new_key] = v if type(v) in SUPPORTED_DATATYPES else str(v)
+                items[new_key] = (
+                    v
+                    if type(v) in SUPPORTED_DATATYPES
+                    else (v.item() if isinstance(v, torch.Tensor) else str(v))
+                )
     return items
 
 
@@ -76,5 +86,8 @@ class NeptuneScaleMetricLogger:
             stringify_unsupported({self.key: value}),
             step=step,
         )
+        # self.run.wait_for_submission(10)
+        # self.run.wait_for_processing(10)
+        # self.run.close()
         # self.run.wait_for_processing()
         # print(2)
