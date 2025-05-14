@@ -1,48 +1,30 @@
+import inspect
+import typing
+from abc import abstractmethod
+from functools import cached_property
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Protocol,
-    TypeVar,
-    Generic,
-    overload,
-    runtime_checkable,
-)
-from attrs import define, field
+from typing import Any, Generic, Literal, overload, TypeVar
+
 import torch
+from torch import nn
+
+import saeco.components as co
+import saeco.core as cl
 from saeco.architecture.arch_reload_info import ArchStoragePaths
+from saeco.components.losses import Loss
 from saeco.components.metrics.metrics import ActMetrics, PreActMetrics
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
-from saeco.core.cache import Cache
-from saeco.misc.utils import useif
-import inspect
-from saeco.core import Module
-from saeco.components.losses import Loss
 from saeco.initializer.initializer import Initializer
+from saeco.misc.utils import useif
 from saeco.sweeps import SweepableConfig
-from saeco.trainer.normalizers.normalizer import (
-    Normalizer,
-    StaticInvertibleGeneralizedNormalizer,
-    NormalizedIO,
-    NormalizedInputs,
-    DeNormalizedOutputs,
-)
+from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 from saeco.trainer.run_config import RunConfig
-import saeco.core as cl
-import saeco.components as co
-from functools import cached_property
-from torch import nn
-from abc import abstractmethod
 
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
-from .arch_prop import loss_prop, metric_prop, model_prop, aux_model_prop
-import typing
-from typing import TYPE_CHECKING, Literal
+from .arch_prop import aux_model_prop, loss_prop, metric_prop, model_prop
 
-if TYPE_CHECKING:
-    from saeco.sweeps.newsweeper import SweepData
 from typing_extensions import get_original_bases
 
 
@@ -512,7 +494,11 @@ class ArchitectureBase(Generic[ArchConfigType]):
         path.path.parent.mkdir(parents=True, exist_ok=True)
 
         if path.exists():
-            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
+            self.save_to_path(
+                path.path.with_name(f"{path.path.name}_1"),
+                save_weights=save_weights,
+                averaged_weights=averaged_weights,
+            )
             raise ValueError(
                 f"file already existed at {path}, wrote to {path.path.name}_1"
             )
