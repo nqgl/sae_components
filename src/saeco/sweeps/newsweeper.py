@@ -1,22 +1,23 @@
-from contextlib import contextmanager
 import importlib
 import importlib.util
+import json
 import os
 import sys
+import time
+from contextlib import contextmanager
 from functools import cached_property
 from pathlib import Path
-from typing import Protocol, Generator
-from pydantic import BaseModel
-import time
-from saeco.architecture.arch_reload_info import ArchClassRef, ArchRef
-from saeco.sweeps.sweepable_config import SweepableConfig
+from typing import Generator, Generic, Protocol, TYPE_CHECKING
+
 from attrs import define, field
-from saeco.mlog import mlog
-from saeco.architecture import Architecture
-from .SweepRunner import SweepRunner
-from typing import TYPE_CHECKING, Generic
+from pydantic import BaseModel
 from typing_extensions import TypeVar
-import json
+
+from saeco.architecture import Architecture
+from saeco.architecture.arch_reload_info import ArchClassRef, ArchRef
+from saeco.mlog import mlog
+from saeco.sweeps.sweepable_config import SweepableConfig
+from .SweepRunner import SweepRunner
 
 if TYPE_CHECKING:
     from ezpod import Pods
@@ -169,7 +170,7 @@ class SweepManager:
         )
         return f"-m saeco.sweeps.sweeprunner_cli {path} {extra_args}"
 
-    def get_worker_run_commands_for_manual_sweep(self):
+    def get_worker_run_commands_for_manual_sweep(self, suffix: str = ""):
         root = self.arch.run_cfg
         root_swept = root.to_swept_nodes()
         N = root_swept.swept_combinations_count_including_vars()
@@ -178,7 +179,24 @@ class SweepManager:
             cfg = root.from_selective_sweep(root_swept.select_instance_by_index(i))
             variants.append((i, cfg.get_hash()))
         return [
-            self.get_worker_run_command(f"--sweep-index {i} --sweep-hash {h}")
+            self.get_worker_run_command(f"--sweep-index {i} --sweep-hash {h} {suffix}")
+            for i, h in variants
+        ]
+
+    def get_worker_run_commands_for_manual_random_sweep(self, N: int, suffix: str = ""):
+        root = self.arch.run_cfg
+        root_swept = root.to_swept_nodes()
+        combos = root_swept.swept_combinations_count_including_vars()
+        assert N <= combos
+        import random
+
+        sweep_ids = random.sample(range(combos), N)
+        variants = []
+        for i in sweep_ids:
+            cfg = root.from_selective_sweep(root_swept.select_instance_by_index(i))
+            variants.append((i, cfg.get_hash()))
+        return [
+            self.get_worker_run_command(f"--sweep-index {i} --sweep-hash {h} {suffix}")
             for i, h in variants
         ]
 
@@ -216,6 +234,7 @@ class SweepManager:
 
     def run_manual_sweep_with_monitoring(
         self,
+        total_pods=None,
         new_pods=None,
         purge_after=True,
         keep_after=False,
@@ -223,7 +242,9 @@ class SweepManager:
         prefix_vars=None,
     ):
 
-        with self.created_pods(new_pods, keep=keep_after, setup_min=setup_min) as pods:
+        with self.created_pods(
+            total_pods, create_n=new_pods, keep=keep_after, setup_min=setup_min
+        ) as pods:
             print("running on remotes")
             task = pods.runpy_with_monitor(
                 self.get_worker_run_commands_for_manual_sweep(),
@@ -236,18 +257,36 @@ class SweepManager:
     def created_pods(
         self,
         num_pods=None,
+        create_n=None,
         keep=False,
         setup_min=None,
+        skip_setup=False,
     ) -> Generator["Pods", None, None]:
         from ezpod import Pods
 
         if num_pods is None:
             num_pods = int(input("Enter number of pods: "))
-        pods = Pods.All(group=self.ezpod_group)
-        pods.make_new_pods(num_pods)
+
+        if create_n is None:
+            create_n = num_pods
+            do_purge = False
+        else:
+            do_purge = True
+
+        pods = Pods.All(group=self.ezpod_group).get_alive()
+        pods.make_new_pods(create_n)
         pods.EZPOD_MIN_COMPLETE_TO_CONTINUE = setup_min
         pods.sync()
-        pods.setup()
+        if not skip_setup:
+            pods.setup()
+        if do_purge:
+            pods.prune(
+                n=num_pods,
+                challenge_file="-c 'print(2)'",
+                stop_after_n_complete=num_pods,
+            )
+            pods = Pods.All(group=self.ezpod_group).get_alive()
+
         try:
             yield pods
         finally:
