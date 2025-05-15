@@ -275,7 +275,9 @@ class Architecture(Generic[ArchConfigType]):
         )
 
     @cached_property
-    def data(self):
+    def data(
+        self,
+    ):  # TODO maybe this should be called dataloader and return dataloader, unless important to not reuse datapoints
         return iter(self.run_cfg.train_cfg.data_cfg.get_databuffer())
 
     @cached_property

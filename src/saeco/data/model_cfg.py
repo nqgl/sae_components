@@ -2,6 +2,7 @@ from functools import cached_property
 
 from nnsight import LanguageModel, NNsight
 from pydantic import Field
+import torch
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -16,6 +17,7 @@ MODEL_FN_CALLABLE_OVERRIDE = None
 class ActsDataConfig(SweepableConfig):
     d_data: int = 768
     sites: list[str] = ["transformer.h.6.input"]
+    site_d_datas: list[int] | None = None
     excl_first: bool = True
     filter_pad: bool = True
     storage_dtype_str: str | None = None
@@ -28,9 +30,9 @@ class ActsDataConfig(SweepableConfig):
         return f"{sites_str}_{self.excl_first}_{self.filter_pad}_{self.storage_dtype_str}_{self.autocast_dtype_str}_{self.force_cast_dtype_str}"
 
     @property
-    def storage_dtype(self):
+    def storage_dtype(self) -> torch.dtype:
         if self.storage_dtype_str is None:
-            return None
+            return self.force_cast_dtype or self.autocast_dtype or torch.float32
         return str_to_dtype(self.storage_dtype_str)
 
     @property

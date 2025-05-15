@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Iterable, Protocol
+from typing import Iterable, Iterator, Protocol
 
 import torch
 import torch.nn as nn
@@ -7,6 +7,8 @@ from jaxtyping import Float
 from torch import Tensor
 
 import saeco.core as cl
+
+from saeco.data.sae_train_batch import SAETrainBatch
 
 
 class Normalizer(cl.Module, ABC):
@@ -340,10 +342,10 @@ class GeneralizedNormalizer(Normalizer):
         )
 
     @torch.no_grad()
-    def prime_normalizer(self, buffer: Iterable[Tensor], n: int = 20):
+    def prime_normalizer(self, buffer: Iterator[SAETrainBatch], n: int = 20):
         assert not self.primed
         self.primed = True
-        samples = [next(buffer) for _ in range(n)]
+        samples = [next(buffer).input for _ in range(n)]
         x = torch.cat(samples, dim=0)
         # samples = [x - self.mu_s(x) for x in samples]
 

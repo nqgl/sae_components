@@ -101,6 +101,10 @@ class Piler:
         return piler
 
     @property
+    def num_piles(self):
+        return self.metadata.num_piles
+
+    @property
     def dtype(self) -> torch.dtype:
         return str_to_dtype(self.metadata.dtype)
 

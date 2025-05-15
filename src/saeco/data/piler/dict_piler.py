@@ -1,7 +1,18 @@
 from enum import Enum
 from pathlib import Path
 
-from typing import cast, List, overload, Sequence, Union
+from typing import (
+    Generator,
+    Iterable,
+    Literal,
+    cast,
+    List,
+    overload,
+    Sequence,
+    Union,
+    Mapping,
+)
+import einops
 
 import torch
 import tqdm
@@ -33,14 +44,16 @@ class DictBatch:
     @overload
     def __getitem__(self, i: str) -> torch.Tensor: ...
     @overload
-    def __getitem__(self, i: int | slice | list[int] | torch.Tensor) -> "DictBatch": ...
+    def __getitem__(
+        self, i: int | slice | Sequence[int | slice] | torch.Tensor
+    ) -> "DictBatch": ...
     def __getitem__(self, i):
         if isinstance(i, str):
             return self.data[i]
         return DictBatch({k: v[i] for k, v in self.data.items()})
 
-    def to(self, device):
-        return DictBatch({k: v.to(device) for k, v in self.data.items()})
+    def to(self, *targets):
+        return DictBatch({k: v.to(*targets) for k, v in self.data.items()})
 
     def cuda(self):
         return self.to("cuda")
@@ -76,6 +89,11 @@ class DictBatch:
             {k: torch.cat([b.data[k] for b in batches], dim=dim) for k in keys}
         )
 
+    def einops_rearrange(self, pattern: str, **kwargs):
+        return DictBatch(
+            {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.data.items()}
+        )
+
 
 class DictPilerMetadata(BaseModel):
     keys: set[str]
@@ -96,8 +114,8 @@ class DictPiler:
     def create(
         cls,
         path: Union[str, Path],
-        dtypes: dict[str, torch.dtype] | dict[str, str],
-        fixed_shapes: dict[str, torch.Size] | dict[str, Sequence[int]],
+        dtypes: Mapping[str, torch.dtype] | Mapping[str, str],
+        fixed_shapes: Mapping[str, torch.Size] | Mapping[str, Sequence[int]],
         num_piles: int,
         use_async_distribute: bool = True,
         compress: bool = False,
@@ -230,6 +248,24 @@ class DictPiler:
         assert all(isinstance(v, torch.Tensor) for v in data.values())
         return DictBatch(data=cast(dict[str, torch.Tensor], data))
 
+    @overload
+    def batch_generator(
+        self,
+        batch_size,
+        yield_dicts: Literal[False] = False,
+        id=None,
+        nw=None,
+    ) -> Generator[DictBatch, None, None]: ...
+
+    @overload
+    def batch_generator(
+        self,
+        batch_size,
+        yield_dicts: Literal[True],
+        id=None,
+        nw=None,
+    ) -> Generator[dict[str, torch.Tensor], None, None]: ...
+
     def batch_generator(
         self,
         batch_size,
@@ -237,7 +273,8 @@ class DictPiler:
         id=None,
         nw=None,
     ):
-        assert id == nw == None or id is not None and nw is not None
+        if not (id == nw == None or id is not None and nw is not None):
+            raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
         nw = nw or 1
 
@@ -271,6 +308,10 @@ class DictPiler:
 
     def as_dataset(self, batch_size, converter=None):
         return PilerDataset(self, batch_size, converter)
+
+    @property
+    def num_piles(self):
+        return next(iter(self.pilers.values())).num_piles
 
 
 import torch.utils.data
