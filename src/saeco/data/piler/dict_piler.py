@@ -3,17 +3,18 @@ from pathlib import Path
 
 from typing import (
     Any,
+    cast,
     ClassVar,
     Generator,
     Iterable,
-    Literal,
-    cast,
     List,
+    Literal,
+    Mapping,
     overload,
     Sequence,
     Union,
-    Mapping,
 )
+
 import einops
 
 import torch
@@ -21,14 +22,14 @@ import tqdm
 from attrs import define, field
 from pydantic import BaseModel
 
+from typing_extensions import Self
+
 from saeco.data.piler import Piler, PilerMetadata
 from saeco.data.storage.compressed_safetensors import CompressionType
 
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
-
-from typing_extensions import Self
 
 
 @define
@@ -56,11 +57,13 @@ class DictBatch:
             return self.data[i]
         return self.__class__({k: v[i] for k, v in self.data.items()})
 
-    def to(self, *targets):
-        return self.__class__({k: v.to(*targets) for k, v in self.data.items()})
+    def to(self, *targets, **kwargs):
+        return self.__class__(
+            {k: v.to(*targets, **kwargs) for k, v in self.data.items()}
+        )
 
-    def cuda(self):
-        return self.to("cuda")
+    def cuda(self, *args, **kwargs):
+        return self.to("cuda", *args, **kwargs)
 
     def keys(self):
         return self.data.keys()

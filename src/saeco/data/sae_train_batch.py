@@ -1,8 +1,10 @@
 from functools import cached_property
-from saeco.data.piler.dict_piler import DictBatch
-from attrs import define
-import torch
 from typing import ClassVar
+
+import torch
+from attrs import define
+
+from saeco.data.piler.dict_piler import DictBatch
 
 
 @define
