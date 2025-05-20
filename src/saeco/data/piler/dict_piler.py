@@ -2,6 +2,8 @@ from enum import Enum
 from pathlib import Path
 
 from typing import (
+    Any,
+    ClassVar,
     Generator,
     Iterable,
     Literal,
@@ -84,7 +86,25 @@ class DictBatch:
         return l
 
     @classmethod
-    def cat_list(cls, batches: list[Self], dim: int = 0):
+    def cat_list(
+        cls, batches: list[Self], dim: int = 0, overwite_kwargs: dict | None = None
+    ):
+        overwite_kwargs = overwite_kwargs or {}
+        other_data_0: dict[str, Any] = batches[0].get_other_data()
+        keys0 = set(other_data_0.keys())
+        overwritten_keys = set(overwite_kwargs.keys())
+        normal_keys = keys0 - overwritten_keys
+
+        for batch in batches:
+            assert normal_keys == set(batch.get_other_data().keys() - overwritten_keys)
+            for normal_key in normal_keys:
+                # assert equal values
+                ...
+        other_data = {
+            **other_data_0,
+            **overwite_kwargs,
+        }  # this ordering makes 2nd overwrite
+
         keys = batches[0].data.keys()
         assert all(b.data.keys() == keys for b in batches)
         return cls({k: torch.cat([b.data[k] for b in batches], dim=dim) for k in keys})
@@ -93,6 +113,21 @@ class DictBatch:
         return self.__class__(
             {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.data.items()}
         )
+
+    @classmethod
+    def construct_with_other_data(
+        cls, data: dict[str, torch.Tensor], other_data: dict[str, Any] | None = None
+    ):
+        return cls(data, **(other_data or {}))
+
+    def copy_with_data(self, data: dict[str, torch.Tensor]):
+        other_data = self.get_other_data()
+        return self.__class__(data, **other_data)
+
+    OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
+
+    def get_other_data(self) -> dict[str, Any]:
+        return {k: getattr(self, k) for k in self.OTHER_DATA_FIELDS}
 
 
 class DictPilerMetadata(BaseModel):
