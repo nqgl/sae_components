@@ -26,6 +26,8 @@ from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
 
+from typing_extensions import Self
+
 
 @define
 class DictBatch:
@@ -45,15 +47,15 @@ class DictBatch:
     def __getitem__(self, i: str) -> torch.Tensor: ...
     @overload
     def __getitem__(
-        self, i: int | slice | Sequence[int | slice] | torch.Tensor
-    ) -> "DictBatch": ...
+        self, i: int | slice | list[int] | torch.Tensor | tuple[slice, ...]
+    ) -> Self: ...
     def __getitem__(self, i):
         if isinstance(i, str):
             return self.data[i]
-        return DictBatch({k: v[i] for k, v in self.data.items()})
+        return self.__class__({k: v[i] for k, v in self.data.items()})
 
     def to(self, *targets):
-        return DictBatch({k: v.to(*targets) for k, v in self.data.items()})
+        return self.__class__({k: v.to(*targets) for k, v in self.data.items()})
 
     def cuda(self):
         return self.to("cuda")
@@ -67,9 +69,9 @@ class DictBatch:
     def values(self):
         return self.data.values()
 
-    def cat(self, other: "DictBatch"):
+    def cat(self, other: Self):
         assert self.keys() == other.keys()
-        return DictBatch(
+        return self.__class__(
             {
                 k: torch.cat([self.data[k], other.data[k]], dim=0)
                 for k in self.data.keys()
@@ -82,15 +84,13 @@ class DictBatch:
         return l
 
     @classmethod
-    def cat_list(cls, batches: list["DictBatch"], dim: int = 0):
+    def cat_list(cls, batches: list[Self], dim: int = 0):
         keys = batches[0].data.keys()
         assert all(b.data.keys() == keys for b in batches)
-        return DictBatch(
-            {k: torch.cat([b.data[k] for b in batches], dim=dim) for k in keys}
-        )
+        return cls({k: torch.cat([b.data[k] for b in batches], dim=dim) for k in keys})
 
     def einops_rearrange(self, pattern: str, **kwargs):
-        return DictBatch(
+        return self.__class__(
             {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.data.items()}
         )
 
