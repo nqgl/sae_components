@@ -1,7 +1,7 @@
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
-from saeco.sweeps.sweepable_config.has_sweep import has_sweep
+from saeco.sweeps.sweepable_config.has_sweep import CouldHaveSweep, has_sweep, to_items
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel, Field
@@ -24,16 +24,11 @@ class SweptNode(BaseModel):
     @classmethod
     def from_sweepable(
         cls,
-        target: BaseModel | dict,
+        target: CouldHaveSweep,
         location: Location = [],
     ) -> "SweptNode":
         inst = cls(location=location)
-        if isinstance(target, BaseModel):
-            items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
-        else:
-            assert isinstance(target, dict)
-            items = target.items()
-        for name, attr in items:
+        for name, attr in to_items(target):
             if isinstance(attr, SweepExpression):
                 inst.expressions[name] = attr
                 # inst.sweepvars |= attr.get_sweepvars()
@@ -42,11 +37,10 @@ class SweptNode(BaseModel):
                 # inst.sweepvars.add(attr)
             elif isinstance(attr, Swept):
                 inst.swept_fields[name] = attr
-            elif isinstance(attr, BaseModel | dict) and has_sweep(attr):
+            elif isinstance(attr, CouldHaveSweep) and has_sweep(attr):
                 inst.children[name] = cls.from_sweepable(attr, location + [name])
             else:
                 continue
-
         return inst
 
     def get_sweepvars(self) -> set[SweepVar]:
