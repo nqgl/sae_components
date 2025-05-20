@@ -22,7 +22,7 @@ from saeco.data.generation_config import DataGenerationProcessConfig
 from saeco.data.split_config import SplitConfig
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Val, Var
+from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Val
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
@@ -32,8 +32,11 @@ from saeco.trainer.train_config import TrainConfig
 PROJECT = "sae sweeps"
 
 
-# var = SweepVar(1, 2, 3, name="var")
 import saeco.core as cl
+
+from saeco.mlog import mlog
+
+mlog.init()
 
 
 def acts_modifier(cache, acts):
@@ -43,18 +46,17 @@ def acts_modifier(cache, acts):
 cache = cl.Cache()
 cache.register_write_callback("acts", acts_modifier)
 
-batch_size_mult_var = SweepVar(1, 2, 3, name="batch_size_mult")
 cfg = RunConfig[VanillaConfig](
     train_cfg=TrainConfig(
-        data_cfg=gpt_2_block(),
+        data_cfg=gpt_2_block(3),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=Val(50_000) // batch_size_mult_var,
-            resample_period=Val(8_000) // batch_size_mult_var,
+            run_length=25_000,
+            resample_period=8_000,
             lr_cooldown_length=0.5,
             lr_warmup_length=500,
         ),
         #
-        batch_size=batch_size_mult_var * 4096,
+        batch_size=2 * 4096,
         optim="Adam",
         lr=1e-3,
         betas=(0.9, 0.997),
@@ -78,15 +80,8 @@ cfg = RunConfig[VanillaConfig](
     ),
     #
     init_cfg=InitConfig(d_data=768, dict_mult=8),
-    arch_cfg=VanillaConfig(pre_bias=Swept(True, False)),
+    arch_cfg=VanillaConfig(pre_bias=True),
 )
-g = VanillaSAE(cfg)
-sweep_manager = g.get_sweep_manager()
-sweep_manager.initialize_sweep()
-sweep_manager.run_sweep_on_pods_with_monitoring(
-    2, purge_after=False, keep_after=True, challenge_file=None
-)
-
 
 g = VanillaSAE(cfg)
 g.run_training()

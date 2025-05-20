@@ -55,10 +55,10 @@ class DictBatch:
     def __getitem__(self, i):
         if isinstance(i, str):
             return self.data[i]
-        return self.__class__({k: v[i] for k, v in self.data.items()})
+        return self.copy_with_data({k: v[i] for k, v in self.data.items()})
 
     def to(self, *targets, **kwargs):
-        return self.__class__(
+        return self.copy_with_data(
             {k: v.to(*targets, **kwargs) for k, v in self.data.items()}
         )
 
@@ -76,7 +76,7 @@ class DictBatch:
 
     def cat(self, other: Self):
         assert self.keys() == other.keys()
-        return self.__class__(
+        return self.copy_with_data(
             {
                 k: torch.cat([self.data[k], other.data[k]], dim=0)
                 for k in self.data.keys()

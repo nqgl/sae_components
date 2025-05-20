@@ -12,20 +12,20 @@ from torch.amp.grad_scaler import GradScaler
 from saeco.core import Cache
 from saeco.data.tokens_data import TokensData
 from saeco.misc.paths import SAVED_MODELS_DIR
-from .OptimConfig import get_optim_cls
+from saeco.mlog import mlog
 from .call_training_hooks import (
-    do_pre_forward,
-    do_post_forward,
     do_post_backward,
+    do_post_forward,
     do_post_step,
+    do_pre_forward,
 )
+from .l0targeter import TARGETER_TYPES
+from .OptimConfig import get_optim_cls
+from .recons import get_recons_loss
+from .run_config import RunConfig
 from .train_cache import TrainCache
 from .train_config import TrainConfig
 from .trainable import Trainable
-from .l0targeter import TARGETER_TYPES
-from .recons import get_recons_loss
-from .run_config import RunConfig
-from saeco.mlog import mlog
 
 # torch.multiprocessing.set_start_method("spawn")
 
@@ -246,10 +246,11 @@ class Trainer:
                         break
 
             buffer = buf()
-
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
+            input, target = x.input, x.target
             if not self.cfg.use_autocast:
-                x = x.float()  # TODO maybe cast other direction instead
+                input = input.float()  # TODO maybe cast other direction instead
+                target = target.float()  # TODO maybe cast other direction instead
             self.optim.zero_grad()
             if self.t % self.eval_step_freq == 0 or (
                 self.cfg.schedule.run_length
@@ -257,11 +258,11 @@ class Trainer:
                 and self.t % 5 == 0
             ):
                 self.trainable.eval()
-                self.eval_step(x)
+                self.eval_step(input, y=target)
                 self.trainable.train()
 
             cache = self.make_cache()
-            self.trainstep(x, cache)
+            self.trainstep(input, cache, y=target)
             self.full_log(cache)
             self.t += 1
             cache.destruct()
@@ -269,7 +270,7 @@ class Trainer:
                 self.averaged_model.update_parameters(self.trainable)
             if self.t % self.cfg.intermittent_metric_freq == 0:
                 self.trainable.eval()
-                self.do_intermittent_metrics()
+                #                self.do_intermittent_metrics()
                 self.trainable.train()
             if (
                 self.cfg.checkpoint_period is not None
@@ -321,16 +322,16 @@ class Trainer:
         self.lr_scheduler.step()
         self.post_step(cache)
 
-    def trainstep(self, x, cache: TrainCache):
+    def trainstep(self, x, cache: TrainCache, y=None):
         self.pre_forward(cache)
         with self.cast():
-            loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
+            loss = self.trainable.loss(x, cache=cache, y=y, coeffs=self.coeffs())
             self.proc_cache_after_forward(cache)
         self.post_forward(cache)
         self.handle_backward(loss, cache)
         self.handle_step(cache)
 
-    def eval_step(self, x):
+    def eval_step(self, x, y=None):
         if self.cfg.use_averaged_model:
             model = self.averaged_model.module
         else:
@@ -338,7 +339,7 @@ class Trainer:
         cache = self.make_cache()
         with torch.no_grad():
             with self.cast():
-                loss = model.loss(x, cache=cache, coeffs=self.coeffs())
+                loss = model.loss(x, cache=cache, y=y, coeffs=self.coeffs())
         self.eval_log(cache)
         cache.destruct()
 
