@@ -108,6 +108,7 @@ class DictBatch:
             **overwite_kwargs,
         }  # this ordering makes 2nd overwrite
 
+        # TODO Finish cat_list
         keys = batches[0].data.keys()
         assert all(b.data.keys() == keys for b in batches)
         return cls({k: torch.cat([b.data[k] for b in batches], dim=dim) for k in keys})
@@ -131,6 +132,17 @@ class DictBatch:
 
     def get_other_data(self) -> dict[str, Any]:
         return {k: getattr(self, k) for k in self.OTHER_DATA_FIELDS}
+
+    def clone(self):
+        return self.__class__(
+            data={k: v.clone() for k, v in self.data.items()}, **self.get_other_data()
+        )
+
+    def contiguous(self):
+        return self.__class__(
+            data={k: v.contiguous() for k, v in self.data.items()},
+            **self.get_other_data(),
+        )
 
 
 class DictPilerMetadata(BaseModel):
@@ -320,13 +332,16 @@ class DictPiler:
         nspare = 0
         for p in range(id % nw, self.piler_metadata.num_piles, nw):
             pile = self[p]
+            # below we clone before yielding to prevent yielding a view of the pile.
+            # if a yielded view were to get pinned by the consumer of this,
+            # (eg a dataloader), the entire mmapped pile would get pinned as well
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                 yield (
-                    pile[i : i + batch_size].data
+                    pile[i : i + batch_size].clone().data
                     if yield_dicts
-                    else pile[i : i + batch_size]
+                    else pile[i : i + batch_size].clone()
                 )
-            spare = pile[len(pile) // batch_size * batch_size :]
+            spare = pile[len(pile) // batch_size * batch_size :].clone()
             if len(spare) > 0:
                 spares.append(spare)
                 nspare += len(spare)
@@ -343,6 +358,8 @@ class DictPiler:
                     spare = consolidated[len(consolidated) // batch_size * batch_size :]
                     spares = [spare]
                     nspare = len(spare)
+            for piler in self.pilers.values():
+                del piler.piles.cache[str(p)]
 
     def as_dataset(self, batch_size, converter=None):
         return PilerDataset(self, batch_size, converter)
