@@ -278,13 +278,13 @@ class Architecture(Generic[ArchConfigType]):
     def data(
         self,
     ):  # TODO maybe this should be called dataloader and return dataloader, unless important to not reuse datapoints
-        return iter(self.run_cfg.train_cfg.data_cfg.get_databuffer())
+        return iter(self.run_cfg.train_cfg.get_databuffer())
 
     @cached_property
     def normalizer(self) -> StaticInvertibleGeneralizedNormalizer:
         normalizer = StaticInvertibleGeneralizedNormalizer(
             init=self.init, cfg=self.run_cfg.normalizer_cfg
-        )
+        ).to(device=self.device)
         if self.state_dict is None:
             normalizer.prime_normalizer(self.data)
         return normalizer
