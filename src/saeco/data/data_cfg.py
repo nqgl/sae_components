@@ -141,7 +141,7 @@ class DataConfig(SweepableConfig):
             target_sites=target_sites,
         )
 
-    def train_dataset(
+    def _train_dataset(
         self,
         model,
         batch_size,
@@ -156,7 +156,7 @@ class DataConfig(SweepableConfig):
             target_sites=target_sites,
         )
 
-    def get_queued_databuffer(
+    def _get_queued_databuffer(
         self,
         batch_size,
         num_workers=None,
@@ -169,7 +169,7 @@ class DataConfig(SweepableConfig):
             self.databuffer_num_workers if num_workers is None else num_workers
         )
         buf = iter(
-            self.get_databuffer(
+            self._get_databuffer(
                 num_workers=num_workers,
                 batch_size=batch_size,
                 input_sites=input_sites,
@@ -184,13 +184,13 @@ class DataConfig(SweepableConfig):
             )
         return buf
 
-    def get_databuffer(
+    def _get_databuffer(
         self, num_workers=0, batch_size=4096, input_sites=None, target_sites=None
     ):
         model = None
         if not self._acts_piles_path(self.trainsplit).exists():
             model = self.model_cfg.model
-        ds = self.train_dataset(
+        ds = self._train_dataset(
             model,
             batch_size=batch_size,
             input_sites=input_sites,
@@ -199,10 +199,6 @@ class DataConfig(SweepableConfig):
         dl = DataLoader(
             ds, num_workers=num_workers, shuffle=False, pin_memory=True, batch_size=None
         )
-
-        # def squeezeyielder():
-        #     for bn in dl:
-        #         yield bn.squeeze(0)
 
         return dl
 

@@ -182,28 +182,6 @@ class Trainer:
                 )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def get_databuffer(self, num_batches=None, num_workers=0, queue_size=...):
-        buf = self.cfg.data_cfg.get_databuffer(
-            num_workers=num_workers, batch_size=self.cfg.batch_size
-        )
-        if queue_size is ...:
-            queue_size = int(4096 / self.cfg.batch_size * 64 + 4)
-        if queue_size is not None:
-            queue = [next(buf).cuda(non_blocking=True) for _ in range(queue_size)]
-
-            def qbuf():
-                try:
-                    while True:
-                        yield queue.pop(0)
-                        queue.append(next(buf).cuda(non_blocking=True))
-                except StopIteration:
-                    print("GPU buffer source depleted")
-                    for x in queue:
-                        yield x
-
-            return qbuf()
-        return buf
-
     def make_cache(self):
         cache = TrainCache()
         cache._watch(self.trainable.get_losses_and_metrics_names())
@@ -226,27 +204,7 @@ class Trainer:
 
     def _train(self, buffer=None, num_steps=None):
         if buffer is None:
-            if self.cfg.input_sites and not all(
-                input_site in self.cfg.data_cfg.model_cfg.acts_cfg.sites
-                for input_site in self.cfg.input_sites
-            ):
-                raise ValueError("Input sites must be a subset of the model's sites.")
-
-            if self.cfg.target_sites and not all(
-                target_site in self.cfg.data_cfg.model_cfg.acts_cfg.sites
-                for target_site in self.cfg.target_sites
-            ):
-                raise ValueError("Target sites must be a subset of the model's sites.")
-
-            used_input_sites = (
-                self.cfg.input_sites or self.cfg.data_cfg.model_cfg.acts_cfg.sites
-            )
-
-            buffer = self.cfg.data_cfg.get_queued_databuffer(
-                batch_size=self.cfg.batch_size,
-                input_sites=used_input_sites,
-                target_sites=self.cfg.target_sites,
-            )
+            buffer = self.cfg.get_databuffer()
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
         self.post_step()

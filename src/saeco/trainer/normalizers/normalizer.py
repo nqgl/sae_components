@@ -369,7 +369,7 @@ class GeneralizedNormalizer(Normalizer):
 
         if self.cfg.std_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
             # std_es = [self.elementwise_std(x) for x in samples]
-            self._std_e.data = self.elementwise_std(x)
+            self._std_e.data[:] = self.elementwise_std(x)
             # x = x / self.std_e(x)
             # x = x / self.std_s(x)
 

@@ -45,3 +45,31 @@ class TrainConfig(SweepableConfig):
 
     def get_optim(self):
         return get_optim_cls(self.optim)
+
+    def get_databuffer(self, num_workers=None):
+        if num_workers is None:
+            num_workers = self.data_cfg.databuffer_num_workers
+        if self.input_sites and not (  # <= checks subset
+            set(self.input_sites) <= set(self.data_cfg.model_cfg.acts_cfg.sites)
+        ):
+            raise ValueError(
+                f"Input sites must be a subset of the data config's sites. Got {self.input_sites}, expected subset of {self.data_cfg.model_cfg.acts_cfg.sites}"
+            )
+
+        if self.target_sites and not (
+            set(self.target_sites) <= set(self.data_cfg.model_cfg.acts_cfg.sites)
+        ):
+            raise ValueError(
+                f"Target sites must be a subset of the data config's sites. Got {self.target_sites}, expected subset of {self.data_cfg.model_cfg.acts_cfg.sites}"
+            )
+
+        used_input_sites = self.input_sites or self.data_cfg.model_cfg.acts_cfg.sites
+
+        buffer = self.data_cfg._get_queued_databuffer(
+            num_workers=num_workers,
+            batch_size=self.batch_size,
+            input_sites=used_input_sites,
+            target_sites=self.target_sites,
+        )
+
+        return buffer

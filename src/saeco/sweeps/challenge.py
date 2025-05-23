@@ -63,7 +63,7 @@ cfg = RunConfig[VanillaConfig](
 
 arch = VanillaSAE(cfg)
 
-data = arch.run_cfg.train_cfg.data_cfg.get_databuffer(num_workers=16)
+data = arch.run_cfg.train_cfg.data_cfg._get_databuffer(num_workers=16)
 model = arch.trainable
 import torch
 import tqdm

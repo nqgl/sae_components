@@ -33,7 +33,7 @@ c = DataConfig(
 )
 i = 0
 model = c.model_cfg.model
-for d in c.get_databuffer():
+for d in c._get_databuffer():
     i += 1
 
 print(i)
