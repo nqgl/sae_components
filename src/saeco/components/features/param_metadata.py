@@ -24,7 +24,7 @@ class ParamMetadata:
         self.as_features = FeaturesParam(
             self.param,
             feature_index=feature_index,
-            fptype=fptype,
+            feature_parameter_type=fptype,
             resampled=resampled,
             reset_optim_on_resample=reset_optim_on_resample,
         )

@@ -16,7 +16,7 @@ class Loss(cl.Module):
         super().__init__()
         self.module = ReuseForward(module)
 
-    def forward(self, x, *, y=None, cache: cl.Cache, **kwargs):
+    def forward(self, x, *, y=None, cache: cl.Cache, **kwargs) -> torch.Tensor:
         assert cache is not None
         pred = self.module(x, cache=cache)
         if y is None:
@@ -24,7 +24,7 @@ class Loss(cl.Module):
         return self.loss(x, y, pred, cache)
 
     @abstractmethod
-    def loss(self, x, y, y_pred, cache: SAECache): ...
+    def loss(self, x, y, y_pred, cache: SAECache) -> torch.Tensor: ...
 
 
 class L2Loss(Loss):

@@ -322,7 +322,7 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
             d["sweep_vars"] = {"parameters": sv_dict}
         return d
 
-    def from_selective_sweep(self, sweep: dict):
+    def from_selective_sweep(self, sweep: dict[str, Any]):
         sweep = sweep.copy()
         print("sweep", sweep)
         self_copy = self.model_copy(deep=True)  # I think this is no longer needed

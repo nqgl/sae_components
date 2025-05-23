@@ -21,7 +21,7 @@ class Module(torch.nn.Module, ABC):
         raise NotImplementedError
 
     @classmethod
-    def __instancecheck__(cls: ABCMeta, instance: torch.Any) -> bool:
+    def __instancecheck__(cls: ABCMeta, instance: Any) -> bool:
         from saeco.components.wrap import WrapsModule
 
         return super().__instancecheck__(instance) or (

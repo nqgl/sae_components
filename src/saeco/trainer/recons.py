@@ -35,9 +35,9 @@ def get_recons_loss(
     with cast_fn():
         for i in range(num_batches):
             batch_tokens = rand_tokens[i * batch_size : (i + 1) * batch_size].cuda()
-            loss = normal(batch_tokens)
-            re = with_sae(batch_tokens)
             zeroed = zero(batch_tokens)
+            re = with_sae(batch_tokens)
+            loss = normal(batch_tokens)
             loss_list.append((loss, re, zeroed))
     losses = torch.tensor(loss_list)
     loss, recons_loss, zero_abl_loss = losses.mean(0).tolist()
@@ -65,7 +65,7 @@ def with_sae_runner(
             else:
                 patch_in = acts_re
             setsite(model, cfg.site, patch_in)
-            out = model.output.save()
+            out = model.output.logits.save()
 
         return out
 
@@ -84,7 +84,7 @@ def zero_ablated_runner(
             else:
                 patch_in = acts_re
             setsite(model, cfg.site, patch_in)
-            out = model.output.save()
+            out = model.output.logits.save()
         return out
 
     return zrunner
@@ -92,7 +92,9 @@ def zero_ablated_runner(
 
 def normal_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig, skip_first=False):
     def nrunner(tokens):
-        return model.trace(tokens, trace=False)
+        with model.trace(tokens):
+            out = model.output.logits.save()
+        return out
 
     return nrunner
 
@@ -100,9 +102,7 @@ def normal_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig, skip_first=
 def to_losses(model_callable):
     def runner(tokens: torch.Tensor):
         out = model_callable(tokens)
-        l = einops.rearrange(
-            out.logits[:, :-1], "batch seq vocab -> (batch seq) vocab"
-        ).cuda()
+        l = einops.rearrange(out[:, :-1], "batch seq vocab -> (batch seq) vocab").cuda()
         t = einops.rearrange(tokens[:, 1:], "batch seq -> (batch seq)").cuda()
         loss = torch.nn.functional.cross_entropy(l, t)
 

@@ -100,7 +100,11 @@ class PProLU(Module):
 
     @property
     def features(self) -> dict[str, FeaturesParam]:
-        return {"bias": FeaturesParam(self.bias, feature_index=0, fptype="bias")}
+        return {
+            "bias": FeaturesParam(
+                self.bias, feature_index=0, feature_parameter_type="bias"
+            )
+        }
 
 
 ProLU.STE = ProLU_STE

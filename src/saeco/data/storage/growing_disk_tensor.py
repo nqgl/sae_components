@@ -1,7 +1,10 @@
+import asyncio
 from pathlib import Path
 
 import torch
 from attrs import define, field
+
+from saeco.data.storage.compressed_safetensors import CompressionType
 
 from .disk_tensor import DiskTensor, DiskTensorMetadata
 
@@ -10,10 +13,14 @@ from .disk_tensor import DiskTensor, DiskTensorMetadata
 #     cat_axis: int
 
 
+class UnsetCatAxis:
+    pass
+
+
 @define
 class GrowingDiskTensor(DiskTensor):
-    cat_axis: int | None = None
-    storage_len: int = 2**14
+    cat_axis: int = field(init=True, default=UnsetCatAxis)
+    storage_len: int | None = 2**14
 
     def resize(self, new_len, truncate=False):
         if "9999" in self.path.name:
@@ -40,6 +47,12 @@ class GrowingDiskTensor(DiskTensor):
             print("done resizing to ", new_len)
 
     @property
+    def cat_len(self) -> int:
+        l = self.metadata.shape[self.cat_axis]
+        assert l is not None
+        return l
+
+    @property
     def valid_tensor(self):
         written_slice = [slice(None)] * self.cat_axis + [
             slice(None, self.metadata.shape[self.cat_axis])
@@ -50,12 +63,19 @@ class GrowingDiskTensor(DiskTensor):
         self.resize(self.metadata.shape[self.cat_axis], truncate=True)
         super().finalize()
 
-    def shuffle_then_finalize(self, shuffle_axis: int | None = None):
+    def shuffle_then_finalize(
+        self, shuffle_axis: int | None = None, perm: torch.Tensor | None = None
+    ):
         if shuffle_axis is None:
             shuffle_axis = self.cat_axis
         self.resize(self.metadata.shape[self.cat_axis], truncate=True)
+        if perm is None:
+            perm = torch.randperm(self.tensor.shape[shuffle_axis])
+        else:
+            assert len(perm) == self.tensor.shape[shuffle_axis] and len(perm.shape) == 1
         self.tensor[:] = self.tensor.index_select(
-            shuffle_axis, torch.randperm(self.tensor.shape[shuffle_axis])
+            shuffle_axis,
+            perm,
         )
         super().finalize()
 
@@ -75,13 +95,14 @@ class GrowingDiskTensor(DiskTensor):
         path: Path,
         shape: list[int],
         dtype: torch.dtype,
+        compression: CompressionType = CompressionType.NONE,
         initial_nnz: int | None = None,
         cat_axis=0,
     ):
+        shape = list(shape)
         if initial_nnz is None:
             initial_nnz = 2**15
         else:
-            shape = shape.copy()
             shape[cat_axis] = None
         cat_len = shape[cat_axis] or int(
             initial_nnz
@@ -95,8 +116,9 @@ class GrowingDiskTensor(DiskTensor):
             storage_len=cat_len,
             cat_axis=cat_axis,
             metadata=DiskTensorMetadata(
-                shape=shape,
+                shape=list(shape),
                 dtype_str=str(dtype),
+                compression=compression,
             ),
             finalized=False,
         )

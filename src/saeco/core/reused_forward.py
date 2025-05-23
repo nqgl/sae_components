@@ -17,7 +17,10 @@ def _reuse(*, x, keyobj, callable, cache: ReuseCache, **kwargs):
     elif key in cache._ancestor.forward_reuse_dict:
         # print("reuse cache hit")
         return cache._ancestor.forward_reuse_dict[key]
-    if isinstance(callable, Module):
+    chk = callable
+    if isinstance(callable, torch._dynamo.eval_frame.OptimizedModule):
+        chk = callable._orig_mod
+    if isinstance(chk, Module):
         output = callable(x, cache=cache, **kwargs)
     else:
         output = callable(x, **kwargs)

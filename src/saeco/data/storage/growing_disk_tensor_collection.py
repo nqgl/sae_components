@@ -1,15 +1,21 @@
-import tqdm
-from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
-from . import DiskTensor, GrowingDiskTensor, DiskTensorCollection
-from attrs import define, field
-
-from pydantic import BaseModel
-import torch
+import asyncio
 from pathlib import Path
+
+import torch
+import tqdm
+from attrs import define, field
+from pydantic import BaseModel
+
+from saeco.data.storage.compressed_safetensors import CompressionType
+
+from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
+
+from . import DiskTensor, DiskTensorCollection, GrowingDiskTensor
 
 
 class GrowingDiskTensorCollectionMetadata(BaseModel):
     finalized: bool = False
+    compression: CompressionType = CompressionType.NONE
 
     def save(self, path: Path) -> None:
         self.metadata_path_from_dir(path).write_text(self.model_dump_json())
@@ -32,18 +38,25 @@ class GrowingDiskTensorCollectionMetadata(BaseModel):
         return cls.model_validate_json(metadata_path.read_text())
 
 
+from attrs import Factory
+
+
+def _metadata_default(
+    self: "GrowingDiskTensorCollection",
+) -> GrowingDiskTensorCollectionMetadata:
+    return GrowingDiskTensorCollectionMetadata.load_from_dir(
+        self.storage_dir, assert_exists=False
+    )
+
+
 @define
 class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
-    metadata: GrowingDiskTensorCollectionMetadata = field()
+    metadata: GrowingDiskTensorCollectionMetadata = field(
+        default=Factory(_metadata_default, takes_self=True)
+    )
     cache: dict[str, GrowingDiskTensor] = field(factory=dict)
 
-    @metadata.default
-    def _metadata_default(self) -> GrowingDiskTensorCollectionMetadata:
-        return GrowingDiskTensorCollectionMetadata.load_from_dir(
-            self.storage_dir, assert_exists=False
-        )
-
-    def get(self, name: str) -> GrowingDiskTensor:
+    def get(self, name: str | int) -> GrowingDiskTensor:
         if isinstance(name, int):
             name = str(name)
         assert isinstance(name, str)
@@ -59,29 +72,62 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
         raise ValueError("Cannot set items in a growing collection")
 
     def create(
-        self, name: str, dtype: torch.dtype, shape: torch.Size
+        self,
+        name: str | int,
+        dtype: torch.dtype,
+        shape: list[int],
+        compression: CompressionType = CompressionType.NONE,
     ) -> GrowingDiskTensor:
         if self.finalized:
             raise ValueError("Collection is finalized, cannot create new tensors")
         name = self.check_name_create(name)
-        self.cache[name] = super().create(name, dtype, shape)
+        self.cache[name] = super().create(name, dtype, shape, compression=compression)
         return self.cache[name]
 
     def keys(self):
         return sorted(list(set(self.cache.keys()) | set(super().keys())))
 
-    def shuffle_then_finalize(self):
+    def shuffle_then_finalize(self, perms: dict[str, torch.Tensor] | None = None):
         if any([(f := self.get(name)).finalized for name in self.keys()]):
             raise ValueError(
                 f"Cannot shuffle finalized tensors: tensor {f} is finalized"
             )
         tkeys = tqdm.tqdm(self.keys())
         tkeys.set_description("Shuffling")
+        if perms is not None:
+            assert len(perms) == len(self.keys())
         for name in tkeys:
             dt = self.get(name)
-            dt.shuffle_then_finalize()
+            dt.shuffle_then_finalize(perm=perms[name] if perms is not None else None)
         self.metadata.finalized = True
         self.metadata.save(self.storage_dir)
+
+    async def _async_shuffle_then_finalize(
+        self, perms: dict[str, torch.Tensor] | None = None
+    ):
+        if any([(f := self.get(name)).finalized for name in self.keys()]):
+            raise ValueError(
+                f"Cannot shuffle finalized tensors: tensor {f} is finalized"
+            )
+        tkeys = tqdm.tqdm(self.keys())
+        tkeys.set_description("Shuffling")
+        if perms is not None:
+            assert len(perms) == len(self.keys())
+
+        await asyncio.gather(
+            *[
+                asyncio.to_thread(
+                    self.get(name).shuffle_then_finalize,
+                    perm=perms[name] if perms is not None else None,
+                )
+                for name in self.keys()
+            ]
+        )
+        self.metadata.finalized = True
+        self.metadata.save(self.storage_dir)
+
+    def shuffle_then_finalize_async(self, perms: dict[str, torch.Tensor] | None = None):
+        asyncio.run(self._async_shuffle_then_finalize(perms))
 
     def finalize(self) -> None:
         tkeys = tqdm.tqdm(self.keys())

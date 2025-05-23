@@ -1,16 +1,19 @@
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import Iterable, Iterator, Protocol
 
 import torch
 import torch.nn as nn
 from jaxtyping import Float
 from torch import Tensor
-from unpythonic import box
 
 import saeco.core as cl
 
+from saeco.data.sae_train_batch import SAETrainBatch
+
 
 class Normalizer(cl.Module, ABC):
+    primed: bool
+
     def __init__(self, init):
         super().__init__()
 
@@ -25,13 +28,13 @@ class Normalizer(cl.Module, ABC):
     def prime_normalizer(self, buffer, n=100):
         pass
 
-    def io_normalize(self, module) -> "NormalizedIO":
+    def io_normalize(self, module: nn.Module) -> "NormalizedIO":
         return NormalizedIO(model=module, normalizer=self)
 
-    def input_normalize(self, module) -> "NormalizedInputs":
+    def input_normalize(self, module: nn.Module) -> "NormalizedInputs":
         return NormalizedInputs(model=module, normalizer=self)
 
-    def output_denormalize(self, module) -> "DeNormalizedOutputs":
+    def output_denormalize(self, module: nn.Module) -> "DeNormalizedOutputs":
         return DeNormalizedOutputs(model=module, normalizer=self)
 
     def get_denormalizer(self):
@@ -339,10 +342,10 @@ class GeneralizedNormalizer(Normalizer):
         )
 
     @torch.no_grad()
-    def prime_normalizer(self, buffer, n=20):
+    def prime_normalizer(self, buffer: Iterator[SAETrainBatch], n: int = 20):
         assert not self.primed
         self.primed = True
-        samples = [next(buffer) for _ in range(n)]
+        samples = [next(buffer).input for _ in range(n)]
         x = torch.cat(samples, dim=0)
         # samples = [x - self.mu_s(x) for x in samples]
 
@@ -366,7 +369,7 @@ class GeneralizedNormalizer(Normalizer):
 
         if self.cfg.std_e not in (Aggregation.DONTUSE, Aggregation.BATCH_AVG):
             # std_es = [self.elementwise_std(x) for x in samples]
-            self._std_e.data = self.elementwise_std(x)
+            self._std_e.data[:] = self.elementwise_std(x)
             # x = x / self.std_e(x)
             # x = x / self.std_s(x)
 
@@ -449,14 +452,18 @@ class GeneralizedNormalizer(Normalizer):
             return self._mu_s
         elif self.cfg.mu_s == SAggregation.SAMPLE:
             return self.sample_mean(x)
+        else:
+            raise ValueError(f"Invalid mu_s value: {self.cfg.mu_s}")
 
-    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
+    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"] | float:
         if self.cfg.std_s == SAggregation.DONTUSE:
-            return 1
+            return 1.0
         elif self.cfg.std_s == SAggregation.PRIMED:
             return self._std_s
         elif self.cfg.std_s == SAggregation.SAMPLE:
             return self.sample_std(x)
+        else:
+            raise ValueError(f"Invalid std_s value: {self.cfg.std_s}")
 
     def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
         if self.cfg.mu_e == Aggregation.DONTUSE:

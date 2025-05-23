@@ -2,6 +2,7 @@ from abc import ABCMeta
 
 import torch
 import torch.nn as nn
+from typing import Any
 
 import saeco.core as cl
 
@@ -37,58 +38,17 @@ class WrapsModule(cl.Module):
         kwargs.pop("cache", None)
         return self.wrapped(*args, **kwargs)
 
-    def __getattr__(self, name: str) -> torch.Any:
+    def __getattr__(self, name: str) -> Any:
         try:
             return super().__getattr__(name)
         except AttributeError:
             return getattr(super().__getattr__("wrapped"), name)
 
     @classmethod
-    def __instancecheck__(cls: ABCMeta, instance: torch.Any) -> bool:
+    def __instancecheck__(cls: ABCMeta, instance: Any) -> bool:
         return super().__instancecheck__(instance) or (
             isinstance(instance, WrapsModule) and isinstance(instance.wrapped, cls)
         )
-
-
-def combination(default, new, original):
-    return (set(new) - set(default)).intersection(set(original))
-
-
-class WrapMix:
-    def __new__(cls, module: nn.Module):
-        print("sss")
-        base = module.__class__
-        name = f"{cls.__name__}<{module.__class__.__name__}>"
-        # instance = super().__new__(cls)
-        # module.__class__ =
-        #
-        # type(name, (cls, base), {})
-        # new = object.__new__(type(name, (cls, base), {}))
-        new = super().__new__(cls)
-        new.__class__ = type(name, (cls, base), module.__dict__)
-        # new.__dict__.update(module.__dict__)
-        # print("sss")
-        # default = set(nn.Module().__dict__.keys())
-        # new = set(nn.Module().__dict__.keys())
-
-        # n = 0
-        # while hasattr(module, f"extra_methods{n}"):
-        #     n += 1
-        nn.Module.__init__(new)
-        return new
-
-    def __init__(self, module):
-        # self.module = module
-        self.wrapped = module
-
-
-class Mix(nn.Module):
-    def __new__(cls, module):
-        name = "{module.__class__.__name__}<{cls.__name__}>"
-        instance = super().__new__(cls)
-        d = instance.__dict__
-        d.update(module.__dict__)
-        return type(name, (cls, module.__class__), d)()
 
 
 def main():

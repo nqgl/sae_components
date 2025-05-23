@@ -127,7 +127,7 @@ class Thresholder(cl.Module):
             thresh_values=ft.FeaturesParam(
                 self.thresh_values,
                 feature_index=0,
-                fptype="bias",
+                feature_parameter_type="bias",
                 reset_optim_on_resample=False,
             )
         )
@@ -189,7 +189,7 @@ class Thresholder(cl.Module):
             self.freq_target.clamp_(0, 1)
 
 
-class DynamicThreshSAE(Architecture[DynamicZipfThreshConfig]):
+class DynamicZipfThreshSAE(Architecture[DynamicZipfThreshConfig]):
     def setup(self):
         pass
 

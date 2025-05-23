@@ -1,5 +1,4 @@
-torch==2.4.1
-unpythonic
+torch>=2.4.1
 triton
 pytest
 tables
@@ -11,5 +10,6 @@ attrs
 jaxtyping
 datasets
 transformers
-torchlars
 neptune
+neptune-scale
+zstd

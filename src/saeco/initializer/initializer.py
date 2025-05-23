@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
+from saeco.components.features.linear_type import LinDecoderMixin, LinEncoderMixin
 from saeco.core.basic_ops import Add
 from saeco.initializer.linear_factory import LinearFactory, Tied
 from .initializer_config import InitConfig
@@ -26,11 +27,12 @@ class Initializer:
         self.tied_weights = False
         self.encoder_init_weights = None
         self._decoder: LinearFactory = LinearFactory(
-            d_dict, d_data, wrappers=[co.LinDecoder]
+            d_dict, d_data, wrappers=[], mixins=[LinDecoderMixin]
         )
         self._encoder: LinearFactory = LinearFactory(
-            d_data, d_dict, wrappers=[co.LinEncoder]
+            d_data, d_dict, wrappers=[], mixins=[LinEncoderMixin]
         )
+
         if self.tied_init:
             self._decoder.tied_weights_init(self._encoder)
         if self.tied_weights:

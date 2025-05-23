@@ -1,40 +1,31 @@
+import inspect
+import typing
+from abc import abstractmethod
+from functools import cached_property
 from pathlib import Path
-from typing import Callable, TypeVar, Generic, overload
-from attrs import define, field
+from typing import Any, Generic, Literal, overload, TypeVar
+
 import torch
+from torch import nn
+
+import saeco.components as co
+import saeco.core as cl
 from saeco.architecture.arch_reload_info import ArchStoragePaths
+from saeco.components.losses import Loss
 from saeco.components.metrics.metrics import ActMetrics, PreActMetrics
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
-from saeco.core.cache import Cache
-from saeco.misc.utils import useif
-import inspect
-from saeco.core import Module
-from saeco.components.losses import Loss
 from saeco.initializer.initializer import Initializer
+from saeco.misc.utils import useif
 from saeco.sweeps import SweepableConfig
-from saeco.trainer.normalizers.normalizer import (
-    Normalizer,
-    StaticInvertibleGeneralizedNormalizer,
-    NormalizedIO,
-    NormalizedInputs,
-    DeNormalizedOutputs,
-)
+from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 from saeco.trainer.run_config import RunConfig
-import saeco.core as cl
-import saeco.components as co
-from functools import cached_property
-from torch import nn
-from abc import abstractmethod
 
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
-from .arch_prop import loss_prop, metric_prop, model_prop, aux_model_prop
-import typing
-from typing import TYPE_CHECKING
+from .arch_prop import aux_model_prop, loss_prop, metric_prop, model_prop
 
-if TYPE_CHECKING:
-    from saeco.sweeps.newsweeper import SweepData
+from typing_extensions import get_original_bases
 
 
 ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
@@ -55,11 +46,12 @@ class SAE(cl.Seq):
     def __init__(
         self,
         *,
-        encoder_pre: cl.Module | None = None,
-        nonlinearity: cl.Module | None = None,
-        decoder: cl.Module = None,
-        act_metrics: ActMetrics = None,
-        preacts: PreActMetrics = None,
+        encoder_pre: Literal[None] = None,
+        nonlinearity: Literal[None] = None,
+        encoder: nn.Module,
+        decoder: nn.Module,
+        act_metrics: ActMetrics | None = None,
+        preacts: PreActMetrics | None = None,
         penalty: co.Penalty | None = ...,
         freqs: EMAFreqTracker | None = ...,
     ): ...
@@ -68,23 +60,24 @@ class SAE(cl.Seq):
     def __init__(
         self,
         *,
-        encoder: cl.Module | None = None,
-        decoder: cl.Module = None,
-        act_metrics: ActMetrics = None,
-        preacts: PreActMetrics = None,
+        encoder_pre: nn.Module,
+        nonlinearity: nn.Module,
+        encoder: Literal[None] = None,
+        decoder: nn.Module,
+        act_metrics: ActMetrics | None = None,
+        preacts: PreActMetrics | None = None,
         penalty: co.Penalty | None = ...,
         freqs: EMAFreqTracker | None = ...,
     ): ...
-
     def __init__(
         self,
         *,
-        encoder_pre: cl.Module | None = None,
-        nonlinearity: cl.Module | None = None,
-        decoder: cl.Module = None,
-        encoder: cl.Module | None = None,
-        act_metrics: ActMetrics = None,
-        preacts: PreActMetrics = None,
+        encoder_pre: nn.Module | None = None,
+        nonlinearity: nn.Module | None = None,
+        encoder: nn.Module | None = None,
+        decoder: nn.Module | None = None,
+        act_metrics: ActMetrics | None = None,
+        preacts: PreActMetrics | None = None,
         penalty: co.Penalty | None = ...,
         freqs: EMAFreqTracker | None = ...,
     ):
@@ -114,7 +107,7 @@ class SAE(cl.Seq):
             # denormalizer=...
         )
 
-    def set_to_aux_model(self, aux_name):
+    def set_to_aux_model(self, aux_name: str):
         self.acts.name = aux_name
 
     # @cached_property
@@ -166,20 +159,23 @@ class Architecture(Generic[ArchConfigType]):
     # aux_models: list[SAE] | None = field(default=None)
 
     def __init__(
-        self, run_cfg: RunConfig[ArchConfigType], state_dict=None, device="cuda"
+        self,
+        run_cfg: RunConfig[ArchConfigType],
+        state_dict: dict[str, Any] | None = None,
+        device: torch.device | str = "cuda",
     ):
-        self.run_cfg = run_cfg
-        self.state_dict = state_dict
-        self._instantiated = False
-        self._setup_complete = False
-        self._trainable = None
-        self.device = device
+        self.run_cfg: RunConfig[ArchConfigType] = run_cfg
+        self.state_dict: dict[str, Any] | None = state_dict
+        self._instantiated: bool = False
+        self._setup_complete: bool = False
+        self._trainable: Trainable | None = None
+        self.device: torch.device | str = device
 
     @property
     def cfg(self) -> ArchConfigType:
         return self.run_cfg.arch_cfg
 
-    def instantiate(self, inst_cfg=None):
+    def instantiate(self, inst_cfg: dict[str, Any] | None = None):
         if inst_cfg:
             self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
         assert self.cfg.is_concrete() and self.run_cfg.is_concrete()
@@ -196,31 +192,31 @@ class Architecture(Generic[ArchConfigType]):
         return model_prop.get_from_fields(self)
 
     @cached_property
-    def _losses(self) -> list[Loss]:
+    def _losses(self) -> dict[str, Loss]:
         return loss_prop.get_from_fields(self)
 
     @cached_property
-    def _metrics(self) -> list[Loss]:
+    def _metrics(self) -> dict[str, nn.Module]:
         return metric_prop.get_from_fields(self)
 
     @cached_property
     def aux_models(self) -> list[SAE]:
-        aux_models = aux_model_prop.get_from_fields(self)
+        aux_models: dict[str, SAE] = aux_model_prop.get_from_fields(self)
         l: list[SAE] = []
         for name, e in aux_models.items():
-            if isinstance(e, list):
-                e: list[SAE]
-                for i, sae in enumerate(e):
-                    sae.set_to_aux_model(f"{name}.{i}")
-                    l.append(sae)
-            elif isinstance(e, SAE):
-                e: SAE
-                e.set_to_aux_model(name)
-                l.append(e)
-            else:
-                raise ValueError(
-                    f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
-                )
+            # if isinstance(e, list):
+            #     # e: list[SAE]
+            #     for i, sae in enumerate(e):
+            #         sae.set_to_aux_model(f"{name}.{i}")
+            #         l.append(sae)
+            # elif isinstance(e, SAE):
+            e: SAE
+            e.set_to_aux_model(name)
+            l.append(e)
+            # else:
+            #     raise ValueError(
+            #         f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
+            #     )
         return l
 
     @abstractmethod
@@ -279,14 +275,16 @@ class Architecture(Generic[ArchConfigType]):
         )
 
     @cached_property
-    def data(self):
-        return iter(self.run_cfg.train_cfg.data_cfg.get_databuffer())
+    def data(
+        self,
+    ):  # TODO maybe this should be called dataloader and return dataloader, unless important to not reuse datapoints
+        return iter(self.run_cfg.train_cfg.get_databuffer())
 
     @cached_property
     def normalizer(self) -> StaticInvertibleGeneralizedNormalizer:
         normalizer = StaticInvertibleGeneralizedNormalizer(
             init=self.init, cfg=self.run_cfg.normalizer_cfg
-        )
+        ).to(device=self.device)
         if self.state_dict is None:
             normalizer.prime_normalizer(self.data)
         return normalizer
@@ -307,9 +305,9 @@ class Architecture(Generic[ArchConfigType]):
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-
-        assert len(cls.__orig_bases__) == 1
-        p = typing.get_args(cls.__orig_bases__[0])
+        bases = get_original_bases(cls)
+        assert len(bases) == 1
+        p = typing.get_args(bases[0])
         assert len(p) == 1
         return p[0]
 
@@ -320,10 +318,11 @@ class Architecture(Generic[ArchConfigType]):
     def save_to_path(
         self,
         path: Path | ArchStoragePaths,
-        save_weights=...,
-        averaged_weights=None,
+        save_weights: bool = ...,
+        averaged_weights: bool | None = None,
     ):
-        path = ArchStoragePaths.from_path(path)
+        if isinstance(path, Path):
+            path = ArchStoragePaths.from_path(path)
         path.path.parent.mkdir(parents=True, exist_ok=True)
 
         if path.exists():
@@ -342,21 +341,10 @@ class Architecture(Generic[ArchConfigType]):
         ):
             if self._trainable is None:
                 raise ValueError("trainable is None but attempted to save weights")
-            torch.save(self._trainable.state_dict(), path.model_weights)
+            torch.save(self._trainable.state_dict(), path.model_weights)  # type: ignore
         if averaged_weights is not None:
-            torch.save(averaged_weights, path.averaged_weights)
+            torch.save(averaged_weights, path.averaged_weights)  # type: ignore
         return path
-
-    def make_sweep_data(self, sweep_info: str) -> "SweepData":
-        from .arch_reload_info import ArchClassRef
-        from saeco.sweeps.newsweeper import SweepData
-
-        arch_ref = ArchClassRef.from_arch(self)
-        return SweepData(
-            arch_class_ref=arch_ref,
-            root_config=self.run_cfg,
-            sweep_id=sweep_info,
-        )
 
     # @classmethod
     # def load_from_path(cls, path: Path | ArchStoragePaths, load_weights=None):
@@ -389,7 +377,10 @@ class Architecture(Generic[ArchConfigType]):
 
     @classmethod
     def load(
-        cls, path: Path | ArchStoragePaths, load_weights=None, averaged_weights=False
+        cls,
+        path: Path | ArchStoragePaths,
+        load_weights: bool | None = None,
+        averaged_weights: bool | None = False,
     ):
         return ArchStoragePaths.from_path(path).load_arch(
             load_weights=load_weights, averaged_weights=averaged_weights
@@ -398,7 +389,152 @@ class Architecture(Generic[ArchConfigType]):
     def run_training(self):
         self.trainer.train()
 
-    def get_sweep_manager(self):
+    def get_sweep_manager(self, ezpod_group=None):
         from saeco.sweeps.newsweeper import SweepManager
 
-        return SweepManager(self)
+        return SweepManager(self, ezpod_group=ezpod_group)
+
+
+# ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
+class BaseRunConfig(SweepableConfig, Generic[ArchConfigType]):
+    arch_cfg: ArchConfigType
+
+
+class ArchitectureBase(Generic[ArchConfigType]):
+    """ """
+
+    def __init__(
+        self,
+        run_cfg: BaseRunConfig[ArchConfigType],
+        state_dict: dict[str, Any] | None = None,
+        device: torch.device | str = "cuda",
+    ):
+        assert state_dict is None
+        self.run_cfg: BaseRunConfig[ArchConfigType] = run_cfg
+        # self.state_dict: dict[str, Any] | None = state_dict
+        self._instantiated: bool = False
+        self._setup_complete: bool = False
+        # self._trainable: Trainable | None = None
+        # self.device: torch.device | str = device
+
+    @property
+    def cfg(self) -> ArchConfigType:
+        return self.run_cfg.arch_cfg
+
+    def instantiate(self, inst_cfg: dict[str, Any] | None = None):
+        if inst_cfg:
+            self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
+        assert self.cfg.is_concrete() and self.run_cfg.is_concrete()
+        self._instantiated = True
+        self._setup()
+
+    def _setup(self):
+        assert self._instantiated
+        self.setup()
+        self._setup_complete = True
+
+    @cached_property
+    def _core_model(self) -> SAE:
+        return model_prop.get_from_fields(self)
+
+    @cached_property
+    def _losses(self) -> dict[str, Loss]:
+        return loss_prop.get_from_fields(self)
+
+    @cached_property
+    def _metrics(self) -> dict[str, nn.Module]:
+        return metric_prop.get_from_fields(self)
+
+    @cached_property
+    def aux_models(self) -> list[SAE]:
+        aux_models: dict[str, SAE] = aux_model_prop.get_from_fields(self)
+        l: list[SAE] = []
+        for name, e in aux_models.items():
+            # if isinstance(e, list):
+            #     # e: list[SAE]
+            #     for i, sae in enumerate(e):
+            #         sae.set_to_aux_model(f"{name}.{i}")
+            #         l.append(sae)
+            # elif isinstance(e, SAE):
+            e: SAE
+            e.set_to_aux_model(name)
+            l.append(e)
+            # else:
+            #     raise ValueError(
+            #         f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
+            #     )
+        return l
+
+    @abstractmethod
+    def setup(self): ...
+
+    @classmethod
+    def get_arch_config_class(cls):
+        if cls is ArchitectureBase:
+            raise ValueError(
+                "Architecture class must not be generic to get config class"
+            )
+        bases = get_original_bases(cls)
+        assert len(bases) == 1
+        p = typing.get_args(bases[0])
+        assert len(p) == 1
+        return p[0]
+
+    @classmethod
+    @abstractmethod
+    def get_config_class(cls):
+        return RunConfig[cls.get_arch_config_class()]
+
+    def save_to_path(
+        self,
+        path: Path | ArchStoragePaths,
+        save_weights: bool = ...,
+        averaged_weights: bool | None = None,
+    ):
+        if isinstance(path, Path):
+            path = ArchStoragePaths.from_path(path)
+        path.path.parent.mkdir(parents=True, exist_ok=True)
+
+        if path.exists():
+            self.save_to_path(
+                path.path.with_name(f"{path.path.name}_1"),
+                save_weights=save_weights,
+                averaged_weights=averaged_weights,
+            )
+            raise ValueError(
+                f"file already existed at {path}, wrote to {path.path.name}_1"
+            )
+
+        from .arch_reload_info import ArchClassRef, ArchRef
+
+        arch_ref = ArchRef.from_arch(self)
+
+        path.arch_ref.write_text(arch_ref.model_dump_json())
+        if save_weights is True or (
+            save_weights is ... and self._trainable is not None
+        ):
+            if self._trainable is None:
+                raise ValueError("trainable is None but attempted to save weights")
+            torch.save(self._trainable.state_dict(), path.model_weights)  # type: ignore
+        if averaged_weights is not None:
+            torch.save(averaged_weights, path.averaged_weights)  # type: ignore
+        return path
+
+    @classmethod
+    def load(
+        cls,
+        path: Path | ArchStoragePaths,
+        load_weights: bool | None = None,
+        averaged_weights: bool | None = False,
+    ) -> "ArchitectureBase":
+        return ArchStoragePaths.from_path(path).load_arch(
+            load_weights=load_weights, averaged_weights=averaged_weights
+        )
+
+    @abstractmethod
+    def run_training(self): ...
+
+    def get_sweep_manager(self, ezpod_group=None):
+        from saeco.sweeps.newsweeper import SweepManager
+
+        return SweepManager(self, ezpod_group=ezpod_group)

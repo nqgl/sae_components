@@ -1,13 +1,13 @@
 from enum import Enum
 
+from types import NoneType
+
+from typing import Any, Callable, Iterable, TypeVar, Union
+
 from pydantic import BaseModel
+
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
-
-
-from typing import Any, Callable, TypeVar, Union
-
-from types import NoneType
 
 T = TypeVar("T")
 
@@ -59,102 +59,6 @@ class ExpressionOpEnum(str, Enum):
                 return args[0][str(args[1])]
             elif isinstance(args[0], list) or isinstance(args[0], tuple):
                 return args[0][int(args[1])]
-
-
-# class SweepExpression(Swept[T]):
-#     expr: "SweepExpressionNode"
-
-#     def __init__(self, *args, expr: Callable[[], T], **kwargs):
-#         super().__init__(values=[], expr=expr, args=args, kwargs=kwargs)
-
-#     def get_sweepvars(self) -> set["SweepVar"]:
-#         params = set()
-#         for p in self.args + tuple(self.kwargs.values()):
-#             if isinstance(p, SweepVar):
-#                 params.add(p)
-#             elif isinstance(p, SweepExpression):
-#                 params |= p.get_sweepvars()
-#         return params
-
-#     def evaluate(self, *args, **kwargs):
-#         print(f"evaluating SweepExpression {self.expr}(*{args}, **{kwargs})")
-#         return self.expr(*args, **kwargs)
-
-#     def instantiate(self):
-#         return self.evaluate(*self.get_args(), **self.get_kwargs())
-
-#     def instantiated(self, swept_vars):
-#         return self.evaluate(*self.get_args(swept_vars), **self.get_kwargs(swept_vars))
-
-#     def get_args(self, swept_vars=None):
-#         if swept_vars is None:
-#             return [
-#                 a.instantiated_value if isinstance(a, SweepVar) else a
-#                 for a in self.args
-#             ]
-#         return [
-#             swept_vars[arg.name] if isinstance(arg, SweepVar) else arg
-#             for arg in self.args
-#         ]
-
-#     def get_kwargs(self, swept_vars=None):
-#         if swept_vars is None:
-#             return {
-#                 k: v.instantiated_value if isinstance(v, SweepVar) else v
-#                 for k, v in self.kwargs.items()
-#             }
-#         return {
-#             k: swept_vars[kwarg.name] if isinstance(kwarg, SweepVar) else kwarg
-#             for k, kwarg in self.kwargs.items()
-#         }
-
-
-# class SweepExpression(Swept[T]):
-#     expr: "SweepExpressionNode"
-
-#     def __init__(self, *args, expr: Callable[[], T], **kwargs):
-#         super().__init__(values=[], expr=expr, args=args, kwargs=kwargs)
-
-#     def get_sweepvars(self) -> set["SweepVar"]:
-#         params = set()
-#         for p in self.args + tuple(self.kwargs.values()):
-#             if isinstance(p, SweepVar):
-#                 params.add(p)
-#             elif isinstance(p, SweepExpression):
-#                 params |= p.get_sweepvars()
-#         return params
-
-#     def evaluate(self, *args, **kwargs):
-#         print(f"evaluating SweepExpression {self.expr}(*{args}, **{kwargs})")
-#         return self.expr(*args, **kwargs)
-
-#     def instantiate(self):
-#         return self.evaluate(*self.get_args(), **self.get_kwargs())
-
-#     def instantiated(self, swept_vars):
-#         return self.evaluate(*self.get_args(swept_vars), **self.get_kwargs(swept_vars))
-
-#     def get_args(self, swept_vars=None):
-#         if swept_vars is None:
-#             return [
-#                 a.instantiated_value if isinstance(a, SweepVar) else a
-#                 for a in self.args
-#             ]
-#         return [
-#             swept_vars[arg.name] if isinstance(arg, SweepVar) else arg
-#             for arg in self.args
-#         ]
-
-#     def get_kwargs(self, swept_vars=None):
-#         if swept_vars is None:
-#             return {
-#                 k: v.instantiated_value if isinstance(v, SweepVar) else v
-#                 for k, v in self.kwargs.items()
-#             }
-#         return {
-#             k: swept_vars[kwarg.name] if isinstance(kwarg, SweepVar) else kwarg
-#             for k, kwarg in self.kwargs.items()
-#         }
 
 
 class SweepVar(SweepExpression[T]):
@@ -211,17 +115,12 @@ class Op(SweepExpression):
         return s
 
 
-# class Var(SweepExpression):
-#     # name: str
-#     sweep_var: SweepVar | None = None
-
-#     def evaluate(self, vars_dict: dict[str, Any]):
-#         return vars_dict[self.sweep_var.name]
-
-#     def get_sweepvars(self):
-#         # shou;d this ret the name or the sweepvar object do we need
-#         # to assess the paradign of the sweepvar class
-#         ...
+def shared_type(it: Iterable[Any]):
+    l = list(it)
+    t = type(l[0])
+    for v in l[1:]:
+        t |= type(v)
+    return t
 
 
 class Val(SweepExpression):
@@ -242,66 +141,18 @@ class Val(SweepExpression):
         ):
             return type(self.value)
         if isinstance(self.value, dict):
-            kt = type(next(iter(self.value.keys())))
-            vt = type(next(iter(self.value.values())))
+            kt = shared_type(self.value.keys())
+            vt = shared_type(self.value.values())
             assert all(
                 [isinstance(k, kt) and isinstance(v, vt) for k, v in self.value.items()]
             )
             return dict[kt, vt]
         elif isinstance(self.value, list):
-            t = type(self.value[0])
+            t = shared_type(self.value)
             assert all([isinstance(v, t) for v in self.value])
             return list[t]
         elif isinstance(self.value, tuple):
-            t = type(self.value[0])
+            t = shared_type(self.value)
             assert all([isinstance(v, t) for v in self.value])
             return tuple[t]
         raise ValueError(f"Cannot get generic type of {self.value}")
-
-
-# class SweepExpression(Swept[T]):
-#     expr: "SweepExpressionNode"
-
-#     def __init__(self, *args, expr: Callable[[], T], **kwargs):
-#         super().__init__(values=[], expr=expr, args=args, kwargs=kwargs)
-
-#     def get_sweepvars(self) -> set["SweepVar"]:
-#         params = set()
-#         for p in self.args + tuple(self.kwargs.values()):
-#             if isinstance(p, SweepVar):
-#                 params.add(p)
-#             elif isinstance(p, SweepExpression):
-#                 params |= p.get_sweepvars()
-#         return params
-
-#     def evaluate(self, *args, **kwargs):
-#         print(f"evaluating SweepExpression {self.expr}(*{args}, **{kwargs})")
-#         return self.expr(*args, **kwargs)
-
-#     def instantiate(self):
-#         return self.evaluate(*self.get_args(), **self.get_kwargs())
-
-#     def instantiated(self, swept_vars):
-#         return self.evaluate(*self.get_args(swept_vars), **self.get_kwargs(swept_vars))
-
-#     def get_args(self, swept_vars=None):
-#         if swept_vars is None:
-#             return [
-#                 a.instantiated_value if isinstance(a, SweepVar) else a
-#                 for a in self.args
-#             ]
-#         return [
-#             swept_vars[arg.name] if isinstance(arg, SweepVar) else arg
-#             for arg in self.args
-#         ]
-
-#     def get_kwargs(self, swept_vars=None):
-#         if swept_vars is None:
-#             return {
-#                 k: v.instantiated_value if isinstance(v, SweepVar) else v
-#                 for k, v in self.kwargs.items()
-#             }
-#         return {
-#             k: swept_vars[kwarg.name] if isinstance(kwarg, SweepVar) else kwarg
-#             for k, kwarg in self.kwargs.items()
-#         }

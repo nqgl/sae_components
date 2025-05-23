@@ -6,12 +6,18 @@ from attr import define, field
 from pydantic import BaseModel
 from saeco.misc import str_to_dtype
 from safetensors.torch import load_file, save_file
+from .compressed_safetensors import (
+    CompressionType,
+    save_file_compressed,
+    load_file_compressed,
+)
 
 
 class DiskTensorMetadata(BaseModel):
     shape: list[int | None]
     dtype_str: str
     # cat_axis: int
+    compression: CompressionType = CompressionType.NONE
 
     @property
     def dtype(self) -> torch.dtype:
@@ -59,7 +65,9 @@ class DiskTensor:
         safepath = self.path.with_suffix(".safetensors")
         if safepath.exists():
             self.finalized = True
-            return load_file(safepath)["finalized_tensor"]
+            return load_file_compressed(
+                safepath, compression=self.metadata.compression
+            )["finalized_tensor"]
         if self.path.exists():
             self.finalized = True
         return self.open_disk_tensor(create=not self.finalized)
@@ -106,8 +114,16 @@ class DiskTensor:
         )
 
     @classmethod
-    def create(cls, path, shape, dtype):
-        metadata = DiskTensorMetadata(shape=shape, dtype_str=str(dtype))
+    def create(
+        cls,
+        path: Path,
+        shape: torch.Size | tuple[int, ...],
+        dtype: torch.dtype,
+        compression: CompressionType = CompressionType.NONE,
+    ):
+        metadata = DiskTensorMetadata(
+            shape=list(shape), dtype_str=str(dtype), compression=compression
+        )
 
         inst = cls(path=path, metadata=metadata)
         if inst.path.exists():
@@ -137,9 +153,10 @@ class DiskTensor:
         return self.path.with_suffix(".metadata")
 
     def _save_safe(self):
-        save_file(
+        save_file_compressed(
             {"finalized_tensor": self.tensor},
             self.path.with_suffix(".safetensors"),
+            compression=self.metadata.compression,
         )
 
     def finalize(self):
@@ -151,7 +168,6 @@ class DiskTensor:
         self._save_safe()
         if self.tensor.numel() > 0:
             self.path.unlink()
-        # assert False
 
         self.metadata_path.write_text(self.metadata.model_dump_json())
 

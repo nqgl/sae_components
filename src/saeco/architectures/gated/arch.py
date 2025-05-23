@@ -1,4 +1,5 @@
 from functools import cached_property
+from typing import Callable
 import torch
 from saeco.core.reused_forward import ReuseForward
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
@@ -77,12 +78,11 @@ class Gated(Architecture[GatedConfig]):
 
     @model_prop
     def gated_model(self):
+
         return SAE(
-            encoder=cl.Parallel(
+            encoder=cl.collections.MulParallel(
                 magnitude=self.enc_mag,
                 gate=co.ops.Thresh(self.enc_gate),
-            ).reduce(
-                lambda x, y: x * y,
             ),
             decoder=self.init.decoder,
             penalty=None,

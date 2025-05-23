@@ -1,14 +1,26 @@
-from saeco.sweeps.sweepable_config.SweptNode import SweptNode
-from .fns import NeptuneCustomLogger
 import os
 from typing import TYPE_CHECKING
+
+from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+from .fns import NeptuneCustomLogger, NeptuneScaleLogger
 
 if TYPE_CHECKING:
     from saeco.sweeps.newsweeper import SweepData
 
 
 class mlog:
-    logger_instance = NeptuneCustomLogger()
+    logger_instance = (
+        NeptuneCustomLogger()
+        if not os.environ.get("NEPTUNE_SCALE", False)
+        else NeptuneScaleLogger()
+    )
+
+    @classmethod
+    def use_neptune_scale(cls):
+        if isinstance(cls.logger_instance, NeptuneScaleLogger):
+            return
+        assert cls.logger_instance is None or cls.logger_instance.run is None
+        cls.logger_instance = NeptuneScaleLogger()
 
     @classmethod
     def init(cls, arch_ref=None, project=None, config=None, run_name=None):

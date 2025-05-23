@@ -7,50 +7,57 @@ import torch
 from typing import Generic, ClassVar
 from typing_extensions import TypeVar
 
-DiskTensorType = TypeVar("DiskTensorType", default=DiskTensor)
+from saeco.data.storage.compressed_safetensors import CompressionType
+
+DiskTensorType = TypeVar("DiskTensorType", bound=DiskTensor)
 
 
 @define
 class DiskTensorCollection(Generic[DiskTensorType]):
-    path: Path
+    path: Path | None = None
     stored_tensors_subdirectory_name: str = "tensors"
     return_raw: bool = False
-    disk_tensor_cls: ClassVar[type[DiskTensorType]] = DiskTensor
+    disk_tensor_cls: ClassVar[type] = DiskTensor
 
     @property
     def storage_dir(self) -> Path:
+        assert self.path is not None
         return self.path / self.stored_tensors_subdirectory_name
 
-    def check_name_create(self, name) -> str:
+    def check_name_create(self, name: str | int) -> str:
         if not isinstance(name, str):
-            if isinstance(name, int):
-                name = str(name)
-            else:
-                raise ValueError(f"Name must be a string or int, got {type(name)}")
+            name = str(name)
         if name in self:
             raise ValueError(f"{name} already exists!")
         return name
 
     def create(
-        self, name: str, dtype: torch.dtype, shape: torch.Size
+        self,
+        name: str,
+        dtype: torch.dtype,
+        shape: list[int],
+        compression: CompressionType = CompressionType.NONE,
     ) -> DiskTensorType:
         name = self.check_name_create(name)
         path = self.storage_dir / name
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             raise ValueError(f"Metadata already exists at {path}")
+        self.disk_tensor_cls: type[DiskTensorType]
         return self.disk_tensor_cls.create(
             path=path,
-            shape=shape,
+            shape=tuple(shape),
             dtype=dtype,
+            compression=compression,
         )
 
     def get(self, name: str | int) -> DiskTensorType:
         if isinstance(name, int):
             name = str(name)
+
         return self.disk_tensor_cls.open(self.storage_dir / name)
 
-    def __getitem__(self, name: str | int):
+    def __getitem__(self, name: str | int) -> torch.Tensor | DiskTensorType:
         disk_tensor = self.get(name)
         if self.return_raw:
             return disk_tensor
