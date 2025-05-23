@@ -226,8 +226,26 @@ class Trainer:
 
     def _train(self, buffer=None, num_steps=None):
         if buffer is None:
+            if self.cfg.input_sites and not all(
+                input_site in self.cfg.data_cfg.model_cfg.acts_cfg.sites
+                for input_site in self.cfg.input_sites
+            ):
+                raise ValueError("Input sites must be a subset of the model's sites.")
+
+            if self.cfg.target_sites and not all(
+                target_site in self.cfg.data_cfg.model_cfg.acts_cfg.sites
+                for target_site in self.cfg.target_sites
+            ):
+                raise ValueError("Target sites must be a subset of the model's sites.")
+
+            used_input_sites = (
+                self.cfg.input_sites or self.cfg.data_cfg.model_cfg.acts_cfg.sites
+            )
+
             buffer = self.cfg.data_cfg.get_queued_databuffer(
-                batch_size=self.cfg.batch_size
+                batch_size=self.cfg.batch_size,
+                input_sites=used_input_sites,
+                target_sites=self.cfg.target_sites,
             )
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
@@ -248,6 +266,8 @@ class Trainer:
             buffer = buf()
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
             input, target = x.input, x.target
+            print(input.shape)
+            print(target.shape)
             if not self.cfg.use_autocast:
                 input = input.float()  # TODO maybe cast other direction instead
                 target = target.float()  # TODO maybe cast other direction instead
@@ -270,7 +290,7 @@ class Trainer:
                 self.averaged_model.update_parameters(self.trainable)
             if self.t % self.cfg.intermittent_metric_freq == 0:
                 self.trainable.eval()
-                #                self.do_intermittent_metrics()
+                #                 self.do_intermittent_metrics()
                 self.trainable.train()
             if (
                 self.cfg.checkpoint_period is not None

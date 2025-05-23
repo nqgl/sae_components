@@ -8,16 +8,16 @@ from safetensors.torch import load_file, save_file
 from torch.utils.data import DataLoader
 
 from saeco.data.acts_data import ActsData, ActsDataset
+from saeco.data.bufferized_iter import bufferized_iter
 from saeco.data.generation_config import DataGenerationProcessConfig
 
 from saeco.data.locations import DATA_DIRS
 from saeco.data.model_cfg import ModelConfig
-from saeco.data.split_config import SplitConfig
 from saeco.data.piler import Piler
 from saeco.data.piler.dict_piler import DictBatch, DictPiler
+from saeco.data.split_config import SplitConfig
 from saeco.data.tokens_data import TokensData
 from saeco.sweeps import SweepableConfig
-from saeco.data.bufferized_iter import bufferized_iter
 
 
 class DataConfig(SweepableConfig):
@@ -50,12 +50,16 @@ class DataConfig(SweepableConfig):
         default_factory=DataGenerationProcessConfig
     )
     perm_all: bool = False
-    databuffer_num_workers: int = 4  # TODO:
+    databuffer_num_workers: int = 4
+
     # on the remote this wants to be ~32
     # on local that's more than necessary
     # maybe shouldn't be part of data config
     # since it doesn't affect training dynamics directly
     # and best values varies depending on hardware
+    databuffer_queue_size: int | None = 32
+    databuffer_worker_queue_base_size: int | None = 1
+    databuffer_worker_offset_mult: int | None = 2
     databuffer_queue_size: int | None = 32
     databuffer_worker_queue_base_size: int | None = 1
     databuffer_worker_offset_mult: int | None = 2
@@ -152,12 +156,26 @@ class DataConfig(SweepableConfig):
             target_sites=target_sites,
         )
 
-    def get_queued_databuffer(self, batch_size, num_workers=None, queue_size=None):
+    def get_queued_databuffer(
+        self,
+        batch_size,
+        num_workers=None,
+        queue_size=None,
+        input_sites=None,
+        target_sites=None,
+    ):
         queue_size = queue_size or self.databuffer_queue_size
         num_workers = (
             self.databuffer_num_workers if num_workers is None else num_workers
         )
-        buf = iter(self.get_databuffer(num_workers=num_workers, batch_size=batch_size))
+        buf = iter(
+            self.get_databuffer(
+                num_workers=num_workers,
+                batch_size=batch_size,
+                input_sites=input_sites,
+                target_sites=target_sites,
+            )
+        )
         if queue_size is not None:
             return bufferized_iter(
                 buf,
@@ -166,11 +184,18 @@ class DataConfig(SweepableConfig):
             )
         return buf
 
-    def get_databuffer(self, num_workers=0, batch_size=4096):
+    def get_databuffer(
+        self, num_workers=0, batch_size=4096, input_sites=None, target_sites=None
+    ):
         model = None
         if not self._acts_piles_path(self.trainsplit).exists():
             model = self.model_cfg.model
-        ds = self.train_dataset(model, batch_size=batch_size)
+        ds = self.train_dataset(
+            model,
+            batch_size=batch_size,
+            input_sites=input_sites,
+            target_sites=target_sites,
+        )
         dl = DataLoader(
             ds, num_workers=num_workers, shuffle=False, pin_memory=True, batch_size=None
         )

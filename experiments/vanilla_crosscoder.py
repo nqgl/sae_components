@@ -46,11 +46,43 @@ def acts_modifier(cache, acts):
 cache = cl.Cache()
 cache.register_write_callback("acts", acts_modifier)
 
+
+def gpt_2(block_postfix):
+    return DataConfig(
+        dataset="alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2",
+        model_cfg=ModelConfig(
+            acts_cfg=ActsDataConfig(
+                excl_first=True,
+                sites=(["transformer.h.3.input", "transformer.h.4.input"]),
+                d_data=768,
+                autocast_dtype_str="bfloat16",
+                force_cast_dtype_str="bfloat16",
+                storage_dtype_str="bfloat16",
+            ),
+            model_name="gpt2",
+        ),
+        trainsplit=SplitConfig(start=0, end=50, tokens_from_split=2_000_000),
+        generation_config=DataGenerationProcessConfig(
+            # tokens_per_pile=2**25,
+            acts_per_pile=2**17,
+            meta_batch_size=2**19,
+            llm_batch_size=2**16,
+        ),
+        seq_len=256,
+    )
+
+
+def gpt_2_block(layer: int | list[int] | tuple[int], io="input"):
+    if isinstance(layer, list | tuple):
+        return gpt_2([f"{l}.{io}" for l in layer])
+    return gpt_2(f"{layer}.{io}")
+
+
 cfg = RunConfig[VanillaConfig](
     train_cfg=TrainConfig(
         data_cfg=gpt_2_block(3),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=25_000,
+            run_length=200,
             resample_period=8_000,
             lr_cooldown_length=0.5,
             lr_warmup_length=500,
@@ -73,6 +105,8 @@ cfg = RunConfig[VanillaConfig](
         #
         wandb_cfg=dict(project=PROJECT),
         intermittent_metric_freq=1000,
+        input_sites=["transformer.h.3.input"],
+        target_sites=["transformer.h.4.input"],
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
