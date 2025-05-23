@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
+from saeco.sweeps.sweepable_config.expressions_utils import common_type, convert_other
 
 T = TypeVar("T")
 
@@ -60,6 +61,11 @@ class ExpressionOpEnum(str, Enum):
             elif isinstance(args[0], list) or isinstance(args[0], tuple):
                 return args[0][int(args[1])]
 
+    def __call__(self, *children):
+        children = [convert_other(c) for c in children]
+        t = common_type(children)
+        return Op[t](op=self, children=children)
+
 
 class SweepVar(SweepExpression[T]):
     values: list[T]
@@ -98,7 +104,8 @@ class SweepVar(SweepExpression[T]):
         return vars_dict[self.name]
 
 
-class Op(SweepExpression):
+class Op(SweepExpression):  # TODO can this be explicitly generic?
+    # I think there may be a reason it isn't explicitly, but don't recall it
     op: ExpressionOpEnum
     children: list[Union["Op", "Val", SweepVar]]
     values: list = []
