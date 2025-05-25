@@ -1,18 +1,19 @@
+from types import NoneType
+from typing import Any, Generic, get_args, get_origin, TYPE_CHECKING, TypeVar
+
 from saeco.sweeps.sweepable_config.Swept import Swept
 
-
-from types import NoneType
-from typing import Any, TypeVar, get_args, get_origin, Generic, TYPE_CHECKING
-
 if TYPE_CHECKING:
-    from saeco.sweeps.sweepable_config.sweep_expressions import (
-        ExpressionOpEnum,
-    )
+    from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
 T = TypeVar("T")
 LITERALS = [int, float, str, bool]
 
-from saeco.sweeps.sweepable_config.expressions_utils import common_type, convert_other
+from saeco.sweeps.sweepable_config.expressions_utils import (
+    common_type,
+    convert_other,
+    shared_type,
+)
 
 
 class SweepExpression(Swept[T], Generic[T]):
@@ -89,10 +90,7 @@ class SweepExpression(Swept[T], Generic[T]):
         return ExpressionOpEnum.MOD(other, self)
 
     def __getitem__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum, Op
 
         other = convert_other(other)
 
@@ -105,7 +103,16 @@ class SweepExpression(Swept[T], Generic[T]):
             else:
                 raise ValueError(f"Cannot index {dtype}")
         else:
-            t = get_args(dtype)[1]
+            print(dtype)
+            try:
+                t = get_args(dtype)[1]
+            except:
+                if dtype in [list, tuple]:
+                    t = shared_type(self.values)
+                elif dtype is dict:
+                    t = common_type([v for v in self.values.values()])
+                else:
+                    raise ValueError(f"Cannot index {dtype}")
         # else:
         #     t = get_args(self.generic_type)[1]
         return Op[t](op=ExpressionOpEnum.INDEX, children=[self, other])

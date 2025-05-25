@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import Any, Iterable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
@@ -27,9 +27,17 @@ def common_type(objs: list["SweepExpression"]):
     return t
 
 
+def shared_type(it: Iterable[Any]):
+    l = list(it)
+    t = type(l[0])
+    for v in l[1:]:
+        t |= type(v)
+    return t
+
+
 def convert_other(other):
-    from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
     from saeco.sweeps.sweepable_config.sweep_expressions import Val
+    from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 
     if isinstance(other, SweepExpression):
         return other
