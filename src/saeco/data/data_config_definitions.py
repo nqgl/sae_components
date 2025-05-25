@@ -9,7 +9,7 @@ gemma_2_2b_openwebtext = DataConfig(
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
-            site="model.layers.17.input",
+            sites=["model.layers.17.input"],
             storage_dtype_str="bfloat16",
             autocast_dtype_str=None,
         ),
@@ -32,7 +32,7 @@ gemma_2_2b_openwebtext_test = DataConfig(
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
-            site="model.layers.16.input",
+            sites=["model.layers.16.input"],
             storage_dtype_str="bfloat16",
             autocast_dtype_str=None,
         ),
@@ -54,7 +54,7 @@ gemma_2_2b_openwebtext_test_fp32 = DataConfig(
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
-            site="model.layers.16.input",
+            sites=["model.layers.16.input"],
             storage_dtype_str="float32",
             autocast_dtype_str=None,
         ),
@@ -77,7 +77,7 @@ gemma_2_2b_openwebtext_test_fp16 = DataConfig(
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
-            site="model.layers.16.input",
+            sites=["model.layers.16.input"],
             storage_dtype_str="float16",
             autocast_dtype_str="bfloat16",
             force_cast_dtype_str="float16",
@@ -125,7 +125,7 @@ def gemma_2_2b_openwebtext_fp32(layer=17):
             acts_cfg=ActsDataConfig(
                 excl_first=True,
                 d_data=2304,
-                site=f"model.layers.{layer}.input",
+                sites=[f"model.layers.{layer}.input"],
                 storage_dtype_str="float32",
                 autocast_dtype_str=None,
             ),
@@ -150,7 +150,7 @@ def gemma_2_2b_openwebtext_bf16(layer=17):
             acts_cfg=ActsDataConfig(
                 excl_first=True,
                 d_data=2304,
-                site=f"model.layers.{layer}.input",
+                sites=[f"model.layers.{layer}.input"],
                 storage_dtype_str="bfloat16",
                 autocast_dtype_str="bfloat16",
             ),
@@ -174,12 +174,10 @@ def gpt_2(block_postfix):
         model_cfg=ModelConfig(
             acts_cfg=ActsDataConfig(
                 excl_first=True,
-                site=(
-                    Swept[str](
-                        *[f"transformer.h.{bp}" for bp in block_postfix],
-                    )
+                sites=(
+                    [f"transformer.h.{bp}" for bp in block_postfix]
                     if isinstance(block_postfix, list | tuple)
-                    else f"transformer.h.{block_postfix}"
+                    else [f"transformer.h.{block_postfix}"]
                 ),
                 d_data=768,
                 autocast_dtype_str="bfloat16",
@@ -199,7 +197,7 @@ def gpt_2(block_postfix):
     )
 
 
-def gpt_2_block(layer=7, io="input"):
+def gpt_2_block(layer: int | list[int] | tuple[int], io="input"):
     if isinstance(layer, list | tuple):
         return gpt_2([f"{l}.{io}" for l in layer])
     return gpt_2(f"{layer}.{io}")
