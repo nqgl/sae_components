@@ -3,20 +3,19 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 import einops
-import nnsight
 import torch
+import torch.utils
+import torch.utils.data
 import tqdm
+from attrs import define
 from nnsight import LanguageModel
 
 from saeco.data.bufferized_iter import bufferized_iter
+from saeco.data.piler.dict_piler import DictBatch
 from saeco.data.split_config import SplitConfig
 from saeco.data.tokens_data import TokensData
-from saeco.misc.nnsite import getsite
 from saeco.misc import str_to_dtype
-import torch.utils
-import torch.utils.data
-from saeco.data.piler.dict_piler import DictBatch
-from attrs import define
+from saeco.misc.nnsite import getsite
 
 if TYPE_CHECKING:
     from saeco.data.data_cfg import DataConfig
@@ -160,8 +159,7 @@ class ActsData:
         target_sites: list[str] | None = None,
         input_sites: list[str] | None = None,
     ):
-        if not self.cfg._acts_piles_path(split).exists():
-            self._store_split(split)
+        assert self.cfg._acts_piles_path(split).exists()
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
@@ -300,6 +298,11 @@ class ActsDataset(torch.utils.data.IterableDataset):
         self.batch_size = batch_size
         self.input_sites = input_sites
         self.target_sites = target_sites
+
+    def store_if_not_exists(self):
+        if not self.acts.cfg._acts_piles_path(self.split).exists():
+            self.acts._store_split(self.split)
+
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
