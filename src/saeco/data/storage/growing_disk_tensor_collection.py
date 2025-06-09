@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import Sequence
 
 import torch
 import tqdm
@@ -75,7 +76,7 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
         self,
         name: str | int,
         dtype: torch.dtype,
-        shape: list[int],
+        shape: torch.Size | Sequence[int],
         compression: CompressionType = CompressionType.NONE,
     ) -> GrowingDiskTensor:
         if self.finalized:
