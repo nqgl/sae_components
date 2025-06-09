@@ -8,6 +8,8 @@ from typing import Any, Generic, Literal, overload, TypeVar
 import torch
 from torch import nn
 
+from typing_extensions import get_original_bases
+
 import saeco.components as co
 import saeco.core as cl
 from saeco.architecture.arch_reload_info import ArchStoragePaths
@@ -18,14 +20,13 @@ from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
 from saeco.initializer.initializer import Initializer
 from saeco.misc.utils import useif
 from saeco.sweeps import SweepableConfig
+from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
 from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 from saeco.trainer.run_config import RunConfig
 
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
 from .arch_prop import aux_model_prop, loss_prop, metric_prop, model_prop
-
-from typing_extensions import get_original_bases
 
 
 ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
@@ -296,6 +297,7 @@ class Architecture(Generic[ArchConfigType]):
             run_cfg=self.run_cfg,
             model=self.trainable,
             save_callback=self.save_to_path,
+            recons_eval_fns=self.get_evaluation_functions(),
         )
         return trainer
 
@@ -393,6 +395,19 @@ class Architecture(Generic[ArchConfigType]):
         from saeco.sweeps.newsweeper import SweepManager
 
         return SweepManager(self, ezpod_group=ezpod_group)
+
+    def get_evaluation_functions(
+        self,
+    ) -> dict[str, ReconstructionEvaluatorFunctionProtocol]:
+        from saeco.trainer.recons import (
+            get_recons_loss_no_bos,
+            get_recons_loss_with_bos,
+        )
+
+        return {
+            "recons/with_bos/": get_recons_loss_with_bos,
+            "recons/no_bos/": get_recons_loss_no_bos,
+        }
 
 
 # ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
