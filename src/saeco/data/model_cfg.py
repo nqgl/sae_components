@@ -1,8 +1,10 @@
+import hashlib
 from functools import cached_property
+
+import torch
 
 from nnsight import LanguageModel, NNsight
 from pydantic import Field
-import torch
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -27,7 +29,8 @@ class ActsDataConfig(SweepableConfig):
     @property
     def actstring(self):
         sites_str = "_".join(sorted(self.sites))
-        return f"{sites_str}_{self.excl_first}_{self.filter_pad}_{self.storage_dtype_str}_{self.autocast_dtype_str}_{self.force_cast_dtype_str}"
+        sites_hash = hashlib.sha256(sites_str.encode()).hexdigest()[:32]
+        return f"{sites_hash}_{self.excl_first}_{self.filter_pad}_{self.storage_dtype_str}_{self.autocast_dtype_str}_{self.force_cast_dtype_str}"
 
     @property
     def storage_dtype(self) -> torch.dtype:

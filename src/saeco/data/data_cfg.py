@@ -122,6 +122,7 @@ class DataConfig(SweepableConfig):
                 dtypes=dtypes,
                 fixed_shapes=fixed_shapes,
                 num_piles=num_piles,
+                compress=self.generation_config.compress_acts,
             )
         return DictPiler.open(self._acts_piles_path(split))
 
