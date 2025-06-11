@@ -1,6 +1,7 @@
-from functools import cached_property
+from functools import cached_property, partial
 
 import einops
+import nnsight
 import saeco.components.features.features as ft
 
 import saeco.core as cl
@@ -17,14 +18,124 @@ from saeco.components.ops import Indexer
 from saeco.components.sae_cache import SAECache
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
+
+from saeco.data.model_cfg import ActsDataConfig
 from saeco.initializer.initializer import Initializer
 from saeco.misc import useif
+from saeco.misc.nnsite import getsite, setsite
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
+from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
+from saeco.trainer.recons import to_losses
+from saeco.trainer.trainable import Trainable
 
 
 class MatryoshkaCLTConfig(SweepableConfig):
     n_sites: int = 12
     n_nestings: int = 3
+
+
+def reconstruct_clt_layer(sae: Trainable, mlp_inputs: list[torch.Tensor], num_layers):
+    cache = SAECache()
+    tensors = mlp_inputs + [
+        torch.zeros_like(mlp_inputs[0]) for _ in range(num_layers - len(mlp_inputs))
+    ]
+
+    catted = torch.cat(tensors, dim=-1).float()
+
+    results = sae(catted[0], cache=cache).to(mlp_inputs[0].dtype)[-1, ...].unsqueeze(0)
+    result = results.chunk(num_layers, dim=-1)[len(mlp_inputs) - 1]
+
+    return result
+
+
+def with_sae_runner(
+    model: nnsight.LanguageModel, encoder: Trainable, cfg: ActsDataConfig
+):
+
+    def saerunner(tokens):
+        mlp_inputs = []
+
+        with model.trace(tokens):
+            for i in range(12):
+                mlp_input_site = f"transformer.h.{i}.mlp.input"
+                mlp_output_site = f"transformer.h.{i}.mlp.output"
+
+                mlp_input = getsite(model, mlp_input_site).save()
+
+                mlp_inputs.append(mlp_input)
+
+                acts_re = nnsight.apply(reconstruct_clt_layer, encoder, mlp_inputs, 12)
+
+                setsite(model, mlp_output_site, acts_re)
+
+            out = model.output.logits.save()
+
+        return out
+
+    return saerunner
+
+
+def zero_ablated_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig):
+    def zrunner(tokens):
+        with model.trace(tokens) as tracer:
+            for site in cfg.sites:
+                if "input" in site:
+                    lm_acts = getsite(model, site)
+                    acts_re = nnsight.apply(torch.zeros_like, lm_acts)
+                    patch_in = acts_re
+                    setsite(model, site, patch_in)
+
+            out = model.output.logits.save()
+        return out
+
+    return zrunner
+
+
+def normal_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig):
+    def nrunner(tokens):
+        with model.trace(tokens):
+            out = model.output.logits.save()
+        return out
+
+    return nrunner
+
+
+@torch.inference_mode()
+def get_multisite_recons_loss(
+    llm,
+    sae: Trainable,
+    tokens=None,
+    num_batches=10,
+    cfg: ActsDataConfig = None,
+    batch_size=1,
+    cast_fn=...,
+):
+    cfg = cfg or sae.cfg
+    loss_list = []
+
+    with_sae = to_losses(with_sae_runner(llm, sae, cfg))
+    zero = to_losses(zero_ablated_runner(llm, cfg))
+    normal = to_losses(normal_runner(llm, cfg))
+    rand_tokens = tokens[torch.randperm(len(tokens))]
+    with cast_fn():
+        for i in range(num_batches):
+            batch_tokens = rand_tokens[i * batch_size : (i + 1) * batch_size].cuda()
+            zeroed = zero(batch_tokens)
+            re = with_sae(batch_tokens)
+            loss = normal(batch_tokens)
+            loss_list.append((loss, re, zeroed))
+    losses = torch.tensor(loss_list)
+    loss, recons_loss, zero_abl_loss = losses.mean(0).tolist()
+    print(loss, recons_loss, zero_abl_loss)
+    score = (zero_abl_loss - recons_loss) / (zero_abl_loss - loss)
+    print(f"{score:.2%}")
+    return {
+        "recons_score": score,
+        "nats_lost": recons_loss - loss,
+        "loss": loss,
+        "recons_loss": recons_loss,
+        "zero_ablation_loss": zero_abl_loss,
+    }
 
 
 class MatryoshkaLoss(Loss):
@@ -145,6 +256,9 @@ class MatryoshkaCLTDecoder(cl.Module):
             )
             for n in range(cfg.n_sites)
         ]
+
+        self.weights = [dec.weight for dec in self.decoders]
+
         self.decode = Seq(
             route_to_decoders=cl.Parallel(
                 *[Indexer.L[: i + 1] for i in range(cfg.n_sites)]
@@ -153,25 +267,6 @@ class MatryoshkaCLTDecoder(cl.Module):
                 lambda *x: torch.cat(x, dim=-1)
             ),
             decoder_bias=self.bias,
-        )
-
-    def decode_single_layer(
-        self, encodings: torch.Tensor, layer_idx: int
-    ) -> torch.Tensor:
-        weight = self.decoders[layer_idx].weight
-
-        batch_size = encodings.size(1)
-
-        reshaped_encodings = encodings.permute(1, 0, 2).reshape(
-            batch_size, self.d_layer_dict * (layer_idx + 1)
-        )
-
-        return F.linear(
-            reshaped_encodings,
-            weight.T,
-            self.bias.bias[
-                layer_idx * self.d_layer_data : (layer_idx + 1) * self.d_layer_data
-            ],
         )
 
     def forward(self, x, *, cache: SAECache):
@@ -198,6 +293,10 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
             self.d_layer_data, self.d_layer_dict, self.nesting_boundaries, self.cfg
         )
 
+    @property
+    def decoder_weights(self):
+        return self.decoder.weights
+
     @cached_property
     def initializers(self):
         return self.init.split_initializer(self.cfg.n_sites)
@@ -206,18 +305,6 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
     def encoders(self):
         return [self.initializers[i].encoder.cuda() for i in range(self.cfg.n_sites)]
 
-    def encode_up_to_layer(self, layer_idx: int):
-        # Generates a model that breaks up an input of shape [batch_size, d_layer_data * (layer_idx + 1)],
-        # and encodes it into [(layer_idx + 1), batch_size, d_layer_dict] shape.
-        return ReuseForward(
-            Seq(
-                split=Lambda(lambda x: torch.chunk(x, layer_idx + 1, dim=-1)),
-                encode=cl.Router(
-                    *[self.encoders[i] for i in range(layer_idx + 1)]
-                ).reduce(lambda *x: torch.stack(x, dim=0)),
-            )
-        )
-
     @cached_property
     def pre_encoders(self):
         # saeco multisite prepares the input catted as
@@ -225,15 +312,14 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
 
         # The decoder will recieve the latents still chunked as
         # [n_sites, batch_size, d_layer_dict]
-        return self.encode_up_to_layer(self.cfg.n_sites - 1)
-
-    def reconstruct_layer(self, x: torch.Tensor, layer_idx: int) -> torch.Tensor:
-        cache = SAECache()
-
-        encodings = self.encode_up_to_layer(layer_idx)(x, cache=cache)
-        recons = self.decoder.decode_single_layer(encodings, layer_idx)
-
-        return recons
+        return ReuseForward(
+            Seq(
+                split=Lambda(lambda x: torch.chunk(x, self.cfg.n_sites, dim=-1)),
+                encode=cl.Router(
+                    *[self.encoders[i] for i in range(self.cfg.n_sites)]
+                ).reduce(lambda *x: torch.stack(x, dim=0)),
+            )
+        )
 
     @cached_property
     def nonlinearity(self):
@@ -254,3 +340,8 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
     @loss_prop
     def sparsity_loss(self):
         return SparsityPenaltyLoss(self.model)
+
+    def get_evaluation_functions(
+        self,
+    ) -> dict[str, ReconstructionEvaluatorFunctionProtocol]:
+        return {"recons/": get_multisite_recons_loss}

@@ -43,13 +43,13 @@ data_config = DataConfig(
         ),
         model_name="gpt2",
     ),
-    trainsplit=SplitConfig(start=0, end=50, tokens_from_split=500_000),
+    trainsplit=SplitConfig(start=0, end=50, tokens_from_split=5_000_000),
     generation_config=DataGenerationProcessConfig(
         # tokens_per_pile=2**25,
         acts_per_pile=2**15,
         meta_batch_size=2**17,
         llm_batch_size=2**13,
-        compress_acts=False,
+        compress_acts=True,
     ),
     seq_len=256,
 )
@@ -80,7 +80,7 @@ cfg = RunConfig[MatryoshkaCLTConfig](
         },
         input_sites=input_mlp_sites,
         target_sites=output_mlp_sites,
-        intermittent_metric_freq=5000,
+        intermittent_metric_freq=1000,
         use_averaged_model=False,
     ),
     resampler_config=AnthResamplerConfig(

@@ -51,8 +51,8 @@ def get_recons_loss_no_bos(
 
 @torch.inference_mode()
 def get_recons_loss(
-    llm,
-    sae: Trainable,
+    model,
+    encoder: Trainable,
     tokens=None,
     num_batches=10,
     cfg: ActsDataConfig = None,
@@ -60,16 +60,23 @@ def get_recons_loss(
     batch_size=1,
     cast_fn=...,
 ):
-    cfg = cfg or sae.cfg
+    if len(cfg.sites):
+        raise ValueError(
+            "multisite architectures cannot use default intermittent metrics"
+        )
+
+    cfg = cfg or encoder.cfg
     loss_list = []
 
     with_sae = to_losses(
-        with_sae_runner(llm, sae, cfg, skip_first=not bos_processed_with_hook)
+        with_sae_runner(model, encoder, cfg, skip_first=not bos_processed_with_hook)
     )
     zero = to_losses(
-        zero_ablated_runner(llm, cfg, skip_first=not bos_processed_with_hook)
+        zero_ablated_runner(model, cfg, skip_first=not bos_processed_with_hook)
     )
-    normal = to_losses(normal_runner(llm, cfg, skip_first=not bos_processed_with_hook))
+    normal = to_losses(
+        normal_runner(model, cfg, skip_first=not bos_processed_with_hook)
+    )
     rand_tokens = tokens[torch.randperm(len(tokens))]
     with cast_fn():
         for i in range(num_batches):
@@ -95,15 +102,17 @@ def get_recons_loss(
 def with_sae_runner(
     model: nnsight.LanguageModel, encoder, cfg: ActsDataConfig, skip_first=False
 ):
+    site = cfg.sites[0]
+
     def saerunner(tokens):
         with model.trace(tokens) as tracer:
-            lm_acts = getsite(model, cfg.site)
+            lm_acts = getsite(model, site)
             acts_re = nnsight.apply(lambda x: encoder(x.float()).to(x.dtype), lm_acts)
             if skip_first:
                 patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
             else:
                 patch_in = acts_re
-            setsite(model, cfg.site, patch_in)
+            setsite(model, site, patch_in)
             out = model.output.logits.save()
 
         return out
@@ -114,15 +123,17 @@ def with_sae_runner(
 def zero_ablated_runner(
     model: nnsight.LanguageModel, cfg: ActsDataConfig, skip_first=False
 ):
+    site = cfg.sites[0]
+
     def zrunner(tokens):
         with model.trace(tokens) as tracer:
-            lm_acts = getsite(model, cfg.site)
+            lm_acts = getsite(model, site)
             acts_re = nnsight.apply(torch.zeros_like, lm_acts)
             if skip_first:
                 patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
             else:
                 patch_in = acts_re
-            setsite(model, cfg.site, patch_in)
+            setsite(model, site, patch_in)
             out = model.output.logits.save()
         return out
 

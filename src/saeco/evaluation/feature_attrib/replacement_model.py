@@ -17,22 +17,15 @@ from saeco.misc.nnsite import getsite, setsite
 class CrossLayerTranscoder:
     model: MatryoshkaCLT
 
-    def encode(self, x):
+    def encode(self, x) -> torch.Tensor:
         # x should be of shape [n_layers, n_tokens, d_layer_data]
         cache = SAECache()
         return self.model.nonlinearity(self.model.pre_encoders(x, cache=cache))
 
-    def decode(self, latents):
+    def decode(self, latents) -> torch.Tensor:
         # TODO: x should be of shape [n_tokens, d_layer_data]
         cache = SAECache()
         return self.model.decoder(latents, cache=cache)
-
-    def reconstruct_layer(self, inputs: torch.Tensor, layer_idx: int) -> torch.Tensor:
-        """Uses the CLT to reconstruct a specific layer of the model.
-
-        inputs should be of shape [d_layer_data * (layer_idx + 1)]
-        """
-        return self.model.reconstruct_layer(inputs, layer_idx)
 
 
 @define
@@ -40,10 +33,15 @@ class ReplacementModel:
     model: LanguageModel
     clt: CrossLayerTranscoder
 
-    attn_prefix: str
+    attn_site: str
     mlp_prefix: str
+
     logit_site: str
+    embedding_site: str
     n_layers: int
+
+    d_model: int
+    d_dict: int
 
     @property
     def input_mlp_sites(self) -> list[str]:
@@ -55,96 +53,115 @@ class ReplacementModel:
 
     @property
     def attn_sites(self) -> list[str]:
-        return [self.attn_prefix.format(i) for i in range(self.n_layers)]
+        return [self.attn_site.format(i) for i in range(self.n_layers)]
 
-    def get_global_replacement_model_prediction(self, prompt: str) -> torch.Tensor:
-        """Computes the output logits on a given prompt using a global replacement
-        model, running the CLT on off-distribution activations."""
+    def setup_attribution(
+        self, prompt: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        inputs = []
+        outputs = []
 
-        input_tokens = self.model.tokenizer(prompt, return_tensors="pt").input_ids
+        with self.model.trace(prompt):
+            embed = getsite(self.model, self.embedding_site).output.save()
 
-        mlp_inputs = []
-
-        with self.model.trace(input_tokens):
             for i in range(self.n_layers):
-                mlp_input = getsite(self.model, self.input_mlp_sites[i]).save()
+                input_site = getsite(self.model, self.input_mlp_sites[i])
+                input = input_site.save()
+                inputs.append(input)
 
-                mlp_inputs.append(mlp_input)
+                output_site = getsite(self.model, self.output_mlp_sites[i])
+                output = output_site.save()
+                outputs.append(output)
 
-                acts_re = nnsight.apply(
-                    lambda x, layer_idx=i: self.clt.reconstruct_layer(
-                        torch.cat(x, dim=-1).float()[0], layer_idx
-                    ).to(x[0].dtype),
-                    mlp_inputs,
-                )
+            logits = self.model.output.logits.save()
 
-                setsite(self.model, self.output_mlp_sites[i], acts_re)
+        # Remove batch dimension, just take last logit.
+        logits = logits[0, -1, :]
 
-            logits = getsite(self.model, self.logit_site + ".output").save()
+        # Remove the batch dimension
+        embed = embed[0]
 
-        return logits
+        real_mlp_acts = torch.stack(outputs).cuda().squeeze()
 
-    def cache_frozen_activations(self, prompt: str) -> dict[str, torch.Tensor]:
-        input_tokens = self.model.tokenizer(prompt, return_tensors="pt").input_ids
+        mlp_inputs = torch.cat(inputs, dim=-1).cuda()[0]
+        clt_encodings = self.clt.encode(mlp_inputs)
+        mlp_act_recons = self.clt.decode(clt_encodings)
+        mlp_act_recons = torch.stack(
+            torch.chunk(mlp_act_recons[-1, :, :], self.n_layers, dim=-1)
+        )  # Just get the last Matryoshka nesting output, reshape catted last dim into layers
 
-        frozen_activations = {}
+        error_vecs = real_mlp_acts - mlp_act_recons
 
-        with self.model.trace(input_tokens):
-            for i in range(self.n_layers):
-                frozen_activations[self.attn_sites[i]] = getsite(
-                    self.model, self.attn_sites[i]
-                ).save()
-                # TODO: The same for normalization layers...
+        return (embed, clt_encodings, error_vecs, logits)
 
-        return frozen_activations
+    def generate_attribution_graph(
+        self, prompt: str, max_n_logits: int = 10, desired_logit_prob: float = 0.95
+    ):
 
-    def attribute_feature_node(
-        self, feature_index: Tuple[int, int, int], prompt: str
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        frozen_activations = self.cache_frozen_activations(prompt)
+        prompt = self.model.tokenizer(prompt, return_tensors="pt").input_ids
+        n_toks = prompt.size(-1)
 
+        embed, encodings, error_vecs, logits = self.setup_attribution(prompt)
 
-def get_active_features(model: LanguageModel, clt: CrossLayerTranscoder, prompt):
-    n_layers = 12
+        logit_idx, logit_p = self.compute_salient_logits(
+            max_n_logits, desired_logit_prob, logits
+        )
 
-    input_prefix = "transformer.h.{}.mlp.input"
-    output_prefix = "transformer.h.{}.mlp.output"
+        active_features = torch.nonzero(encodings > 0)
 
-    input_sources = [input_prefix.format(i) for i in range(n_layers)]
-    output_sources = [output_prefix.format(i) for i in range(n_layers)]
+        n_active_features = active_features.size(0)
 
-    inputs = []
-    outputs = []
+        # active_features[:, 0] = layer indices
+        # active_features[:, 1] = token indices
+        # active_features[:, 2] = feature indices
 
-    input_tokens = model.tokenizer(prompt, return_tensors="pt").input_ids
+        encoder_vectors = torch.stack(
+            [
+                self.clt.model.encoders[layer_idx].weight[feature_idx]
+                for layer_idx, _, feature_idx in active_features
+            ]
+        )
 
-    with model.trace(input_tokens):
-        for i in range(n_layers):
-            input_site = getsite(model, input_sources[i])
-            input = input_site.save()
-            inputs.append(input)
+        # TODO: Figure out decoder access pattern and then decide how to store them.
 
-            output_site = getsite(model, output_sources[i])
-            output = output_site.save()
-            outputs.append(output)
+        feature_idx = 100_000
+        selected_feature = active_features[feature_idx]
+        encoder_dir = encoder_vectors[feature_idx]
+        print(selected_feature)
+        print(encoder_dir)
 
-    inputs = torch.cat(inputs, dim=-1).cuda()[0]
-    outputs = torch.cat(outputs, dim=-1).cuda()[0]
+        layer = selected_feature[0]
+        token_pos = selected_feature[1]
 
-    encodings = clt.encode(inputs)
-    print(encodings.shape)
-    decodings = clt.decode(encodings)[
-        -1, :, :
-    ]  # Just get the last Matryoshka nesting output
+        with self.model.trace(prompt) as tracer:
+            last_layer = getsite(self.model, self.input_mlp_sites[layer])
 
-    print(decodings.shape)
+            for attn_site in self.attn_sites:
+                attn_val = getsite(self.model, attn_site).save()
+                attn_val.grad.save().detach()
 
-    active_indices = torch.nonzero(encodings > 0)
-    # active_indices[:, 0] = layer indices
-    # active_indices[:, 1] = token indices
-    # active_indices[:, 2] = feature indices
+            last_layer_val = last_layer.save()
+            last_layer_val.grad[:, token_pos] = encoder_dir
 
-    print(active_indices.shape)
+            last_layer.backward(gradient=torch.zeros_like(last_layer))
+
+        print(target_tensor.shape)
+
+        # The attribution matrix is a square matrix.
+        # The nodes are ordered as: CLT features, embeds, errors, logits.
+        # The number of CLT nodes is the number of active features on the prompt.
+        # There are n_toks embed nodes, n_layers * n_toks error nodes, and len(logit_idx) logit nodes.
+
+        # The attribution from target node to source_node node is given by: "graph[target][source]".
+
+    def compute_salient_logits(self, max_n_logits, desired_logit_prob, logits):
+        probs = torch.softmax(logits, dim=-1)
+        top_p, top_idx = torch.topk(probs, max_n_logits)
+
+        cutoff = int(torch.searchsorted(torch.cumsum(top_p, 0), desired_logit_prob)) + 1
+        top_p, top_idx = top_p[:cutoff], top_idx[:cutoff]
+
+        return top_idx, top_p
 
 
 def main():
@@ -172,17 +189,16 @@ def main():
     model = ReplacementModel(
         model,
         clt,
-        attn_prefix="transformer.h.{}.attn",
+        attn_site="transformer.h.{}.attn",
         mlp_prefix="transformer.h.{}.mlp",
         logit_site="lm_head",
+        embedding_site="transformer.wte",
         n_layers=12,
+        d_model=768,
+        d_dict=768 * 8,
     )
 
-    logits = model.get_global_replacement_model_prediction(
-        "The president of the United States is"
-    )
-
-    print(logits.shape)
+    model.generate_attribution_graph("The president of the United States is ")
 
 
 #    get_active_features(model, clt, "The president of the United States is")

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Protocol, runtime_checkable, TYPE_CHECKING
 
 import einops
 
@@ -16,12 +16,11 @@ from saeco.components.resampling import AnthResampler, RandomResampler, Resample
 from saeco.core import Cache
 from .normalizers import (
     ConstL2Normalizer,
+    GeneralizedNormalizer,
     Normalized,
     Normalizer,
-    GeneralizedNormalizer,
 )
 from .train_cache import TrainCache
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from saeco.architecture.architecture import SAE
@@ -93,6 +92,7 @@ class Trainable(cl.Module):
         ), "models and losses should not be normalized, the Trainable object is responsible for normalization."
         self.models = nn.ModuleList(models)
         model = models[0]
+        self.raw_model = model
         assert extra_losses is None or losses is None
 
         self.losses = nn.ModuleDict(
