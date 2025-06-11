@@ -60,6 +60,44 @@ class Initializer:
         new.encoder_init_weights = self.encoder_init_weights
         return new
 
+    def split_initializer(
+        self, bf, split_d_data=True, l0_target=None
+    ) -> list["Initializer"]:
+        assert self.d_dict % bf == 0
+        if split_d_data:
+            assert self.d_data % bf == 0
+        l = []
+        for i in range(bf):
+            new = Initializer(
+                d_data=self.d_data // bf if split_d_data else self.d_data,
+                d_dict=self.d_dict // bf,
+                l0_target=l0_target or self.l0_target,
+            )
+            # self.tied_bias = True
+            new.tied_init = self.tied_init
+            new.tied_weights = self.tied_weights
+            new.encoder_init_weights = self.encoder_init_weights
+            l.append(new)
+        return l
+
+    def split_clt_initializer(
+        self, bf, split_d_data=True, l0_target=None
+    ) -> list["Initializer"]:
+        assert self.d_dict % bf == 0
+        l = []
+        for i in range(bf):
+            new = Initializer(
+                d_data=self.d_data // bf if split_d_data else self.d_data,
+                d_dict=self.d_dict // bf,
+                l0_target=l0_target or self.l0_target,
+            )
+            # self.tied_bias = True
+            new.tied_init = self.tied_init
+            new.tied_weights = self.tied_weights
+            new.encoder_init_weights = self.encoder_init_weights
+            l.append(new)
+        return l
+
     @property
     def encoder(self) -> co.LinEncoder:
         return self._encoder.get()

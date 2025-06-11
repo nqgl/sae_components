@@ -1,148 +1,99 @@
+from types import NoneType
+from typing import Any, Generic, get_args, get_origin, TYPE_CHECKING, TypeVar
+
 from saeco.sweeps.sweepable_config.Swept import Swept
 
-
-from types import NoneType
-from typing import Any, TypeVar, get_args, get_origin, Generic
+if TYPE_CHECKING:
+    from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
 T = TypeVar("T")
 LITERALS = [int, float, str, bool]
+
+from saeco.sweeps.sweepable_config.expressions_utils import (
+    common_type,
+    convert_other,
+    shared_type,
+)
 
 
 class SweepExpression(Swept[T], Generic[T]):
     values: list = []
 
-    @classmethod
-    def convert_other(cls, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
-
-        if isinstance(other, SweepExpression):
-            return other
-        if any([isinstance(other, l) for l in LITERALS]):
-            return Val[type(other)](value=other)
-        # if isinstance(other, SweepVar):
-        #     return Var(name=other.name, sweep_var=other)
-        raise ValueError(f"Cannot convert {other} to SweepExpressionNode")
-
-    @classmethod
-    def common_type(cls, objs: list["SweepExpression"]):
-        t = None
-        for o in objs:
-            if o.generic_type is not None:
-                if t is None:
-                    t = o.generic_type
-                elif o.generic_type is float and t is int:
-                    t = float
-                elif t is float and o.generic_type is int:
-                    t = float
-                elif issubclass(t, o.generic_type):
-                    t = o.generic_type
-                elif issubclass(o.generic_type, t):
-                    pass
-                else:
-                    raise ValueError(
-                        f"Cannot find common type for {t} and {o.generic_type}"
-                    )
-        return t
-
     def __mul__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
-        other = self.convert_other(other)
-        type(self)
-        type(other)
+        return ExpressionOpEnum.MUL(self, other)
 
-        t = self.common_type([self, other])
-        return Op[t](op=ExpressionOpEnum.MUL, children=[self, other])
+    def __rmul__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+
+        return ExpressionOpEnum.MUL(other, self)
 
     def __add__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
-        other = self.convert_other(other)
-        t = self.common_type([self, other])
-        return Op[t](op=ExpressionOpEnum.ADD, children=[self, other])
+        return ExpressionOpEnum.ADD(self, other)
+
+    def __radd__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+
+        return ExpressionOpEnum.ADD(other, self)
 
     def __sub__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
-        other = self.convert_other(other)
-        t = self.common_type([self, other])
-        return Op[t](op=ExpressionOpEnum.SUB, children=[self, other])
+        return ExpressionOpEnum.SUB(self, other)
+
+    def __rsub__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+
+        return ExpressionOpEnum.SUB(other, self)
 
     def __truediv__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
-        other = self.convert_other(other)
-        t = self.common_type([self, other])
-        return Op[float](op=ExpressionOpEnum.FLOATDIV, children=[self, other])
+        return ExpressionOpEnum.FLOATDIV(self, other)
+
+    def __rtruediv__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+
+        return ExpressionOpEnum.FLOATDIV(other, self)
 
     def __floordiv__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
-        other = self.convert_other(other)
-        t = self.common_type([self, other])
-        return Op[int](op=ExpressionOpEnum.INTDIV, children=[self, other])
+        return ExpressionOpEnum.INTDIV(self, other)
+
+    def __rfloordiv__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+
+        return ExpressionOpEnum.INTDIV(other, self)
 
     def __pow__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
-        other = self.convert_other(other)
-        t = self.common_type([self, other])
-        return Op[t](op=ExpressionOpEnum.POW, children=[self, other])
+        return ExpressionOpEnum.POW(self, other)
+
+    def __rpow__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+
+        return ExpressionOpEnum.POW(other, self)
 
     def __mod__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 
-        other = self.convert_other(other)
-        t = self.common_type([self, other])
-        return Op[t](op=ExpressionOpEnum.MOD, children=[self, other])
+        return ExpressionOpEnum.MOD(self, other)
+
+    def __rmod__(self, other):
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+
+        return ExpressionOpEnum.MOD(other, self)
 
     def __getitem__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import (
-            ExpressionOpEnum,
-            Op,
-            Val,
-        )
+        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum, Op
 
-        get_origin(type(self))
-        get_args(type(self))
-        other = self.convert_other(other)
+        other = convert_other(other)
 
-        # if (
-        #     "args" in self.__pydantic_generic_metadata__
-        #     and self.__pydantic_generic_metadata__["args"]
-        # ):
         dtype = self.generic_type
         if get_origin(dtype):
             if get_origin(dtype) is dict:
@@ -152,7 +103,16 @@ class SweepExpression(Swept[T], Generic[T]):
             else:
                 raise ValueError(f"Cannot index {dtype}")
         else:
-            t = get_args(dtype)[1]
+            print(dtype)
+            try:
+                t = get_args(dtype)[1]
+            except:
+                if dtype in [list, tuple]:
+                    t = shared_type(self.values)
+                elif dtype is dict:
+                    t = common_type([v for v in self.values.values()])
+                else:
+                    raise ValueError(f"Cannot index {dtype}")
         # else:
         #     t = get_args(self.generic_type)[1]
         return Op[t](op=ExpressionOpEnum.INDEX, children=[self, other])

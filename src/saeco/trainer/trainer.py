@@ -13,6 +13,7 @@ from saeco.core import Cache
 from saeco.data.tokens_data import TokensData
 from saeco.misc.paths import SAVED_MODELS_DIR
 from saeco.mlog import mlog
+from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
 from .call_training_hooks import (
     do_post_backward,
     do_post_forward,
@@ -36,6 +37,7 @@ class Trainer:
         cfg: TrainConfig,
         run_cfg: RunConfig,
         model: Trainable,
+        recons_eval_fns: dict[str, ReconstructionEvaluatorFunctionProtocol],
         optim: torch.optim.Optimizer | None = None,
         save_callback=None,
     ):
@@ -98,6 +100,7 @@ class Trainer:
                     multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.999),
                 )
             )
+        self.recons_eval_fns = recons_eval_fns
 
     @cached_property
     def llm_val_tokens(self):
@@ -248,7 +251,7 @@ class Trainer:
                 self.averaged_model.update_parameters(self.trainable)
             if self.t % self.cfg.intermittent_metric_freq == 0:
                 self.trainable.eval()
-                #                 self.do_intermittent_metrics()
+                self.do_intermittent_metrics()
                 self.trainable.train()
             if (
                 self.cfg.checkpoint_period is not None
@@ -322,25 +325,24 @@ class Trainer:
         cache.destruct()
 
     def do_intermittent_metrics(self, buffer=None):
-        self.log_recons("recons/with_bos/", True)
-        self.log_recons("recons/no_bos/", False)
-        self.log_recons("recons/no_bos2/", False, num_batches=50)
+        self.log_recons()
 
-    def log_recons(self, label, proc_bos, num_batches=20):
-        self.log(
-            {
-                (label + k): v
-                for k, v in get_recons_loss(
-                    self.subject_model,
-                    self.trainable,
-                    tokens=self.llm_val_tokens,
-                    cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
-                    bos_processed_with_hook=proc_bos,
-                    num_batches=num_batches,
-                    cast_fn=self.cast,
-                ).items()
-            }
-        )
+    def log_recons(self, num_batches=20):
+
+        for eval_name, fn in self.recons_eval_fns.items():
+            self.log(
+                {
+                    (eval_name + k): v
+                    for k, v in fn(
+                        self.subject_model,
+                        self.trainable,
+                        tokens=self.llm_val_tokens,
+                        cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
+                        num_batches=num_batches,
+                        cast_fn=self.cast,
+                    ).items()
+                }
+            )
 
     def full_log(self, cache: Cache):
         if self.t % self.log_freq != 0:  # and self.t % 23000 > 100:

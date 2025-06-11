@@ -20,7 +20,14 @@ from typing_extensions import dataclass_transform
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
-from saeco.sweeps.sweepable_config.has_sweep import has_sweep
+from saeco.sweeps.sweepable_config.has_sweep import (
+    CouldHaveSweep,
+    has_sweep,
+    index_collection,
+    key_in_collection,
+    set_collection,
+    to_items,
+)
 
 from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Op, Val
 from types import UnionType, GenericAlias
@@ -142,15 +149,10 @@ class SweepableMeta(mc.ModelMetaclass):
 
 
 def _to_swept_selective_dict(
-    target: BaseModel | dict, sweep_params: set["SweepVar"] = None
+    target: CouldHaveSweep, sweep_params: set["SweepVar"] = None
 ):
     d = {}
-    if isinstance(target, BaseModel):
-        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
-    else:
-        assert isinstance(target, dict)
-        items = target.items()
-    for name, attr in items:
+    for name, attr in to_items(target):
         if isinstance(attr, SweepExpression):
             sweep_params |= attr.get_sweepvars()
             continue
@@ -170,24 +172,16 @@ def _to_swept_selective_dict(
     return d
 
 
-def _get_sweepvars(target: BaseModel | dict, sweepvars: set["SweepVar"] = None):
-    if isinstance(target, BaseModel):
-        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
-    else:
-        assert isinstance(target, dict)
-        items = target.items()
+def _get_sweepvars(target: CouldHaveSweep, sweepvars: set["SweepVar"] | None = None):
     if sweepvars is None:
         sweepvars = set()
-    for name, attr in items:
+    for name, attr in to_items(target):
         if isinstance(attr, SweepExpression):
             sweepvars |= attr.get_sweepvars()
             continue
-        elif isinstance(attr, SweepVar):
-            assert False
-            sweepvars.add(attr)
-            continue
-        elif isinstance(attr, BaseModel | dict) and has_sweep(attr):
+        elif isinstance(attr, CouldHaveSweep) and has_sweep(attr):
             _get_sweepvars(attr, sweepvars)
+        assert not isinstance(attr, SweepVar)
     return sweepvars
 
 
@@ -198,12 +192,7 @@ def _to_randomly_selected_dict(target):
 
     random.seed(time.time())
 
-    if isinstance(target, BaseModel):
-        items = [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
-    else:
-        assert isinstance(target, dict)
-        items = target.items()
-    for name, attr in items:
+    for name, attr in to_items(target):
         if isinstance(attr, Swept):
             subdict = random.choice(attr.model_dump()["values"])
         elif isinstance(attr, BaseModel | dict):
@@ -227,49 +216,42 @@ def _merge_dicts_left(orig, new):
 
 def _merge_dicts_left2(orig, new, obj):
     for key, value in new.items():
-        if key in orig and isinstance(value, dict):
-            obj_attr = getattr(obj, key)
+        if key_in_collection(orig, key) and isinstance(value, CouldHaveSweep):
+            obj_attr = index_collection(obj, key)
             if isinstance(obj_attr, Swept):
-                orig[key] = value
+                # orig[key] = value
+                set_collection(orig, key, value)
             else:
-                orig[key] = _merge_dicts_left2(orig[key], value, obj_attr)
+                set_collection(
+                    orig,
+                    key,
+                    _merge_dicts_left2(index_collection(orig, key), value, obj_attr),
+                )
         else:
-            if key not in orig:
+            if not key_in_collection(orig, key):
                 print(f"key {key} not in original dict, adding")
-            orig[key] = value
-    if isinstance(obj, BaseModel):
-        items = [(k, getattr(obj, k)) for (k, v) in obj.model_fields.items()]
-    # elif isinstance(obj, dict):
-    #     items = obj.items()
-    else:
-        return orig
-    # for key, value in items:
-    #     obj_attr = getattr(obj, key)
-    #     if isinstance(obj_attr, SweepExpression):
-    #         orig[key] = obj_attr.instantiate()
+            set_collection(orig, key, value)
     return orig
 
 
-def acc_path(obj, path: list[str]):
+def acc_path(obj: CouldHaveSweep, path: list[str]):
     if len(path) == 0:
         return obj
-    acc = obj[path[0]] if isinstance(obj, dict) else getattr(obj, path[0])
+    acc = index_collection(obj, path[0])
     return acc_path(acc, path[1:])
 
 
-def set_path(obj, path: list[str], value):
+def set_path(obj: CouldHaveSweep, path: list[str], value):
     target = acc_path(obj, path[:-1])
     key = path[-1]
-    if isinstance(target, dict):
-        target[key] = value
-    else:
-        setattr(target, key, value)
+    set_collection(target, key, value)
 
 
 def _instantiate_sweepexpressions(target, obj: "SweepableConfig", swept_vars):
     paths = obj.to_swept_nodes().get_paths_to_sweep_expressions()
     for path in paths:
-        t: SweepExpression = acc_path(obj, path)
+        t = acc_path(obj, path)
+        assert isinstance(t, SweepExpression)
         set_path(target, path, t.evaluate(swept_vars))
         # acc_path(target, path[:-1])
 
@@ -280,7 +262,8 @@ def _get_sweep_expression_instantiations_dict(
     paths = obj.to_swept_nodes().get_paths_to_sweep_expressions()
     d = {}
     for path in paths:
-        t: SweepExpression = acc_path(obj, path)
+        t = acc_path(obj, path)
+        assert isinstance(t, SweepExpression)
         d["/".join(path)] = t.evaluate(swept_vars)
     return d
 

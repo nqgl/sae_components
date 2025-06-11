@@ -8,6 +8,13 @@ from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 from .neptune_scale_metric_logger import NeptuneScaleMetricLogger
 
+from attrs import define, field
+
+
+@define
+class RunConfig:
+    config: dict = field(factory=dict)
+
 
 class NeptuneLogger:
     def __init__(self):
@@ -17,6 +24,7 @@ class NeptuneLogger:
         self.run: neptune.Run | None = None
         self.project = "default-project"
         self.run_name = None
+        self.run_config = RunConfig()
 
     @classmethod
     def neptune_config_fix(cls, item):
@@ -68,6 +76,7 @@ class NeptuneLogger:
         if self.run.exists(namespace):
             data = {**self.run[namespace].fetch(), **data}
         self.run[namespace].assign(self.neptune_config_fix(data))
+        self.run_config.config.update({f"{namespace}/{k}": v for k, v in data.items()})
 
     def sweep(self, swept_nodes: SweptNode, project):
         raise NotImplementedError("Neptune sweeps not yet implemented")
@@ -176,6 +185,7 @@ class NeptuneCustomLogger:
         self.run: neptune.Run | None = None
         self.project = "default-project"
         self.run_name = None
+        self.run_config = RunConfig()
 
     def init(self, project=None, config=None, run_name=None):
         import neptune
@@ -232,6 +242,7 @@ class NeptuneCustomLogger:
         if self.run is not None and self.run.exists(namespace):
             data = {**self.run[namespace].fetch(), **data}
         self.run[namespace].assign(self.neptune_config_fix(data))
+        self.run_config.config.update({f"{namespace}/{k}": v for k, v in data.items()})
 
     def agent(
         self,

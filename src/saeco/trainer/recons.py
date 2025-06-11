@@ -7,11 +7,52 @@ from saeco.misc.nnsite import getsite, setsite
 from saeco.trainer.trainable import Trainable
 
 
-# @torch.no_grad()
+def get_recons_loss_with_bos(
+    llm,
+    sae: Trainable,
+    tokens=None,
+    num_batches=10,
+    cfg: ActsDataConfig = None,
+    batch_size=1,
+    cast_fn=...,
+):
+    return get_recons_loss(
+        llm=llm,
+        sae=sae,
+        tokens=tokens,
+        num_batches=num_batches,
+        cfg=cfg,
+        bos_processed_with_hook=True,
+        batch_size=batch_size,
+        cast_fn=cast_fn,
+    )
+
+
+def get_recons_loss_no_bos(
+    llm,
+    sae: Trainable,
+    tokens=None,
+    num_batches=10,
+    cfg: ActsDataConfig = None,
+    batch_size=1,
+    cast_fn=...,
+):
+    return get_recons_loss(
+        llm=llm,
+        sae=sae,
+        tokens=tokens,
+        num_batches=num_batches,
+        cfg=cfg,
+        bos_processed_with_hook=False,
+        batch_size=batch_size,
+        cast_fn=cast_fn,
+    )
+
+
 @torch.inference_mode()
 def get_recons_loss(
-    model,
-    encoder: Trainable,
+    llm,
+    sae: Trainable,
     tokens=None,
     num_batches=10,
     cfg: ActsDataConfig = None,
@@ -19,18 +60,16 @@ def get_recons_loss(
     batch_size=1,
     cast_fn=...,
 ):
-    cfg = cfg or encoder.cfg
+    cfg = cfg or sae.cfg
     loss_list = []
 
     with_sae = to_losses(
-        with_sae_runner(model, encoder, cfg, skip_first=not bos_processed_with_hook)
+        with_sae_runner(llm, sae, cfg, skip_first=not bos_processed_with_hook)
     )
     zero = to_losses(
-        zero_ablated_runner(model, cfg, skip_first=not bos_processed_with_hook)
+        zero_ablated_runner(llm, cfg, skip_first=not bos_processed_with_hook)
     )
-    normal = to_losses(
-        normal_runner(model, cfg, skip_first=not bos_processed_with_hook)
-    )
+    normal = to_losses(normal_runner(llm, cfg, skip_first=not bos_processed_with_hook))
     rand_tokens = tokens[torch.randperm(len(tokens))]
     with cast_fn():
         for i in range(num_batches):
