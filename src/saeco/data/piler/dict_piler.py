@@ -221,6 +221,7 @@ class DictPiler:
         cls,
         path: Union[str, Path],
         use_async_distribute: bool = True,
+        skip_cache: bool = True,
         # we could allow options to be passed in here and then assert that they match the properties of the opened piler
         # not sure that's necessary though
     ):
@@ -231,17 +232,23 @@ class DictPiler:
 
         metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
 
-        pilers = {k: Piler.open(path / k) for k in metadata.keys}
+        pilers = {k: Piler.open(path / k, skip_cache=skip_cache) for k in metadata.keys}
 
         first_piler = next(iter(pilers.values()))
 
-        assert all(
-            first_piler.metadata.num_piles == piler.metadata.num_piles
-            and first_piler.metadata.dtype == piler.metadata.dtype
-            and first_piler.metadata.compression == piler.metadata.compression
-            and first_piler.metadata.fixed_shape == piler.metadata.fixed_shape
-            for piler in pilers.values()
-        )
+        for piler in pilers.values():
+            if first_piler.metadata.num_piles != piler.metadata.num_piles:
+                raise ValueError(
+                    f"Piler {piler.path} does not match first piler {first_piler.path}: {piler.metadata.num_piles} != {first_piler.metadata.num_piles}"
+                )
+            if first_piler.shape[0] != piler.shape[0]:
+                raise ValueError(
+                    f"Piler {piler.path} shape does not match first piler {first_piler.path}: {piler.shape[0]} != {first_piler.shape[0]}"
+                )
+            if first_piler.metadata.compression != piler.metadata.compression:
+                raise ValueError(
+                    f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
+                )
 
         dict_piler = DictPiler(
             metadata,
@@ -366,7 +373,19 @@ class DictPiler:
 
     @property
     def num_piles(self):
-        return next(iter(self.pilers.values())).num_piles
+        n = next(iter(self.pilers.values())).num_piles
+        assert all(piler.num_piles == n for piler in self.pilers.values())
+        return n
+
+    @property
+    def num_samples(self):
+        samples = next(iter(self.pilers.values())).shape[0]
+        assert all(piler.shape[0] == samples for piler in self.pilers.values())
+        return samples
+
+    @property
+    def shapes(self) -> dict[str, dict[str, list[int]]]:
+        return {k: piler.shapes for k, piler in self.pilers.items()}
 
 
 import torch.utils.data
