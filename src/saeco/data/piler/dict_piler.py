@@ -221,7 +221,7 @@ class DictPiler:
         cls,
         path: Union[str, Path],
         use_async_distribute: bool = True,
-        skip_cache: bool = False,
+        skip_cache: bool = True,
         # we could allow options to be passed in here and then assert that they match the properties of the opened piler
         # not sure that's necessary though
     ):
