@@ -236,13 +236,19 @@ class DictPiler:
 
         first_piler = next(iter(pilers.values()))
 
-        assert all(
-            first_piler.metadata.num_piles == piler.metadata.num_piles
-            and first_piler.metadata.dtype == piler.metadata.dtype
-            and first_piler.metadata.compression == piler.metadata.compression
-            and first_piler.metadata.fixed_shape == piler.metadata.fixed_shape
-            for piler in pilers.values()
-        )
+        for piler in pilers.values():
+            if first_piler.metadata.num_piles != piler.metadata.num_piles:
+                raise ValueError(
+                    f"Piler {piler.path} does not match first piler {first_piler.path}: {piler.metadata.num_piles} != {first_piler.metadata.num_piles}"
+                )
+            if first_piler.shape[0] != piler.shape[0]:
+                raise ValueError(
+                    f"Piler {piler.path} shape does not match first piler {first_piler.path}: {piler.shape[0]} != {first_piler.shape[0]}"
+                )
+            if first_piler.metadata.compression != piler.metadata.compression:
+                raise ValueError(
+                    f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
+                )
 
         dict_piler = DictPiler(
             metadata,
