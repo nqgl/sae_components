@@ -367,7 +367,19 @@ class DictPiler:
 
     @property
     def num_piles(self):
-        return next(iter(self.pilers.values())).num_piles
+        n = next(iter(self.pilers.values())).num_piles
+        assert all(piler.num_piles == n for piler in self.pilers.values())
+        return n
+
+    @property
+    def num_samples(self):
+        samples = next(iter(self.pilers.values())).shape[0]
+        assert all(piler.shape[0] == samples for piler in self.pilers.values())
+        return samples
+
+    @property
+    def shapes(self) -> dict[str, dict[str, list[int]]]:
+        return {k: piler.shapes for k, piler in self.pilers.items()}
 
 
 import torch.utils.data

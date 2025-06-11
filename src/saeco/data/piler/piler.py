@@ -3,7 +3,8 @@
 import asyncio
 import os
 from pathlib import Path
-from typing import List, Union
+
+from typing import Any, List, TypeVar, Union
 
 import torch
 import tqdm
@@ -24,6 +25,15 @@ class PilerMetadata(BaseModel):
     fixed_shape: list[int]
     compression: CompressionType = CompressionType.NONE
     num_piles: int
+
+
+T = TypeVar("T")
+
+
+def assert_cast(tp: type[T], value: Any) -> T:
+    if not isinstance(value, tp):
+        raise TypeError(f"Expected {tp.__name__}, got {type(value).__name__}")
+    return value
 
 
 @define
@@ -199,6 +209,25 @@ class Piler:
         if isinstance(piles, list) and len(piles) == 1:
             return piles[0]
         return torch.cat(piles)  # type: ignore
+
+    @property
+    def shapes(self) -> dict[str, list[int]]:
+        assert self.piles.finalized
+        return {
+            k: [assert_cast(int, i) for i in p.metadata.shape]
+            for k, p in self.piles.items(raw=True)
+        }
+
+    @property
+    def shape(self) -> list[int]:
+        batch = sum([shape[0] for shape in self.shapes.values()])
+        rest = next(iter(self.shapes.values()))[1:]
+        assert all(shape[1:] == rest for shape in self.shapes.values())
+        return [batch] + rest
+
+    @property
+    def num_samples(self) -> int:
+        return self.shape[0]
 
 
 def main():
