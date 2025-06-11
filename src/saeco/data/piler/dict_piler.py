@@ -221,6 +221,7 @@ class DictPiler:
         cls,
         path: Union[str, Path],
         use_async_distribute: bool = True,
+        skip_cache: bool = False,
         # we could allow options to be passed in here and then assert that they match the properties of the opened piler
         # not sure that's necessary though
     ):
@@ -231,7 +232,7 @@ class DictPiler:
 
         metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
 
-        pilers = {k: Piler.open(path / k) for k in metadata.keys}
+        pilers = {k: Piler.open(path / k, skip_cache=skip_cache) for k in metadata.keys}
 
         first_piler = next(iter(pilers.values()))
 

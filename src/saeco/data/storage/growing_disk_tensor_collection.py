@@ -56,11 +56,14 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
         default=Factory(_metadata_default, takes_self=True)
     )
     cache: dict[str, GrowingDiskTensor] = field(factory=dict)
+    skip_cache: bool = False
 
     def get(self, name: str | int) -> GrowingDiskTensor:
         if isinstance(name, int):
             name = str(name)
         assert isinstance(name, str)
+        if self.skip_cache:
+            return super().get(name)
         if name not in self.cache:
             self.cache[name] = super().get(name)
         return self.cache[name]

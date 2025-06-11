@@ -66,7 +66,7 @@ class Piler:
         )
 
         for i in range(num_piles):
-            piles.create(i, dtype, [0] + fixed_shape, compression)
+            piles.create(i, dtype, [0] + list(fixed_shape), compression)
 
         piler = Piler(
             metadata=metadata,
@@ -80,7 +80,7 @@ class Piler:
         return piler
 
     @classmethod
-    def open(cls, path: str | Path):
+    def open(cls, path: str | Path, skip_cache: bool = False):
         if isinstance(path, str):
             path = Path(path)
         metadata_path = cls.get_metadata_path(path)
@@ -91,7 +91,9 @@ class Piler:
         metadata = PilerMetadata.model_validate_json(metadata_path.read_text())
 
         gdtc = GrowingDiskTensorCollection(
-            path, stored_tensors_subdirectory_name="piles"
+            path,
+            stored_tensors_subdirectory_name="piles",
+            skip_cache=skip_cache,
         )
 
         assert len(gdtc) == metadata.num_piles
