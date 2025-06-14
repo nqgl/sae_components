@@ -3,6 +3,7 @@ from pathlib import Path
 
 from typing import (
     Any,
+    Callable,
     cast,
     ClassVar,
     Generator,
@@ -367,6 +368,81 @@ class DictPiler:
                     nspare = len(spare)
             for piler in self.pilers.values():
                 del piler.piles.cache[str(p)]
+
+    @overload
+    def sized_generator(
+        self,
+        yield_dicts: Literal[False] = False,
+        id=None,
+        nw=None,
+    ) -> tuple[Callable[[int], tuple[DictBatch, int]], int]: ...
+
+    @overload
+    def sized_generator(
+        self,
+        yield_dicts: Literal[True],
+        id=None,
+        nw=None,
+    ) -> tuple[Callable[[int], tuple[dict[str, torch.Tensor] | None, int]], int]: ...
+
+    def sized_generator(
+        self,
+        yield_dicts: bool = False,
+        id=None,
+        nw=None,
+        return_last_batch: bool = False,
+    ):
+        if not (id == nw == None or id is not None and nw is not None):
+            raise ValueError("id and nw must be either both None or both not None")
+        id = id or 0
+        nw = nw or 1
+
+        def piles_gen():
+            for p in range(id % nw, self.piler_metadata.num_piles, nw):
+                yield self[p]
+            # below we clone before yielding to prevent yielding a view of the pile.
+            # if a yielded view were to get pinned by the consumer of this,
+            # (eg a dataloader), the entire mmapped pile would get pinned as well
+
+        piler0 = next(iter(self.pilers.values()))
+        num_samples_total = sum(
+            piler0.shapes[p][0]
+            for p in range(id % nw, self.piler_metadata.num_piles, nw)
+        )
+
+        num_returned = 0
+
+        i = 0
+        piles = piles_gen()
+        pile = next(piles)
+        done = False
+
+        def get(batch_size):
+            nonlocal i, pile, piles, done, num_samples_total, num_returned
+            if done:
+                raise StopIteration("No more batches")
+            res = None
+            while len(pile) - i < batch_size:
+                try:
+                    pile = DictBatch.cat_list([pile[i:].clone(), next(piles)])
+                    i = 0
+                except StopIteration as e:
+                    if not return_last_batch:
+                        raise e
+                    done = True
+                    num_returned += len(pile) - i
+                    assert num_returned == num_samples_total
+                    return pile[i:].clone(), 0
+            res = (
+                pile[i : i + batch_size].clone().data
+                if yield_dicts
+                else pile[i : i + batch_size].clone()
+            )
+            i += batch_size
+            num_returned += batch_size
+            return res, num_samples_total - num_returned
+
+        return get, num_samples_total
 
     def as_dataset(self, batch_size, converter=None):
         return PilerDataset(self, batch_size, converter)
