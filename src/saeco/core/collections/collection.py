@@ -1,20 +1,15 @@
-# from saeco.core.reused_forward import ReuseForward
-from typing import Any, Union
-
+import torch.nn as nn
 
 from saeco.core.module import Module
-
-
-import torch.nn as nn
 
 
 class Collection(Module):
     def __init__(
         self,
-        *collection_list: Union[nn.Parameter, nn.Module],
-        _support_parameters=True,
-        _support_modules=True,
-        **collection_dict: Union[nn.Parameter, nn.Module],
+        *collection_list: nn.Parameter | nn.Module,
+        _support_parameters: bool = True,
+        _support_modules: bool = True,
+        **collection_dict: nn.Parameter | nn.Module,
     ):
         super().__init__()
         assert (len(collection_list) == 0) or (
@@ -50,6 +45,9 @@ class Collection(Module):
                     f"Only nn.Modules and nn.Parameters are allowed in collections.\nError@ {name}={module}"
                 )
 
+        self._support_parameters = _support_parameters
+        self._support_modules = _support_modules
+
     def __getitem__(self, key):
         if not isinstance(key, slice):
             if isinstance(key, int):
@@ -60,22 +58,22 @@ class Collection(Module):
 
         assert key.step is None
         if isinstance(key.start, int) or isinstance(key.stop, int):
-            items = self._collection.items()[key]
+            items = list(self._collection.items())[key]
         elif isinstance(key.start, str) or isinstance(key.stop, str):
             numerical_indices = [
                 list(self._collection.keys()).index(k) if isinstance(k, str) else k
                 for k in (key.start, key.stop)
             ]
-            items = self._collection.items()[
+            items = list(self._collection.items())[
                 numerical_indices[0] : numerical_indices[1]
             ]
         else:
             raise ValueError(
                 "key.start and key.stop must be of the same type (int or str)"
             )
-        return self.__class__(**{k: v for k, v in items})
-
-    # def __getattr__(self, key):
-    #     if key in super().__getattr__("_collection"):
-    #         return super().__getattr__("_collection")[key]
-    #     return super().__getattr__(key)
+        assert "_support_parameters" not in items and "_support_modules" not in items
+        return self.__class__(
+            _support_parameters=self._support_parameters,
+            _support_modules=self._support_modules,
+            **{k: v for k, v in items},
+        )
