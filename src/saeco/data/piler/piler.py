@@ -2,6 +2,7 @@
 # for code snippets and setting me on the right path
 import asyncio
 import os
+from functools import cached_property
 from pathlib import Path
 
 from typing import Any, List, TypeVar, Union
@@ -210,19 +211,19 @@ class Piler:
             return piles[0]
         return torch.cat(piles)  # type: ignore
 
-    @property
-    def shapes(self) -> dict[str, list[int]]:
+    @cached_property
+    def shapes(self) -> list[list[int]]:
         assert self.piles.finalized
-        return {
-            k: [assert_cast(int, i) for i in p.metadata.shape]
-            for k, p in self.piles.items(raw=True)
-        }
+        return [
+            [assert_cast(int, i) for i in self.piles.get(n).metadata.shape]
+            for n in range(self.num_piles)
+        ]
 
-    @property
+    @cached_property
     def shape(self) -> list[int]:
-        batch = sum([shape[0] for shape in self.shapes.values()])
-        rest = next(iter(self.shapes.values()))[1:]
-        assert all(shape[1:] == rest for shape in self.shapes.values())
+        batch = sum([shape[0] for shape in self.shapes])
+        rest = self.shapes[0][1:]
+        assert all(shape[1:] == rest for shape in self.shapes)
         return [batch] + rest
 
     @property

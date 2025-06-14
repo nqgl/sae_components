@@ -384,7 +384,7 @@ class DictPiler:
         return samples
 
     @property
-    def shapes(self) -> dict[str, dict[str, list[int]]]:
+    def shapes(self) -> dict[str, list[list[int]]]:
         return {k: piler.shapes for k, piler in self.pilers.items()}
 
 
