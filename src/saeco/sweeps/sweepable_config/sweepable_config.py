@@ -1,25 +1,25 @@
+from types import GenericAlias, UnionType
 from typing import (
     Annotated,
     Any,
     ClassVar,
+    get_args,
+    get_origin,
     TYPE_CHECKING,
     TypeVar,
     Union,
-    get_origin,
-    get_args,
 )
+
 import pydantic._internal._model_construction as mc
 from pydantic import (
     BaseModel,
     BeforeValidator,
-    ValidationError,
     create_model,
     dataclasses,
+    ValidationError,
 )
 from typing_extensions import dataclass_transform
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+
 from saeco.sweeps.sweepable_config.has_sweep import (
     CouldHaveSweep,
     has_sweep,
@@ -29,8 +29,10 @@ from saeco.sweeps.sweepable_config.has_sweep import (
     to_items,
 )
 
-from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Op, Val
-from types import UnionType, GenericAlias
+from saeco.sweeps.sweepable_config.sweep_expressions import Op, SweepVar, Val
+from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
+from saeco.sweeps.sweepable_config.Swept import Swept
+from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 
 T = TypeVar("T")
 
@@ -291,7 +293,7 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
             if isinstance(attr, Swept):
                 return False
             elif isinstance(attr, BaseModel):
-                if not cls.is_concrete(attr):
+                if not cls._is_concrete(attr):
                     return False
         return True
 

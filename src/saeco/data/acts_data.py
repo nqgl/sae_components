@@ -3,20 +3,19 @@ from functools import cached_property
 from typing import TYPE_CHECKING
 
 import einops
-import nnsight
 import torch
+import torch.utils
+import torch.utils.data
 import tqdm
+from attrs import define
 from nnsight import LanguageModel
 
 from saeco.data.bufferized_iter import bufferized_iter
+from saeco.data.piler.dict_piler import DictBatch
 from saeco.data.split_config import SplitConfig
 from saeco.data.tokens_data import TokensData
-from saeco.misc.nnsite import getsite
 from saeco.misc import str_to_dtype
-import torch.utils
-import torch.utils.data
-from saeco.data.piler.dict_piler import DictBatch
-from attrs import define
+from saeco.misc.nnsite import getsite
 
 if TYPE_CHECKING:
     from saeco.data.data_cfg import DataConfig
