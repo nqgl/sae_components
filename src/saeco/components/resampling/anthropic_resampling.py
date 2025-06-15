@@ -86,27 +86,32 @@ class AnthResampler(Resampler):
         errors = []
         errmags = []
         enc_inputs = []
-        enc_module = self.get_encoder_containing_module(model.model)
+        enc_module = self.get_encoder_containing_module(
+            model.model
+        )  # TODO hmm what's going on with this
         inputs = []
         need_enc_in = self.cfg.enc_directions == 0 or self.cfg.dec_directions == 0
         for i in range(10):
             data = next(data_source).float()
-            res = get_modules_io(model, modules=[enc_module], data=data)
+            res = get_modules_io(model, modules=[enc_module], data=data.input)
             enc_inputs_list = res.inputs[enc_module]
             if len(enc_inputs_list) != 1:
                 for i in range(len(enc_inputs_list) - 1):
                     if torch.any(enc_inputs_list[i][0] != enc_inputs_list[i + 1][0]):
                         raise ValueError("Expected one input")
             enc_input = enc_inputs_list[0][0] if need_enc_in else None
-            error = data - res.model_out
+            error = data.target - res.model_out
             assert error.ndim == 2
             errmag = error.norm(dim=1)
-            inputs.append(data)
+            inputs.append(data.input)
             errors.append(error)
             errmags.append(errmag)
             enc_inputs.append(enc_input)
         errmag = torch.cat(errmags)
-        v, i = torch.topk(errmag, k=num_directions)
+        if errmag.shape[0] <= errmag.shape[0]:
+            i = torch.arange(num_directions)
+        else:
+            v, i = torch.topk(errmag, k=errmag.shape[0])
 
         error = model.normalizer(torch.cat(errors)[i], cache=Cache())
         inputs = model.normalizer(torch.cat(inputs)[i], cache=Cache())

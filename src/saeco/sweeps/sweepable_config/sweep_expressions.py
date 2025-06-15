@@ -6,9 +6,14 @@ from typing import Any, Callable, Iterable, TypeVar, Union
 
 from pydantic import BaseModel
 
+from saeco.sweeps.sweepable_config.expressions_utils import (
+    common_type,
+    convert_other,
+    shared_type,
+)
+
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.sweeps.sweepable_config.expressions_utils import common_type, convert_other
 
 T = TypeVar("T")
 
@@ -104,7 +109,7 @@ class SweepVar(SweepExpression[T]):
         return vars_dict[self.name]
 
 
-class Op(SweepExpression):  # TODO can this be explicitly generic?
+class Op(SweepExpression[T]):  # TODO can this be explicitly generic?
     # I think there may be a reason it isn't explicitly, but don't recall it
     op: ExpressionOpEnum
     children: list[Union["Op", "Val", SweepVar]]
@@ -122,14 +127,6 @@ class Op(SweepExpression):  # TODO can this be explicitly generic?
         return s
 
 
-def shared_type(it: Iterable[Any]):
-    l = list(it)
-    t = type(l[0])
-    for v in l[1:]:
-        t |= type(v)
-    return t
-
-
 class Val(SweepExpression):
     value: str | int | float | bool | list | tuple | dict
 
@@ -141,6 +138,8 @@ class Val(SweepExpression):
 
     @property
     def generic_type(self):
+        if super().generic_type is not None:
+            return super().generic_type
         if not (
             isinstance(self.value, dict)
             or isinstance(self.value, list)

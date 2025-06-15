@@ -1,91 +1,144 @@
 # thanks to https://discuss.pytorch.org/t/torch-save-like-open-mode-a/137114
 # for code snippets and setting me on the right path
+import asyncio
 import os
+from functools import cached_property
 from pathlib import Path
-from typing import List, Union
+
+from typing import Any, List, TypeVar, Union
 
 import torch
 import tqdm
+
 from attrs import define
-import asyncio
+from pydantic import BaseModel
+
 from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
 
-
-# path = Path("data/table_test.h5")
-# t = torch.arange(32).reshape(2, 16)
+from saeco.misc import str_to_dtype
 
 
+class PilerMetadata(BaseModel):
+    dtype: str
+    fixed_shape: list[int]
+    compression: CompressionType = CompressionType.NONE
+    num_piles: int
+
+
+T = TypeVar("T")
+
+
+def assert_cast(tp: type[T], value: Any) -> T:
+    if not isinstance(value, tp):
+        raise TypeError(f"Expected {tp.__name__}, got {type(value).__name__}")
+    return value
+
+
+@define
 class Piler:
-    def __init__(
-        self,
+    metadata: PilerMetadata
+    path: Path
+    readonly: bool
+    piles: GrowingDiskTensorCollection
+
+    @classmethod
+    def create(
+        cls,
         path: Union[str, Path],
-        dtype,
-        fixed_shape: list[int] | None = None,
-        shape: list[int] | None = None,
-        num_piles: int | None = None,
+        dtype: torch.dtype | str,
+        fixed_shape: list[int],
+        num_piles: int,
         compress: bool = False,
     ):
         if isinstance(path, str):
             path = Path(path)
-        if shape is None:
-            assert fixed_shape is not None
-            shape = [0] + list(fixed_shape)
-        else:
-            assert fixed_shape is None
-        self.path = path
-        self.readonly = num_piles is None
-        # if num_piles is None:
-        #     g = path.glob("pile*")
-        #     num_piles = len(list(g))
-        #     assert num_piles > 0
-        # else:
-        #     path.mkdir(parents=True)
-        #     g = path.glob("pile*")
-        #     assert len(list(g)) == 0
 
-        self.dtype = dtype
-        self.shape = shape
-        self.compression_type = (
-            CompressionType.NONE if not compress else CompressionType.ZSTD
+        if isinstance(dtype, torch.dtype):
+            dtype = str(dtype)
+
+        compression = CompressionType.NONE if not compress else CompressionType.ZSTD
+
+        metadata = PilerMetadata(
+            dtype=dtype,
+            fixed_shape=fixed_shape,
+            num_piles=num_piles,
+            compression=compression,
         )
-        if not self.path.exists():
-            self.path.mkdir(parents=True)
-        self.piles = GrowingDiskTensorCollection(
-            self.path, stored_tensors_subdirectory_name="piles"
+
+        if path.exists():
+            raise ValueError(f"folder already exists at {path}")
+        path.mkdir(parents=True)
+
+        piles = GrowingDiskTensorCollection(
+            path, stored_tensors_subdirectory_name="piles"
         )
-        if num_piles is None:
-            self.num_piles = len(self.piles)
-        else:
-            assert len(self.piles) == 0
-            self.num_piles = num_piles
-        if not self.readonly and len(self.piles) == 0:
-            self.initialize()
 
-    def initialize(self):
-        for i in range(self.num_piles):
-            self.piles.create(
-                i, self.dtype, self.shape, compression=self.compression_type
-            )
+        for i in range(num_piles):
+            piles.create(i, dtype, [0] + list(fixed_shape), compression)
 
-    # def finalize(self):
-    #     self.piles.finalize()
-    #     assert len(self.piles) == self.num_piles
+        piler = Piler(
+            metadata=metadata,
+            path=path,
+            readonly=False,
+            piles=piles,
+        )
+
+        cls.get_metadata_path(path).write_text(metadata.model_dump_json())
+
+        return piler
+
+    @classmethod
+    def open(cls, path: str | Path, skip_cache: bool = False):
+        if isinstance(path, str):
+            path = Path(path)
+        metadata_path = cls.get_metadata_path(path)
+
+        if not metadata_path.exists():
+            raise ValueError(f"Piler metadata not found at {metadata_path}")
+
+        metadata = PilerMetadata.model_validate_json(metadata_path.read_text())
+
+        gdtc = GrowingDiskTensorCollection(
+            path,
+            stored_tensors_subdirectory_name="piles",
+            skip_cache=skip_cache,
+        )
+
+        assert len(gdtc) == metadata.num_piles
+
+        piler = Piler(metadata, path, readonly=True, piles=gdtc)
+
+        return piler
+
+    @property
+    def num_piles(self):
+        return self.metadata.num_piles
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return str_to_dtype(self.metadata.dtype)
+
+    @classmethod
+    def get_metadata_path(cls, path: Union[str, Path]):
+        if isinstance(path, str):
+            path = Path(path)
+        return path / "piler_metadata.json"
 
     def distribute(self, t: torch.Tensor, indexer: torch.Tensor | None = None):
         if self.readonly:
             raise ValueError("Cannot write to a readonly Piler")
-        if t.dtype != self.dtype:
+        if str(t.dtype) != self.metadata.dtype:
             raise ValueError(
-                f"Tensor dtype {t.dtype} does not match Piler dtype {self.dtype}"
+                f"Tensor dtype {t.dtype} does not match Piler dtype {self.metadata.dtype}"
             )
         if indexer is None:
-            i = torch.randint(0, self.num_piles, [t.shape[0]])
+            i = torch.randint(0, self.metadata.num_piles, [t.shape[0]])
         else:
             i = indexer
-        trng = tqdm.trange(self.num_piles, leave=False)
+        trng = tqdm.trange(self.metadata.num_piles, leave=False)
         trng.set_description(f"Distributing {t.shape[0]}")
         for pile_idx in trng:
             self.piles.get(pile_idx).append(t[i == pile_idx])
@@ -99,13 +152,13 @@ class Piler:
     ):
         if self.readonly:
             raise ValueError("Cannot write to a readonly Piler")
-        if t.dtype != self.dtype:
+        if str(t.dtype) != self.metadata.dtype:
             raise ValueError(
-                f"Tensor dtype {t.dtype} does not match Piler dtype {self.dtype}"
+                f"Tensor dtype {t.dtype} does not match Piler dtype {self.metadata.dtype}"
             )
         # Compute indexer tensor if not provided
         if indexer is None:
-            i = torch.randint(0, self.num_piles, [t.shape[0]])
+            i = torch.randint(0, self.metadata.num_piles, [t.shape[0]])
         else:
             i = indexer
 
@@ -126,7 +179,7 @@ class Piler:
         # we can still update it as long as the loop scheduling is done in the main thread.
         # Prepare tasks and attach a simple progress counter.
         tasks = []
-        for pile_idx in range(self.num_piles):
+        for pile_idx in range(self.metadata.num_piles):
             tasks.append(asyncio.create_task(append_to_pile(pile_idx)))
 
         # Optionally, you can monitor task completion via tqdm:
@@ -158,6 +211,25 @@ class Piler:
             return piles[0]
         return torch.cat(piles)  # type: ignore
 
+    @cached_property
+    def shapes(self) -> list[list[int]]:
+        assert self.piles.finalized
+        return [
+            [assert_cast(int, i) for i in self.piles.get(n).metadata.shape]
+            for n in range(self.num_piles)
+        ]
+
+    @cached_property
+    def shape(self) -> list[int]:
+        batch = sum([shape[0] for shape in self.shapes])
+        rest = self.shapes[0][1:]
+        assert all(shape[1:] == rest for shape in self.shapes)
+        return [batch] + rest
+
+    @property
+    def num_samples(self) -> int:
+        return self.shape[0]
+
 
 def main():
 
@@ -175,7 +247,7 @@ def main():
     rm(testdata)
     testdata.mkdir(parents=True, exist_ok=True)
 
-    p = Piler(testdata / "piler_test", torch.int64, [None, 16], num_piles=4)
+    p = Piler.create(testdata / "piler_test", torch.int64, [16], 4)
     for i in range(400):
         t = torch.arange(32000).reshape(-1, 16)
         p.distribute(t)
@@ -184,7 +256,8 @@ def main():
 
     p.shuffle_piles()
     shuffled = torch.cat(p.piles.values(raw=False))
-    p2 = Piler(testdata / "piler_test", torch.int64, [None, 16])
+
+    p2 = Piler.open(testdata / "piler_test")
     reopened = torch.cat(p2.piles.values(raw=False))
     p.piles[0] == p2.piles[0]
     p.piles.keys()

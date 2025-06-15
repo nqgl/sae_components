@@ -1,11 +1,12 @@
-from saeco.data.storage import DiskTensor, GrowingDiskTensor
+from pathlib import Path
+from typing import ClassVar, Generic, Literal, overload, Sequence
+
+import torch
 
 from attrs import define, field
-
-from pathlib import Path
-import torch
-from typing import Generic, ClassVar
 from typing_extensions import TypeVar
+
+from saeco.data.storage import DiskTensor, GrowingDiskTensor
 
 from saeco.data.storage.compressed_safetensors import CompressionType
 
@@ -35,7 +36,7 @@ class DiskTensorCollection(Generic[DiskTensorType]):
         self,
         name: str,
         dtype: torch.dtype,
-        shape: list[int],
+        shape: torch.Size | Sequence[int],
         compression: CompressionType = CompressionType.NONE,
     ) -> DiskTensorType:
         name = self.check_name_create(name)
@@ -89,12 +90,20 @@ class DiskTensorCollection(Generic[DiskTensorType]):
     def __iter__(self):
         return iter(self.keys())
 
+    @overload
+    def items(self, raw: Literal[True] = True) -> list[tuple[str, DiskTensorType]]: ...
+    @overload
+    def items(self, raw: Literal[False] = False) -> list[tuple[str, torch.Tensor]]: ...
     def items(self, raw: bool = True):
         if raw:
             return [(name, self.get(name)) for name in self.keys()]
         else:
             return [(name, self.get(name).tensor) for name in self.keys()]
 
+    @overload
+    def values(self, raw: Literal[True] = True) -> list[DiskTensorType]: ...
+    @overload
+    def values(self, raw: Literal[False] = False) -> list[torch.Tensor]: ...
     def values(self, raw: bool = True):
         if raw:
             return [self.get(name) for name in self.keys()]

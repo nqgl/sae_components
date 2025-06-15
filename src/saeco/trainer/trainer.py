@@ -12,20 +12,21 @@ from torch.amp.grad_scaler import GradScaler
 from saeco.core import Cache
 from saeco.data.tokens_data import TokensData
 from saeco.misc.paths import SAVED_MODELS_DIR
-from .OptimConfig import get_optim_cls
+from saeco.mlog import mlog
+from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
 from .call_training_hooks import (
-    do_pre_forward,
-    do_post_forward,
     do_post_backward,
+    do_post_forward,
     do_post_step,
+    do_pre_forward,
 )
+from .l0targeter import TARGETER_TYPES
+from .OptimConfig import get_optim_cls
+from .recons import get_recons_loss
+from .run_config import RunConfig
 from .train_cache import TrainCache
 from .train_config import TrainConfig
 from .trainable import Trainable
-from .l0targeter import TARGETER_TYPES
-from .recons import get_recons_loss
-from .run_config import RunConfig
-from saeco.mlog import mlog
 
 # torch.multiprocessing.set_start_method("spawn")
 
@@ -36,6 +37,7 @@ class Trainer:
         cfg: TrainConfig,
         run_cfg: RunConfig,
         model: Trainable,
+        recons_eval_fns: dict[str, ReconstructionEvaluatorFunctionProtocol],
         optim: torch.optim.Optimizer | None = None,
         save_callback=None,
     ):
@@ -98,6 +100,7 @@ class Trainer:
                     multi_avg_fn=torch.optim.swa_utils.get_ema_multi_avg_fn(0.999),
                 )
             )
+        self.recons_eval_fns = recons_eval_fns
 
     @cached_property
     def llm_val_tokens(self):
@@ -182,28 +185,6 @@ class Trainer:
                 )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def get_databuffer(self, num_batches=None, num_workers=0, queue_size=...):
-        buf = self.cfg.data_cfg.get_databuffer(
-            num_workers=num_workers, batch_size=self.cfg.batch_size
-        )
-        if queue_size is ...:
-            queue_size = int(4096 / self.cfg.batch_size * 64 + 4)
-        if queue_size is not None:
-            queue = [next(buf).cuda(non_blocking=True) for _ in range(queue_size)]
-
-            def qbuf():
-                try:
-                    while True:
-                        yield queue.pop(0)
-                        queue.append(next(buf).cuda(non_blocking=True))
-                except StopIteration:
-                    print("GPU buffer source depleted")
-                    for x in queue:
-                        yield x
-
-            return qbuf()
-        return buf
-
     def make_cache(self):
         cache = TrainCache()
         cache._watch(self.trainable.get_losses_and_metrics_names())
@@ -226,9 +207,7 @@ class Trainer:
 
     def _train(self, buffer=None, num_steps=None):
         if buffer is None:
-            buffer = self.cfg.data_cfg.get_queued_databuffer(
-                batch_size=self.cfg.batch_size
-            )
+            buffer = self.cfg.get_databuffer()
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
         self.post_step()
@@ -246,10 +225,13 @@ class Trainer:
                         break
 
             buffer = buf()
-
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
+            input, target = x.input, x.target
+            print(input.shape)
+            print(target.shape)
             if not self.cfg.use_autocast:
-                x = x.float()  # TODO maybe cast other direction instead
+                input = input.float()  # TODO maybe cast other direction instead
+                target = target.float()  # TODO maybe cast other direction instead
             self.optim.zero_grad()
             if self.t % self.eval_step_freq == 0 or (
                 self.cfg.schedule.run_length
@@ -257,11 +239,11 @@ class Trainer:
                 and self.t % 5 == 0
             ):
                 self.trainable.eval()
-                self.eval_step(x)
+                self.eval_step(input, y=target)
                 self.trainable.train()
 
             cache = self.make_cache()
-            self.trainstep(x, cache)
+            self.trainstep(input, cache, y=target)
             self.full_log(cache)
             self.t += 1
             cache.destruct()
@@ -321,16 +303,16 @@ class Trainer:
         self.lr_scheduler.step()
         self.post_step(cache)
 
-    def trainstep(self, x, cache: TrainCache):
+    def trainstep(self, x, cache: TrainCache, y=None):
         self.pre_forward(cache)
         with self.cast():
-            loss = self.trainable.loss(x, cache=cache, coeffs=self.coeffs())
+            loss = self.trainable.loss(x, cache=cache, y=y, coeffs=self.coeffs())
             self.proc_cache_after_forward(cache)
         self.post_forward(cache)
         self.handle_backward(loss, cache)
         self.handle_step(cache)
 
-    def eval_step(self, x):
+    def eval_step(self, x, y=None):
         if self.cfg.use_averaged_model:
             model = self.averaged_model.module
         else:
@@ -338,30 +320,29 @@ class Trainer:
         cache = self.make_cache()
         with torch.no_grad():
             with self.cast():
-                loss = model.loss(x, cache=cache, coeffs=self.coeffs())
+                loss = model.loss(x, cache=cache, y=y, coeffs=self.coeffs())
         self.eval_log(cache)
         cache.destruct()
 
     def do_intermittent_metrics(self, buffer=None):
-        self.log_recons("recons/with_bos/", True)
-        self.log_recons("recons/no_bos/", False)
-        self.log_recons("recons/no_bos2/", False, num_batches=50)
+        self.log_recons()
 
-    def log_recons(self, label, proc_bos, num_batches=20):
-        self.log(
-            {
-                (label + k): v
-                for k, v in get_recons_loss(
-                    self.subject_model,
-                    self.trainable,
-                    tokens=self.llm_val_tokens,
-                    cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
-                    bos_processed_with_hook=proc_bos,
-                    num_batches=num_batches,
-                    cast_fn=self.cast,
-                ).items()
-            }
-        )
+    def log_recons(self, num_batches=20):
+
+        for eval_name, fn in self.recons_eval_fns.items():
+            self.log(
+                {
+                    (eval_name + k): v
+                    for k, v in fn(
+                        self.subject_model,
+                        self.trainable,
+                        tokens=self.llm_val_tokens,
+                        cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
+                        num_batches=num_batches,
+                        cast_fn=self.cast,
+                    ).items()
+                }
+            )
 
     def full_log(self, cache: Cache):
         if self.t % self.log_freq != 0:  # and self.t % 23000 > 100:

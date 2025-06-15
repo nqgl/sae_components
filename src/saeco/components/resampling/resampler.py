@@ -1,11 +1,14 @@
 from typing import Optional
+
 import torch
 import torch.nn as nn
 from typing_extensions import Self
+
+from saeco.components.features import Resamplable
 from saeco.components.features.features_param import (
     FeaturesParam,
-    HasFeatures,
     get_resampled_params,
+    HasFeatures,
 )
 from saeco.components.features.optim_reset import (
     OptimResetValues,
@@ -15,9 +18,6 @@ from saeco.components.resampling.freq_tracker.freq_tracker import (
     get_active_freq_trackers,
 )
 from .freq_tracker import FreqTracker
-from saeco.components.features import (
-    Resamplable,
-)
 
 
 def find_matching_submodules(module: nn.Module, matchfn):
@@ -32,9 +32,11 @@ def find_matching_submodules(module: nn.Module, matchfn):
 
 
 from abc import ABC
+
+from pydantic import Field
+
 from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig
-from pydantic import Field
 
 
 class ResamplerConfig(SweepableConfig):
@@ -151,42 +153,28 @@ class Resampler(ABC):
     def encs(self) -> list[Resamplable]:
         if self._encs is None:
             self.setup_resample_types()
+        assert self._encs is not None
         return self._encs
-
-    def add_to_encs(self, enc):
-        if self._encs is None:
-            self._encs = []
-        self._encs.append(enc)
-        return enc
 
     @property
     def decs(self) -> list[Resamplable]:
         if self._decs is None:
             self.setup_resample_types()
+        assert self._decs is not None
         return self._decs
-
-    def add_to_decs(self, dec):
-        if self._encs is None:
-            self._encs = []
-        self._encs.append(dec)
-        return dec
 
     @property
     def biases(self) -> list[Resamplable]:
         if self._biases is None:
             self.setup_resample_types()
+        assert self._biases is not None
         return self._biases
-
-    def add_to_biases(self, bias):
-        if self._encs is None:
-            self._encs = []
-        self._encs.append(bias)
-        return bias
 
     @property
     def other_types(self) -> list[Resamplable]:
         if self._other_types is None:
             self.setup_resample_types()
+        assert self._other_types is not None
         return self._other_types
 
     @torch.no_grad()

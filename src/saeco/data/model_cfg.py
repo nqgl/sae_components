@@ -1,19 +1,23 @@
 from functools import cached_property
+
 from nnsight import LanguageModel, NNsight
 from pydantic import Field
+import torch
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from saeco.data.locations import DATA_DIRS
 
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
-from saeco.data.locations import DATA_DIRS
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 MODEL_FN_CALLABLE_OVERRIDE = None
 
 
 class ActsDataConfig(SweepableConfig):
     d_data: int = 768
-    site: str = "transformer.h.6.input"
+    sites: list[str] = ["transformer.h.6.input"]
+    site_d_datas: list[int] | None = None
     excl_first: bool = True
     filter_pad: bool = True
     storage_dtype_str: str | None = None
@@ -22,12 +26,13 @@ class ActsDataConfig(SweepableConfig):
 
     @property
     def actstring(self):
-        return f"{self.site}_{self.excl_first}_{self.filter_pad}_{self.storage_dtype_str}_{self.autocast_dtype_str}_{self.force_cast_dtype_str}"
+        sites_str = "_".join(sorted(self.sites))
+        return f"{sites_str}_{self.excl_first}_{self.filter_pad}_{self.storage_dtype_str}_{self.autocast_dtype_str}_{self.force_cast_dtype_str}"
 
     @property
-    def storage_dtype(self):
+    def storage_dtype(self) -> torch.dtype:
         if self.storage_dtype_str is None:
-            return None
+            return self.force_cast_dtype or self.autocast_dtype or torch.float32
         return str_to_dtype(self.storage_dtype_str)
 
     @property
@@ -73,6 +78,9 @@ class ModelConfig(SweepableConfig):
                 ]
             ]
         ), "config's kwargs clash with nnsight::trace kwargs"
+
+        assert len(self.acts_cfg.sites) == len(set(self.acts_cfg.sites))
+
         self._raw_model = None
 
         return super().model_post_init(__context)
@@ -125,3 +133,19 @@ class ModelConfig(SweepableConfig):
     @property
     def modelstring(self) -> str:
         return f"{self.model_name}_{self.torch_dtype_str}_{self.acts_cfg.actstring}"
+
+
+def main():
+    acts_cfg = ActsDataConfig(
+        excl_first=True,
+        d_data=2304,
+        sites=["model.layers.17.input", "model.layers.18.output"],
+        storage_dtype_str="bfloat16",
+        autocast_dtype_str=None,
+    )
+
+    print(acts_cfg.actstring)
+
+
+if __name__ == "__main__":
+    main()

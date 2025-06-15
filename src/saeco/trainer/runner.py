@@ -44,7 +44,7 @@ class TrainingRunner:
 
     @cached_property
     def data(self) -> iter:
-        return iter(self.cfg.train_cfg.data_cfg.get_databuffer())
+        return iter(self.cfg.train_cfg.data_cfg._get_databuffer())
 
     @cached_property
     def initializer(self) -> Initializer:

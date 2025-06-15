@@ -78,15 +78,18 @@ class TokensData:
             raise ValueError("num_tokens must be specified if write=True")
         if num_tokens is not None and (not write):
             raise ValueError("num_tokens was specified but write=False")
-        return Piler(
+        if write:
+
+            return Piler.create(
+                self.cfg._tokens_piles_path(self.split),
+                dtype=torch.int64,
+                fixed_shape=[self.seq_len],
+                num_piles=(
+                    1 + num_tokens // self.cfg.generation_config.tokens_per_pile
+                ),
+            )
+        return Piler.open(
             self.cfg._tokens_piles_path(self.split),
-            dtype=torch.int64,
-            fixed_shape=[self.seq_len],
-            num_piles=(
-                1 + num_tokens // self.cfg.generation_config.tokens_per_pile
-                if write
-                else None
-            ),
         )
 
     def _store_split(self, split: SplitConfig):
@@ -117,7 +120,7 @@ class TokensData:
             // self.cfg.generation_config.tokens_per_pile
         )
         assert (
-            num_piles <= piler.num_piles
+            num_piles <= piler.metadata.num_piles
         ), f"{num_tokens}, {self.cfg.generation_config.tokens_per_pile}, {piler.num_piles}"
         tokens = piler[0:num_piles]
         assert (
