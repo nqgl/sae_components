@@ -122,6 +122,7 @@ class DataConfig(SweepableConfig):
                 dtypes=dtypes,
                 fixed_shapes=fixed_shapes,
                 num_piles=num_piles,
+                compress=self.generation_config.compress_acts,
             )
         return DictPiler.open(self._acts_piles_path(split))
 
@@ -142,11 +143,7 @@ class DataConfig(SweepableConfig):
         )
 
     def _train_dataset(
-        self,
-        model,
-        batch_size,
-        input_sites: list[str] | None = None,
-        target_sites: list[str] | None = None,
+        self, model, batch_size, input_sites: list[str], target_sites: list[str]
     ):
         return ActsDataset(
             ActsData(self, model),
@@ -158,11 +155,11 @@ class DataConfig(SweepableConfig):
 
     def _get_queued_databuffer(
         self,
+        input_sites: list[str],
+        target_sites: list[str],
         batch_size,
         num_workers=None,
         queue_size=None,
-        input_sites=None,
-        target_sites=None,
     ):
         queue_size = queue_size or self.databuffer_queue_size
         num_workers = (
@@ -170,10 +167,10 @@ class DataConfig(SweepableConfig):
         )
         buf = iter(
             self._get_databuffer(
+                input_sites,
+                target_sites,
                 num_workers=num_workers,
                 batch_size=batch_size,
-                input_sites=input_sites,
-                target_sites=target_sites,
             )
         )
         if queue_size is not None:
@@ -185,7 +182,11 @@ class DataConfig(SweepableConfig):
         return buf
 
     def _get_databuffer(
-        self, num_workers=0, batch_size=4096, input_sites=None, target_sites=None
+        self,
+        input_sites: list[str],
+        target_sites: list[str],
+        num_workers=0,
+        batch_size=4096,
     ):
         model = None
         if not self._acts_piles_path(self.trainsplit).exists():

@@ -5,18 +5,18 @@ from typing import TYPE_CHECKING
 import einops
 import nnsight
 import torch
+import torch.utils
+import torch.utils.data
 import tqdm
+from attrs import define
 from nnsight import LanguageModel
 
 from saeco.data.bufferized_iter import bufferized_iter
+from saeco.data.piler.dict_piler import DictBatch
 from saeco.data.split_config import SplitConfig
 from saeco.data.tokens_data import TokensData
-from saeco.misc.nnsite import getsite
 from saeco.misc import str_to_dtype
-import torch.utils
-import torch.utils.data
-from saeco.data.piler.dict_piler import DictBatch
-from attrs import define
+from saeco.misc.nnsite import getsite
 
 if TYPE_CHECKING:
     from saeco.data.data_cfg import DataConfig
@@ -153,12 +153,12 @@ class ActsData:
         self,
         split: SplitConfig,
         batch_size,
+        target_sites: list[str],
+        input_sites: list[str],
         nsteps=None,
         id=None,
         nw=None,
         prog_bar=False,
-        target_sites: list[str] | None = None,
-        input_sites: list[str] | None = None,
     ):
         if not self.cfg._acts_piles_path(split).exists():
             self._store_split(split)
@@ -181,7 +181,7 @@ class ActsData:
         for batch in batch_gen:
             yield SAETrainBatch(
                 data=batch.data,
-                input_sites=input_sites or self.cfg.model_cfg.acts_cfg.sites,
+                input_sites=input_sites,
                 target_sites=target_sites,
             )
         # piler = self.cfg.acts_piler(split)
@@ -292,8 +292,8 @@ class ActsDataset(torch.utils.data.IterableDataset):
         acts: ActsData,
         split: SplitConfig,
         batch_size,
-        input_sites: list[str] | None = None,
-        target_sites: list[str] | None = None,
+        input_sites: list[str],
+        target_sites: list[str],
     ):
         self.acts = acts
         self.split = split
@@ -330,10 +330,10 @@ class ActsDataset(torch.utils.data.IterableDataset):
             self.acts.acts_generator(
                 self.split,
                 self.batch_size,
-                id=id,
-                nw=nw,
                 input_sites=self.input_sites,
                 target_sites=self.target_sites,
+                id=id,
+                nw=nw,
             ),
             queue_size=base_size + offset,
             # getnext=lambda i: next(i).cuda(non_blocking=True),

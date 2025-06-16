@@ -10,7 +10,7 @@ from saeco.data.piler.dict_piler import DictBatch
 @define
 class SAETrainBatch(DictBatch):
     input_sites: list[str]
-    target_sites: list[str] | None = None
+    target_sites: list[str]
     OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = DictBatch.OTHER_DATA_FIELDS + (
         "input_sites",
         "target_sites",
@@ -23,5 +23,4 @@ class SAETrainBatch(DictBatch):
 
     @cached_property
     def target(self) -> torch.Tensor:
-        sites = self.target_sites or self.input_sites
-        return torch.cat([self[k] for k in sites], dim=-1)
+        return torch.cat([self[k] for k in self.target_sites], dim=-1)
