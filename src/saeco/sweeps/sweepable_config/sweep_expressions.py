@@ -109,8 +109,11 @@ class SweepVar(SweepExpression[T]):
         return vars_dict[self.name]
 
 
-class Op(SweepExpression[T]):  # TODO can this be explicitly generic?
-    # I think there may be a reason it isn't explicitly, but don't recall it
+class Op(SweepExpression):  
+    # WARNING>> things break if this is  SweepExpression[T]
+    # This should be explored and understood but at the moment, don't touch it. 
+    # What breaks? One example: Op fields in a sweepableconfig don't get validated correctly (maybe they don't get validated as Op? not sure)
+    # curious if explicit generic would be good but I expect it would also not work.
     op: ExpressionOpEnum
     children: list[Union["Op", "Val", SweepVar]]
     values: list = []
