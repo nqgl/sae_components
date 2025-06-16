@@ -292,7 +292,24 @@ class NeptuneCustomLogger:
         cfg: SweepableConfig = self.root_config.from_selective_sweep(
             selective_instance_sweep_dict
         )
-        assert cfg.get_hash() == sweep_hash, f"{cfg.get_hash()} != {sweep_hash}"
+        if cfg.get_hash() != sweep_hash:
+            wow_match_weird = None
+            for i in range(
+                self.root_config.to_swept_nodes().swept_combinations_count_including_vars()
+            ):
+                h = self.root_config.from_selective_sweep(
+                    self.root_config.to_swept_nodes().select_instance_by_index(i)
+                ).get_hash()
+                if h == sweep_hash:
+                    wow_match_weird = i
+                    break
+            if wow_match_weird is not None:
+                raise ValueError(
+                    f"{cfg.get_hash()} != {sweep_hash} but {wow_match_weird} matches"
+                )
+            raise ValueError(
+                f"{cfg.get_hash()} != {sweep_hash}, and didn't match other options either"
+            )
         self._sweep_inst_config = selective_instance_sweep_dict
         if project:
             self.project = project
