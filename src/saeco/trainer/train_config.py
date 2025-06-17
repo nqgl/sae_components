@@ -1,3 +1,5 @@
+from functools import cached_property
+
 from pydantic import Field
 
 from saeco.data.data_cfg import DataConfig
@@ -42,7 +44,7 @@ class TrainConfig(SweepableConfig):
     def true_target_sites(self) -> list[str]:
         return self.target_sites or self.true_input_sites
 
-    @lazycall
+    @cached_property
     def schedule(self):
         return self.raw_schedule_cfg.step_scheduler
 
