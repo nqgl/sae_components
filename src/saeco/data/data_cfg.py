@@ -156,13 +156,15 @@ class DataConfig(SweepableConfig):
     def _train_dataset(
         self, model, batch_size, input_sites: list[str], target_sites: list[str]
     ):
-        return ActsDataset(
+        dataset = ActsDataset(
             ActsData(self, model),
             self.trainsplit,
             batch_size,
             input_sites=input_sites,
             target_sites=target_sites,
         )
+        dataset.store_if_not_exists()
+        return dataset
 
     def _get_queued_databuffer(
         self,
@@ -202,6 +204,7 @@ class DataConfig(SweepableConfig):
         model = None
         if not self._acts_piles_path(self.trainsplit).exists():
             model = self.model_cfg.model
+
         ds = self._train_dataset(
             model,
             batch_size=batch_size,

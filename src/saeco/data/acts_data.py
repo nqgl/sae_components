@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import einops
-import nnsight
 import torch
 import torch.utils
 import torch.utils.data
@@ -224,6 +223,10 @@ class ActsDataset(torch.utils.data.IterableDataset):
         self.batch_size = batch_size
         self.input_sites = input_sites
         self.target_sites = target_sites
+
+    def store_if_not_exists(self):
+        if not self.acts.cfg._acts_piles_path(self.split).exists():
+            self.acts._store_split(self.split)
 
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()

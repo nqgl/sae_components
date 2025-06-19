@@ -2,12 +2,14 @@ import random
 from functools import cached_property
 
 import einops
-
+import nnsight
 import saeco.components.features.features as ft
 
 import saeco.core as cl
 import torch
 import torch.nn as nn
+
+import torch.nn.functional as F
 
 from saeco.architecture import Architecture, aux_model_prop, loss_prop, model_prop, SAE
 
@@ -17,9 +19,15 @@ from saeco.components.ops import Indexer
 from saeco.components.sae_cache import SAECache
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
+
+from saeco.data.model_cfg import ActsDataConfig
 from saeco.initializer.initializer import Initializer
 from saeco.misc import useif
+from saeco.misc.nnsite import getsite, setsite
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
+from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
+from saeco.trainer.recons import to_losses
+from saeco.trainer.trainable import Trainable
 
 
 class MatryoshkaCLTConfig(SweepableConfig):
@@ -27,6 +35,110 @@ class MatryoshkaCLTConfig(SweepableConfig):
     n_nestings: int = 3
 
     per_decoder_split: bool = True
+
+
+def reconstruct_clt_layer(sae: Trainable, mlp_inputs: list[torch.Tensor], num_layers):
+    cache = SAECache()
+    tensors = mlp_inputs + [
+        torch.zeros_like(mlp_inputs[0]) for _ in range(num_layers - len(mlp_inputs))
+    ]
+
+    catted = torch.cat(tensors, dim=-1).float()
+
+    results = sae(catted[0], cache=cache).to(mlp_inputs[0].dtype)[-1, ...].unsqueeze(0)
+    result = results.chunk(num_layers, dim=-1)[len(mlp_inputs) - 1]
+
+    return result
+
+
+def with_sae_runner(
+    model: nnsight.LanguageModel, encoder: Trainable, cfg: ActsDataConfig
+):
+
+    def saerunner(tokens):
+        mlp_inputs = []
+
+        with model.trace(tokens):
+            for i in range(12):
+                mlp_input_site = f"transformer.h.{i}.mlp.input"
+                mlp_output_site = f"transformer.h.{i}.mlp.output"
+
+                mlp_input = getsite(model, mlp_input_site).save()
+
+                mlp_inputs.append(mlp_input)
+
+                acts_re = nnsight.apply(reconstruct_clt_layer, encoder, mlp_inputs, 12)
+
+                setsite(model, mlp_output_site, acts_re)
+
+            out = model.output.logits.save()
+
+        return out
+
+    return saerunner
+
+
+def zero_ablated_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig):
+    def zrunner(tokens):
+        with model.trace(tokens) as tracer:
+            for site in cfg.sites:
+                if "input" in site:
+                    lm_acts = getsite(model, site)
+                    acts_re = nnsight.apply(torch.zeros_like, lm_acts)
+                    patch_in = acts_re
+                    setsite(model, site, patch_in)
+
+            out = model.output.logits.save()
+        return out
+
+    return zrunner
+
+
+def normal_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig):
+    def nrunner(tokens):
+        with model.trace(tokens):
+            out = model.output.logits.save()
+        return out
+
+    return nrunner
+
+
+@torch.inference_mode()
+def get_multisite_recons_loss(
+    llm,
+    sae: Trainable,
+    tokens=None,
+    num_batches=10,
+    cfg: ActsDataConfig = None,
+    batch_size=1,
+    cast_fn=...,
+):
+    cfg = cfg or sae.cfg
+    loss_list = []
+
+    with_sae = to_losses(with_sae_runner(llm, sae, cfg))
+    zero = to_losses(zero_ablated_runner(llm, cfg))
+    normal = to_losses(normal_runner(llm, cfg))
+    rand_tokens = tokens[torch.randperm(len(tokens))]
+    with cast_fn():
+        for i in range(num_batches):
+            batch_tokens = rand_tokens[i * batch_size : (i + 1) * batch_size].cuda()
+            zeroed = zero(batch_tokens)
+            re = with_sae(batch_tokens)
+            loss = normal(batch_tokens)
+            loss_list.append((loss, re, zeroed))
+    losses = torch.tensor(loss_list)
+    loss, recons_loss, zero_abl_loss = losses.mean(0).tolist()
+    print(loss, recons_loss, zero_abl_loss)
+    score = (zero_abl_loss - recons_loss) / (zero_abl_loss - loss)
+    print(f"{score:.2%}")
+    return {
+        "recons_score": score,
+        "nats_lost": recons_loss - loss,
+        "loss": loss,
+        "recons_loss": recons_loss,
+        "zero_ablation_loss": zero_abl_loss,
+    }
 
 
 class MatryoshkaLoss(Loss):
@@ -113,22 +225,47 @@ class SplittableDecoder(
 
 
 class AddSplitDecoderBias(cl.Module):
-    def __init__(self, num_layers, d_data):
+    def __init__(self, num_layers, d_layer_data):
         super().__init__()
-        self.bias = nn.Parameter(torch.randn(num_layers * d_data))
+        self.bias = nn.Parameter(torch.randn(num_layers * d_layer_data)).cuda()
 
     def forward(self, x, *, cache: SAECache):
         return x + self.bias
 
 
 class MatryoshkaCLTDecoder(cl.Module):
-    def __init__(self, d_data: int, d_dict: int, cfg: MatryoshkaCLTConfig):
+    def __init__(
+        self,
+        d_layer_data: int,
+        d_layer_dict: int,
+        nesting_boundaries: list[int],
+        cfg: MatryoshkaCLTConfig,
+    ):
         super().__init__()
+
+        self.d_layer_data = d_layer_data
+        self.d_layer_dict = d_layer_dict
+
+        self.bias = AddSplitDecoderBias(
+            num_layers=cfg.n_sites, d_layer_data=d_layer_data
+        )
+
+        self.decoders = [
+            SplittableDecoder(
+                d_layer_dict=d_layer_dict,
+                num_layers=n + 1,
+                d_layer_data=d_layer_data,
+                nesting_boundaries=nesting_boundaries,
+            )
+            for n in range(cfg.n_sites)
+        ]
+
+        self.weights = [dec.weight for dec in self.decoders]
 
         self.decode = Seq(
             split_into_layers=Lambda(
                 lambda x: einops.rearrange(
-                    x, "batch (layer d_dict) -> layer batch d_dict", d_dict=d_dict
+                    x, "batch (layer d_dict) -> layer batch d_dict", d_dict=d_layer_dict
                 )
             ),
             route_to_decoders=cl.Parallel(
@@ -137,7 +274,10 @@ class MatryoshkaCLTDecoder(cl.Module):
             **useif(
                 not cfg.per_decoder_split,
                 generate_splits=Lambda(
-                    lambda x: (x, generate_random_boundary(cfg.n_nestings, d_dict))
+                    lambda x: (
+                        x,
+                        generate_random_boundary(cfg.n_nestings, d_layer_dict),
+                    )
                 ),
             ),
             **useif(
@@ -147,16 +287,18 @@ class MatryoshkaCLTDecoder(cl.Module):
             splittable_decoders=cl.Router(
                 *[
                     SplittableDecoder(
-                        d_dict=d_dict,
+                        d_dict=d_layer_dict,
                         num_layers=n + 1,
-                        d_data=d_data,
+                        d_data=d_layer_data,
                         num_nestings=cfg.n_nestings,
                         per_decoder_split=cfg.per_decoder_split,
                     )
                     for n in range(cfg.n_sites)
                 ]
             ).reduce(lambda *x: torch.cat(x, dim=-1)),
-            decoder_bias=AddSplitDecoderBias(num_layers=cfg.n_sites, d_data=d_data),
+            decoder_bias=AddSplitDecoderBias(
+                num_layers=cfg.n_sites, d_data=d_layer_data
+            ),
         )
 
     def forward(self, x, *, cache: SAECache):
@@ -194,9 +336,7 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
 
         assert (2 ** (self.cfg.n_nestings - 1)) <= self.d_layer_dict
 
-        self.nesting_sizes = [
-            self.d_layer_dict // (2**i) for i in range(self.cfg.n_nestings)
-        ]
+        self.nesting_boundaries = self.boundary_generator()
 
     @model_prop
     def model(self):
@@ -213,3 +353,8 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
     @loss_prop
     def sparsity_loss(self):
         return SparsityPenaltyLoss(self.model)
+
+    def get_evaluation_functions(
+        self,
+    ) -> dict[str, ReconstructionEvaluatorFunctionProtocol]:
+        return {"recons/": get_multisite_recons_loss}
