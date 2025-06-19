@@ -1,8 +1,11 @@
-from saeco.core.basic_ops import Sub
-import torch
-from typing import Optional
-import torch.nn as nn
 from functools import cached_property
+from typing import Optional
+
+import torch
+import torch.nn as nn
+
+from saeco.components.features.linear_type import LinDecoderMixin, LinEncoderMixin
+from saeco.core.basic_ops import Sub
 from saeco.misc import lazycall
 
 
@@ -103,7 +106,15 @@ class Tied:
 
 
 class LinearFactory:
-    def __init__(self, d_in, d_out, bias=True, wrappers=[], mixins: list = []):
+    def __init__(
+        self,
+        d_in,
+        d_out,
+        bias=True,
+        wrappers=[],
+        mixins: list = [],
+        param_id: str = None,
+    ):
         self.d_in = d_in
         self.d_out = d_out
         self._bias = bias
@@ -113,6 +124,7 @@ class LinearFactory:
         self.mixins = mixins
         self._weight_tie: Optional[Tied] = None
         self._bias_tie: Optional[Tied] = None
+        self.param_id: Optional[str] = param_id
 
     @property
     def unset(self):
@@ -148,6 +160,12 @@ class LinearFactory:
 
     def make_new(self) -> nn.Linear:
         lin = self.linear_cls(self.d_in, self.d_out, bias=self.bias)
+
+        if self.param_id is not None and (
+            LinEncoderMixin in self.mixins or LinDecoderMixin in self.mixins
+        ):
+            lin.param_id = self.param_id
+
         if self._weight_tie is not None:
             self._weight_tie(lin)
         if self.bias and self._bias_tie is not None:

@@ -6,8 +6,9 @@ import tqdm
 from nnsight import LanguageModel
 from torch import Tensor
 
-from saeco.data.split_config import SplitConfig
 from saeco.data.piler import Piler
+
+from saeco.data.split_config import SplitConfig
 
 if TYPE_CHECKING:
     from saeco.data.data_cfg import DataConfig

@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -17,6 +19,7 @@ class Initializer:
         l0_target=None,
         median=None,
         weight_scale=None,
+        param_id: Optional[str] = None,
     ):
         self.d_data = d_data
         d_dict = d_dict or int(d_data * dict_mult)
@@ -27,10 +30,10 @@ class Initializer:
         self.tied_weights = False
         self.encoder_init_weights = None
         self._decoder: LinearFactory = LinearFactory(
-            d_dict, d_data, wrappers=[], mixins=[LinDecoderMixin]
+            d_dict, d_data, wrappers=[], mixins=[LinDecoderMixin], param_id=param_id
         )
         self._encoder: LinearFactory = LinearFactory(
-            d_data, d_dict, wrappers=[], mixins=[LinEncoderMixin]
+            d_data, d_dict, wrappers=[], mixins=[LinEncoderMixin], param_id=param_id
         )
 
         if self.tied_init:
@@ -72,6 +75,7 @@ class Initializer:
                 d_data=self.d_data // bf if split_d_data else self.d_data,
                 d_dict=self.d_dict // bf,
                 l0_target=l0_target or self.l0_target,
+                param_id=f"{i}",
             )
             # self.tied_bias = True
             new.tied_init = self.tied_init

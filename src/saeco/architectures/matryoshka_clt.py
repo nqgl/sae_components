@@ -1,3 +1,4 @@
+import random
 from functools import cached_property
 
 import einops
@@ -25,25 +26,12 @@ class MatryoshkaCLTConfig(SweepableConfig):
     n_sites: int = 12
     n_nestings: int = 3
 
+    per_decoder_split: bool = True
+
 
 class MatryoshkaLoss(Loss):
     def loss(self, x, y, y_pred, cache: SAECache):
         return torch.mean((y.unsqueeze(0) - y_pred) ** 2)
-
-
-def multilayer_decoder(weight: torch.Tensor):
-    def decode(x: torch.Tensor):
-        # have to do the .to(x.dtype) bc something where the autocast doesn't work
-        # didn't look into it enough to deeply understand it
-        # einops.einsum(x, weight.to(x.dtype),"l b d, l o d -> b (l o)", )
-        return torch.einsum("lbd,lod->bo", x, weight.to(x.dtype))
-        # return einops.rearrange(o, "b l o -> b (l o)")
-
-        return torch.einsum("lbd,lod->blo", x, weight.to(x.dtype))
-
-        return torch.bmm(x, weight.transpose(-2, -1).to(x.dtype))
-
-    return decode
 
 
 def slice_dim(low, high, dim):
@@ -51,46 +39,66 @@ def slice_dim(low, high, dim):
 
 
 def split_tensor(x, bounds, dim):
-    bounds = [0] + bounds + [x.shape[dim]]
     if dim == -1:
         dim = x.dim()
+
+    if bounds[0] != 0:
+        bounds = [0] + bounds
+    if bounds[-1] != x.shape[dim]:
+        bounds = bounds + [x.shape[dim]]
+
     return [x[slice_dim(bounds[i], bounds[i + 1], dim)] for i in range(len(bounds) - 1)]
+
+
+def generate_random_boundary(n_slices, max_index):
+    return sorted(
+        [0]
+        + [random.randint(1, max_index - 1) for _ in range(n_slices - 1)]
+        + [max_index]
+    )
 
 
 class SplittableDecoder(
     cl.Module, ft.OrthogonalizeFeatureGradsMixin, ft.NormFeaturesMixin
 ):
-    def __init__(self, d_dict, num_layers, d_data, num_nestings):
+    def __init__(
+        self, d_dict, num_layers, d_data, num_nestings, per_decoder_split=False
+    ):
         super().__init__()
-        self.weight = nn.Parameter(torch.randn(num_layers * d_data, d_dict))
+        self.weight = nn.Parameter(torch.randn(num_layers * d_dict, d_data))
+
         self.d_dict = d_dict
         self.n_nestings = num_nestings
         self.n_layers = num_layers
         self.d_data = d_data
+        self.per_decoder_split = per_decoder_split
 
-    def forward(self, acts, *, cache: SAECache):
-        splits = self.boundary_generator()
-        splits.sort()
+    def forward(self, input, *, cache: SAECache):
+        # If a boundary is shared by all decoders, then the input is a tuple of (acts, splits)
+        if self.per_decoder_split:
+            splits = generate_random_boundary(self.n_nestings, self.d_dict)
+            acts = input
+        else:
+            acts, splits = input
+
         return torch.stack(
             [
-                dec(x_i)
-                for i, (dec, x_i) in enumerate(
-                    zip(self.split_dec(splits), split_tensor(acts, splits, dim=2))
+                torch.einsum("lbd,ldo->bo", x_i, dec_i)
+                for (dec_i, x_i) in zip(
+                    self.split_dec(splits), split_tensor(acts, splits, dim=2)
                 )
             ],
             dim=0,
         ).cumsum(dim=0)
 
     def split_dec(self, bounds: list[int]):
-        return [
-            multilayer_decoder(w)
-            for w in split_tensor(
-                self.weight.view(self.n_layers, self.d_data, self.d_dict), bounds, dim=2
-            )
-        ]
-
-    def boundary_generator(self):
-        return [self.d_dict // (2**i) for i in range(1, self.n_nestings)]
+        return split_tensor(
+            einops.rearrange(
+                self.weight, "(l d_dict) d_data -> l d_dict d_data", l=self.n_layers
+            ),
+            bounds,
+            dim=1,
+        )
 
     @cached_property
     def features(self):
@@ -120,6 +128,16 @@ class MatryoshkaCLTDecoder(cl.Module):
             route_to_decoders=cl.Parallel(
                 *[Indexer.L[: i + 1] for i in range(cfg.n_sites)]
             ).reduce(lambda *x: x),
+            **useif(
+                not cfg.per_decoder_split,
+                generate_splits=Lambda(
+                    lambda x: (x, generate_random_boundary(cfg.n_nestings, d_dict))
+                ),
+            ),
+            **useif(
+                not cfg.per_decoder_split,
+                prepare_splits=Lambda(lambda x: [(x_i, x[1]) for x_i in x[0]]),
+            ),
             splittable_decoders=cl.Router(
                 *[
                     SplittableDecoder(
@@ -127,6 +145,7 @@ class MatryoshkaCLTDecoder(cl.Module):
                         num_layers=n + 1,
                         d_data=d_data,
                         num_nestings=cfg.n_nestings,
+                        per_decoder_split=cfg.per_decoder_split,
                     )
                     for n in range(cfg.n_sites)
                 ]
@@ -135,12 +154,10 @@ class MatryoshkaCLTDecoder(cl.Module):
         )
 
     def forward(self, x, *, cache: SAECache):
-        decoded_layers = cache(self).decode(x)
-        return decoded_layers
+        return cache(self).decode(x)
 
 
 class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
-
     def boundary_generator(self):
         return [self.d_layer_dict // (2**i) for i in range(self.cfg.n_nestings)]
 
@@ -162,21 +179,6 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
                 ).reduce(lambda *x: torch.stack(x, dim=0)),
             )
         )
-
-    # @cached_property
-    # def encoder(self):
-    #     return ReuseForward(
-    #         Seq(
-    #             pre_encs=self.pre_encoders,
-    #             nonlinearity=nn.ReLU(),
-    #         )
-    #     )
-
-    # def decoded_layer(self, layer: int, nl: int, nu: int):
-    #     layer_acts = Seq(
-    #         enc=self.encoder,
-    #         layer_inputs=Indexer.L[: layer + 1],
-    #     )
 
     def setup(self):
         assert self.init.d_dict % self.cfg.n_sites == 0
@@ -217,42 +219,13 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
             ]
         ).reduce(lambda *x: torch.cat(x, dim=1))
 
-    # @cached_property
-    # def encode_each_layer(self):
-
-    #     encode_module = cl.Parallel(
-    #         *[
-    #             Seq(
-    #                 Lambda(
-    #                     lambda x, idx=i: x[
-    #                         :, self.d_layer_data * idx : self.d_layer_data * (idx + 1)
-    #                     ]
-    #                 ),
-    #                 nn.Linear(
-    #                     in_features=self.d_layer_data,
-    #                     out_features=self.d_layer_dict,
-    #                 ),
-    #             )
-    #             for i in range(self.cfg.n_sites)
-    #         ]
-    #     ).reduce(lambda *x: torch.cat(x, dim=1))
-
-    #     return Seq(
-    #         weight=encode_module,
-    #         nonlinearity=nn.ReLU(),  # Whatever nonlinearity you want
-    #     )
-
-    @cached_property
-    def stacked_model(self):
+    @model_prop
+    def model(self):
         return SAE(
             encoder_pre=self.pre_encoders,
             nonlinearity=nn.ReLU(),
             decoder=self.decoder,
         )
-
-    @model_prop
-    def model(self):
-        return self.stacked_model
 
     @loss_prop
     def l2_loss(self):
