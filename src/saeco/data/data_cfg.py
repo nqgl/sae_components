@@ -103,8 +103,19 @@ class DataConfig(SweepableConfig):
     def _acts_piles_path(self, split: SplitConfig) -> Path:
         return self._get_acts_split_path(split) / "piles"
 
+    def _act_chunks_paths(self, split: SplitConfig) -> list[Path]:
+        return [
+            self._get_acts_split_path(split) / "chunks" / str(i)
+            for i in range(split.act_chunks_cached)
+        ]
+
     def acts_piler(
-        self, split: SplitConfig, write=False, target_gb_per_pile=2, num_tokens=None
+        self,
+        path,
+        split: SplitConfig,
+        write=False,
+        target_gb_per_pile=2,
+        num_tokens=None,
     ) -> DictPiler:
         if write:
             num_piles = self.generation_config.num_act_piles(num_tokens)
@@ -118,13 +129,13 @@ class DataConfig(SweepableConfig):
                 }
             )
             return DictPiler.create(
-                self._acts_piles_path(split),
+                path,
                 dtypes=dtypes,
                 fixed_shapes=fixed_shapes,
                 num_piles=num_piles,
                 compress=self.generation_config.compress_acts,
             )
-        return DictPiler.open(self._acts_piles_path(split))
+        return DictPiler.open(path)
 
     def train_data_batch_generator(  # unused
         self,
@@ -198,7 +209,7 @@ class DataConfig(SweepableConfig):
             target_sites=target_sites,
         )
         dl = DataLoader(
-            ds, num_workers=num_workers, shuffle=False, pin_memory=True, batch_size=None
+            ds, num_workers=0, shuffle=False, pin_memory=False, batch_size=None
         )
 
         return dl

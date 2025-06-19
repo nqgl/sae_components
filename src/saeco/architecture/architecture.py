@@ -328,7 +328,7 @@ class Architecture(Generic[ArchConfigType]):
         path.path.parent.mkdir(parents=True, exist_ok=True)
 
         if path.exists():
-            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
+            self.save_to_path(path.path.with_name(path.path.stem + "_1"))
             raise ValueError(
                 f"file already existed at {path}, wrote to {path.path.name}_1"
             )

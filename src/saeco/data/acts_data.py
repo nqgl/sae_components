@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from functools import cached_property
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import einops
@@ -34,13 +35,25 @@ class ActsData:
         self.cfg = cfg
         self.model = model
 
-    def _store_split(self, split: SplitConfig):
+    def _store_chunk(self, chunk_idx: int, chunk_path: Path, split: SplitConfig):
+        print(f"storing chunk {chunk_idx} at {chunk_path}")
         tokens_data = TokensData(self.cfg, self.model, split=split)
-        tokens = tokens_data.get_tokens(num_tokens=split.tokens_from_split)
+        tokens = tokens_data.get_tokens(
+            num_tokens=split.acts_per_chunk * split.act_chunks_cached,
+        )
+
+        tokens_start = chunk_idx * split.acts_per_chunk
+        tokens_end = (chunk_idx + 1) * split.acts_per_chunk
+        tokens = tokens[tokens_start // tokens.shape[1] : tokens_end // tokens.shape[1]]
+
+        tok_start_idx = tokens_start // tokens.shape[1]
+        tok_idx = tokens_end // tokens.shape[1]
+
         acts_piler = self.cfg.acts_piler(
+            chunk_path,
             split,
             write=True,
-            num_tokens=split.tokens_from_split or tokens_data.num_tokens,
+            num_tokens=split.acts_per_chunk or tokens_data.num_tokens,
         )
 
         tqdm.tqdm.write(f"Storing acts for {split.get_split_key()}")
@@ -160,8 +173,11 @@ class ActsData:
         nw=None,
         prog_bar=False,
     ):
-        if not self.cfg._acts_piles_path(split).exists():
-            self._store_split(split)
+        chunk_paths = self.cfg._act_chunks_paths(split)
+        for i, chunk_path in enumerate(chunk_paths):
+            if not chunk_path.exists():
+                self._store_chunk(i, chunk_path, split)
+
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
@@ -170,116 +186,24 @@ class ActsData:
         # g = piler.batch_generator(batch_size, yield_dicts=False, id=id, nw=nw)
         # next(g)
 
-        piler = self.cfg.acts_piler(split)
-        batch_gen = piler.batch_generator(
-            batch_size,
-            yield_dicts=False,
-            id=id,
-            nw=nw,
-        )
+        print("CHUNK PATHS", chunk_paths[0])
 
-        for batch in batch_gen:
-            yield SAETrainBatch(
-                data=batch.data,
-                input_sites=input_sites,
-                target_sites=target_sites,
+        pilers = [self.cfg.acts_piler(chunk_path, split) for chunk_path in chunk_paths]
+
+        for piler in pilers:
+            batch_gen = piler.batch_generator(
+                batch_size,
+                yield_dicts=False,
+                id=id,
+                nw=nw,
             )
-        # piler = self.cfg.acts_piler(split)
-        # assert (
-        #     nsteps is None
-        #     or split.tokens_from_split is None
-        #     or nsteps <= split.tokens_from_split // batch_size
-        # )
 
-        # if prog_bar:
-        #     print("\nProgress bar activation batch count is approximate\n")
-
-        #     progress = (
-        #         tqdm.trange(nsteps or split.tokens_from_split // batch_size)
-        #         if split.tokens_from_split is not None
-        #         else None
-        #     )
-        #     for p in range(id % nw, piler.num_piles, nw):
-        #         # print("get next pile")
-        #         # print(id, nw, p)
-        #         pile = piler[p]
-        #         if progress is None:
-        #             progress = tqdm.trange(
-        #                 pile.shape[0] * piler.num_piles // batch_size
-        #             )
-
-        #         assert pile.dtype == torch.float16
-        #         # print("got next pile")
-        #         for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-        #             yield pile[i : i + batch_size]
-        #             progress.update()
-        # else:
-        #     assert nsteps is None
-        #     # pile = piler[id]
-        #     spares = []
-        #     nspare = 0
-        #     for p in range(id % nw, piler.num_piles, nw):
-        #         # print("get next pile")
-        #         # print(id, nw, p)
-        #         pile = piler[p]
-        #         # if p == id:
-        #         #     nextpile = nextpile[: (id % nw + 1) * len(nextpile) // nw]
-        #         # pile = nextpile
-        #         assert pile.dtype == self.cfg.model_cfg.acts_cfg.storage_dtype
-        #         # print("got next pile")
-        #         for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-        #             yield pile[i : i + batch_size]
-        #         spare = pile[len(pile) // batch_size * batch_size :]
-        #         if len(spare) > 0:
-        #             spares.append(spare)
-        #             nspare += len(spare)
-        #             if nspare > batch_size:
-        #                 consolidated = torch.cat(spares, dim=0)
-        #                 for i in range(
-        #                     0, len(consolidated) // batch_size * batch_size, batch_size
-        #                 ):
-        #                     yield consolidated[i : i + batch_size]
-        #                 spare = consolidated[
-        #                     len(consolidated) // batch_size * batch_size :
-        #                 ]
-        #                 spares = [spare]
-        #                 nspare = len(spare)
-
-        #     # for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-        #     #     yield pile[i : i + batch_size]
-
-    def pile_generator(
-        self,
-        split: SplitConfig,
-        batch_size,
-        nsteps=None,
-        id=None,
-        nw=None,
-        prog_bar=False,
-    ):
-        if not self.cfg._acts_piles_path(split).exists():
-            self._store_split(split)
-        assert id == nw == None or id is not None and nw is not None
-        id = id or 0
-        nw = nw or 1
-        piler = self.cfg.acts_piler(split)
-        assert (
-            nsteps is None
-            or split.tokens_from_split is None
-            or nsteps <= split.tokens_from_split // batch_size
-        )
-
-        assert nsteps is None
-        pile = piler[id]
-        for p in range(id + nw, piler.num_piles, nw):
-            # print("get next pile")
-            # print(id, nw, p)
-            nextpile = piler[p]
-            # print("got next pile")
-            yield pile
-            pile = nextpile
-        for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-            yield pile
+            for batch in batch_gen:
+                yield SAETrainBatch(
+                    data=batch.data,
+                    input_sites=input_sites,
+                    target_sites=target_sites,
+                )
 
 
 class ActsDataset(torch.utils.data.IterableDataset):

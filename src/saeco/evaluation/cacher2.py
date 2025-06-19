@@ -265,7 +265,7 @@ class ActsCacher:
         if sae_acts_flat.ndim == 3:
             sae_acts = einops.rearrange(
                 sae_acts_flat,
-                "n_layers (doc seq) d_dict -> doc seq (n_layers, d_dict)",
+                "n_layers (doc seq) d_dict -> doc seq (n_layers d_dict)",
                 doc=ndoc,
                 seq=seq_len,
             )
