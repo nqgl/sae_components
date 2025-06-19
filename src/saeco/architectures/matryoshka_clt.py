@@ -107,6 +107,7 @@ class SplittableDecoder(
                 self.weight,
                 feature_index=0,
                 feature_parameter_type=FeaturesParam.FPTYPES.dec,
+                param_id=f"{self.n_layers - 1}",
             ),
         }
 
@@ -125,6 +126,11 @@ class MatryoshkaCLTDecoder(cl.Module):
         super().__init__()
 
         self.decode = Seq(
+            split_into_layers=Lambda(
+                lambda x: einops.rearrange(
+                    x, "batch (layer d_dict) -> layer batch d_dict", d_dict=d_dict
+                )
+            ),
             route_to_decoders=cl.Parallel(
                 *[Indexer.L[: i + 1] for i in range(cfg.n_sites)]
             ).reduce(lambda *x: x),
@@ -176,7 +182,7 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
                 split=Lambda(lambda x: torch.chunk(x, self.cfg.n_sites, dim=-1)),
                 encode=cl.Router(
                     *[self.initializers[i].encoder for i in range(self.cfg.n_sites)]
-                ).reduce(lambda *x: torch.stack(x, dim=0)),
+                ).reduce(lambda *x: torch.cat(x, dim=-1)),
             )
         )
 
@@ -191,33 +197,6 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
         self.nesting_sizes = [
             self.d_layer_dict // (2**i) for i in range(self.cfg.n_nestings)
         ]
-
-    def generate_cross_layer_decode(self, nesting_size):
-        assert nesting_size <= self.d_layer_dict
-        return cl.Parallel(
-            *[
-                Seq(
-                    Lambda(
-                        lambda x, idx=i: torch.cat(
-                            [
-                                x[
-                                    :,
-                                    self.d_layer_dict * j : self.d_layer_dict * j
-                                    + nesting_size,
-                                ]
-                                for j in range(idx + 1)
-                            ],
-                            dim=1,
-                        )
-                    ),
-                    nn.Linear(
-                        in_features=nesting_size * (i + 1),
-                        out_features=self.d_layer_data,
-                    ),
-                )
-                for i in range(self.cfg.n_sites)
-            ]
-        ).reduce(lambda *x: torch.cat(x, dim=1))
 
     @model_prop
     def model(self):

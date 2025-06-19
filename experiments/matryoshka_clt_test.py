@@ -1,54 +1,101 @@
+from pathlib import Path
+
 from saeco.architectures.matryoshka_clt import MatryoshkaCLT, MatryoshkaCLTConfig
+from saeco.components.features.features_param import get_featuresparams
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
+from saeco.data.data_cfg import DataConfig
 from saeco.data.data_config_definitions import gemma_2_2b_openwebtext_bf16, gpt_2_block
+from saeco.data.generation_config import DataGenerationProcessConfig
+from saeco.data.model_cfg import ActsDataConfig, ModelConfig
+from saeco.data.split_config import SplitConfig
 from saeco.initializer import InitConfig
+from saeco.initializer.initializer_config import InitConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 
+PROJECT = "matryoshka_clt"
+
+from saeco.mlog import mlog
+
+
+mlog.init()
+
+dict_mult = 64
+n_sites = 12
+
+input_mlp_sites = ["transformer.h.{}.mlp.input".format(i) for i in range(n_sites)]
+output_mlp_sites = ["transformer.h.{}.mlp.output".format(i) for i in range(n_sites)]
+mlp_sites = input_mlp_sites + output_mlp_sites
+
+data_config = DataConfig(
+    dataset="alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2",
+    model_cfg=ModelConfig(
+        acts_cfg=ActsDataConfig(
+            excl_first=True,
+            sites=mlp_sites,
+            d_data=768,
+            autocast_dtype_str="bfloat16",
+            force_cast_dtype_str="bfloat16",
+            storage_dtype_str="bfloat16",
+        ),
+        model_name="gpt2",
+    ),
+    trainsplit=SplitConfig(
+        start=0, end=5, act_chunks_cached=2, acts_per_chunk=10_000_000
+    ),
+    generation_config=DataGenerationProcessConfig(
+        acts_per_pile=2**15,
+        meta_batch_size=2**16,
+        llm_batch_size=2**15,
+        compress_acts=True,
+    ),
+    seq_len=256,
+)
+
+
 cfg = RunConfig[MatryoshkaCLTConfig](
     train_cfg=TrainConfig(
-        data_cfg=gpt_2_block([6, 7]),
+        data_cfg=data_config,
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=50_000,
+            run_length=1000,
             resample_period=10_000,
-            lr_warmup_length=2_000,
+            lr_warmup_length=500,
         ),
         #
-        batch_size=16,
+        batch_size=2048,
         optim="Adam",
         lr=1e-3,
         betas=(0.9, 0.997),
         #
         use_autocast=True,
-        use_lars=True,
+        use_lars=False,
         #
-        l0_target=50,
+        l0_target=50 * 12,
         l0_target_adjustment_size=0.001,
         coeffs={
-            "sparsity_loss": 0,
+            "sparsity_loss": 1e-2,
             "L2_loss": 1,
         },
-        #
-        intermittent_metric_freq=5000,
+        input_sites=input_mlp_sites,
+        target_sites=output_mlp_sites,
+        intermittent_metric_freq=100,
+        use_averaged_model=False,
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
         expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(d_data=768 * 2, dict_mult=8),
-    arch_cfg=MatryoshkaCLTConfig(n_sites=2),
+    init_cfg=InitConfig(d_data=768 * n_sites, dict_mult=dict_mult),
+    arch_cfg=MatryoshkaCLTConfig(n_sites=n_sites, n_nestings=3),
 )
 
 arch = MatryoshkaCLT(cfg)
-sweep_manager = arch.get_sweep_manager()
-sweep_manager.rand_run_no_agent(project="nqgl/default-project")
+arch.run_training()
 
-sweep_manager.initialize_sweep()
-
-sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)
+arch.save_to_path(Path("matryoshka_clt_test_model.pt"))
