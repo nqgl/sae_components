@@ -69,20 +69,22 @@ _PROTECTED = {
 class DictBatch(dict):
     """
     A batch **is** a dict[str, torch.Tensor] *and* may carry extra attributes
-    declared by subclasses via ``OTHER_DATA_FIELDS``.
+    declared by subclasses via `OTHER_DATA_FIELDS` and `TENSOR_DATA_FIELDS`.
 
     Examples
     --------
     >>> class LMCombinedBatch(CombinedBatch):
     ...     OTHER_DATA_FIELDS = ("prompt", "doc_id")
+    ...     TENSOR_DATA_FIELDS = ("input_ids", "attention_mask")
     ...
     >>> b = LMCombinedBatch(
-    ...         {"input_ids": torch.ones(4, 128, dtype=torch.long)},
+    ...         {"input_ids": torch.ones(4, 128, dtype=torch.long),
+    ...          "attention_mask": torch.ones(4, 128, dtype=torch.long)},
     ...         prompt="Once upon a time",
     ...         doc_id=42,
     ...     )
-    >>> b.prompt, b["input_ids"].shape
-    ('Once upon a time', torch.Size([4, 128]))
+    >>> b.prompt, b["input_ids"].shape, b.input_ids.shape
+    ('Once upon a time', torch.Size([4, 128]), torch.Size([4, 128]))
     >>> b2 = b[:2]
     >>> b2.prompt, len(b2)
     ('Once upon a time', 2)
@@ -90,6 +92,7 @@ class DictBatch(dict):
 
     # ------------------------------- metadata --------------------------------
     OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
+    TENSOR_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
 
     # ------------------------------- ctor ------------------------------------
     def __init__(
@@ -102,13 +105,13 @@ class DictBatch(dict):
         Parameters
         ----------
         data
-            Mapping ``str -> Tensor`` to initialise the dict body. If omitted,
+            Mapping `str -> Tensor to initialise the dict body. If omitted,
             tensor kwargs are used instead.
         **kwargs
             *Either* tensor entries (for the dict) *or* values for
-            ``OTHER_DATA_FIELDS``.
+            `OTHER_DATA_FIELDS.
         """
-        # Split kwargs into “extra” and “tensor” parts
+        # Split kwargs into "extra" and "tensor" parts
         extra: dict[str, Any] = {}
         tensor_kwargs: dict[str, Tensor] = {}
         if (
@@ -131,7 +134,7 @@ class DictBatch(dict):
         if data is not None:
             if tensor_kwargs:  # pragma: no cover
                 raise ValueError(
-                    "Provide tensors either via the `data` mapping OR as "
+                    "Provide tensors either via the data mapping OR as "
                     "keyword arguments, but not both."
                 )
             self._check_contents(data)
@@ -139,6 +142,18 @@ class DictBatch(dict):
         else:
             self._check_contents(tensor_kwargs)
             super().__init__(tensor_kwargs)
+
+        # Check that all required TENSOR_DATA_FIELDS are present
+        for field in self.TENSOR_DATA_FIELDS:
+            if field not in self:
+                raise ValueError(
+                    f"Missing required tensor field '{field}' from TENSOR_DATA_FIELDS"
+                )
+            if not isinstance(self[field], Tensor):
+                raise TypeError(
+                    f"Field '{field}' from TENSOR_DATA_FIELDS must be a torch.Tensor, "
+                    f"got {type(self[field])}"
+                )
 
         # attach extras as attributes
         for k in self.OTHER_DATA_FIELDS:
@@ -166,6 +181,19 @@ class DictBatch(dict):
                 raise TypeError(f"Value for {k!r} is not a torch.Tensor")
 
     # ------------------------------ dunder -----------------------------------
+    def __getattr__(self, name: str) -> Any:
+        """Allow accessing TENSOR_DATA_FIELDS as attributes."""
+        if name in self.TENSOR_DATA_FIELDS:
+            try:
+                return self[name]
+            except KeyError:
+                raise AttributeError(
+                    f"'{self.__class__.__name__}' object has no attribute '{name}'"
+                )
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
+
     @overload
     def __getitem__(self, key: str) -> Tensor: ...
     @overload
@@ -293,13 +321,14 @@ class DictBatch(dict):
     @dataclass_transform(kw_only_default=True)
     def auto_other_fields(cls: Type[T]) -> Type[T]:
         """
-        Enhanced decorator that automatically populates OTHER_DATA_FIELDS from annotations.
+        Enhanced decorator that automatically populates OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS from annotations.
 
         Features:
         - Handles forward references properly
         - Excludes ClassVar, property, and cached_property fields
-        - Preserves manually defined OTHER_DATA_FIELDS if you want to add extras
+        - Preserves manually defined OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS if you want to add extras
         - Works with complex type annotations
+        - Automatically detects Tensor-annotated fields for TENSOR_DATA_FIELDS
         """
         # Get type hints with forward reference resolution
         try:
@@ -309,8 +338,9 @@ class DictBatch(dict):
             # Fallback to raw annotations if get_type_hints fails
             hints = getattr(cls, "__annotations__", {})
 
-        # Extract field names, excluding special cases
-        field_names = []
+        # Extract field names, separating tensor and other fields
+        other_field_names = []
+        tensor_field_names = []
 
         for name, hint in hints.items():
             # Skip if it's a method/property in the class
@@ -330,28 +360,114 @@ class DictBatch(dict):
             if name.startswith("_"):
                 continue
 
-            field_names.append(name)
+            # Check if it's a Tensor type
+            if hint is Tensor or (origin is not None and issubclass(origin, Tensor)):
+                tensor_field_names.append(name)
+            elif hint == "Tensor" or hint == "torch.Tensor":  # String annotations
+                tensor_field_names.append(name)
+            else:
+                other_field_names.append(name)
 
-        # Get existing OTHER_DATA_FIELDS from parent classes
-        parent_fields = ()
+        # Get existing fields from parent classes
+        parent_other_fields = ()
+        parent_tensor_fields = ()
         for base in cls.__mro__[1:]:  # Skip the class itself
             if hasattr(base, "OTHER_DATA_FIELDS"):
-                parent_fields = base.OTHER_DATA_FIELDS
+                parent_other_fields = base.OTHER_DATA_FIELDS
+            if hasattr(base, "TENSOR_DATA_FIELDS"):
+                parent_tensor_fields = base.TENSOR_DATA_FIELDS
+            if parent_other_fields or parent_tensor_fields:
                 break
 
-        # Check if class already has OTHER_DATA_FIELDS defined
-        if hasattr(cls, "OTHER_DATA_FIELDS") and cls.OTHER_DATA_FIELDS != parent_fields:
+        # Handle OTHER_DATA_FIELDS
+        if (
+            hasattr(cls, "OTHER_DATA_FIELDS")
+            and cls.OTHER_DATA_FIELDS != parent_other_fields
+        ):
             # Merge manually defined fields with auto-detected ones
             manual_fields = tuple(
-                f for f in cls.OTHER_DATA_FIELDS if f not in parent_fields
+                f for f in cls.OTHER_DATA_FIELDS if f not in parent_other_fields
             )
-            all_fields = set(parent_fields) | set(field_names) | set(manual_fields)
-            cls.OTHER_DATA_FIELDS = tuple(all_fields)
+            all_other_fields = (
+                set(parent_other_fields) | set(other_field_names) | set(manual_fields)
+            )
+            cls.OTHER_DATA_FIELDS = tuple(all_other_fields)
         else:
             # Just combine parent fields with new fields
-            cls.OTHER_DATA_FIELDS = parent_fields + tuple(field_names)
+            cls.OTHER_DATA_FIELDS = parent_other_fields + tuple(other_field_names)
+
+        # Handle TENSOR_DATA_FIELDS
+        if (
+            hasattr(cls, "TENSOR_DATA_FIELDS")
+            and cls.TENSOR_DATA_FIELDS != parent_tensor_fields
+        ):
+            # Merge manually defined fields with auto-detected ones
+            manual_tensor_fields = tuple(
+                f for f in cls.TENSOR_DATA_FIELDS if f not in parent_tensor_fields
+            )
+            all_tensor_fields = (
+                set(parent_tensor_fields)
+                | set(tensor_field_names)
+                | set(manual_tensor_fields)
+            )
+            cls.TENSOR_DATA_FIELDS = tuple(all_tensor_fields)
+        else:
+            # Just combine parent fields with new fields
+            cls.TENSOR_DATA_FIELDS = parent_tensor_fields + tuple(tensor_field_names)
 
         return cls
 
     def float(self):
         return self.to(torch.float32)
+
+
+# Example usage:
+if __name__ == "__main__":
+    # Example 1: Using the decorator
+    @DictBatch.auto_other_fields
+    class MyBatch(DictBatch):
+        input_ids: Tensor
+        attention_mask: Tensor
+        labels: Tensor
+        prompt: str
+        doc_id: int
+
+    # This will automatically set:
+    # TENSOR_DATA_FIELDS = ("input_ids", "attention_mask", "labels")
+    # OTHER_DATA_FIELDS = ("prompt", "doc_id")
+
+    # Create a batch
+    batch = MyBatch(
+        {
+            "input_ids": torch.ones(4, 128, dtype=torch.long),
+            "attention_mask": torch.ones(4, 128, dtype=torch.long),
+            "labels": torch.ones(4, 128, dtype=torch.long),
+        },
+        prompt="Hello world",
+        doc_id=42,
+    )
+
+    # Access tensors both ways
+    print(batch["input_ids"].shape)  # torch.Size([4, 128])
+    print(batch.input_ids.shape)  # torch.Size([4, 128])
+    print(batch.attention_mask.shape)  # torch.Size([4, 128])
+
+    # Access other fields
+    print(batch.prompt)  # "Hello world"
+    print(batch.doc_id)  # 42
+
+    # This will raise an error - missing required tensor field
+    try:
+        bad_batch = MyBatch(
+            {
+                "input_ids": torch.ones(4, 128, dtype=torch.long),
+                "attention_mask": torch.ones(4, 128, dtype=torch.long),
+                # missing "labels"!
+            },
+            prompt="Hello world",
+            doc_id=42,
+        )
+    except ValueError as e:
+        print(
+            f"Error: {e}"
+        )  # Error: Missing required tensor field 'labels' from TENSOR_DATA_FIELDS
