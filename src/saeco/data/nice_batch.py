@@ -47,6 +47,17 @@ class NiceConvertedIter:
     ) -> "NiceConvertedIter":
         return NiceConvertedIter(transform_gen(self._iter))
 
+    def as_dataset(self) -> "NiceIterDataset":
+        return NiceIterDataset(self)
+
+
+class NiceIterDataset(torch.utils.data.IterableDataset):
+    def __init__(self, iterable: Iterator["DictBatch"]):
+        self.iterable = iterable
+
+    def __iter__(self):
+        return self.iterable
+
 
 # --------------------------------------------------------------------------- #
 #                          The combined batch class                           #
