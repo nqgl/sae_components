@@ -420,6 +420,14 @@ class DictBatch(dict):
     def float(self):
         return self.to(torch.float32)
 
+    def items(self) -> Iterator[tuple[str, Tensor]]:
+        return super().items()
+
+    def gather(self, dim: int, indices: Tensor) -> Self:
+        return self.construct_with_other_data(
+            {k: v.gather(dim, indices) for k, v in self.items()}, self._get_other_dict()
+        )
+
 
 # Example usage:
 if __name__ == "__main__":
