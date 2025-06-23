@@ -3,6 +3,7 @@ from pathlib import Path
 
 from typing import (
     Any,
+    Callable,
     cast,
     ClassVar,
     Generator,
@@ -24,125 +25,124 @@ from pydantic import BaseModel
 
 from typing_extensions import Self
 
+# @define
+# class DictBatch:
+#     """
+#     Indexing with a string returns the tensor associated with that key (location).
+
+#     Indexing with an integer, slice, list of indices, or a torch.Tensor applies the
+#     indexing operation to each tensor in the batch, returning a new DictBatch.
+#     """
+
+#     data: dict[str, torch.Tensor]
+
+#     @overload
+#     def __getitem__(self, i: str) -> torch.Tensor: ...
+#     @overload
+#     def __getitem__(
+#         self, i: int | slice | list[int] | torch.Tensor | tuple[slice, ...]
+#     ) -> Self: ...
+#     def __getitem__(self, i):
+#         if isinstance(i, str):
+#             return self.data[i]
+#         return self.copy_with_data({k: v[i] for k, v in self.data.items()})
+
+#     def to(self, *targets, **kwargs):
+#         return self.copy_with_data(
+#             {k: v.to(*targets, **kwargs) for k, v in self.data.items()}
+#         )
+
+#     def cuda(self, *args, **kwargs):
+#         return self.to("cuda", *args, **kwargs)
+
+#     def keys(self):
+#         return self.data.keys()
+
+#     def items(self):
+#         return self.data.items()
+
+#     def values(self):
+#         return self.data.values()
+
+#     def cat(self, other: Self):
+#         assert self.keys() == other.keys()
+#         return self.copy_with_data(
+#             {
+#                 k: torch.cat([self.data[k], other.data[k]], dim=0)
+#                 for k in self.data.keys()
+#             }
+#         )
+
+#     def __len__(self):
+#         l = len(next(iter(self.data.values())))
+#         assert all(len(v) == l for v in self.data.values())
+#         return l
+
+#     @classmethod
+#     def cat_list(
+#         cls, batches: list[Self], dim: int = 0, overwite_kwargs: dict | None = None
+#     ):
+#         overwite_kwargs = overwite_kwargs or {}
+#         other_data_0: dict[str, Any] = batches[0].get_other_data()
+#         keys0 = set(other_data_0.keys())
+#         overwritten_keys = set(overwite_kwargs.keys())
+#         normal_keys = keys0 - overwritten_keys
+
+#         for batch in batches:
+#             assert normal_keys == set(batch.get_other_data().keys() - overwritten_keys)
+#             for normal_key in normal_keys:
+#                 # assert equal values
+#                 ...
+#         other_data = {
+#             **other_data_0,
+#             **overwite_kwargs,
+#         }  # this ordering makes 2nd overwrite
+
+#         # TODO Finish cat_list
+#         keys = batches[0].data.keys()
+#         assert all(b.data.keys() == keys for b in batches)
+#         return cls({k: torch.cat([b.data[k] for b in batches], dim=dim) for k in keys})
+
+#     def einops_rearrange(self, pattern: str, **kwargs):
+#         return self.__class__(
+#             {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.data.items()}
+#         )
+
+#     @classmethod
+#     def construct_with_other_data(
+#         cls, data: dict[str, torch.Tensor], other_data: dict[str, Any] | None = None
+#     ):
+#         return cls(data, **(other_data or {}))
+
+#     def copy_with_data(self, data: dict[str, torch.Tensor]):
+#         other_data = self.get_other_data()
+#         return self.__class__(data, **other_data)
+
+#     OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
+
+#     def get_other_data(self) -> dict[str, Any]:
+#         return {k: getattr(self, k) for k in self.OTHER_DATA_FIELDS}
+
+#     def clone(self):
+#         return self.__class__(
+#             data={k: v.clone() for k, v in self.data.items()}, **self.get_other_data()
+#         )
+
+#     def contiguous(self):
+#         return self.__class__(
+#             data={k: v.contiguous() for k, v in self.data.items()},
+#             **self.get_other_data(),
+#         )
+
+
+from saeco.data.nice_batch import DictBatch
+
 from saeco.data.piler import Piler, PilerMetadata
 from saeco.data.storage.compressed_safetensors import CompressionType
 
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
-
-
-@define
-class DictBatch:
-    """
-        Represents a batch of data from multiple locations in a model, all aligned to the
-    same activation tokens/inference steps.
-
-        Indexing with a string returns the tensor associated with that key (location).
-
-        Indexing with an integer, slice, list of indices, or a torch.Tensor applies the
-        indexing operation to each tensor in the batch, returning a new DictBatch.
-    """
-
-    data: dict[str, torch.Tensor]
-
-    @overload
-    def __getitem__(self, i: str) -> torch.Tensor: ...
-    @overload
-    def __getitem__(
-        self, i: int | slice | list[int] | torch.Tensor | tuple[slice, ...]
-    ) -> Self: ...
-    def __getitem__(self, i):
-        if isinstance(i, str):
-            return self.data[i]
-        return self.copy_with_data({k: v[i] for k, v in self.data.items()})
-
-    def to(self, *targets, **kwargs):
-        return self.copy_with_data(
-            {k: v.to(*targets, **kwargs) for k, v in self.data.items()}
-        )
-
-    def cuda(self, *args, **kwargs):
-        return self.to("cuda", *args, **kwargs)
-
-    def keys(self):
-        return self.data.keys()
-
-    def items(self):
-        return self.data.items()
-
-    def values(self):
-        return self.data.values()
-
-    def cat(self, other: Self):
-        assert self.keys() == other.keys()
-        return self.copy_with_data(
-            {
-                k: torch.cat([self.data[k], other.data[k]], dim=0)
-                for k in self.data.keys()
-            }
-        )
-
-    def __len__(self):
-        l = len(next(iter(self.data.values())))
-        assert all(len(v) == l for v in self.data.values())
-        return l
-
-    @classmethod
-    def cat_list(
-        cls, batches: list[Self], dim: int = 0, overwite_kwargs: dict | None = None
-    ):
-        overwite_kwargs = overwite_kwargs or {}
-        other_data_0: dict[str, Any] = batches[0].get_other_data()
-        keys0 = set(other_data_0.keys())
-        overwritten_keys = set(overwite_kwargs.keys())
-        normal_keys = keys0 - overwritten_keys
-
-        for batch in batches:
-            assert normal_keys == set(batch.get_other_data().keys() - overwritten_keys)
-            for normal_key in normal_keys:
-                # assert equal values
-                ...
-        other_data = {
-            **other_data_0,
-            **overwite_kwargs,
-        }  # this ordering makes 2nd overwrite
-
-        # TODO Finish cat_list
-        keys = batches[0].data.keys()
-        assert all(b.data.keys() == keys for b in batches)
-        return cls({k: torch.cat([b.data[k] for b in batches], dim=dim) for k in keys})
-
-    def einops_rearrange(self, pattern: str, **kwargs):
-        return self.__class__(
-            {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.data.items()}
-        )
-
-    @classmethod
-    def construct_with_other_data(
-        cls, data: dict[str, torch.Tensor], other_data: dict[str, Any] | None = None
-    ):
-        return cls(data, **(other_data or {}))
-
-    def copy_with_data(self, data: dict[str, torch.Tensor]):
-        other_data = self.get_other_data()
-        return self.__class__(data, **other_data)
-
-    OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
-
-    def get_other_data(self) -> dict[str, Any]:
-        return {k: getattr(self, k) for k in self.OTHER_DATA_FIELDS}
-
-    def clone(self):
-        return self.__class__(
-            data={k: v.clone() for k, v in self.data.items()}, **self.get_other_data()
-        )
-
-    def contiguous(self):
-        return self.__class__(
-            data={k: v.contiguous() for k, v in self.data.items()},
-            **self.get_other_data(),
-        )
 
 
 class DictPilerMetadata(BaseModel):
@@ -369,6 +369,81 @@ class DictPiler:
                 if str(p) in piler.piles.cache:
                     del piler.piles.cache[str(p)]
 
+    @overload
+    def sized_generator(
+        self,
+        yield_dicts: Literal[False] = False,
+        id=None,
+        nw=None,
+    ) -> tuple[Callable[[int], tuple[DictBatch, int]], int]: ...
+
+    @overload
+    def sized_generator(
+        self,
+        yield_dicts: Literal[True],
+        id=None,
+        nw=None,
+    ) -> tuple[Callable[[int], tuple[dict[str, torch.Tensor] | None, int]], int]: ...
+
+    def sized_generator(
+        self,
+        yield_dicts: bool = False,
+        id=None,
+        nw=None,
+        return_last_batch: bool = False,
+    ):
+        if not (id == nw == None or id is not None and nw is not None):
+            raise ValueError("id and nw must be either both None or both not None")
+        id = id or 0
+        nw = nw or 1
+
+        def piles_gen():
+            for p in range(id % nw, self.piler_metadata.num_piles, nw):
+                yield self[p]
+            # below we clone before yielding to prevent yielding a view of the pile.
+            # if a yielded view were to get pinned by the consumer of this,
+            # (eg a dataloader), the entire mmapped pile would get pinned as well
+
+        piler0 = next(iter(self.pilers.values()))
+        num_samples_total = sum(
+            piler0.shapes[p][0]
+            for p in range(id % nw, self.piler_metadata.num_piles, nw)
+        )
+
+        num_returned = 0
+
+        i = 0
+        piles = piles_gen()
+        pile = next(piles)
+        done = False
+
+        def get(batch_size):
+            nonlocal i, pile, piles, done, num_samples_total, num_returned
+            if done:
+                raise StopIteration("No more batches")
+            res = None
+            while len(pile) - i < batch_size:
+                try:
+                    pile = DictBatch.cat_list([pile[i:].clone(), next(piles)])
+                    i = 0
+                except StopIteration as e:
+                    if not return_last_batch:
+                        raise e
+                    done = True
+                    num_returned += len(pile) - i
+                    assert num_returned == num_samples_total
+                    return pile[i:].clone(), 0
+            res = (
+                pile[i : i + batch_size].clone().data
+                if yield_dicts
+                else pile[i : i + batch_size].clone()
+            )
+            i += batch_size
+            num_returned += batch_size
+            return res, num_samples_total - num_returned
+
+        return get, num_samples_total
+
     def as_dataset(self, batch_size, converter=None):
         return PilerDataset(self, batch_size, converter)
 
@@ -385,7 +460,7 @@ class DictPiler:
         return samples
 
     @property
-    def shapes(self) -> dict[str, dict[str, list[int]]]:
+    def shapes(self) -> dict[str, list[list[int]]]:
         return {k: piler.shapes for k, piler in self.pilers.items()}
 
 

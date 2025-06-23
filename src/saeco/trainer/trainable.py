@@ -1,4 +1,4 @@
-from typing import Optional, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import cast, Optional, Protocol, runtime_checkable, TYPE_CHECKING
 
 import einops
 
@@ -14,6 +14,7 @@ from saeco.components.losses import (
 )
 from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
 from saeco.core import Cache
+from saeco.data.sae_train_batch import SAETrainBatch
 from .normalizers import (
     ConstL2Normalizer,
     GeneralizedNormalizer,
@@ -120,9 +121,18 @@ class Trainable(cl.Module):
 
     @property
     def losses_d(self) -> dict[str, Loss]:
-        return self.losses  # type: ignore
+        return cast(dict[str, Loss], self.losses)
 
     def loss(self, x, *, cache: Cache, y=None, coeffs: dict[str, float] = {}):
+        if isinstance(x, SAETrainBatch):
+            batch = x
+            x = batch.input
+            if y is None:
+                y = batch.target
+            elif batch.target_sites is not None:
+                raise ValueError(
+                    "x was SAETrainBatch, y was provided, and target_sites was not None -- unexpected input combination"
+                )
         coeffs = dict(coeffs)
         loss = 0
         for key, loss_fn in self.losses_d.items():
@@ -143,10 +153,10 @@ class Trainable(cl.Module):
             shape = x.shape
             x = einops.rearrange(x, "doc seq data -> (doc seq) data")
         elif x.ndim != 2:
-            raise NotImplementedError
+            raise NotImplementedError(f"rearrange not implemented for {x.shape}")
         return x, shape
 
-    def dearrange(self, x: torch.Tensor, shape: tuple[int, int]):
+    def dearrange(self, x: torch.Tensor, shape: tuple[int, int] | None):
         if shape is None:
             return x
         return einops.rearrange(
@@ -155,6 +165,8 @@ class Trainable(cl.Module):
 
     @make_cache_optional
     def forward(self, x: torch.Tensor, *, cache: TrainCache) -> torch.Tensor:
+        if isinstance(x, SAETrainBatch):
+            x = x.input
         x, shape = self.rearrange(x)
         out = self.model(x, cache=cache)
         return self.dearrange(out, shape)

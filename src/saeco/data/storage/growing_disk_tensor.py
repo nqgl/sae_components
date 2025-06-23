@@ -23,8 +23,6 @@ class GrowingDiskTensor(DiskTensor):
     storage_len: int | None = 2**14
 
     def resize(self, new_len, truncate=False):
-        if "9999" in self.path.name:
-            print("resizing to ", new_len)
         assert not self.finalized
         old_tensor = self.tensor
         temp = self.path.rename(
@@ -43,8 +41,6 @@ class GrowingDiskTensor(DiskTensor):
         temp.unlink()
 
         self.tensor = new_tensor
-        if "9999" in self.path.name:
-            print("done resizing to ", new_len)
 
     @property
     def cat_len(self) -> int:

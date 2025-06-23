@@ -1,11 +1,12 @@
-from typing import Any, Literal, Union, Callable, overload
+from types import FunctionType, LambdaType
+from typing import Any, Callable, Literal, overload, Protocol, runtime_checkable, Union
+
+from torch import Tensor
 from typing_extensions import Self
+
 from saeco.core.cache import Cache
 from saeco.core.collections.collection import Collection
 from saeco.core.proc_appropriately import proc_appropriately
-from typing import Protocol, runtime_checkable
-from torch import Tensor
-from types import FunctionType, LambdaType
 
 
 @runtime_checkable
@@ -38,8 +39,8 @@ class Propagator(Collection):
         self._cache_to_reduction = None
         self._binary_reduction = None
         self._binary_reduction_initial_value = None
-        self._propagate_rule: PropagateRule = None
-        self._output_rule = output_normal
+        self._propagate_rule: PropagateRule | None = None
+        self._output_rule: OutputRule = output_normal
         # ah maybe I should make this take these as list or as dict explicitly not as args and kwargs
 
     def propagate(self, propagate_rule: PropagateRule):
@@ -52,6 +53,8 @@ class Propagator(Collection):
 
     def _propagate(self, x, l, *a, **k):
         # decision: assuming no variation in first layer case desired behavior
+        if self._propagate_rule is None:
+            raise ValueError("Propagate rule not set")
         return self._propagate_rule(x=x, l=l, *a, **k)
 
     def forward(self, x, *, cache: Cache, **kwargs):
@@ -72,6 +75,8 @@ class Propagator(Collection):
         return self._reduce(*l, cache=cache)
 
     def _reduce(self, *l, cache):
+        if self._reduction is None:
+            raise ValueError("Reduction not set")
         if not self._binary_reduction:
             if self._cache_to_reduction:
                 return self._reduction(*l, cache=cache)
@@ -122,4 +127,4 @@ class Propagator(Collection):
         self._cache_to_reduction = takes_cache
         return self
 
-    def then(self, *args, **kwargs): ...
+    # def then(self, *args, **kwargs): ...

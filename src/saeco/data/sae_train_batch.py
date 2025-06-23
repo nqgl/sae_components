@@ -3,18 +3,20 @@ from typing import ClassVar
 
 import torch
 from attrs import define
+from typing_extensions import dataclass_transform
 
 from saeco.data.piler.dict_piler import DictBatch
 
 
-@define
+# @dataclass_transform(kw_only_default=True)
+@DictBatch.auto_other_fields
 class SAETrainBatch(DictBatch):
     input_sites: list[str]
-    target_sites: list[str]
-    OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = DictBatch.OTHER_DATA_FIELDS + (
-        "input_sites",
-        "target_sites",
-    )
+    target_sites: list[str] | None = None
+    # OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = DictBatch.OTHER_DATA_FIELDS + (
+    #     "input_sites",
+    #     "target_sites",
+    # )
 
     @cached_property  # this means we must never mutate one of these? so maybe property is better.
     # but re-catting input and output each time seems bad too.
