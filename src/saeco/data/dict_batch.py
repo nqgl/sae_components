@@ -490,3 +490,9 @@ if __name__ == "__main__":
         print(
             f"Error: {e}"
         )  # Error: Missing required tensor field 'labels' from TENSOR_DATA_FIELDS
+
+    def __or__(self, other: "DictBatch") -> "DictBatch":
+        raise ValueError("ambiguous")
+
+    def __and__(self, other: "DictBatch") -> "DictBatch":
+        raise ValueError("ambiguous")
