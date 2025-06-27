@@ -376,6 +376,12 @@ class DictBatch(dict):
                 tensor_field_names.append(name)
             elif hint == "Tensor" or hint == "torch.Tensor":  # String annotations
                 tensor_field_names.append(name)
+            elif hasattr(hint, "array_type") and issubclass(hint.array_type, Tensor):
+                # this is a jaxtyping annotated field (or something similar imitating that interface)
+                # this doesn't make use of any of the nice features that jaxtyping provides,
+                # so TODO add those features.
+
+                tensor_field_names.append(name)
             else:
                 other_field_names.append(name)
 
@@ -490,3 +496,9 @@ if __name__ == "__main__":
         print(
             f"Error: {e}"
         )  # Error: Missing required tensor field 'labels' from TENSOR_DATA_FIELDS
+
+    def __or__(self, other: "DictBatch") -> "DictBatch":
+        raise ValueError("ambiguous")
+
+    def __and__(self, other: "DictBatch") -> "DictBatch":
+        raise ValueError("ambiguous")
