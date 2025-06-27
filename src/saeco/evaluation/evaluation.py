@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from torch import Tensor
 
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
+
 from saeco.architecture.architecture import Architecture
 
 from saeco.data.locations import DATA_DIRS
@@ -47,10 +48,10 @@ from .fastapi_models.families_draft import (
 )
 
 from .filtered import FilteredTensor
-from .storage.stored_metadata import Filters, Metadatas, Artifacts
 from .named_filter import NamedFilter
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
+from .storage.stored_metadata import Artifacts, Filters, Metadatas
 
 
 @define

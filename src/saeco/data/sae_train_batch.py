@@ -20,5 +20,4 @@ class SAETrainBatch(DictBatch):
 
     @cached_property
     def target(self) -> torch.Tensor:
-        sites = self.target_sites or self.input_sites
-        return torch.cat([self[k] for k in sites], dim=-1)
+        return torch.cat([self[k] for k in self.target_sites], dim=-1)

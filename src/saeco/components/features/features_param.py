@@ -1,13 +1,10 @@
-from saeco.components.features.optim_reset import (
-    FeatureParamType,
-    OptimResetValues,
-)
-
+from typing import Mapping, Optional, overload, Protocol, runtime_checkable, TypeAlias
 
 import torch
 import torch.nn as nn
 from torch import Tensor
-from typing import Mapping, Optional, Protocol, TypeAlias, overload, runtime_checkable
+
+from saeco.components.features.optim_reset import FeatureParamType, OptimResetValues
 
 IndexType = int | list[int]
 
@@ -80,6 +77,7 @@ class FeaturesParam:
         feature_parameter_type: Optional[FeatureParamType] = None,
         resampled=True,
         reset_optim_on_resample=True,
+        param_id: Optional[str] = None,
     ):
         super().__init__()
         self.param = param
@@ -91,6 +89,7 @@ class FeaturesParam:
         )
         self.resampler_cfg = None
         self.reset_optim_on_resample = reset_optim_on_resample
+        self.param_id: Optional[str] = param_id
 
     def __eq__(self, other):
         return (
@@ -100,6 +99,7 @@ class FeaturesParam:
             and self.resampled == other.resampled
             and self.type == other.type
             and self.resampler_cfg == other.resampler_cfg
+            and self.param_id == other.param_id
         )
 
     def __hash__(self):
@@ -110,6 +110,7 @@ class FeaturesParam:
                 self.field_handlers,
                 self.resampled,
                 self.type,
+                self.param_id,
             )
         )
 
@@ -255,6 +256,8 @@ def get_resampled_params(model: nn.Module):
             yield fp
 
 
+from functools import cached_property
+
 # class Features:
 #     def __init__(self, features: nn.Parameter, transformation: callable):
 #         self.features = features
@@ -284,7 +287,6 @@ def get_resampled_params(model: nn.Module):
 #     def features_grad(self) -> Optional[Tensor]: ...
 
 from typing import overload
-from functools import cached_property
 
 
 @runtime_checkable

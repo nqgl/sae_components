@@ -256,7 +256,8 @@ class DictPiler:
                     spares = [spare]
                     nspare = len(spare)
             for piler in self.pilers.values():
-                del piler.piles.cache[str(p)]
+                if str(p) in piler.piles.cache:
+                    del piler.piles.cache[str(p)]
 
     @overload
     def sized_generator(

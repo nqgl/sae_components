@@ -14,6 +14,7 @@ class DataGenerationProcessConfig(SweepableConfig):
     meta_batch_size: int = 2**16  # how many tokens to send in each meta-batch
     llm_batch_size: int = 2**12  # batch size when running the LLM (in tokens)
     num_document_distribution_batches: int = 100
+    compress_acts: bool = False
 
     def num_act_piles(self, num_tokens):
         return 1 + num_tokens // self.acts_per_pile

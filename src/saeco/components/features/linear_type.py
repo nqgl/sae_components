@@ -1,12 +1,13 @@
+from abc import abstractmethod
+
+from functools import cached_property
 from typing import Optional, TypedDict
 
 import torch.nn as nn
 from torch import Tensor
-
-from functools import cached_property
-from abc import abstractmethod
-from saeco.components.features.features_param import FeaturesParam
 from typing_extensions import Self
+
+from saeco.components.features.features_param import FeaturesParam
 
 
 # class LinWeights(WrapsModule):
@@ -153,6 +154,8 @@ class LinWeightsMixin:
 
 
 class LinDecoderMixin(LinWeightsMixin):
+    param_id: Optional[str] = None
+
     @cached_property
     def features(self) -> dict[str, FeaturesParam]:
         return {
@@ -160,11 +163,14 @@ class LinDecoderMixin(LinWeightsMixin):
                 self.weight,
                 feature_index=1,
                 feature_parameter_type=FeaturesParam.FPTYPES.dec,
+                param_id=self.param_id,
             )
         }
 
 
 class LinEncoderMixin(LinWeightsMixin):
+    param_id: Optional[str] = None
+
     @cached_property
     def features(self) -> dict[str, FeaturesParam]:
         d = {
@@ -172,6 +178,7 @@ class LinEncoderMixin(LinWeightsMixin):
                 self.weight,
                 feature_index=0,
                 feature_parameter_type=FeaturesParam.FPTYPES.enc,
+                param_id=self.param_id,
             ),
         }
         if self.bias is not None:
@@ -179,6 +186,7 @@ class LinEncoderMixin(LinWeightsMixin):
                 self.bias,
                 feature_index=0,
                 feature_parameter_type=FeaturesParam.FPTYPES.bias,
+                param_id=self.param_id,
             )
         return d
 

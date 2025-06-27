@@ -93,6 +93,7 @@ class Trainable(cl.Module):
         ), "models and losses should not be normalized, the Trainable object is responsible for normalization."
         self.models = nn.ModuleList(models)
         model = models[0]
+        self.raw_model = model
         assert extra_losses is None or losses is None
 
         self.losses = nn.ModuleDict(

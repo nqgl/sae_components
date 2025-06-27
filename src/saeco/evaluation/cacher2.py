@@ -8,14 +8,17 @@ import tqdm
 from attrs import define, field
 from jaxtyping import Float, Int
 from torch import Tensor
+
 from saeco.architecture.architecture import Architecture
 
 from saeco.data import ActsData, DataConfig
+from saeco.data.piler.dict_piler import DictBatch
+from saeco.data.sae_train_batch import SAETrainBatch
+from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.tokens_data import PermutedDocs
 
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
-from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 def to_token_chunk_yielder(tokens: Tensor, chunk_size: int):
@@ -71,7 +74,7 @@ class ActsCacher:
         return metadata_chunks
 
     @torch.inference_mode()
-    def get_llm_acts(self, tokens: Int[Tensor, "doc seq"]):
+    def get_llm_acts(self, tokens: Int[Tensor, "doc seq"]) -> DictBatch:
         return self.acts_data.to_acts(
             tokens,
             llm_batch_size=self.cfg.llm_batch_size
@@ -241,15 +244,39 @@ class ActsCacher:
             return torch.cat(sae_acts, dim=0).coalesce()
         return torch.cat(sae_acts, dim=0)
 
-    def get_sae_acts(self, subj_acts) -> Tensor:
-        ndoc, seq_len, d_dict = subj_acts.shape
-        subj_acts_flat = einops.rearrange(
-            subj_acts, "doc seq d_dict -> (doc seq) d_dict"
+    def get_sae_acts(self, subj_acts: DictBatch) -> Tensor:
+        sae_batch = SAETrainBatch(
+            data=subj_acts.data,
+            input_sites=self.architecture.run_cfg.train_cfg.true_input_sites,
+            target_sites=self.architecture.run_cfg.train_cfg.true_target_sites,
         )
-        sae_acts_flat = self.sae_model.get_acts(subj_acts_flat)
-        sae_acts = einops.rearrange(
-            sae_acts_flat, "(doc seq) d_dict -> doc seq d_dict", doc=ndoc, seq=seq_len
+
+        input_acts = sae_batch.input
+
+        ndoc, seq_len, d_dict = input_acts.shape
+        input_acts_flat = einops.rearrange(
+            input_acts, "doc seq d_model -> (doc seq) d_model"
         )
+
+        sae_acts_flat = self.sae_model.get_acts(input_acts_flat)
+
+        # TODO: This is a hack to get around that our multisite CLT model stores
+        # activations as [n_layer, batch_size, d_dict].
+        if sae_acts_flat.ndim == 3:
+            sae_acts = einops.rearrange(
+                sae_acts_flat,
+                "n_layers (doc seq) d_dict -> doc seq (n_layers d_dict)",
+                doc=ndoc,
+                seq=seq_len,
+            )
+        else:
+            sae_acts = einops.rearrange(
+                sae_acts_flat,
+                "(doc seq) d_dict -> doc seq d_dict",
+                doc=ndoc,
+                seq=seq_len,
+            )
+
         if self.cfg.exclude_bos_from_storage:
             sae_acts[:, 0] = 0
         return sae_acts

@@ -1,3 +1,5 @@
+from functools import cached_property
+
 from pydantic import Field
 
 from saeco.data.data_cfg import DataConfig
@@ -35,7 +37,14 @@ class TrainConfig(SweepableConfig):
     target_sites: list[str] | None = None
 
     @property
-    @lazycall
+    def true_input_sites(self) -> list[str]:
+        return self.input_sites or self.data_cfg.model_cfg.acts_cfg.sites
+
+    @property
+    def true_target_sites(self) -> list[str]:
+        return self.target_sites or self.true_input_sites
+
+    @cached_property
     def schedule(self):
         return self.raw_schedule_cfg.step_scheduler
 
@@ -63,13 +72,11 @@ class TrainConfig(SweepableConfig):
                 f"Target sites must be a subset of the data config's sites. Got {self.target_sites}, expected subset of {self.data_cfg.model_cfg.acts_cfg.sites}"
             )
 
-        used_input_sites = self.input_sites or self.data_cfg.model_cfg.acts_cfg.sites
-
         buffer = self.data_cfg._get_queued_databuffer(
+            input_sites=self.true_input_sites,
+            target_sites=self.true_target_sites,
             num_workers=num_workers,
             batch_size=self.batch_size,
-            input_sites=used_input_sites,
-            target_sites=self.target_sites,
         )
 
         return buffer
