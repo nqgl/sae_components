@@ -1,13 +1,12 @@
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
-from saeco.sweeps.sweepable_config.has_sweep import CouldHaveSweep, has_sweep, to_items
-from typing import TYPE_CHECKING, Any, TypeVar
+import random
+from typing import Any, TYPE_CHECKING, TypeVar
 
 from pydantic import BaseModel, Field
 
-
-import random
+from saeco.sweeps.sweepable_config.has_sweep import CouldHaveSweep, has_sweep, to_items
+from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
+from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 Location = list[str]
 
@@ -227,13 +226,13 @@ class SweptNode(BaseModel):
 
 
 def main():
+    from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
     from saeco.sweeps.sweepable_config import (
         SweepableConfig,
-        Swept,
         SweepExpression,
         SweepVar,
+        Swept,
     )
-    from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 
     class Ex(SweepableConfig):
         a: int = 1

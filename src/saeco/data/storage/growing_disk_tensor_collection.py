@@ -16,7 +16,6 @@ from . import DiskTensor, DiskTensorCollection, GrowingDiskTensor
 
 class GrowingDiskTensorCollectionMetadata(BaseModel):
     finalized: bool = False
-    compression: CompressionType = CompressionType.NONE
 
     def save(self, path: Path) -> None:
         self.metadata_path_from_dir(path).write_text(self.model_dump_json())
