@@ -100,9 +100,6 @@ class DataConfig(SweepableConfig):
     def _tokens_perm_path(self, split: SplitConfig) -> Path:
         return self._get_tokens_split_path(split) / "perm.safetensors"
 
-    def _acts_piles_path(self, split: SplitConfig) -> Path:
-        return self._get_acts_split_path(split) / "piles"
-
     def _act_chunks_paths(self, split: SplitConfig) -> list[Path]:
         return [
             self._get_acts_split_path(split) / "chunks" / str(i)
@@ -163,7 +160,6 @@ class DataConfig(SweepableConfig):
             input_sites=input_sites,
             target_sites=target_sites,
         )
-        dataset.store_if_not_exists()
         return dataset
 
     def _get_queued_databuffer(
@@ -201,9 +197,7 @@ class DataConfig(SweepableConfig):
         num_workers=0,
         batch_size=4096,
     ):
-        model = None
-        if not self._acts_piles_path(self.trainsplit).exists():
-            model = self.model_cfg.model
+        model = self.model_cfg.model
 
         ds = self._train_dataset(
             model,

@@ -4,7 +4,6 @@ from functools import cached_property
 import einops
 import nnsight
 import saeco.components.features.features as ft
-
 import saeco.core as cl
 import torch
 import torch.nn as nn
@@ -15,6 +14,8 @@ from saeco.architecture import Architecture, aux_model_prop, loss_prop, model_pr
 
 from saeco.components import L2Loss, Lambda, Loss, SparsityPenaltyLoss
 from saeco.components.features.features_param import FeaturesParam
+
+from saeco.components.jumprelu import JumpReLU
 from saeco.components.ops import Indexer
 from saeco.components.sae_cache import SAECache
 from saeco.core import Seq
@@ -238,7 +239,6 @@ class MatryoshkaCLTDecoder(cl.Module):
         self,
         d_layer_data: int,
         d_layer_dict: int,
-        nesting_boundaries: list[int],
         cfg: MatryoshkaCLTConfig,
     ):
         super().__init__()
@@ -252,10 +252,11 @@ class MatryoshkaCLTDecoder(cl.Module):
 
         self.decoders = [
             SplittableDecoder(
-                d_layer_dict=d_layer_dict,
+                d_dict=d_layer_dict,
                 num_layers=n + 1,
-                d_layer_data=d_layer_data,
-                nesting_boundaries=nesting_boundaries,
+                d_data=d_layer_data,
+                num_nestings=cfg.n_nestings,
+                per_decoder_split=cfg.per_decoder_split,
             )
             for n in range(cfg.n_sites)
         ]
@@ -273,16 +274,15 @@ class MatryoshkaCLTDecoder(cl.Module):
             ).reduce(lambda *x: x),
             **useif(
                 not cfg.per_decoder_split,
-                generate_splits=Lambda(
-                    lambda x: (
-                        x,
-                        generate_random_boundary(cfg.n_nestings, d_layer_dict),
-                    )
+                generate_boundary=Seq(
+                    generate_splits=Lambda(
+                        lambda x: (
+                            x,
+                            generate_random_boundary(cfg.n_nestings, d_layer_dict),
+                        )
+                    ),
+                    prepare_splits=Lambda(lambda x: [(x_i, x[1]) for x_i in x[0]]),
                 ),
-            ),
-            **useif(
-                not cfg.per_decoder_split,
-                prepare_splits=Lambda(lambda x: [(x_i, x[1]) for x_i in x[0]]),
             ),
             splittable_decoders=cl.Router(
                 *[
@@ -297,7 +297,7 @@ class MatryoshkaCLTDecoder(cl.Module):
                 ]
             ).reduce(lambda *x: torch.cat(x, dim=-1)),
             decoder_bias=AddSplitDecoderBias(
-                num_layers=cfg.n_sites, d_data=d_layer_data
+                num_layers=cfg.n_sites, d_layer_data=d_layer_data
             ),
         )
 
@@ -342,6 +342,7 @@ class MatryoshkaCLT(Architecture[MatryoshkaCLTConfig]):
     def model(self):
         return SAE(
             encoder_pre=self.pre_encoders,
+            #            nonlinearity=JumpReLU(0.03, 1),
             nonlinearity=nn.ReLU(),
             decoder=self.decoder,
         )

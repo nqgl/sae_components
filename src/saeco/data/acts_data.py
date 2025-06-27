@@ -224,10 +224,6 @@ class ActsDataset(torch.utils.data.IterableDataset):
         self.input_sites = input_sites
         self.target_sites = target_sites
 
-    def store_if_not_exists(self):
-        if not self.acts.cfg._acts_piles_path(self.split).exists():
-            self.acts._store_split(self.split)
-
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
 
