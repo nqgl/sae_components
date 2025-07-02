@@ -192,6 +192,14 @@ class DictBatch(dict):
                 raise TypeError(f"Value for {k!r} is not a torch.Tensor")
 
     # ------------------------------ dunder -----------------------------------
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in self.TENSOR_DATA_FIELDS:
+            assert isinstance(value, Tensor)
+            self[name] = value
+        else:
+            super().__setattr__(name, value)
+
     def __getattr__(self, name: str) -> Any:
         """Allow accessing TENSOR_DATA_FIELDS as attributes."""
         if name in self.TENSOR_DATA_FIELDS:
