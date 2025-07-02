@@ -256,7 +256,11 @@ class DictPiler:
                     spares = [spare]
                     nspare = len(spare)
             for piler in self.pilers.values():
-                del piler.piles.cache[str(p)]
+                if not piler.piles.skip_cache:
+                    try:
+                        del piler.piles.cache[str(p)]
+                    except KeyError as e:
+                        print(f"Warning, deleting item from piler cache failed: {e}")
 
     @overload
     def sized_generator(
