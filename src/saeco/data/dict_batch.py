@@ -10,6 +10,7 @@ from typing import (
     Callable,
     ClassVar,
     Generator,
+    Generic,
     get_args,
     get_origin,
     get_type_hints,
@@ -23,13 +24,17 @@ from torch import Tensor
 from typing_extensions import dataclass_transform
 
 T = TypeVar("T")
+from typing_extensions import Self
+
+
+DictBatch_T = TypeVar("DictBatch_T", bound="DictBatch")
 
 
 # --------------------------------------------------------------------------- #
 #  Utility wrapper (kept exactly as in NiceBatch so existing pipes still work) #
 # --------------------------------------------------------------------------- #
-class NiceConvertedIter:
-    def __init__(self, iterable: Iterator["DictBatch"]):
+class NiceConvertedIter(Generic[DictBatch_T]):
+    def __init__(self, iterable: Iterator[DictBatch_T]):
         self._iter = iterable
 
     def __iter__(self):  # pragma: no cover
@@ -41,21 +46,21 @@ class NiceConvertedIter:
     def __rshift__(  # Enables:   loader >> some_transform >> other_transform
         self,
         transform_gen: Callable[
-            [Iterator["DictBatch"]],
-            Iterator["DictBatch"] | Generator["DictBatch", None, None],
+            [Iterator[DictBatch_T]],
+            Iterator[DictBatch_T] | Generator[DictBatch_T, None, None],
         ],
-    ) -> "NiceConvertedIter":
+    ) -> "NiceConvertedIter[DictBatch_T]":
         return NiceConvertedIter(transform_gen(self._iter))
 
-    def as_dataset(self) -> "NiceIterDataset":
+    def as_dataset(self) -> "NiceIterDataset[DictBatch_T]":
         return NiceIterDataset(self)
 
 
-class NiceIterDataset(torch.utils.data.IterableDataset):
-    def __init__(self, iterable: Iterator["DictBatch"]):
+class NiceIterDataset(torch.utils.data.IterableDataset, Generic[DictBatch_T]):
+    def __init__(self, iterable: Iterator[DictBatch_T]):
         self.iterable = iterable
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[DictBatch_T]:
         return self.iterable
 
 
@@ -226,7 +231,7 @@ class DictBatch(dict):
             | tuple[slice, ...]
             | tuple[EllipsisType, Tensor]
         ),
-    ) -> "DictBatch": ...
+    ) -> Self: ...
 
     def __getitem__(self, key):  # type: ignore[override]
         if isinstance(key, str):
@@ -255,25 +260,25 @@ class DictBatch(dict):
         return self.to("cuda", *args, **kwargs)
 
     # -------------------- cloning / contiguity -------------------------------
-    def clone(self) -> "DictBatch":
+    def clone(self) -> Self:
         return self.__class__.construct_with_other_data(
             {k: v.clone() for k, v in self.items()}, self._get_other_dict()
         )
 
-    def contiguous(self) -> "DictBatch":
+    def contiguous(self) -> Self:
         return self.__class__.construct_with_other_data(
             {k: v.contiguous() for k, v in self.items()}, self._get_other_dict()
         )
 
     # ----------------------- cat / stack helpers -----------------------------
     @classmethod
-    def _validate_keysets(cls, batches: list["DictBatch"]):
+    def _validate_keysets(cls, batches: list[Self]):
         keys0 = batches[0].keys()
         if not all(b.keys() == keys0 for b in batches):
             raise ValueError("All batches must have identical tensor keys")
 
     @classmethod
-    def cat_list(cls, batches: list["DictBatch"], dim: int = 0) -> "DictBatch":
+    def cat_list(cls, batches: list[Self], dim: int = 0) -> Self:
         cls._validate_keysets(batches)
         return cls.construct_with_other_data(
             {k: torch.cat([b[k] for b in batches], dim=dim) for k in batches[0].keys()},
@@ -281,7 +286,7 @@ class DictBatch(dict):
         )
 
     @classmethod
-    def stack_list(cls, batches: list["DictBatch"], dim: int = 0) -> "DictBatch":
+    def stack_list(cls, batches: list[Self], dim: int = 0) -> Self:
         cls._validate_keysets(batches)
         return cls.construct_with_other_data(
             {
@@ -295,7 +300,7 @@ class DictBatch(dict):
     @classmethod
     def convert_iterable(
         cls, iterable: Iterable[dict[str, Tensor]]
-    ) -> NiceConvertedIter:
+    ) -> NiceConvertedIter[Self]:
         def gen():
             for d in iterable:
                 yield cls(d)  # type: ignore[arg-type]
@@ -309,13 +314,13 @@ class DictBatch(dict):
     @classmethod
     def construct_with_other_data(
         cls, data: dict[str, Tensor], other: dict[str, Any] | None = None
-    ) -> "DictBatch":
+    ) -> Self:
         other = other or {}
         return cls(data, **other)
 
     # -- simple rule: enjoy equal extras or keep first; can customise in subclass
     @classmethod
-    def _merge_other_data(cls, batches: list["DictBatch"]) -> dict[str, Any]:
+    def _merge_other_data(cls, batches: list[Self]) -> dict[str, Any]:
         """Default strategy: require identical extras across all batches."""
         merged: dict[str, Any] = {}
         for field in cls.OTHER_DATA_FIELDS:
