@@ -92,7 +92,7 @@ class ArchRef(BaseModel, Generic[T]):
         return archref_cls.model_validate(d)
 
     def load_arch(
-        self, state_dict=None, device="cuda", xcls: "Architecture[Any]" | None = None
+        self, state_dict=None, device="cuda", xcls: "Architecture[Any] | None" = None
     ):
         arch_cls = self.class_ref.get_arch_class()
         if xcls is not None:
