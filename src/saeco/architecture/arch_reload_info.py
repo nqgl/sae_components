@@ -1,13 +1,12 @@
-from pydantic import BaseModel, Field
-from typing_extensions import get_original_bases
+import importlib
+import inspect
+import json
+from pathlib import Path
+from typing import Any, Generic, TYPE_CHECKING, TypeVar
 
 import torch
-import inspect
-import importlib
-from pathlib import Path
-import json
-from typing import TYPE_CHECKING, Generic, TypeVar, Any
-from typing_extensions import Self
+from pydantic import BaseModel, Field
+from typing_extensions import get_original_bases, Self
 
 
 if TYPE_CHECKING:
@@ -92,8 +91,13 @@ class ArchRef(BaseModel, Generic[T]):
         archref_cls = cls[config_class]
         return archref_cls.model_validate(d)
 
-    def load_arch(self, state_dict=None, device="cuda"):
+    def load_arch(
+        self, state_dict=None, device="cuda", xcls: "Architecture[Any]" | None = None
+    ):
         arch_cls = self.class_ref.get_arch_class()
+        if xcls is not None:
+            if issubclass(xcls, arch_cls):
+                arch_cls = xcls
         return arch_cls(self.config, state_dict=state_dict, device=device)
 
     @classmethod

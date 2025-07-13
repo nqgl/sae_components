@@ -543,7 +543,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
         averaged_weights: bool | None = False,
     ) -> "ArchitectureBase":
         return ArchStoragePaths.from_path(path).load_arch(
-            load_weights=load_weights, averaged_weights=averaged_weights
+            load_weights=load_weights, averaged_weights=averaged_weights, xcls=cls
         )
 
     @abstractmethod
