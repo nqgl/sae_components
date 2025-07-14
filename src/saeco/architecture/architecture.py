@@ -489,11 +489,23 @@ class ArchitectureBase(Generic[ArchConfigType]):
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-        bases = get_original_bases(cls)
-        assert len(bases) == 1
-        p = typing.get_args(bases[0])
-        assert len(p) == 1
-        return p[0]
+
+        # TODO make a more robust version of this?
+        # TODO port this to normal arch (or share inheritance)
+        for cl in cls.mro():
+            # print(f"cl args:{cl} {typing.get_args(cl)}")
+            bases = get_original_bases(cl)
+            # print(f"cl: {cl}")
+            # print(f"len(bases) == 1{len(bases) == 1}")
+            if len(bases) > 0:
+                # print(f"bases: {bases}")
+                assert len(bases) == 1
+                p = typing.get_args(bases[0])
+                if len(p) > 0:
+                    assert len(p) == 1
+                    assert issubclass(p[0], SweepableConfig)
+                    return p[0]
+        raise ValueError(f"could not find arch config class in {cls}")
 
     @classmethod
     @abstractmethod
