@@ -603,3 +603,48 @@ class ArchitectureBase(Generic[ArchConfigType]):
         from saeco.sweeps.newsweeper import SweepManager
 
         return SweepManager(self, ezpod_group=ezpod_group)
+
+    def save_sweepref_and_get_py_commands(
+        self,
+        project: str,
+        gpus_per_run: int,
+        clivars: str = 'TORCH_LOGS="graph_breaks,recompiles"  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True ',
+        pre_commands: str = "",
+        pyname: str | None = None,
+    ) -> list[str]:
+        sm = self.get_sweep_manager()
+        sm.initialize_sweep(project=project)
+
+        commands = (
+            sm.get_worker_run_commands_for_manual_sweep(suffix="--distributed-skip-log")
+            if gpus_per_run > 1
+            else sm.get_worker_run_commands_for_manual_sweep()
+        )
+        return to_py_cmd(
+            commands,
+            pyname=pyname
+            or ("python3" if gpus_per_run == 1 else f"composer -n {gpus_per_run}"),
+            challenge_file=None,
+            prefix_vars=pre_commands + clivars,
+        )
+
+
+def to_py_cmd(  # Semi temporary code duplication of something that also exists in ezpod
+    cmd: str | list[str],
+    pyname: str,
+    challenge_file: str | None = None,
+    prefix_vars: str | None = None,
+):
+    if isinstance(cmd, list):
+        return [
+            to_py_cmd(
+                c, pyname=pyname, challenge_file=challenge_file, prefix_vars=prefix_vars
+            )
+            for c in cmd
+        ]
+    cmd = f"{pyname} {cmd}"
+    if prefix_vars:
+        cmd = f"{prefix_vars} {cmd}"
+    if challenge_file:
+        cmd = f"{pyname} {challenge_file}; {cmd}"
+    return cmd
