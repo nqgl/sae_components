@@ -415,7 +415,8 @@ class BaseRunConfig(SweepableConfig, Generic[ArchConfigType]):
     arch_cfg: ArchConfigType
 
 
-class WithConfig(Generic[ArchConfigType]): ...
+class WithConfig(Generic[ArchConfigType]):
+    cfg: ArchConfigType
 
 
 def get_max_mro_cfg_cls(cls: type) -> type:
@@ -435,6 +436,11 @@ def get_max_mro_cfg_cls(cls: type) -> type:
                 raise ValueError(
                     f"This error is happening because Architecture and ArchitectureBase still need to be unified"
                 )
+            continue
+        # type(p[0])
+        assert isinstance(p[0], TypeVar) or issubclass(p[0], SweepableConfig)
+        p = [i for i in p if issubclass(i, SweepableConfig)]
+        if len(p) == 0:
             continue
         if len(p) != 1:
             raise ValueError(
