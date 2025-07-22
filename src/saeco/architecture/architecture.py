@@ -415,6 +415,54 @@ class BaseRunConfig(SweepableConfig, Generic[ArchConfigType]):
     arch_cfg: ArchConfigType
 
 
+class WithConfig(Generic[ArchConfigType]): ...
+
+
+def get_max_mro_cfg_cls(cls: type) -> type:
+    import typing
+
+    from typing_extensions import get_original_bases
+
+    bases = [b for cl in cls.mro() for b in get_original_bases(cl)]
+    params = []
+    for b in bases:
+        p = typing.get_args(b)
+        if not p:
+            continue
+        o = typing.get_origin(b)
+        if not issubclass(o, (ArchitectureBase, WithConfig)):
+            if issubclass(o, Architecture):
+                raise ValueError(
+                    f"This error is happening because Architecture and ArchitectureBase still need to be unified"
+                )
+            continue
+        if len(p) != 1:
+            raise ValueError(
+                f"Expected 1 generic parameter, got {len(p)}. \n\nThe parameters: {p}"
+            )
+        if not issubclass(p[0], SweepableConfig):
+            raise ValueError(
+                f"Architecture config class must be a subclass of SweepableConfig, got {p[0]}"
+            )
+        params.extend(p)
+    mro_params = [SweepableConfig]
+    for p in params:
+        for i in range(len(mro_params)):
+            if p == mro_params[i]:
+                break
+            if issubclass(p, mro_params[i]):
+                mro_params[i:i] = [p]
+                break
+        else:
+            if not issubclass(mro_params[-1], p):
+                raise ValueError(
+                    f"Architecture config classes must be able to be resolved into a sequence of subclasses, could not resolve {p} into {mro_params}"
+                )
+            mro_params.append(p)
+    max_mro_cfg_cls = mro_params[0]
+    return max_mro_cfg_cls
+
+
 class ArchitectureBase(Generic[ArchConfigType]):
     """ """
 
@@ -489,23 +537,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-
-        # TODO make a more robust version of this?
-        # TODO port this to normal arch (or share inheritance)
-        for cl in cls.mro():
-            # print(f"cl args:{cl} {typing.get_args(cl)}")
-            bases = get_original_bases(cl)
-            # print(f"cl: {cl}")
-            # print(f"len(bases) == 1{len(bases) == 1}")
-            if len(bases) > 0:
-                # print(f"bases: {bases}")
-                assert len(bases) == 1
-                p = typing.get_args(bases[0])
-                if len(p) > 0:
-                    assert len(p) == 1
-                    assert issubclass(p[0], SweepableConfig)
-                    return p[0]
-        raise ValueError(f"could not find arch config class in {cls}")
+        return get_max_mro_cfg_cls(cls)
 
     @classmethod
     @abstractmethod
