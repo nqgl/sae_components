@@ -419,7 +419,7 @@ class WithConfig(Generic[ArchConfigType]):
     cfg: ArchConfigType
 
 
-def get_max_mro_cfg_cls(cls: type) -> type:
+def get_max_mro_cfg_cls_(cls: type) -> type:
     import typing
 
     from typing_extensions import get_original_bases
@@ -452,6 +452,111 @@ def get_max_mro_cfg_cls(cls: type) -> type:
             )
         params.extend(p)
     mro_params = [SweepableConfig]
+    for p in params:
+        for i in range(len(mro_params)):
+            if p == mro_params[i]:
+                break
+            if issubclass(p, mro_params[i]):
+                mro_params[i:i] = [p]
+                break
+        else:
+            if not issubclass(mro_params[-1], p):
+                raise ValueError(
+                    f"Architecture config classes must be able to be resolved into a sequence of subclasses, could not resolve {p} into {mro_params}"
+                )
+            mro_params.append(p)
+    max_mro_cfg_cls = mro_params[0]
+    return max_mro_cfg_cls
+
+
+def get_max_mro_cfg_cls(cls: type) -> type:
+    import typing
+
+    from typing_extensions import get_original_bases
+
+    bases = [b for cl in [cls, *cls.mro()] for b in get_original_bases(cl)]
+
+    params = []
+    for b in bases:
+        p = typing.get_args(b)
+        if not p:
+            continue
+        o = typing.get_origin(b)
+        if not issubclass(o, (ArchitectureBase, WithConfig)):
+            if issubclass(o, Architecture):
+                raise ValueError(
+                    f"This error is happening because Architecture and ArchitectureBase still need to be unified"
+                )
+            continue
+        # type(p[0])
+        assert isinstance(p[0], TypeVar) or issubclass(p[0], SweepableConfig)
+        p = [p.__default__ if isinstance(p, TypeVar) else p for p in p]
+        p = [i for i in p if issubclass(i, SweepableConfig)]
+        if len(p) == 0:
+            continue
+        if len(p) != 1:
+            raise ValueError(
+                f"Expected 1 generic parameter, got {len(p)}. \n\nThe parameters: {p}"
+            )
+        if not issubclass(p[0], SweepableConfig):
+            raise ValueError(
+                f"Architecture config class must be a subclass of SweepableConfig, got {p[0]}"
+            )
+        params.extend(p)
+    mro_params = [SweepableConfig]
+    for p in params:
+        for i in range(len(mro_params)):
+            if p == mro_params[i]:
+                break
+            if issubclass(p, mro_params[i]):
+                mro_params[i:i] = [p]
+                break
+        else:
+            if not issubclass(mro_params[-1], p):
+                raise ValueError(
+                    f"Architecture config classes must be able to be resolved into a sequence of subclasses, could not resolve {p} into {mro_params}"
+                )
+            mro_params.append(p)
+    max_mro_cfg_cls = mro_params[0]
+    return max_mro_cfg_cls
+
+
+def get_max_mro_cls(cls: type, target_type: type) -> type:
+    import typing
+
+    from typing_extensions import get_original_bases
+
+    bases = [cls] + [b for cl in cls.mro() for b in get_original_bases(cl)]
+
+    params = []
+    for b in bases:
+        p = typing.get_args(b)
+        if not p:
+            continue
+        o = typing.get_origin(b)
+        if not issubclass(o, (ArchitectureBase, WithConfig)):
+            if issubclass(o, Architecture):
+                raise ValueError(
+                    f"This error is happening because Architecture and ArchitectureBase still need to be unified"
+                )
+            continue
+        # type(p[0])
+        assert isinstance(p[0], TypeVar) or issubclass(p[0], target_type)
+        p = [p.__default__ if isinstance(p, TypeVar) else p for p in p]
+        p = [p for p in p if p is not typing.NoDefault]
+        p = [i for i in p if issubclass(i, target_type)]
+        if len(p) == 0:
+            continue
+        if len(p) != 1:
+            raise ValueError(
+                f"Expected 1 generic parameter, got {len(p)}. \n\nThe parameters: {p}"
+            )
+        if not issubclass(p[0], target_type):
+            raise ValueError(
+                f"Architecture config class must be a subclass of target_type, got {p[0]}"
+            )
+        params.extend(p)
+    mro_params = [target_type]
     for p in params:
         for i in range(len(mro_params)):
             if p == mro_params[i]:
@@ -504,6 +609,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
 
     @cached_property
     def _core_model(self) -> SAE:
+
         return model_prop.get_from_fields(self)
 
     @cached_property

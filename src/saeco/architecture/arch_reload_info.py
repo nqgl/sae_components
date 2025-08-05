@@ -70,24 +70,27 @@ class ArchRef(BaseModel, Generic[T]):
     config: T = Field()
 
     @classmethod
-    def open(cls, path: Path) -> Self:
-
+    def open(cls, path: Path, xcls: "Architecture[Any] | None" = None) -> Self:
         try:
             bases = get_original_bases(cls)
             if hasattr(bases[0], "__args__") and bases[0].__args__[0] is not T:
                 raise ValueError("generic type T must not be instantiated")
         except AttributeError:
             pass
-        return cls.from_json(json.loads(path.read_text()))
+        return cls.from_json(json.loads(path.read_text()), xcls=xcls)
 
     @classmethod
-    def from_json(cls, d: dict):
+    def from_json(cls, d: dict, xcls: "Architecture[Any] | None" = None):
+        arch = ArchClassRef.model_validate(d["class_ref"]).get_arch_class()
 
-        config_class = (
-            ArchClassRef.model_validate(d["class_ref"])
-            .get_arch_class()
-            .get_config_class()
-        )
+        if xcls is not None and arch in xcls.mro():
+            print("using xcls")
+            print(f"xcls: {xcls}")
+            print(f"arch: {arch}")
+            print(f"xcls.mro(): {xcls.mro()}")
+            arch = xcls
+
+        config_class = arch.get_config_class()
         archref_cls = cls[config_class]
         return archref_cls.model_validate(d)
 
@@ -97,6 +100,12 @@ class ArchRef(BaseModel, Generic[T]):
         arch_cls = self.class_ref.get_arch_class()
         if xcls is not None:
             if issubclass(xcls, arch_cls):
+                arch_cls = xcls
+            if arch_cls in xcls.mro():
+                print("using xcls")
+                print(f"xcls: {xcls}")
+                print(f"arch_cls: {arch_cls}")
+                print(f"xcls.mro(): {xcls.mro()}")
                 arch_cls = xcls
         return arch_cls(self.config, state_dict=state_dict, device=device)
 
@@ -171,8 +180,9 @@ class ArchStoragePaths(BaseModel):
                 raise ValueError(
                     f"weights do not exist at {self.model_weights}, but load_weights is set"
                 )
-        arch_ref = ArchRef.open(self.arch_ref)
+        arch_ref = ArchRef.open(self.arch_ref, xcls=xcls)
         arch_inst = arch_ref.load_arch(state_dict=state_dict, device=device, xcls=xcls)
+        print(f"arch_inst_type: {arch_inst.__class__}")
         return arch_inst
 
     def exists(self):
