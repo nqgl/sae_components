@@ -1,3 +1,4 @@
+import itertools
 from enum import Enum
 from pathlib import Path
 
@@ -17,7 +18,6 @@ from typing import (
 )
 
 import einops
-
 import torch
 import tqdm
 from attrs import define, field
@@ -202,6 +202,7 @@ class DictPiler:
         yield_dicts: Literal[False] = False,
         id=None,
         nw=None,
+        num_epochs: int | None = 1,
     ) -> Generator[DictBatch, None, None]: ...
 
     @overload
@@ -211,6 +212,7 @@ class DictPiler:
         yield_dicts: Literal[True],
         id=None,
         nw=None,
+        num_epochs: int | None = 1,
     ) -> Generator[dict[str, torch.Tensor], None, None]: ...
 
     def batch_generator(
@@ -219,48 +221,60 @@ class DictPiler:
         yield_dicts: bool = False,
         id=None,
         nw=None,
+        num_epochs: int | None = 1,
     ):
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
         nw = nw or 1
+        if num_epochs is not None:
+            epoch_gen = range(num_epochs)
+        else:
+            epoch_gen = itertools.count()
 
         spares: list[DictBatch] = []
         nspare = 0
-        for p in range(id % nw, self.piler_metadata.num_piles, nw):
-            pile = self[p]
-            # below we clone before yielding to prevent yielding a view of the pile.
-            # if a yielded view were to get pinned by the consumer of this,
-            # (eg a dataloader), the entire mmapped pile would get pinned as well
-            for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-                yield (
-                    pile[i : i + batch_size].clone().data
-                    if yield_dicts
-                    else pile[i : i + batch_size].clone()
-                )
-            spare = pile[len(pile) // batch_size * batch_size :].clone()
-            if len(spare) > 0:
-                spares.append(spare)
-                nspare += len(spare)
-                if nspare > batch_size:
-                    consolidated = DictBatch.cat_list(spares, dim=0)
-                    for i in range(
-                        0, len(consolidated) // batch_size * batch_size, batch_size
-                    ):
-                        yield (
-                            consolidated[i : i + batch_size].data
-                            if yield_dicts
-                            else consolidated[i : i + batch_size]
-                        )
-                    spare = consolidated[len(consolidated) // batch_size * batch_size :]
-                    spares = [spare]
-                    nspare = len(spare)
-            for piler in self.pilers.values():
-                if not piler.piles.skip_cache:
-                    try:
-                        del piler.piles.cache[str(p)]
-                    except KeyError as e:
-                        print(f"Warning, deleting item from piler cache failed: {e}")
+        for epoch in epoch_gen:
+            if epoch != 0:
+                print(f"finished epoch {epoch - 1}")
+            for p in range(id % nw, self.piler_metadata.num_piles, nw):
+                pile = self[p]
+                # below we clone before yielding to prevent yielding a view of the pile.
+                # if a yielded view were to get pinned by the consumer of this,
+                # (eg a dataloader), the entire mmapped pile would get pinned as well
+                for i in range(0, len(pile) // batch_size * batch_size, batch_size):
+                    yield (
+                        pile[i : i + batch_size].clone().data
+                        if yield_dicts
+                        else pile[i : i + batch_size].clone()
+                    )
+                spare = pile[len(pile) // batch_size * batch_size :].clone()
+                if len(spare) > 0:
+                    spares.append(spare)
+                    nspare += len(spare)
+                    if nspare > batch_size:
+                        consolidated = DictBatch.cat_list(spares, dim=0)
+                        for i in range(
+                            0, len(consolidated) // batch_size * batch_size, batch_size
+                        ):
+                            yield (
+                                consolidated[i : i + batch_size].data
+                                if yield_dicts
+                                else consolidated[i : i + batch_size]
+                            )
+                        spare = consolidated[
+                            len(consolidated) // batch_size * batch_size :
+                        ]
+                        spares = [spare]
+                        nspare = len(spare)
+                for piler in self.pilers.values():
+                    if not piler.piles.skip_cache:
+                        try:
+                            del piler.piles.cache[str(p)]
+                        except KeyError as e:
+                            print(
+                                f"Warning, deleting item from piler cache failed: {e}"
+                            )
 
     @overload
     def sized_generator(
