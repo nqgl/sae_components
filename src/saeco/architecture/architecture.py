@@ -644,7 +644,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
     def setup(self): ...
 
     @classmethod
-    def get_arch_config_class(cls):
+    def get_arch_config_class(cls) -> type[ArchConfigType]:
         if cls is ArchitectureBase:
             raise ValueError(
                 "Architecture class must not be generic to get config class"
@@ -653,8 +653,9 @@ class ArchitectureBase(Generic[ArchConfigType]):
 
     @classmethod
     @abstractmethod
-    def get_config_class(cls):
-        return RunConfig[cls.get_arch_config_class()]
+    def get_config_class(cls) -> type[BaseRunConfig[ArchConfigType]]: ...
+
+    # return BaseRunConfig[cls.get_arch_config_class()]
 
     def save_to_path(
         self,
