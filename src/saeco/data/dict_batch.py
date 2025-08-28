@@ -24,8 +24,9 @@ from torch import Tensor
 from typing_extensions import dataclass_transform
 
 T = TypeVar("T")
-from typing_extensions import Self
+from warnings import deprecated, warn
 
+from typing_extensions import Self
 
 DictBatch_T = TypeVar("DictBatch_T", bound="DictBatch")
 
@@ -182,7 +183,17 @@ class DictBatch(dict):
     # --------------------------- static helpers ------------------------------
     @property
     def data(self) -> dict[str, Tensor]:
-        return self
+        if "data" in self:
+            return self["data"]
+        elif "data" in self.__dict__:
+            return self.__dict__["data"]
+
+        warn(
+            "DictBatch.data was used to access self, this backwards compatibility feature will be deprecated",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self  # just for backwards compatibility
 
     @staticmethod
     def _check_contents(d: dict[str, Tensor]):
@@ -457,6 +468,51 @@ class DictBatch(dict):
         return self.construct_with_other_data(
             {k: v.gather(dim, indices) for k, v in self.items()}, self._get_other_dict()
         )
+
+    def set_split(self, sel: set[str] | list[str]) -> "SplitDictBatch[Self]":
+        keys = set(self.keys())
+        if sel - keys:
+            raise ValueError(f"Keys {sel - keys} not found in {keys}")
+        a_keys = sel
+        b_keys = keys - sel
+        a = DictBatch({k: v for k, v in self.items() if k in a_keys})
+        b = DictBatch({k: v for k, v in self.items() if k in b_keys})
+        return SplitDictBatch[self.__class__](
+            a, b, self._get_other_dict(), self.__class__
+        )
+
+    def index_subset(
+        self,
+        mask: Tensor,
+        include: list[str] | set[str] | None = None,
+        exclude: list[str] | set[str] | None = None,
+    ) -> Self:
+        if (include is None) == (exclude is None):
+            raise ValueError("Either include or exclude must be provided, but not both")
+        if isinstance(include, list):
+            include = set(include)
+        if isinstance(exclude, list):
+            exclude = set(exclude)
+        if include is None:
+            include = set(self.keys()) - exclude
+
+        split = self.set_split(include)
+        split.a = split.a[mask]
+        return split.recombine()
+
+
+from attrs import define
+
+
+@define
+class SplitDictBatch[T: DictBatch]:
+    a: DictBatch
+    b: DictBatch
+    other_data: dict[str, Any]
+    cls: type[T]
+
+    def recombine(self) -> T:
+        return self.cls.construct_with_other_data({**self.a, **self.b}, self.other_data)
 
 
 # Example usage:
