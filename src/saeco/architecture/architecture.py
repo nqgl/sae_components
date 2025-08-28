@@ -415,6 +415,165 @@ class BaseRunConfig(SweepableConfig, Generic[ArchConfigType]):
     arch_cfg: ArchConfigType
 
 
+class WithConfig(Generic[ArchConfigType]):
+    cfg: ArchConfigType
+
+
+def get_max_mro_cfg_cls_(cls: type) -> type:
+    import typing
+
+    from typing_extensions import get_original_bases
+
+    bases = [b for cl in cls.mro() for b in get_original_bases(cl)]
+    params = []
+    for b in bases:
+        p = typing.get_args(b)
+        if not p:
+            continue
+        o = typing.get_origin(b)
+        if not issubclass(o, (ArchitectureBase, WithConfig)):
+            if issubclass(o, Architecture):
+                raise ValueError(
+                    f"This error is happening because Architecture and ArchitectureBase still need to be unified"
+                )
+            continue
+        # type(p[0])
+        assert isinstance(p[0], TypeVar) or issubclass(p[0], SweepableConfig)
+        p = [i for i in p if issubclass(i, SweepableConfig)]
+        if len(p) == 0:
+            continue
+        if len(p) != 1:
+            raise ValueError(
+                f"Expected 1 generic parameter, got {len(p)}. \n\nThe parameters: {p}"
+            )
+        if not issubclass(p[0], SweepableConfig):
+            raise ValueError(
+                f"Architecture config class must be a subclass of SweepableConfig, got {p[0]}"
+            )
+        params.extend(p)
+    mro_params = [SweepableConfig]
+    for p in params:
+        for i in range(len(mro_params)):
+            if p == mro_params[i]:
+                break
+            if issubclass(p, mro_params[i]):
+                mro_params[i:i] = [p]
+                break
+        else:
+            if not issubclass(mro_params[-1], p):
+                raise ValueError(
+                    f"Architecture config classes must be able to be resolved into a sequence of subclasses, could not resolve {p} into {mro_params}"
+                )
+            mro_params.append(p)
+    max_mro_cfg_cls = mro_params[0]
+    return max_mro_cfg_cls
+
+
+def get_max_mro_cfg_cls(cls: type) -> type:
+    import typing
+
+    from typing_extensions import get_original_bases
+
+    bases = [b for cl in [cls, *cls.mro()] for b in get_original_bases(cl)]
+
+    params = []
+    for b in bases:
+        p = typing.get_args(b)
+        if not p:
+            continue
+        o = typing.get_origin(b)
+        if not issubclass(o, (ArchitectureBase, WithConfig)):
+            if issubclass(o, Architecture):
+                raise ValueError(
+                    f"This error is happening because Architecture and ArchitectureBase still need to be unified"
+                )
+            continue
+        # type(p[0])
+        assert isinstance(p[0], TypeVar) or issubclass(p[0], SweepableConfig)
+        p = [p.__default__ if isinstance(p, TypeVar) else p for p in p]
+        p = [i for i in p if issubclass(i, SweepableConfig)]
+        if len(p) == 0:
+            continue
+        if len(p) != 1:
+            raise ValueError(
+                f"Expected 1 generic parameter, got {len(p)}. \n\nThe parameters: {p}"
+            )
+        if not issubclass(p[0], SweepableConfig):
+            raise ValueError(
+                f"Architecture config class must be a subclass of SweepableConfig, got {p[0]}"
+            )
+        params.extend(p)
+    mro_params = [SweepableConfig]
+    for p in params:
+        for i in range(len(mro_params)):
+            if p == mro_params[i]:
+                break
+            if issubclass(p, mro_params[i]):
+                mro_params[i:i] = [p]
+                break
+        else:
+            if not issubclass(mro_params[-1], p):
+                raise ValueError(
+                    f"Architecture config classes must be able to be resolved into a sequence of subclasses, could not resolve {p} into {mro_params}"
+                )
+            mro_params.append(p)
+    max_mro_cfg_cls = mro_params[0]
+    return max_mro_cfg_cls
+
+
+def get_max_mro_cls(cls: type, target_type: type) -> type:
+    import typing
+
+    from typing_extensions import get_original_bases
+
+    bases = [cls] + [b for cl in cls.mro() for b in get_original_bases(cl)]
+
+    params = []
+    for b in bases:
+        p = typing.get_args(b)
+        if not p:
+            continue
+        o = typing.get_origin(b)
+        if not issubclass(o, (ArchitectureBase, WithConfig)):
+            if issubclass(o, Architecture):
+                raise ValueError(
+                    f"This error is happening because Architecture and ArchitectureBase still need to be unified"
+                )
+            continue
+        # type(p[0])
+        assert isinstance(p[0], TypeVar) or issubclass(p[0], target_type)
+        p = [p.__default__ if isinstance(p, TypeVar) else p for p in p]
+        p = [p for p in p if p is not typing.NoDefault]
+        p = [i for i in p if issubclass(i, target_type)]
+        if len(p) == 0:
+            continue
+        if len(p) != 1:
+            raise ValueError(
+                f"Expected 1 generic parameter, got {len(p)}. \n\nThe parameters: {p}"
+            )
+        if not issubclass(p[0], target_type):
+            raise ValueError(
+                f"Architecture config class must be a subclass of target_type, got {p[0]}"
+            )
+        params.extend(p)
+    mro_params = [target_type]
+    for p in params:
+        for i in range(len(mro_params)):
+            if p == mro_params[i]:
+                break
+            if issubclass(p, mro_params[i]):
+                mro_params[i:i] = [p]
+                break
+        else:
+            if not issubclass(mro_params[-1], p):
+                raise ValueError(
+                    f"Architecture config classes must be able to be resolved into a sequence of subclasses, could not resolve {p} into {mro_params}"
+                )
+            mro_params.append(p)
+    max_mro_cfg_cls = mro_params[0]
+    return max_mro_cfg_cls
+
+
 class ArchitectureBase(Generic[ArchConfigType]):
     """ """
 
@@ -450,6 +609,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
 
     @cached_property
     def _core_model(self) -> SAE:
+
         return model_prop.get_from_fields(self)
 
     @cached_property
@@ -484,33 +644,18 @@ class ArchitectureBase(Generic[ArchConfigType]):
     def setup(self): ...
 
     @classmethod
-    def get_arch_config_class(cls):
+    def get_arch_config_class(cls) -> type[ArchConfigType]:
         if cls is ArchitectureBase:
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-
-        # TODO make a more robust version of this?
-        # TODO port this to normal arch (or share inheritance)
-        for cl in cls.mro():
-            # print(f"cl args:{cl} {typing.get_args(cl)}")
-            bases = get_original_bases(cl)
-            # print(f"cl: {cl}")
-            # print(f"len(bases) == 1{len(bases) == 1}")
-            if len(bases) > 0:
-                # print(f"bases: {bases}")
-                assert len(bases) == 1
-                p = typing.get_args(bases[0])
-                if len(p) > 0:
-                    assert len(p) == 1
-                    assert issubclass(p[0], SweepableConfig)
-                    return p[0]
-        raise ValueError(f"could not find arch config class in {cls}")
+        return get_max_mro_cfg_cls(cls)
 
     @classmethod
     @abstractmethod
-    def get_config_class(cls):
-        return RunConfig[cls.get_arch_config_class()]
+    def get_config_class(cls) -> type[BaseRunConfig[ArchConfigType]]: ...
+
+    # return BaseRunConfig[cls.get_arch_config_class()]
 
     def save_to_path(
         self,
@@ -565,3 +710,48 @@ class ArchitectureBase(Generic[ArchConfigType]):
         from saeco.sweeps.newsweeper import SweepManager
 
         return SweepManager(self, ezpod_group=ezpod_group)
+
+    def save_sweepref_and_get_py_commands(
+        self,
+        project: str,
+        gpus_per_run: int,
+        clivars: str = 'TORCH_LOGS="graph_breaks,recompiles"  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True ',
+        pre_commands: str = "",
+        pyname: str | None = None,
+    ) -> list[str]:
+        sm = self.get_sweep_manager()
+        sm.initialize_sweep(project=project)
+
+        commands = (
+            sm.get_worker_run_commands_for_manual_sweep(suffix="--distributed-skip-log")
+            if gpus_per_run > 1
+            else sm.get_worker_run_commands_for_manual_sweep()
+        )
+        return to_py_cmd(
+            commands,
+            pyname=pyname
+            or ("python3" if gpus_per_run == 1 else f"composer -n {gpus_per_run}"),
+            challenge_file=None,
+            prefix_vars=pre_commands + clivars,
+        )
+
+
+def to_py_cmd(  # Semi temporary code duplication of something that also exists in ezpod
+    cmd: str | list[str],
+    pyname: str,
+    challenge_file: str | None = None,
+    prefix_vars: str | None = None,
+):
+    if isinstance(cmd, list):
+        return [
+            to_py_cmd(
+                c, pyname=pyname, challenge_file=challenge_file, prefix_vars=prefix_vars
+            )
+            for c in cmd
+        ]
+    cmd = f"{pyname} {cmd}"
+    if prefix_vars:
+        cmd = f"{prefix_vars} {cmd}"
+    if challenge_file:
+        cmd = f"{pyname} {challenge_file}; {cmd}"
+    return cmd
