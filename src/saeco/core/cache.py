@@ -1,10 +1,11 @@
-from typing import Any, List, TypeVar
-from jaxtyping import Float, jaxtyped
-from torch import Tensor, NumberType
-from saeco.misc.exception_location_hint import locate_cache_exception
-
 import inspect
 import re
+from typing import Any, List, TypeVar
+
+from jaxtyping import Float, jaxtyped
+from torch import NumberType, Tensor
+
+from saeco.misc.exception_location_hint import locate_cache_exception
 
 T = TypeVar("T")
 
@@ -464,6 +465,20 @@ class Cache:
         # the typing is not technically correct here
         # but it gets the fields right in the IDE
         return SubCacher(cache=self, obj=obj, force_watch=force_watch)
+
+    def get(self, attr: str | list[str], default=...):
+        if isinstance(attr, str) and "/" in attr or "." in attr:
+            return self.get(attr.replace("/", ".").split("."), default=default)
+        if isinstance(attr, str):
+            attr = [attr]
+        obj = self
+        for k in attr[:-1]:
+            if k not in obj._subcaches:
+                return default
+            obj = obj[k]
+        if not obj._has(attr[-1]):
+            return default
+        return getattr(obj, attr[-1])
 
 
 class SubCacher:
