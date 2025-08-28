@@ -47,7 +47,7 @@ class Trainer:
         self.save_callback = save_callback
         self.t = 1
         self.log_t_offset = 0
-        self.log_freq = 10
+        self.log_freq = 1
 
         assert optim is None
         if optim is not None:
@@ -199,6 +199,7 @@ class Trainer:
         try:
             self._train(buffer=buffer, num_steps=num_steps)
         finally:
+            print("training complete, entering final")
             if self.cfg.save_on_complete:
                 try:
                     self.save()
@@ -222,6 +223,7 @@ class Trainer:
                     n += 1
                     yield next(old_buffer)
                     if n >= num_steps:
+                        print("hit end in train buf()")
                         break
 
             buffer = buf()
@@ -246,6 +248,9 @@ class Trainer:
             self.trainstep(input, cache, y=target)
             self.full_log(cache)
             self.t += 1
+            if self.cfg.early_stopping_bounds.should_stop(cache, t=self.t):
+                print("early stopping")
+                break
             cache.destruct()
             if self.cfg.use_averaged_model:
                 self.averaged_model.update_parameters(self.trainable)
@@ -264,6 +269,7 @@ class Trainer:
                 )
                 self.post_step()
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
+                print("hit end in train()")
                 break
 
     @contextmanager
@@ -376,7 +382,9 @@ class Trainer:
 
     def save(self):
         save_dir = SAVED_MODELS_DIR
+        print("get run name")
         name = mlog.get_run_name()
+        print("done")
         sweep_name, run_name = name.split(":")
         savename = save_dir / sweep_name / run_name / str(self.t)
 
