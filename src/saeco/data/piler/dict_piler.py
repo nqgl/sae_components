@@ -1,4 +1,5 @@
 import itertools
+import random
 from enum import Enum
 from pathlib import Path
 
@@ -37,6 +38,12 @@ from saeco.data.storage.growing_disk_tensor_collection import (
 
 class DictPilerMetadata(BaseModel):
     keys: set[str]
+
+
+def shuffled_range(start, stop, mod):
+    shrange = list(range(start, stop, mod))
+    random.shuffle(shrange)
+    return shrange
 
 
 @define
@@ -214,7 +221,7 @@ class DictPiler:
         nw=None,
         num_epochs: int | None = 1,
     ) -> Generator[dict[str, torch.Tensor], None, None]: ...
-
+    @torch.inference_mode()
     def batch_generator(
         self,
         batch_size,
@@ -234,33 +241,39 @@ class DictPiler:
 
         spares: list[DictBatch] = []
         nspare = 0
+
         for epoch in epoch_gen:
             if epoch != 0:
                 print(f"finished epoch {epoch - 1}")
-            for p in range(id % nw, self.piler_metadata.num_piles, nw):
+            for p in shuffled_range(
+                (id + epoch) % nw, self.piler_metadata.num_piles, nw
+            ):
                 pile = self[p]
+                perm = torch.randperm(len(pile))
                 # below we clone before yielding to prevent yielding a view of the pile.
                 # if a yielded view were to get pinned by the consumer of this,
                 # (eg a dataloader), the entire mmapped pile would get pinned as well
-                for i in range(0, len(pile) // batch_size * batch_size, batch_size):
+                for i in shuffled_range(
+                    0, len(pile) // batch_size * batch_size, batch_size
+                ):
                     yield (
-                        pile[i : i + batch_size].clone().data
+                        pile[perm[i : i + batch_size]].clone().data
                         if yield_dicts
-                        else pile[i : i + batch_size].clone()
+                        else pile[perm[i : i + batch_size]].clone()
                     )
-                spare = pile[len(pile) // batch_size * batch_size :].clone()
+                spare = pile[perm[len(pile) // batch_size * batch_size :]].clone()
                 if len(spare) > 0:
                     spares.append(spare)
                     nspare += len(spare)
-                    if nspare > batch_size:
+                    if nspare >= batch_size:
                         consolidated = DictBatch.cat_list(spares, dim=0)
-                        for i in range(
+                        for i in shuffled_range(
                             0, len(consolidated) // batch_size * batch_size, batch_size
                         ):
                             yield (
-                                consolidated[i : i + batch_size].data
+                                consolidated[i : i + batch_size].clone().data
                                 if yield_dicts
-                                else consolidated[i : i + batch_size]
+                                else consolidated[i : i + batch_size].clone()
                             )
                         spare = consolidated[
                             len(consolidated) // batch_size * batch_size :
