@@ -107,7 +107,10 @@ class Piler:
             skip_cache=skip_cache,
         )
 
-        assert len(gdtc) == metadata.num_piles
+        if len(gdtc) != metadata.num_piles:
+            raise ValueError(
+                f"expected {metadata.num_piles} piles, got {len(gdtc)} for {path}"
+            )
 
         piler = Piler(metadata, path, readonly=True, piles=gdtc)
 
