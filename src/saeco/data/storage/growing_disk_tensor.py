@@ -33,9 +33,9 @@ class GrowingDiskTensor(DiskTensor):
         new_tensor = self.create_tensor()
         if truncate:
             new_slice = slice(None)
-            old_slice = [slice(None)] * self.cat_axis + [slice(None, new_len)]
+            old_slice = (slice(None),) * self.cat_axis + (slice(None, new_len),)
         else:
-            new_slice = [slice(None)] * self.cat_axis + [slice(None, old_len)]
+            new_slice = (slice(None),) * self.cat_axis + (slice(None, old_len),)
             old_slice = slice(None)
         new_tensor[new_slice] = old_tensor[old_slice]
         temp.unlink()
