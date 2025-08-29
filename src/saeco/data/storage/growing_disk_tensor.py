@@ -137,12 +137,12 @@ class GrowingDiskTensor(DiskTensor):
         assert not self.finalized
         while self.metadata.shape[self.cat_axis] + length >= self.storage_len:
             self.resize(self.storage_len * 2)
-        append_slice = [slice(None)] * self.cat_axis + [
+        append_slice = (slice(None),) * self.cat_axis + (
             slice(
                 self.metadata.shape[self.cat_axis],
                 self.metadata.shape[self.cat_axis] + length,
-            )
-        ]
+            ),
+        )
         self.tensor[append_slice] = tensor
         self.metadata.shape[self.cat_axis] += length
 
