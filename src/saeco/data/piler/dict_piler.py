@@ -40,8 +40,10 @@ class DictPilerMetadata(BaseModel):
     keys: set[str]
 
 
-def shuffled_range(start, stop, mod):
+def shuffled_range(start, stop, mod, shuffle=True):
     shrange = list(range(start, stop, mod))
+    if not shuffle:
+        return shrange
     random.shuffle(shrange)
     return shrange
 
@@ -210,6 +212,7 @@ class DictPiler:
         id=None,
         nw=None,
         num_epochs: int | None = 1,
+        shuffle: bool = True,
     ) -> Generator[DictBatch, None, None]: ...
 
     @overload
@@ -220,6 +223,7 @@ class DictPiler:
         id=None,
         nw=None,
         num_epochs: int | None = 1,
+        shuffle: bool = True,
     ) -> Generator[dict[str, torch.Tensor], None, None]: ...
     @torch.inference_mode()
     def batch_generator(
@@ -229,6 +233,7 @@ class DictPiler:
         id=None,
         nw=None,
         num_epochs: int | None = 1,
+        shuffle: bool = False,
     ):
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
@@ -241,27 +246,39 @@ class DictPiler:
 
         spares: list[DictBatch] = []
         nspare = 0
+        perm = None
+
+        def newperm(pile):
+            nonlocal perm
+            if shuffle:
+                perm = torch.randperm(len(pile))
+
+        def getslice(pile, a, b):
+            nonlocal perm
+            if perm is None:
+                return pile[a:b]
+            return pile[perm[a:b]]
 
         for epoch in epoch_gen:
             if epoch != 0:
                 print(f"finished epoch {epoch - 1}")
             for p in shuffled_range(
-                (id + epoch) % nw, self.piler_metadata.num_piles, nw
+                (id) % nw, self.piler_metadata.num_piles, nw, shuffle=shuffle
             ):
                 pile = self[p]
-                perm = torch.randperm(len(pile))
+                newperm(pile)
+                # perm = torch.randperm(len(pile))
                 # below we clone before yielding to prevent yielding a view of the pile.
                 # if a yielded view were to get pinned by the consumer of this,
                 # (eg a dataloader), the entire mmapped pile would get pinned as well
                 for i in shuffled_range(
-                    0, len(pile) // batch_size * batch_size, batch_size
+                    0, len(pile) // batch_size * batch_size, batch_size, shuffle=shuffle
                 ):
-                    yield (
-                        pile[perm[i : i + batch_size]].clone().data
-                        if yield_dicts
-                        else pile[perm[i : i + batch_size]].clone()
-                    )
-                spare = pile[perm[len(pile) // batch_size * batch_size :]].clone()
+                    pile_slice = getslice(pile, i, i + batch_size).clone()
+                    yield (pile_slice.data if yield_dicts else pile_slice)
+                spare = getslice(
+                    pile, len(pile) // batch_size * batch_size, None
+                ).clone()
                 if len(spare) > 0:
                     spares.append(spare)
                     nspare += len(spare)
@@ -270,10 +287,13 @@ class DictPiler:
                         for i in shuffled_range(
                             0, len(consolidated) // batch_size * batch_size, batch_size
                         ):
+                            consolidated_slice = consolidated[
+                                i : i + batch_size
+                            ].clone()  # no getslice because this was already permed
                             yield (
-                                consolidated[i : i + batch_size].clone().data
+                                consolidated_slice.data
                                 if yield_dicts
-                                else consolidated[i : i + batch_size].clone()
+                                else consolidated_slice
                             )
                         spare = consolidated[
                             len(consolidated) // batch_size * batch_size :
