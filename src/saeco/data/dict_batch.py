@@ -181,19 +181,19 @@ class DictBatch(dict):
                 setattr(self, k, None)
 
     # --------------------------- static helpers ------------------------------
-    @property
-    def data(self) -> dict[str, Tensor]:
-        if "data" in self:
-            return self["data"]
-        elif "data" in self.__dict__:
-            return self.__dict__["data"]
+    # @property
+    # def data(self) -> dict[str, Tensor]:
+    #     if "data" in self:
+    #         return self["data"]
+    #     elif "data" in self.__dict__:
+    #         return self.__dict__["data"]
 
-        warn(
-            "DictBatch.data was used to access self, this backwards compatibility feature will be deprecated",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self  # just for backwards compatibility
+    #     warn(
+    #         "DictBatch.data was used to access self, this backwards compatibility feature will be deprecated",
+    #         DeprecationWarning,
+    #         stacklevel=2,
+    #     )
+    #     return self  # just for backwards compatibility
 
     @staticmethod
     def _check_contents(d: dict[str, Tensor]):
@@ -285,8 +285,11 @@ class DictBatch(dict):
     @classmethod
     def _validate_keysets(cls, batches: list[Self]):
         keys0 = batches[0].keys()
-        if not all(b.keys() == keys0 for b in batches):
-            raise ValueError("All batches must have identical tensor keys")
+        if not all((b.keys()) == keys0 for b in batches):
+            batch_keys = "\n\t".join(f"{i}: {b.keys()}" for i, b in enumerate(batches))
+            raise ValueError(
+                f"All batches must have identical tensor keys. Got: {batch_keys}"
+            )
 
     @classmethod
     def cat_list(cls, batches: list[Self], dim: int = 0) -> Self:
@@ -468,6 +471,14 @@ class DictBatch(dict):
         return self.construct_with_other_data(
             {k: v.gather(dim, indices) for k, v in self.items()}, self._get_other_dict()
         )
+
+    def apply_func(self, func: Callable[[Tensor], Tensor]) -> Self:
+        return self.construct_with_other_data(
+            {k: func(v) for k, v in self.items()}, self._get_other_dict()
+        )
+
+    def reshape(self, *shape: int) -> Self:
+        return self.apply_func(lambda x: x.reshape(*shape))
 
     def set_split(self, sel: set[str] | list[str]) -> "SplitDictBatch[Self]":
         keys = set(self.keys())
