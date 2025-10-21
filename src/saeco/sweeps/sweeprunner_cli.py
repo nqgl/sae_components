@@ -39,6 +39,12 @@ def start(
         sweep_data, sweep_index=sweep_index, sweep_hash=sweep_hash
     )
     if distributed_skip_log:
+        import torch
+        import os
+
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.cuda.set_device(local_rank)
+
         from composer.utils import dist
 
         assert dist.get_world_size() > 1
