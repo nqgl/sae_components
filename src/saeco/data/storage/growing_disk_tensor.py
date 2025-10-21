@@ -9,6 +9,9 @@ from saeco.data.storage.compressed_safetensors import CompressionType
 from .disk_tensor import DiskTensor, DiskTensorMetadata
 
 
+SAECO_MIN_GDT_INITIAL_BYTES = 2**25  # 32 MB
+SAECO_MAX_GDT_INITIAL_BYTES = 2**32  # 4 GB
+
 # class DiskTensorMetadata(DiskTensorMetadata):
 #     cat_axis: int
 
@@ -97,7 +100,13 @@ class GrowingDiskTensor(DiskTensor):
     ):
         shape = list(shape)
         if initial_nnz is None:
-            initial_nnz = 2**15
+            # shape2 = shape.copy()
+            # shape2[cat_axis] = 1
+            # numel_per_nnz = torch.prod(torch.tensor(shape2)).item()
+            # bytes_per_nnz = int(numel_per_nnz * dtype.itemsize)
+            initial_nnz = SAECO_MIN_GDT_INITIAL_BYTES // dtype.itemsize
+
+            # initial_nnz = 2**20
         else:
             shape[cat_axis] = None
         cat_len = shape[cat_axis] or int(

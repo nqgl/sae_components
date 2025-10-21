@@ -77,7 +77,9 @@ class Piler:
         )
 
         for i in range(num_piles):
-            piles.create(i, dtype, [0] + list(fixed_shape), compression)
+            piles.create(
+                i, dtype=dtype, shape=[0] + list(fixed_shape), compression=compression
+            )
 
         piler = Piler(
             metadata=metadata,
@@ -235,7 +237,6 @@ class Piler:
 
 
 def main():
-
     testdata = Path("testdata")
 
     # remove contents of testdata
