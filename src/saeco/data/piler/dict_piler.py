@@ -213,6 +213,7 @@ class DictPiler:
         nw=None,
         num_epochs: int | None = 1,
         shuffle: bool = True,
+        shuffle_piles_order: bool = False,
     ) -> Generator[DictBatch, None, None]: ...
 
     @overload
@@ -224,6 +225,7 @@ class DictPiler:
         nw=None,
         num_epochs: int | None = 1,
         shuffle: bool = True,
+        shuffle_piles_order: bool = False,
     ) -> Generator[dict[str, torch.Tensor], None, None]: ...
     @torch.inference_mode()
     def batch_generator(
@@ -233,7 +235,8 @@ class DictPiler:
         id=None,
         nw=None,
         num_epochs: int | None = 1,
-        shuffle: bool = False,
+        shuffle: bool = True,
+        shuffle_piles_order: bool = False,
     ):
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
@@ -263,7 +266,10 @@ class DictPiler:
             if epoch != 0:
                 print(f"finished epoch {epoch - 1}")
             for p in shuffled_range(
-                (id) % nw, self.piler_metadata.num_piles, nw, shuffle=shuffle
+                (id) % nw,
+                self.piler_metadata.num_piles,
+                nw,
+                shuffle=shuffle and shuffle_piles_order,
             ):
                 pile = self[p]
                 newperm(pile)
