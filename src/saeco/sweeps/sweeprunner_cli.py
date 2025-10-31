@@ -43,9 +43,16 @@ def start(
         import os
 
         local_rank = int(os.environ["LOCAL_RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
         torch.cuda.set_device(local_rank)
-
+        # torch.distributed.init_process_group(
+        #     backend="nccl",
+        #     rank=local_rank,
+        #     world_size=world_size,
+        # )
         from composer.utils import dist
+
+        dist.initialize_dist(device="gpu")
 
         assert dist.get_world_size() > 1
         if dist.get_global_rank() != 0:
