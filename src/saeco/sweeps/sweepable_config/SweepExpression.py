@@ -1,22 +1,19 @@
-from types import NoneType
-from typing import Any, Generic, get_args, get_origin, TYPE_CHECKING, TypeVar
-
-from saeco.sweeps.sweepable_config.Swept import Swept
-
-if TYPE_CHECKING:
-    from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
-
-T = TypeVar("T")
-LITERALS = [int, float, str, bool]
+from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 from saeco.sweeps.sweepable_config.expressions_utils import (
     common_type,
     convert_other,
     shared_type,
 )
+from saeco.sweeps.sweepable_config.Swept import Swept
+
+if TYPE_CHECKING:
+    pass
+
+LITERALS = [int, float, str, bool]
 
 
-class SweepExpression(Swept[T], Generic[T]):
+class SweepExpression[T](Swept[T]):
     values: list = []
 
     def __mul__(self, other):
@@ -117,7 +114,7 @@ class SweepExpression(Swept[T], Generic[T]):
         #     t = get_args(self.generic_type)[1]
         return Op[t](op=ExpressionOpEnum.INDEX, children=[self, other])
 
-    def evaluate(self, vars_dict: dict[str, Any]): ...
+    def evaluate(self, vars_dict: dict[str, Any]) -> T: ...
 
     def get_sweepvars(self):
         raise NotImplementedError(f"get_sweepvars not implemented for {type(self)}")

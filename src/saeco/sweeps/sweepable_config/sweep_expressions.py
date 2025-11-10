@@ -109,19 +109,28 @@ class SweepVar(SweepExpression[T]):
         return vars_dict[self.name]
 
 
-class Op(SweepExpression):  
+class Op[T](SweepExpression[T]):
     # WARNING>> things break if this is  SweepExpression[T]
-    # This should be explored and understood but at the moment, don't touch it. 
-    # What breaks? One example: Op fields in a sweepableconfig don't get validated correctly (maybe they don't get validated as Op? not sure)
+    # This should be explored and understood but at the moment, don't touch it.
+    # What breaks? One example: Op fields in a sweepableconfig don't get validated
+    # correctly (maybe they don't get validated as Op? not sure)
     # curious if explicit generic would be good but I expect it would also not work.
+    # > I now think it has to do with  validator resolution order in some way.
+    # will have to explore more. would like to make this correctly generic.
     op: ExpressionOpEnum
     children: list[Union["Op", "Val", SweepVar]]
     values: list = []
 
-    def evaluate(self, vars_dict: dict[str, Any]):
+    def evaluate(self, vars_dict: dict[str, Any]) -> T:
         print(self)
         print(vars_dict)
-        return self.op.evaluate(*[child.evaluate(vars_dict) for child in self.children])
+        result = self.op.evaluate(
+            *[child.evaluate(vars_dict) for child in self.children]
+        )
+        my_type = self.generic_type
+        assert my_type is not None
+        assert isinstance(result, my_type)
+        return result
 
     def get_sweepvars(self):
         s = set()
@@ -130,8 +139,15 @@ class Op(SweepExpression):
         return s
 
 
-class Val(SweepExpression):
-    value: str | int | float | bool | list | tuple | dict
+class Val[T: str | int | float | bool | list | tuple | dict[Any, Any]](
+    SweepExpression[T]
+):
+    # maybe this doesn't even need to be a subtype of SweepExpression?
+    # or maybe SE doesn't need to subclass Swept.
+    # particularly the bit where swept has the values field --
+    #      not a nice clash for that vs this value field. maybe can factor
+    # out the common behavior into a SweptBase class.
+    value: T
 
     def evaluate(self, vars_dict: dict[str, Any]):
         return self.value
@@ -140,7 +156,7 @@ class Val(SweepExpression):
         return set()
 
     @property
-    def generic_type(self):
+    def generic_type(self) -> type[T] | None:
         if super().generic_type is not None:
             return super().generic_type
         if not (
@@ -153,15 +169,15 @@ class Val(SweepExpression):
             kt = shared_type(self.value.keys())
             vt = shared_type(self.value.values())
             assert all(
-                [isinstance(k, kt) and isinstance(v, vt) for k, v in self.value.items()]
+                isinstance(k, kt) and isinstance(v, vt) for k, v in self.value.items()
             )
             return dict[kt, vt]
         elif isinstance(self.value, list):
             t = shared_type(self.value)
-            assert all([isinstance(v, t) for v in self.value])
+            assert all(isinstance(v, t) for v in self.value)
             return list[t]
         elif isinstance(self.value, tuple):
             t = shared_type(self.value)
-            assert all([isinstance(v, t) for v in self.value])
+            assert all(isinstance(v, t) for v in self.value)
             return tuple[t]
         raise ValueError(f"Cannot get generic type of {self.value}")

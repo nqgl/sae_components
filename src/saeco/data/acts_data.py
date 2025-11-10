@@ -179,7 +179,7 @@ class ActsData:
 
         for batch in batch_gen:
             yield SAETrainBatch(
-                data=batch.data,
+                **batch,
                 input_sites=input_sites or self.cfg.model_cfg.acts_cfg.sites,
                 target_sites=target_sites,
             )
