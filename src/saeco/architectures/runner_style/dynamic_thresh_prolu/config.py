@@ -3,7 +3,6 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import (
-    ActsDataConfig,
     DataConfig,
     DataGenerationProcessConfig,
     ModelConfig,
@@ -13,6 +12,7 @@ from saeco.data.config.data_config_definitions import (
     gemma_2_2b_openwebtext,
     gpt_2_block,
 )
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept

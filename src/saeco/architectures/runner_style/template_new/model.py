@@ -7,6 +7,7 @@ import saeco.components.features.features as ft
 from saeco.components.model import Architecture
 import saeco.core as cl
 
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
@@ -29,7 +30,7 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
+from saeco.data import DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig

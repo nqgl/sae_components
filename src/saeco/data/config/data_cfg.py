@@ -12,7 +12,7 @@ from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 
 from saeco.data.config.locations import DATA_DIRS
-from saeco.data.model_config.model_cfg import ModelConfig
+from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.piler import Piler
 from saeco.data.piler.dict_piler import DictBatch, DictPiler
 from saeco.data.config.split_config import SplitConfig

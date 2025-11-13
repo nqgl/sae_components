@@ -2,6 +2,7 @@ import torch
 
 import torch.nn as nn
 
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import Initializer
 from saeco.components import (
     L1Penalty,
@@ -66,7 +67,7 @@ def sae(
 
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.runner import TrainingRunner
-from saeco.data import DataConfig, ModelConfig, ActsDataConfig
+from saeco.data import DataConfig, ModelConfig
 from saeco.sweeps import do_sweep
 
 
