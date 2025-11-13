@@ -8,6 +8,10 @@ from torch import Tensor
 
 from saeco.data.config.split_config import SplitConfig
 from saeco.data.piler import Piler
+from functools import cached_property
+import datasets
+from attrs import define, field
+
 
 if TYPE_CHECKING:
     from saeco.data.config.data_cfg import DataConfig
@@ -20,16 +24,13 @@ class TokensData:
         self.cfg = cfg
         self.model = model
         self.split = split
-        self._data = None
         self._documents = None
 
-    @property
+    @cached_property
     def src_dataset_data(self):
-        if self._data is not None:
-            return self._data
         dataset = self.cfg.load_dataset_from_split(self.split)
-        self._data = dataset[self.cfg.tokens_column_name]
-        assert self.src_dataset_data.ndim == 2
+        data = dataset[self.cfg.tokens_column_name]
+        assert data.ndim == 2
         if self.dataset_document_length < self.seq_len:
             raise ValueError(
                 f"Document length {self.dataset_document_length} is less than the requested sequence length {self.seq_len}"
@@ -39,10 +40,10 @@ class TokensData:
                 f"Document length {self.dataset_document_length} is not a multiple of the requested sequence length {self.seq_len}, truncating documents"
             )
             input("Press enter to continue and acknowledge this warning")
-            self._data = self.src_dataset_data[
+            data = data[
                 :, : self.seq_len * (self.dataset_document_length // self.seq_len)
             ]
-        return self._data
+        return data
 
     @property
     def dataset_document_length(self):
@@ -156,10 +157,6 @@ class TokensData:
             pile = piler[p]
             for i in range(0, len(pile) // batch_size * batch_size, batch_size):
                 yield pile[i : i + batch_size]
-
-
-import datasets
-from attrs import define, field
 
 
 @define
