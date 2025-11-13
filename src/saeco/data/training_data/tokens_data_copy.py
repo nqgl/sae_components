@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 import einops
 import torch
 import tqdm
-from nnsight import LanguageModel
+from nnsight import LanguageModel, NNsight
 from torch import Tensor
 
 from saeco.data.config.split_config import SplitConfig
@@ -19,12 +19,8 @@ if TYPE_CHECKING:
 
 @define
 class TokensData:
-    def __init__(
-        self, cfg: "DataConfig", model: LanguageModel | None, split: SplitConfig
-    ):
-        self.cfg = cfg
-        self.model = model
-        self.split = split
+    cfg: "DataConfig"
+    split: SplitConfig
 
     @cached_property
     def src_dataset_data(self):
@@ -65,7 +61,7 @@ class TokensData:
         else:
             docs = self.src_dataset_data
         if self.cfg.set_bos:
-            docs[:, 0] = self.model.tokenizer.bos_token_id
+            docs[:, 0] = self.cfg.model_cfg.tokenizer.bos_token_id
         return docs
 
     @property
