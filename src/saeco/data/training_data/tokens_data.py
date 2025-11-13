@@ -24,7 +24,6 @@ class TokensData:
         self.cfg = cfg
         self.model = model
         self.split = split
-        self._documents = None
 
     @cached_property
     def src_dataset_data(self):
@@ -53,22 +52,20 @@ class TokensData:
     def seq_len(self):
         return self.cfg.seq_len or self.dataset_document_length
 
-    @property
+    @cached_property
     def documents(self) -> torch.Tensor:
-        if self._documents is not None:
-            return self._documents
         if self.dataset_document_length != self.seq_len:
-            self._documents = einops.rearrange(
+            docs = einops.rearrange(
                 self.src_dataset_data,
                 "batch (x seq_len) -> (batch x) seq_len",
                 x=self.dataset_document_length // self.seq_len,
                 seq_len=self.seq_len,
             )
         else:
-            self._documents = self.src_dataset_data
+            docs = self.src_dataset_data
         if self.cfg.set_bos:
-            self._documents[:, 0] = self.model.tokenizer.bos_token_id
-        return self._documents
+            docs[:, 0] = self.model.tokenizer.bos_token_id
+        return docs
 
     @property
     def num_tokens(self):
