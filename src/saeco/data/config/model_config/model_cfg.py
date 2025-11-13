@@ -1,8 +1,10 @@
+from contextlib import nullcontext
 from functools import cached_property
 
 from nnsight import LanguageModel, NNsight
 from pydantic import Field
 
+import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -78,6 +80,14 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase = HuggingFaceModelConfig](
     @property
     def modelstring(self) -> str:
         return f"{self.model_name}_{self.torch_dtype_str}_{self.acts_cfg.actstring}"
+
+    def autocast_context(self):
+        if self.acts_cfg.autocast_dtype is False:
+            return nullcontext()
+        return torch.autocast(
+            device_type="cuda",
+            dtype=(self.acts_cfg.autocast_dtype or self.torch_dtype),
+        )
 
 
 def main():

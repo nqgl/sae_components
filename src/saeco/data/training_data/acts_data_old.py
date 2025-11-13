@@ -180,39 +180,6 @@ class ActsData:
                 target_sites=target_sites,
             )
 
-    def pile_generator(
-        self,
-        split: SplitConfig,
-        batch_size,
-        nsteps=None,
-        id=None,
-        nw=None,
-        prog_bar=False,
-    ):
-        if not self.cfg._acts_piles_path(split).exists():
-            self._store_split(split)
-        assert id == nw == None or id is not None and nw is not None
-        id = id or 0
-        nw = nw or 1
-        piler = self.cfg.acts_piler(split)
-        assert (
-            nsteps is None
-            or split.tokens_from_split is None
-            or nsteps <= split.tokens_from_split // batch_size
-        )
-
-        assert nsteps is None
-        pile = piler[id]
-        for p in range(id + nw, piler.num_piles, nw):
-            # print("get next pile")
-            # print(id, nw, p)
-            nextpile = piler[p]
-            # print("got next pile")
-            yield pile
-            pile = nextpile
-        for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-            yield pile
-
 
 class ActsDataset(torch.utils.data.IterableDataset):
     """

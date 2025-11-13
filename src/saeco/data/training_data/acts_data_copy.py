@@ -8,7 +8,7 @@ import torch.utils
 import torch.utils.data
 import tqdm
 from attrs import define
-from nnsight import LanguageModel
+from nnsight import LanguageModel, NNsight
 
 from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.data.piler.dict_piler import DictBatch
@@ -25,9 +25,9 @@ from saeco.data.training_data.sae_train_batch import SAETrainBatch
 
 
 @define
-class ActsDataStorer:
+class ActsData:
     cfg: "DataConfig"
-    model: LanguageModel
+    model: LanguageModel | NNsight
 
     def _store_split(self, split: SplitConfig):
         tokens_data = TokensData(self.cfg, self.model, split=split)
@@ -57,26 +57,6 @@ class ActsDataStorer:
             acts_piler.distribute(acts.data)
         acts_piler.shuffle_piles()
 
-    def acts_generator_from_tokens_generator(self, tokens_generator, llm_batch_size):
-        for tokens in tokens_generator:
-            acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
-            yield acts
-
-    @contextmanager
-    def _null_context(self):
-        yield
-
-    def autocast_context(self):
-        if self.cfg.model_cfg.acts_cfg.autocast_dtype is False:
-            return self._null_context()
-        return torch.autocast(
-            device_type="cuda",
-            dtype=(
-                self.cfg.model_cfg.acts_cfg.autocast_dtype
-                or self.cfg.model_cfg.torch_dtype
-            ),
-        )
-
     def to_acts(
         self,
         tokens,
@@ -90,7 +70,7 @@ class ActsDataStorer:
         assert self.model is not None
 
         acts_dict = {site: [] for site in self.cfg.model_cfg.acts_cfg.sites}
-        with self.autocast_context():
+        with self.cfg.model_cfg.autocast_context():
             with torch.inference_mode():
                 trng = tqdm.trange(0, tokens.shape[0], llm_batch_size, leave=False)
                 trng.set_description(f"Tracing {tokens.shape[0]}")
@@ -144,6 +124,16 @@ class ActsDataStorer:
                 return acts[mask]
         return acts
 
+    def acts_generator_from_tokens_generator(self, tokens_generator, llm_batch_size):
+        for tokens in tokens_generator:
+            acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
+            yield acts
+
+
+@define
+class ActsDataReader:
+    cfg: "DataConfig"
+
     def acts_generator(
         self,
         split: SplitConfig,
@@ -155,8 +145,7 @@ class ActsDataStorer:
         target_sites: list[str] | None = None,
         input_sites: list[str] | None = None,
     ):
-        if not self.cfg._acts_piles_path(split).exists():
-            self._store_split(split)
+        assert self.cfg._acts_piles_path(split).exists()
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
@@ -176,39 +165,6 @@ class ActsDataStorer:
                 target_sites=target_sites,
             )
 
-    def pile_generator(
-        self,
-        split: SplitConfig,
-        batch_size,
-        nsteps=None,
-        id=None,
-        nw=None,
-        prog_bar=False,
-    ):
-        if not self.cfg._acts_piles_path(split).exists():
-            self._store_split(split)
-        assert id == nw == None or id is not None and nw is not None
-        id = id or 0
-        nw = nw or 1
-        piler = self.cfg.acts_piler(split)
-        assert (
-            nsteps is None
-            or split.tokens_from_split is None
-            or nsteps <= split.tokens_from_split // batch_size
-        )
-
-        assert nsteps is None
-        pile = piler[id]
-        for p in range(id + nw, piler.num_piles, nw):
-            # print("get next pile")
-            # print(id, nw, p)
-            nextpile = piler[p]
-            # print("got next pile")
-            yield pile
-            pile = nextpile
-        for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-            yield pile
-
 
 class ActsDataset(torch.utils.data.IterableDataset):
     """
@@ -217,7 +173,7 @@ class ActsDataset(torch.utils.data.IterableDataset):
 
     def __init__(
         self,
-        acts: ActsData,
+        acts: ActsDataReader,
         split: SplitConfig,
         batch_size,
         input_sites: list[str] | None = None,

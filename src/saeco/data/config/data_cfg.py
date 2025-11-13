@@ -7,7 +7,7 @@ from pydantic import Field
 from safetensors.torch import load_file, save_file
 from torch.utils.data import DataLoader
 
-from saeco.data.training_data.acts_data import ActsData, ActsDataset
+from saeco.data.training_data.acts_data_old import ActsData, ActsDataset
 from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 
@@ -189,7 +189,7 @@ class DataConfig(SweepableConfig):
     ):
         model = None
         if not self._acts_piles_path(self.trainsplit).exists():
-            model = self.model_cfg.model
+            self.store_split(self.trainsplit)
         ds = self._train_dataset(
             model,
             batch_size=batch_size,
@@ -202,18 +202,9 @@ class DataConfig(SweepableConfig):
 
         return dl
 
-    def get_split_tokens(self, split, num_tokens=None):  ###
-        return TokensData(
-            self,
-            self.model_cfg.model,
-            split=(
-                split
-                if isinstance(split, SplitConfig)
-                else getattr(self, f"{split}split")
-            ),
-        ).get_tokens(
-            num_tokens=num_tokens,
-        )
+    def store_split(self, split: SplitConfig):
+        ActsData(cfg=self, model=self.model_cfg.model)._store_split(split)
+        assert self._acts_piles_path(split).exists()
 
     def getsplit(self, split: str):
         return getattr(self, f"{split}split")
@@ -272,4 +263,9 @@ class DataConfig(SweepableConfig):
                 if isinstance(split, SplitConfig)
                 else getattr(self, f"{split}split")
             ),
+        )
+
+    def get_split_tokens(self, split, num_tokens=None):
+        return self.tokens_data(split).get_tokens(
+            num_tokens=num_tokens,
         )
