@@ -2,61 +2,30 @@ from functools import cached_property
 
 from nnsight import LanguageModel, NNsight
 from pydantic import Field
-import torch
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from saeco.data.config.locations import DATA_DIRS
 
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
+from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
+from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
 
-MODEL_FN_CALLABLE_OVERRIDE = None
 
-
-class ActsDataConfig(SweepableConfig):
-    d_data: int = 768
-    sites: list[str] = ["transformer.h.6.input"]
-    site_d_datas: list[int] | None = None
-    excl_first: bool = True
-    filter_pad: bool = True
-    storage_dtype_str: str | None = None
-    autocast_dtype_str: str | bool | None = None
-    force_cast_dtype_str: str | None = None
-
-    @property
-    def actstring(self):
-        sites_str = "_".join(sorted(self.sites))
-        return f"{sites_str}_{self.excl_first}_{self.filter_pad}_{self.storage_dtype_str}_{self.autocast_dtype_str}_{self.force_cast_dtype_str}"
-
-    @property
-    def storage_dtype(self) -> torch.dtype:
-        if self.storage_dtype_str is None:
-            return self.force_cast_dtype or self.autocast_dtype or torch.float32
-        return str_to_dtype(self.storage_dtype_str)
-
-    @property
-    def autocast_dtype(self):
-        if self.autocast_dtype_str is False:
-            return False
-        if self.autocast_dtype_str is None:
-            return self.storage_dtype
-        return str_to_dtype(self.autocast_dtype_str)
-
-    @property
-    def force_cast_dtype(self):
-        if self.force_cast_dtype_str is None:
-            return None
-        return str_to_dtype(self.force_cast_dtype_str)
-
-
-class ModelConfig(SweepableConfig):
-    model_name: str = "gpt2"
+class ModelConfig[ModelLoadT: ModelLoadingConfigBase = HuggingFaceModelConfig](
+    SweepableConfig
+):
+    model_load_cfg: ModelLoadT
     acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
     model_kwargs: dict = Field(default_factory=dict)
     _device: str = "cuda"
     # no_processing: bool = False
     torch_dtype_str: str | None = None
+
+    @property
+    def model_name(self):
+        return self.model_load_cfg.model_name
 
     @property
     def torch_dtype(self):
@@ -87,44 +56,20 @@ class ModelConfig(SweepableConfig):
 
     @cached_property
     def tokenizer(self):
-        return AutoTokenizer.from_pretrained(
-            self.model_name,
-            cache_dir=DATA_DIRS.CACHE_DIR,
-        )
-
-    def _make_raw_model(self):
-        get_model_fn = (
-            MODEL_FN_CALLABLE_OVERRIDE or AutoModelForCausalLM.from_pretrained
-        )
-        if self.torch_dtype_str is None:
-            model = get_model_fn(
-                self.model_name,
-                cache_dir=DATA_DIRS.CACHE_DIR,
-                device_map=self._device,
-            )
-        else:
-            model = get_model_fn(
-                self.model_name,
-                cache_dir=DATA_DIRS.CACHE_DIR,
-                torch_dtype=self.torch_dtype,
-                device_map=self._device,
-            )
-        return model
-        # if MODEL_FN_CALLABLE_OVERRIDE is not None:
-        #     model = NNsight(model)
+        return self.model_load_cfg.tokenizer
 
     @property
-    def raw_model(self) -> AutoModelForCausalLM:
+    def raw_model(self):
         if self._raw_model is None:
-            self._raw_model = self._make_raw_model()
+            self._raw_model = self.model_load_cfg._make_raw_model(
+                load_as_dtype=self.torch_dtype,
+                device=self._device,
+            )
         return self._raw_model
 
-    @property
+    @property  # I have a vague memory that theres a reason this isn't a cached property?
     def model(self) -> NNsight:
-        model = NNsight(self.raw_model)
-        if not hasattr(model, "tokenizer"):
-            setattr(model, "tokenizer", self.tokenizer)
-        return model
+        return self.model_load_cfg.nnsight_wrap(self.raw_model)
 
     @model.setter
     def model(self, m: NNsight):
