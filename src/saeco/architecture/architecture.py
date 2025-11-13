@@ -7,6 +7,7 @@ from typing import Any, Generic, Literal, overload, TypeVar
 
 import torch
 from torch import nn
+from paramsight import takes_alias, get_resolved_typevars_for_base
 
 from typing_extensions import get_original_bases
 
@@ -271,6 +272,7 @@ class Architecture[ArchConfigT: SweepableConfig]:
         )
         return trainer
 
+    @takes_alias
     @classmethod
     def get_arch_config_class(cls):
         if cls is Architecture:
@@ -283,6 +285,7 @@ class Architecture[ArchConfigT: SweepableConfig]:
         assert len(p) == 1
         return p[0]
 
+    @takes_alias
     @classmethod
     def get_config_class(cls):
         return RunConfig[cls.get_arch_config_class()]
@@ -611,13 +614,14 @@ class ArchitectureBase[ArchConfigT: SweepableConfig]:
     @abstractmethod
     def setup(self): ...
 
+    @takes_alias
     @classmethod
     def get_arch_config_class(cls) -> type[ArchConfigT]:
         if cls is ArchitectureBase:
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-        return get_max_mro_cfg_cls(cls)
+        return get_resolved_typevars_for_base(cls, ArchitectureBase)[0]
 
     @classmethod
     @abstractmethod
