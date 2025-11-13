@@ -13,7 +13,7 @@ from nnsight import LanguageModel
 from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.data.piler.dict_piler import DictBatch
 from saeco.data.config.split_config import SplitConfig
-from saeco.data.training_data.tokens_data import TokensData
+from saeco.data.training_data.tokens_data_copy import TokensData
 from saeco.misc import str_to_dtype
 from saeco.misc.nnsite import getsite
 
@@ -24,14 +24,10 @@ if TYPE_CHECKING:
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 
 
-class ActsData:
-    """
-    Generates, stores, and loads activations
-    """
-
-    def __init__(self, cfg: "DataConfig", model: LanguageModel | None):
-        self.cfg = cfg
-        self.model = model
+@define
+class ActsDataStorer:
+    cfg: "DataConfig"
+    model: LanguageModel
 
     def _store_split(self, split: SplitConfig):
         tokens_data = TokensData(self.cfg, self.model, split=split)
