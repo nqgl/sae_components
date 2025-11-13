@@ -16,6 +16,9 @@ LITERALS = [int, float, str, bool]
 class SweepExpression[T](Swept[T]):
     values: list = []
 
+    def repr(self, level=0):
+        return f"{self!r}"
+
     def __mul__(self, other):
         from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
 

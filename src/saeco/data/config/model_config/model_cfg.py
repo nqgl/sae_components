@@ -6,7 +6,7 @@ import torch
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from saeco.data.locations import DATA_DIRS
+from saeco.data.config.locations import DATA_DIRS
 
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig

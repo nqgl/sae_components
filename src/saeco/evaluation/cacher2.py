@@ -11,7 +11,7 @@ from torch import Tensor
 from saeco.architecture.architecture import Architecture
 
 from saeco.data import ActsData, DataConfig
-from saeco.data.tokens_data import PermutedDocs
+from saeco.data.training_data.tokens_data import PermutedDocs
 
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
@@ -170,8 +170,7 @@ class ActsCacher:
                         ids[2] -= i
                         vals = spacts.values()[mask]
                         acts[
-                            ci
-                            * self.cfg.docs_per_chunk : (chunk.idx + 1)
+                            ci * self.cfg.docs_per_chunk : (chunk.idx + 1)
                             * self.cfg.docs_per_chunk
                         ][ids.unbind()] = vals
                     for k, feat_acts in enumerate(batch):

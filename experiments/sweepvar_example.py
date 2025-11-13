@@ -1,4 +1,4 @@
-from saeco.data.data_config_definitions import (
+from saeco.data.config.data_config_definitions import (
     gpt_2_block,
 )
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression

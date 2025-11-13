@@ -3,7 +3,10 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.data.data_config_definitions import gpt_2_block, gemma_2_2b_openwebtext
+from saeco.data.config.data_config_definitions import (
+    gpt_2_block,
+    gemma_2_2b_openwebtext,
+)
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
@@ -64,6 +67,5 @@ else:
 
 
 def run(cfg):
-
     tr = TrainingRunner(cfg, model_fn=anth_update_model)
     tr.trainer.train()

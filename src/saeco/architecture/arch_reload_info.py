@@ -26,7 +26,7 @@ def get_src(obj):
 class ArchClassRef(BaseModel):
     module: str
     cls_name: str
-    source_backup: str = None
+    source_backup: str | None = None
 
     @classmethod
     def from_arch(cls, arch: "Architecture[Any]") -> "ArchClassRef":

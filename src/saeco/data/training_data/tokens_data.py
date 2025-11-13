@@ -6,11 +6,11 @@ import tqdm
 from nnsight import LanguageModel
 from torch import Tensor
 
-from saeco.data.split_config import SplitConfig
+from saeco.data.config.split_config import SplitConfig
 from saeco.data.piler import Piler
 
 if TYPE_CHECKING:
-    from saeco.data.data_cfg import DataConfig
+    from saeco.data.config.data_cfg import DataConfig
 
 
 class TokensData:
@@ -79,7 +79,6 @@ class TokensData:
         if num_tokens is not None and (not write):
             raise ValueError("num_tokens was specified but write=False")
         if write:
-
             return Piler.create(
                 self.cfg._tokens_piles_path(self.split),
                 dtype=torch.int64,
@@ -119,17 +118,19 @@ class TokensData:
             else (num_tokens + self.cfg.generation_config.tokens_per_pile - 1)
             // self.cfg.generation_config.tokens_per_pile
         )
-        assert (
-            num_piles <= piler.metadata.num_piles
-        ), f"{num_tokens}, {self.cfg.generation_config.tokens_per_pile}, {piler.num_piles}"
+        assert num_piles <= piler.metadata.num_piles, (
+            f"{num_tokens}, {self.cfg.generation_config.tokens_per_pile}, {piler.num_piles}"
+        )
         tokens = piler[0:num_piles]
         assert (
             num_tokens is None
             or abs(tokens.numel() - num_tokens)
             < self.cfg.generation_config.tokens_per_pile
-        ), f"{tokens.shape} from piler vs {num_tokens} requested\
+        ), (
+            f"{tokens.shape} from piler vs {num_tokens} requested\
                 this is expected if tokens per split is small, otherwise a bug.\
                     \n piles requested: {num_piles}, available: {piler.num_piles}"
+        )
         return (
             tokens[: num_tokens // tokens.shape[1] + 1]
             if num_tokens is not None
@@ -206,6 +207,7 @@ class PermutedDocs:
         # cols =
         for i in range(0, len(self.perm) // batch_size * batch_size, batch_size):
             ds = self.dataset[self.perm[i : i + batch_size]]
-            yield ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len], {
-                col: ds[col] for col in columns
-            }
+            yield (
+                ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len],
+                {col: ds[col] for col in columns},
+            )

@@ -20,7 +20,7 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.data.data_config_definitions import gpt_2_block
+from saeco.data.config.data_config_definitions import gpt_2_block
 from saeco.architectures.vanilla.vanilla_model import VanillaSAE, VanillaConfig
 
 PROJECT = "sae sweeps"

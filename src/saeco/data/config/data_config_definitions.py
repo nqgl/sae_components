@@ -1,6 +1,6 @@
 from saeco.sweeps.sweepable_config.Swept import Swept
 from .data_cfg import DataConfig, DataGenerationProcessConfig, SplitConfig
-from .model_cfg import ActsDataConfig, ModelConfig
+from .model_config.model_cfg import ActsDataConfig, ModelConfig
 
 
 gemma_2_2b_openwebtext = DataConfig(

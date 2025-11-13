@@ -26,7 +26,7 @@ from pydantic import BaseModel
 
 from typing_extensions import Self
 
-from saeco.data.dict_batch import DictBatch
+from saeco.data.infrastructure.dict_batch import DictBatch
 
 from saeco.data.piler import Piler, PilerMetadata
 from saeco.data.storage.compressed_safetensors import CompressionType
@@ -236,7 +236,7 @@ class DictPiler:
         nw=None,
         num_epochs: int | None = 1,
         shuffle: bool = True,
-        shuffle_piles_order: bool = False,
+        shuffle_piles_order: bool = True,
     ):
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")

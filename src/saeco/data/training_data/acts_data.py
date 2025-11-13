@@ -10,18 +10,18 @@ import tqdm
 from attrs import define
 from nnsight import LanguageModel
 
-from saeco.data.bufferized_iter import bufferized_iter
+from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.data.piler.dict_piler import DictBatch
-from saeco.data.split_config import SplitConfig
-from saeco.data.tokens_data import TokensData
+from saeco.data.config.split_config import SplitConfig
+from saeco.data.training_data.tokens_data import TokensData
 from saeco.misc import str_to_dtype
 from saeco.misc.nnsite import getsite
 
 if TYPE_CHECKING:
-    from saeco.data.data_cfg import DataConfig
+    from saeco.data.config.data_cfg import DataConfig
 
 
-from saeco.data.sae_train_batch import SAETrainBatch
+from saeco.data.training_data.sae_train_batch import SAETrainBatch
 
 
 class ActsData:

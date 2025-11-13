@@ -1,11 +1,8 @@
 from functools import cached_property
-from typing import ClassVar
 
 import torch
-from attrs import define
-from typing_extensions import dataclass_transform
 
-from saeco.data.dict_batch import DictBatch
+from saeco.data.infrastructure.dict_batch import DictBatch
 
 
 @DictBatch.auto_other_fields
