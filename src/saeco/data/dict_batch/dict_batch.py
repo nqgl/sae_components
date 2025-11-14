@@ -511,6 +511,23 @@ class DictBatch(dict):
         split.a = split.a[mask]
         return split.recombine()
 
+    def split(
+        self,
+        split_size: int | list[int],
+        dim: int = 0,
+    ) -> list[Self]:
+        assert dim == 0
+        splitself = {k: v.split(split_size, dim=dim) for k, v in self.items()}
+        l0 = splitself[next(iter(self.keys()))]
+        assert all(len(v) == len(l0) for v in splitself.values())
+
+        return [
+            self.construct_with_other_data(
+                {**{k: v[i] for k, v in splitself.items()}}, self._get_other_dict()
+            )
+            for i in range(len(l0))
+        ]
+
 
 from attrs import define
 
