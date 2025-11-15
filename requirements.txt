@@ -11,5 +11,4 @@ jaxtyping
 datasets
 transformers
 neptune
-neptune-scale
 zstd
