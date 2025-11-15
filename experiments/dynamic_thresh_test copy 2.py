@@ -16,14 +16,14 @@ from saeco.trainer.train_config import TrainConfig
 
 cfg = RunConfig[DynamicThreshConfig](
     train_cfg=TrainConfig(
-        data_cfg=gemma_2_2b_openwebtext_bf16(),
+        data_cfg=gpt_2_block([6, 7]),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
-            resample_period=10_000,
+            resample_period=50,
             lr_warmup_length=2_000,
         ),
         #
-        batch_size=4096,
+        batch_size=256,
         optim="Adam",
         lr=1e-3,
         betas=(0.9, 0.997),
@@ -45,7 +45,7 @@ cfg = RunConfig[DynamicThreshConfig](
         expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(d_data=2304, dict_mult=8),
+    init_cfg=InitConfig(d_data=768 * 2, dict_mult=128),
     arch_cfg=DynamicThreshConfig(
         thresh_cfg=ThreshConfig(
             decay_toward_mean=0.1,
@@ -63,6 +63,6 @@ arch = DynamicThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent(project="nqgl/default-project")
 
-# sweep_manager.initialize_sweep()
+sweep_manager.initialize_sweep()
 
-# sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)
+sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)

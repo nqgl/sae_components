@@ -1,7 +1,6 @@
-from saeco.architectures.dynamic_thresh_prolu.model import (
-    DynamicThreshConfig,
-    DynamicThreshSAE,
-    ThreshConfig,
+from saeco.architectures.test_clt import (
+    CrossLayerTranscoder,
+    CrossLayerTranscoderConfig,
 )
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -14,16 +13,16 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 
-cfg = RunConfig[DynamicThreshConfig](
+cfg = RunConfig[CrossLayerTranscoderConfig](
     train_cfg=TrainConfig(
-        data_cfg=gemma_2_2b_openwebtext_bf16(),
+        data_cfg=gpt_2_block([6, 7]),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
             resample_period=10_000,
             lr_warmup_length=2_000,
         ),
         #
-        batch_size=4096,
+        batch_size=256,
         optim="Adam",
         lr=1e-3,
         betas=(0.9, 0.997),
@@ -45,24 +44,14 @@ cfg = RunConfig[DynamicThreshConfig](
         expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(d_data=2304, dict_mult=8),
-    arch_cfg=DynamicThreshConfig(
-        thresh_cfg=ThreshConfig(
-            decay_toward_mean=0.1,
-            momentum=0.0,
-            l0_diff_mult=1,
-            lr=0.03,
-            warmup_len=0,
-            initial_value=1,
-        ),  # Swept(1.5, 2.0, 1.0, 0.7, 3.0),
-        l1_end_scale=0,  # Swept(0.0, 0.01),
-    ),
+    init_cfg=InitConfig(d_data=768 * 2, dict_mult=128),
+    arch_cfg=CrossLayerTranscoderConfig(),
 )
 
-arch = DynamicThreshSAE(cfg)
+arch = CrossLayerTranscoder(cfg)
 sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent(project="nqgl/default-project")
 
-# sweep_manager.initialize_sweep()
+sweep_manager.initialize_sweep()
 
-# sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)
+sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)
