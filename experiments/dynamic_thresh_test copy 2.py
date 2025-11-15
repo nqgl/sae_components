@@ -13,7 +13,8 @@ from saeco.data.config.data_config_definitions import (
     gpt_2_block,
 )
 from saeco.data.config.generation_config import DataGenerationProcessConfig
-from saeco.data.model_config.model_cfg import ActsDataConfig, ModelConfig
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
+from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.split_config import SplitConfig
 from saeco.initializer import InitConfig
 from saeco.sweeps.sweepable_config.Swept import Swept

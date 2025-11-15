@@ -2,7 +2,7 @@ import einops
 import nnsight
 import torch
 
-from saeco.data.model_config.model_cfg import ActsDataConfig
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.misc.nnsite import getsite, setsite
 from saeco.trainer.trainable import Trainable
 

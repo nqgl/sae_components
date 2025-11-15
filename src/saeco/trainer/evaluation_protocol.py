@@ -2,7 +2,7 @@ from typing import Callable, ContextManager, Protocol
 
 import torch
 
-from saeco.data.model_config.model_cfg import ActsDataConfig
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.trainer.trainable import Trainable
 
 

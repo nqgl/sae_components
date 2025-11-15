@@ -58,7 +58,7 @@ class ActsCacher:
                 columns=caching_config.metadatas_from_src_column_names,
             ),
             architecture=architecture,
-            acts_data=architecture.run_cfg.train_cfg.data_cfg.acts_data(),
+            acts_data=architecture.run_cfg.train_cfg.data_cfg.acts_data_creator(),
             seq_len=architecture.run_cfg.train_cfg.data_cfg.seq_len,
         )
         return inst
