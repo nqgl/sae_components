@@ -28,3 +28,8 @@ class SplitConfig(SweepableConfig):
             to=self.end,
             unit="%",
         )
+
+    def get_bounds(self, n: int) -> tuple[int, int]:
+        start = int(n * self.start / 100) if self.start is not None else 0
+        end = int(n * self.end / 100) if self.end is not None else n
+        return start, end
