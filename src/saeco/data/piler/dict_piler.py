@@ -1,3 +1,4 @@
+from functools import cached_property
 import itertools
 import random
 from enum import Enum
@@ -26,7 +27,7 @@ from pydantic import BaseModel
 
 from typing_extensions import Self
 
-from saeco.data.infrastructure.dict_batch import DictBatch
+from saeco.data.dict_batch.dict_batch import DictBatch
 
 from saeco.data.piler import Piler, PilerMetadata
 from saeco.data.storage.compressed_safetensors import CompressionType
@@ -34,6 +35,8 @@ from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
+
+import torch.utils.data
 
 
 class DictPilerMetadata(BaseModel):
@@ -46,6 +49,12 @@ def shuffled_range(start, stop, mod, shuffle=True):
         return shrange
     random.shuffle(shrange)
     return shrange
+
+
+### TODO flip:
+# currently it's DictPiler[tensor name key -> Piler[ index -> Pile]]
+# seems better to flip it to DictPiler[ index -> DictPile[tensor name key -> Pile/tensor]]
+# not high priority though
 
 
 @define
@@ -409,8 +418,56 @@ class DictPiler:
     def shapes(self) -> dict[str, list[list[int]]]:
         return {k: piler.shapes for k, piler in self.pilers.items()}
 
+    @cached_property
+    def pile_indices(self) -> list[int]:
+        assert self.readonly
 
-import torch.utils.data
+        l = [[shape[0] for shape in piler.shapes] for piler in self.pilers.values()]
+        assert all(e == l[0] for e in l)
+        return l[0]
+
+    def _index_by_sample(self, index: int | slice) -> DictBatch:
+        if isinstance(index, int):
+            pile_idx, sample_idx = convert_sample_index_to_pile_pair(
+                index, self.pile_indices
+            )
+            return self[pile_idx][sample_idx]
+        start, stop, step = index.indices(self.num_samples)
+        start_pile, start_sample = convert_sample_index_to_pile_pair(
+            start, self.pile_indices
+        )
+        stop_pile, _ = convert_sample_index_to_pile_pair(stop, self.pile_indices)
+        dist = stop - start
+        data = self[start_pile : stop_pile + 1]
+        assert data.batch_size >= dist + start_sample, (
+            data.batch_size,
+            dist,
+            start_sample,
+        )
+        return data[start_sample : start_sample + dist]
+
+    @property
+    def sample_indexer(self) -> "DictPilerSampleIndexer":
+        return DictPilerSampleIndexer(piler=self)
+
+
+def convert_sample_index_to_pile_pair(
+    idx: int, pile_sizes: list[int]
+) -> tuple[int, int]:
+    pile_idx = idx
+    for i, pile_size in enumerate(pile_sizes):
+        if pile_idx < pile_size:
+            return i, pile_idx
+        pile_idx -= pile_size
+    raise ValueError(f"Index {idx} is out of bounds for pile sizes {pile_sizes}")
+
+
+@define
+class DictPilerSampleIndexer:
+    piler: DictPiler
+
+    def __getitem__(self, index: int | slice) -> DictBatch:
+        return self.piler._index_by_sample(index)
 
 
 class PilerDataset(torch.utils.data.IterableDataset):
