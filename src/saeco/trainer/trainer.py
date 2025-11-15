@@ -10,7 +10,6 @@ from schedulefree import AdamWScheduleFree
 from torch.amp.grad_scaler import GradScaler
 
 from saeco.core import Cache
-from saeco.data.tokens_data import TokensData
 from saeco.misc.paths import SAVED_MODELS_DIR
 from saeco.mlog import mlog
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
@@ -104,8 +103,8 @@ class Trainer:
 
     @cached_property
     def llm_val_tokens(self):
-        return TokensData(
-            self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
+        return self.cfg.data_cfg.tokens_data(
+            split=self.cfg.data_cfg.testsplit
         ).get_tokens()
 
     def get_l0_target(self):
@@ -173,7 +172,6 @@ class Trainer:
 
     def proc_cache_after_forward(self, cache: Cache):
         if self.cfg.l0_targeting_enabled and self.cfg.l0_target is not None:
-
             if not self.cfg.schedule.dynamic_adjust(self.t):
                 return
             step = self.l0_targeter(l0=cache.L0, t=self.t)
@@ -334,7 +332,6 @@ class Trainer:
         self.log_recons()
 
     def log_recons(self, num_batches=20):
-
         for eval_name, fn in self.recons_eval_fns.items():
             self.log(
                 {

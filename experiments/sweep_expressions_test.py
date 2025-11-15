@@ -1,4 +1,4 @@
-from saeco.data.data_config_definitions import (
+from saeco.data.config.data_config_definitions import (
     gpt_2_block,
     gemma_2_2b_openwebtext_test,
     gemma_2_2b_openwebtext,
@@ -7,8 +7,9 @@ from saeco.data.data_config_definitions import (
     gemma_2_2b_openwebtext_fp32,
     gemma_2_2b_openwebtext_bf16,
 )
-from saeco.data.generation_config import DataGenerationProcessConfig
-from saeco.data.split_config import SplitConfig
+from saeco.data.config.generation_config import DataGenerationProcessConfig
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
+from saeco.data.config.split_config import SplitConfig
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.sweep_expressions import Val
 from saeco.trainer.run_config import RunConfig
@@ -16,7 +17,7 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
+from saeco.data import DataConfig, ModelConfig
 from saeco.sweeps import SweepableConfig, Swept, SweepVar
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.train_config import TrainConfig

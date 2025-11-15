@@ -14,7 +14,7 @@ from saeco.components.losses import (
 )
 from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
 from saeco.core import Cache
-from saeco.data.sae_train_batch import SAETrainBatch
+from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from .normalizers import (
     ConstL2Normalizer,
     GeneralizedNormalizer,
@@ -90,7 +90,9 @@ class Trainable(cl.Module):
         self.normalizer = normalizer
         assert not any(
             isinstance(m, Normalized) for m in list(losses.values()) + models
-        ), "models and losses should not be normalized, the Trainable object is responsible for normalization."
+        ), (
+            "models and losses should not be normalized, the Trainable object is responsible for normalization."
+        )
         self.models = nn.ModuleList(models)
         model = models[0]
         assert extra_losses is None or losses is None
@@ -200,9 +202,9 @@ class Trainable(cl.Module):
         groups = [{"name": "normal", "params": normal}]
         for kvs, params in has_metadata.items():
             groups.append({"params": params, **{k: v for k, v in kvs}})
-        assert sum(len(g["params"]) for g in groups) == len(
-            list(self.parameters())
-        ), f"param_groups did not cover all parameters"
+        assert sum(len(g["params"]) for g in groups) == len(list(self.parameters())), (
+            f"param_groups did not cover all parameters"
+        )
         return groups
 
     def make_cache(self) -> Cache:

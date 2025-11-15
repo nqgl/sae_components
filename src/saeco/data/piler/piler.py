@@ -203,7 +203,7 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
         self.piles.shuffle_then_finalize(perms=perms)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i) -> torch.Tensor:
         if isinstance(i, int):
             piles = [self.piles[i]]
         elif isinstance(i, list):
@@ -213,6 +213,7 @@ class Piler:
         else:
             piles = self.piles[i]
         if isinstance(piles, list) and len(piles) == 1:
+            assert isinstance(piles[0], torch.Tensor)
             return piles[0]
         return torch.cat(piles)  # type: ignore
 

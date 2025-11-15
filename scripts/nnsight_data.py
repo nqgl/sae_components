@@ -1,10 +1,10 @@
 from saeco.data import (
-    ActsDataConfig,
     DataConfig,
     DataGenerationProcessConfig,
     ModelConfig,
     SplitConfig,
 )
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 
 
 cfg = DataConfig()

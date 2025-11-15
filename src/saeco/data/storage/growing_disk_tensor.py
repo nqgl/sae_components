@@ -5,6 +5,7 @@ import torch
 from attrs import define, field
 
 from saeco.data.storage.compressed_safetensors import CompressionType
+from saeco.misc.dtypes import str_to_dtype
 
 from .disk_tensor import DiskTensor, DiskTensorMetadata
 
@@ -104,6 +105,8 @@ class GrowingDiskTensor(DiskTensor):
             # shape2[cat_axis] = 1
             # numel_per_nnz = torch.prod(torch.tensor(shape2)).item()
             # bytes_per_nnz = int(numel_per_nnz * dtype.itemsize)
+            if isinstance(dtype, str):
+                dtype = str_to_dtype(dtype)  # TODO fix callers that cause this problem
             initial_nnz = SAECO_MIN_GDT_INITIAL_BYTES // dtype.itemsize
 
             # initial_nnz = 2**20

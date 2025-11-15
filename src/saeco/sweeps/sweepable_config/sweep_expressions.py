@@ -2,7 +2,8 @@ from enum import Enum
 
 from types import NoneType
 
-from typing import Any, Callable, Iterable, TypeVar, Union
+import types
+from typing import Any, Callable, Iterable, TypeVar, Union, get_args
 
 from pydantic import BaseModel
 
@@ -14,6 +15,7 @@ from saeco.sweeps.sweepable_config.expressions_utils import (
 
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
+
 
 T = TypeVar("T")
 
@@ -66,9 +68,27 @@ class ExpressionOpEnum(str, Enum):
             elif isinstance(args[0], list) or isinstance(args[0], tuple):
                 return args[0][int(args[1])]
 
-    def __call__(self, *children):
+    def __call__(self, *children: SweepExpression):
         children = [convert_other(c) for c in children]
         t = common_type(children)
+        assert self != ExpressionOpEnum.INDEX
+        # below is what I was going to do for INDEX, but it should be handled externally (in ExpressionOpEnum.__call__):
+        #    container_type = children[0].generic_type
+        #    contained_type = Any
+        #    args = get_args(container_type)
+        #    if args:
+        #        if isinstance(container_type, dict):
+        #            contained_type = args[1]
+        #        elif isinstance(container_type, list) or isinstance(
+        #            container_type, tuple
+        #        ):
+        #            contained_type = args[0]
+        #        else:
+        #            raise ValueError(f"Cannot index {container_type}")
+        #    t = contained_type
+        if self == ExpressionOpEnum.FLOATDIV:
+            if t is int:
+                t = float
         return Op[t](op=self, children=children)
 
 
@@ -109,6 +129,10 @@ class SweepVar(SweepExpression[T]):
         return vars_dict[self.name]
 
 
+def indent(s, level=1):
+    return "\n".join([" " * 4 * level + line for line in s.split("\n")])
+
+
 class Op[T](SweepExpression[T]):
     # WARNING>> things break if this is  SweepExpression[T]
     # This should be explored and understood but at the moment, don't touch it.
@@ -128,8 +152,25 @@ class Op[T](SweepExpression[T]):
             *[child.evaluate(vars_dict) for child in self.children]
         )
         my_type = self.generic_type
+
         assert my_type is not None
-        assert isinstance(result, my_type)
+        self.children[0].repr()
+        print(self.repr())
+        # if (
+        #     isinstance(result, float)
+        #     and my_type is int
+        #     and chill_issubclass(int, my_type)
+        #     and not chill_issubclass(float, my_type)
+        # ):
+        #     if result.is_integer():
+        #         result = int(result)
+        # elif (
+        #     isinstance(result, int)
+        #     and chill_issubclass(float, my_type)
+        #     and not chill_issubclass(int, my_type)
+        # ):
+        #     result = float(result)
+        # assert isinstance(result, my_type), (result, my_type) # TODO
         return result
 
     def get_sweepvars(self):
@@ -138,8 +179,18 @@ class Op[T](SweepExpression[T]):
             s |= child.get_sweepvars()
         return s
 
+    def repr(self):
+        inner = f"""{self.children[0].repr()}
+        {self.op.value}
+        {self.children[1].repr()}"""
+        return f"""
+        (
+        {indent(inner)}
+        )
+        """
 
-class Val[T: str | int | float | bool | list | tuple | dict[Any, Any]](
+
+class Val[T: str | float | int | bool | list | tuple | dict[Any, Any]](
     SweepExpression[T]
 ):
     # maybe this doesn't even need to be a subtype of SweepExpression?

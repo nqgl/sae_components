@@ -715,7 +715,7 @@ from typing import (
 import torch
 from torch import Tensor
 
-from saeco.data.dict_batch import DictBatch
+from saeco.data.dict_batch.dict_batch import DictBatch
 
 
 # ---------- Dim descriptors ----------
