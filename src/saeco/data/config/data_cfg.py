@@ -6,8 +6,15 @@ import torch
 from pydantic import Field
 from safetensors.torch import load_file, save_file
 from torch.utils.data import DataLoader
+from typing import Any
 
-from saeco.data.training_data.acts_data_old import ActsData, ActsDataset
+from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
+from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
+from saeco.data.training_data.acts_data import (
+    ActsDataReader,
+    ActsDataCreator,
+    ActsDataset,
+)
 from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 
@@ -16,14 +23,14 @@ from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.piler import Piler
 from saeco.data.piler.dict_piler import DictBatch, DictPiler
 from saeco.data.config.split_config import SplitConfig
+from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
 from saeco.data.training_data.tokens_data import TokensData
+from saeco.data.training_data.tokens_data_interface import TokensDataInterface
 from saeco.sweeps import SweepableConfig
 
 
-class DataConfig(SweepableConfig):
-    dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"
-    load_from_disk: bool = False
-    model_cfg: ModelConfig = Field(default_factory=ModelConfig)
+class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any]](SweepableConfig):
+    model_cfg: ModelConfig[ModelLoadT]
     trainsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
             start=0,
@@ -43,20 +50,23 @@ class DataConfig(SweepableConfig):
             end=100,
         )
     )
-    set_bos: bool = True
+    override_dictpiler_path_str: str | None = None
+    dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"  # tok
+    load_from_disk: bool = False  # tok
+    set_bos: bool = True  # tok
+    tokens_column_name: str = "input_ids"  # tok
+    perm_all: bool = False  # tok
     seq_len: int | None = 128
-    tokens_column_name: str = "input_ids"
     generation_config: DataGenerationProcessConfig = Field(
         default_factory=DataGenerationProcessConfig
     )
-    perm_all: bool = False
     databuffer_num_workers: int = 4
 
     # on the remote this wants to be ~32
     # on local that's more than necessary
     # maybe shouldn't be part of data config
     # since it doesn't affect training dynamics directly
-    # and best values varies depending on hardware
+    # and best values vary depending on hardware
     databuffer_queue_size: int | None = 32
     databuffer_worker_queue_base_size: int | None = 1
     databuffer_worker_offset_mult: int | None = 2
@@ -133,7 +143,7 @@ class DataConfig(SweepableConfig):
         input_sites: list[str] | None = None,
         target_sites: list[str] | None = None,
     ):
-        return ActsData(self, model).acts_generator(
+        return ActsDataReader(self).acts_generator(
             self.trainsplit,
             batch_size=batch_size,
             nsteps=nsteps,
@@ -149,7 +159,7 @@ class DataConfig(SweepableConfig):
         target_sites: list[str] | None = None,
     ):
         return ActsDataset(
-            ActsData(self, model),
+            ActsDataReader(self),
             self.trainsplit,
             batch_size,
             input_sites=input_sites,
@@ -203,7 +213,7 @@ class DataConfig(SweepableConfig):
         return dl
 
     def store_split(self, split: SplitConfig):
-        ActsData(cfg=self, model=self.model_cfg.model)._store_split(split)
+        ActsDataCreator(cfg=self, model=self.model_cfg.model)._store_split(split)
         assert self._acts_piles_path(split).exists()
 
     def getsplit(self, split: str):
@@ -251,13 +261,24 @@ class DataConfig(SweepableConfig):
             )
         return dataset
 
-    def acts_data(self) -> "ActsData":
-        return ActsData(self, self.model_cfg.model)
+    def acts_data_creator(self) -> "ActsDataCreator":
+        return ActsDataCreator(cfg=self, model=self.model_cfg.model)
 
-    def tokens_data(self, split="train") -> "TokensData":
+    def tokens_data(
+        self, split: SplitConfig | str = "train"
+    ) -> TokensDataInterface[torch.Tensor] | TokensDataInterface[DictBatch]:
+        if self.override_dictpiler_path_str is not None:
+            return DictPiledTokensData(
+                cfg=self,
+                piler_path=Path(self.override_dictpiler_path_str),
+                split=(
+                    split
+                    if isinstance(split, SplitConfig)
+                    else getattr(self, f"{split}split")
+                ),
+            )
         return TokensData(
-            self,
-            self.model_cfg.model,
+            cfg=self,
             split=(
                 split
                 if isinstance(split, SplitConfig)

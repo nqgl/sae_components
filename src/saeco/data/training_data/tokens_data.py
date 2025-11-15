@@ -1,9 +1,9 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import einops
 import torch
 import tqdm
-from nnsight import LanguageModel
+from nnsight import LanguageModel, NNsight
 from torch import Tensor
 
 from saeco.data.config.split_config import SplitConfig
@@ -12,18 +12,18 @@ from functools import cached_property
 import datasets
 from attrs import define, field
 
+from saeco.data.piler.dict_piler import DictPiler
+from saeco.data.training_data.tokens_data_interface import TokensDataInterface
+
 
 if TYPE_CHECKING:
     from saeco.data.config.data_cfg import DataConfig
 
 
-class TokensData:
-    def __init__(
-        self, cfg: "DataConfig", model: LanguageModel | None, split: SplitConfig
-    ):
-        self.cfg = cfg
-        self.model = model
-        self.split = split
+@define
+class TokensData(TokensDataInterface[torch.Tensor]):
+    cfg: "DataConfig[Any ]"
+    split: SplitConfig
 
     @cached_property
     def src_dataset_data(self):
@@ -64,7 +64,7 @@ class TokensData:
         else:
             docs = self.src_dataset_data
         if self.cfg.set_bos:
-            docs[:, 0] = self.model.tokenizer.bos_token_id
+            docs[:, 0] = self.cfg.model_cfg.tokenizer.bos_token_id
         return docs
 
     @property
@@ -105,7 +105,7 @@ class TokensData:
             piler.distribute(self.documents[i : i + doc_dist_batch_size])
         piler.shuffle_piles()
 
-    def get_tokens(self, num_tokens=None):
+    def get_tokens(self, num_tokens: int | None = None) -> torch.Tensor:
         if not self.cfg._tokens_piles_path(self.split).exists():
             self._store_split(self.split)
         piler = self.tokens_piler()
@@ -129,31 +129,12 @@ class TokensData:
                 this is expected if tokens per split is small, otherwise a bug.\
                     \n piles requested: {num_piles}, available: {piler.num_piles}"
         )
+        assert isinstance(tokens, torch.Tensor)
         return (
             tokens[: num_tokens // tokens.shape[1] + 1]
             if num_tokens is not None
             else tokens
         )
-
-    def get_tokens_iter(
-        self,
-        batch_size,
-        id=None,
-        nw=None,
-    ):
-        assert id == nw == None or id is not None and nw is not None
-        id = id or 0
-        nw = nw or 1
-        if not self.cfg._tokens_piles_path(self.split).exists():
-            self._store_split(self.split)
-
-        piler = self.tokens_piler()
-        for p in range(id % nw, piler.num_piles, nw):
-            print("get next tokens pile")
-            print(id, nw, p)
-            pile = piler[p]
-            for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-                yield pile[i : i + batch_size]
 
 
 @define
