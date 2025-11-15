@@ -11,13 +11,15 @@ from attrs import define
 from nnsight import LanguageModel, NNsight
 
 from saeco.data.training_data.bufferized_iter import bufferized_iter
-from saeco.data.piler.dict_piler import DictBatch
+from saeco.data.dict_batch import DictBatch
 from saeco.data.config.split_config import SplitConfig
-from saeco.data.training_data.tokens_data_copy import TokensData
-from saeco.misc import str_to_dtype
 from saeco.misc.nnsite import getsite
+from typing import Any
 
 if TYPE_CHECKING:
+    from saeco.data.config.model_config.model_type_cfg_base import (
+        ModelLoadingConfigBase,
+    )
     from saeco.data.config.data_cfg import DataConfig
 
 
@@ -25,66 +27,111 @@ from saeco.data.training_data.sae_train_batch import SAETrainBatch
 
 
 @define
-class ActsData:
-    cfg: "DataConfig"
+class ActsDataCreator:
+    cfg: "DataConfig[ModelLoadingConfigBase[Any]]"
     model: LanguageModel | NNsight
 
     def _store_split(self, split: SplitConfig):
-        tokens_data = TokensData(self.cfg, self.model, split=split)
-        tokens = tokens_data.get_tokens(num_tokens=split.tokens_from_split)
-        acts_piler = self.cfg.acts_piler(
-            split,
-            write=True,
-            num_tokens=split.tokens_from_split or tokens_data.num_tokens,
-        )
+        if self.cfg.model_cfg.use_custom_data_source:
+            n_batches = 1000
+            acts_piler = self.cfg.acts_piler(
+                split,
+                write=True,
+                num_tokens=split.tokens_from_split or 32 * n_batches,
+            )
 
-        tqdm.tqdm.write(f"Storing acts for {split.get_split_key()}")
+            dataloader = self.cfg.model_cfg.model_load_cfg.custom_data_source()
+            data_iter = iter(dataloader)
+            for _ in tqdm.tqdm(
+                range(n_batches),
+                total=n_batches,
+                position=0,
+                desc="Storing",
+            ):
+                batch = next(data_iter)
+                acts = self.to_acts(batch, llm_batch_size=batch.batch_size)
+                acts_piler.distribute(acts)
+            acts_piler.shuffle_piles()
+            return
+        else:
+            tokens_data = self.cfg.tokens_data(split=split)
+            input_data = tokens_data.get_tokens(num_tokens=split.tokens_from_split)
+            acts_piler = self.cfg.acts_piler(
+                split,
+                write=True,
+                num_tokens=split.tokens_from_split or tokens_data.num_tokens,
+            )
 
-        meta_batch_size = (
-            self.cfg.generation_config.meta_batch_size // tokens_data.seq_len
-        )
-        tokens_split = tokens.split(meta_batch_size)
-        for acts in tqdm.tqdm(
-            self.acts_generator_from_tokens_generator(
-                tokens_split,
-                llm_batch_size=self.cfg.generation_config.llm_batch_size
-                // tokens_data.seq_len,
-            ),
-            total=len(tokens_split),
-            position=0,
-            desc="Storing",
-        ):
-            acts_piler.distribute(acts.data)
-        acts_piler.shuffle_piles()
+            tqdm.tqdm.write(f"Storing acts for {split.get_split_key()}")
+
+            meta_batch_size = (
+                self.cfg.generation_config.meta_batch_size // tokens_data.seq_len
+            )
+            input_data_split = input_data.split(meta_batch_size)
+            # assert (not isinstance(input_data, torch.Tensor)) or isinstance(
+            #     input_data_split, torch.Tensor
+            # )
+            assert isinstance(input_data_split, torch.Tensor | DictBatch)
+            for acts in tqdm.tqdm(
+                self.acts_generator_from_tokens_generator(
+                    input_data_split,
+                    llm_batch_size=self.cfg.generation_config.llm_batch_size
+                    // tokens_data.seq_len,
+                ),
+                total=len(input_data_split),
+                position=0,
+                desc="Storing",
+            ):
+                acts_piler.distribute(acts)
+            acts_piler.shuffle_piles()
 
     def to_acts(
         self,
-        tokens,
+        inputs: DictBatch | torch.Tensor,
         llm_batch_size,
         rearrange=True,
         skip_exclude=False,
         force_not_skip_padding=False,
         batched_kwargs={},
     ) -> DictBatch:
-        assert isinstance(tokens, torch.Tensor)
+        # assert notisinstance(inputs, torch.Tensor)
         assert self.model is not None
+        tx_inputs = self.cfg.model_cfg.model_load_cfg.input_data_transform(
+            input_data=inputs
+        )
 
         acts_dict = {site: [] for site in self.cfg.model_cfg.acts_cfg.sites}
         with self.cfg.model_cfg.autocast_context():
-            with torch.inference_mode():
-                trng = tqdm.trange(0, tokens.shape[0], llm_batch_size, leave=False)
-                trng.set_description(f"Tracing {tokens.shape[0]}")
+            if isinstance(tx_inputs, torch.Tensor):
+                batch_size = tx_inputs.shape[0]
+            else:
+                batch_size = tx_inputs.batch_size
+            with torch.inference_mode():  # is this ok with nnsight?
+                trng = tqdm.trange(0, batch_size, llm_batch_size, leave=False)
+                trng.set_description(f"Tracing {batch_size}")
                 for i in trng:
                     batch_kwargs = {
                         k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
                     }
                     model = self.model
                     d = {}
-                    with model.trace(
-                        tokens[i : i + llm_batch_size],
-                        **self.cfg.model_cfg.model_kwargs,
-                        **batch_kwargs,
-                    ):
+                    if isinstance(tx_inputs, torch.Tensor):
+                        trace_ctx = model.trace(
+                            tx_inputs[i : i + llm_batch_size],
+                            **self.cfg.model_cfg.model_kwargs,
+                            **batch_kwargs,
+                        )
+                    else:
+                        args = [
+                            tx_inputs.pop(k) for k in self.cfg.model_cfg.positional_args
+                        ]
+                        trace_ctx = model.trace(
+                            *args,
+                            **tx_inputs[i : i + llm_batch_size],
+                            **self.cfg.model_cfg.model_kwargs,
+                            **batch_kwargs,
+                        )
+                    with trace_ctx:
                         for site in self.cfg.model_cfg.acts_cfg.sites:
                             acts_module = getsite(model, site)
                             acts = acts_module.save()
@@ -94,14 +141,16 @@ class ActsData:
                         acts_dict[site].append(d[site])
 
         acts = {}
+
         for site in self.cfg.model_cfg.acts_cfg.sites:
             acts[site] = torch.cat(acts_dict[site], dim=0)
-        # ### END FUTURE
+
         acts = DictBatch(data=acts)
 
         if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
             acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
-        toks_re = tokens
+
+        toks_re = inputs
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
             toks_re = toks_re[:, 1:]
@@ -124,8 +173,8 @@ class ActsData:
                 return acts[mask]
         return acts
 
-    def acts_generator_from_tokens_generator(self, tokens_generator, llm_batch_size):
-        for tokens in tokens_generator:
+    def acts_generator_from_tokens_generator(self, inputs_generator, llm_batch_size):
+        for tokens in inputs_generator:
             acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
 

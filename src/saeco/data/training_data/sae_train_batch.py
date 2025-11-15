@@ -2,7 +2,7 @@ from functools import cached_property
 
 import torch
 
-from saeco.data.infrastructure.dict_batch import DictBatch
+from saeco.data.dict_batch.dict_batch import DictBatch
 
 
 @DictBatch.auto_other_fields
