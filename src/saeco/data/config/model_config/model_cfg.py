@@ -7,7 +7,7 @@ from pydantic import Field
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-
+from typing import Any
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
@@ -15,7 +15,7 @@ from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
 
 
-class ModelConfig[ModelLoadT: ModelLoadingConfigBase = HuggingFaceModelConfig](
+class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = HuggingFaceModelConfig](
     SweepableConfig
 ):
     model_load_cfg: ModelLoadT
@@ -24,6 +24,8 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase = HuggingFaceModelConfig](
     _device: str = "cuda"
     # no_processing: bool = False
     torch_dtype_str: str | None = None
+    positional_args: list[str] = Field(default_factory=list)
+    use_custom_data_source: bool = False
 
     @property
     def model_name(self):
