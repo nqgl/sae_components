@@ -528,6 +528,14 @@ class DictBatch(dict):
             for i in range(len(l0))
         ]
 
+    def einops_rearrange(self, pattern: str, **kwargs):
+        import einops
+
+        return self.construct_with_other_data(
+            {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.items()},
+            self._get_other_dict(),
+        )
+
 
 from attrs import define
 
