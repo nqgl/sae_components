@@ -18,6 +18,10 @@ from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfi
 class HuggingFaceModelConfig(ModelLoadingConfigBase[PreTrainedModel]):
     model_name: str = "gpt2"
 
+    @property
+    def name(self) -> str:  # type: ignore
+        return self.model_name
+
     @cached_property
     def tokenizer(self) -> PreTrainedTokenizer:
         return AutoTokenizer.from_pretrained(

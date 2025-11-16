@@ -25,11 +25,11 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = HuggingFaceModelConf
     # no_processing: bool = False
     torch_dtype_str: str | None = None
     positional_args: list[str] = Field(default_factory=list)
-    use_custom_data_source: bool = False
+    use_custom_data_source: bool = False  # TODO remove
 
     @property
     def model_name(self):
-        return self.model_load_cfg.model_name
+        return self.model_load_cfg.name
 
     @property
     def torch_dtype(self):

@@ -27,7 +27,7 @@ class ModelLoadingConfigBase[
     ModelT: nn.Module = nn.Module,
 ](SweepableConfig):
     @property
-    def model_name(self) -> str:  # TODO change to not shadowe model
+    def name(self) -> str:  # type: ignore
         raise NotImplementedError
 
     @cached_property
@@ -51,6 +51,11 @@ class ModelLoadingConfigBase[
 
     def custom_data_source(self) -> Iterable[DictBatch]:
         raise NotImplementedError
+
+    def filter_acts(
+        self, input_data: torch.Tensor | DictBatch, acts: DictBatch
+    ) -> DictBatch:
+        return acts
 
 
 # @runtime_checkable
