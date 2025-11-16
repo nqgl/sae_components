@@ -59,10 +59,11 @@ def shuffled_range(start, stop, mod, shuffle=True):
 
 @define
 class DictPiler:
-    metadata: DictPilerMetadata
-    piler_metadata: PilerMetadata
-    pilers: dict[str, Piler]
+    # metadata: DictPilerMetadata
+    # piler_metadata: PilerMetadata
+    # pilers: dict[str, Piler]
     path: Path
+    skip_cache: bool
     use_async_distribute: bool = (
         True  # this is a flag just bc it's a new/experimental feature
     )
@@ -77,6 +78,7 @@ class DictPiler:
         num_piles: int,
         use_async_distribute: bool = True,
         compress: bool = False,
+        skip_cache: bool = True,
     ):
         keys = set(dtypes.keys())
 
@@ -109,38 +111,86 @@ class DictPiler:
             for k in keys
         }
 
-        first_piler = next(iter(pilers.values()))
+        # first_piler = next(iter(pilers.values()))
 
         dict_piler = DictPiler(
-            metadata,
-            first_piler.metadata,
-            pilers,
-            path,
-            use_async_distribute,
-            False,
+            # metadata=metadata,
+            # piler_metadata=first_piler.metadata,
+            # pilers=pilers,
+            path=path,
+            skip_cache=False,
+            use_async_distribute=use_async_distribute,
+            readonly=False,
         )
-
+        assert not cls.get_metadata_path(path).exists()
         cls.get_metadata_path(path).write_text(metadata.model_dump_json())
+        dict_piler.pilers = pilers
 
         return dict_piler
 
     @classmethod
     def open(
         cls,
-        path: Union[str, Path],
+        path: Path,
         use_async_distribute: bool = True,
         skip_cache: bool = True,
         # we could allow options to be passed in here and then assert that they match the properties of the opened piler
         # not sure that's necessary though
     ):
-        metadata_path = cls.get_metadata_path(path)
+        # metadata_path = cls.get_metadata_path(path)
 
+        # if not metadata_path.exists():
+        #     raise ValueError(f"DictPiler metadata not found at {metadata_path}")
+
+        # metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
+
+        # pilers = {k: Piler.open(path / k, skip_cache=skip_cache) for k in metadata.keys}
+
+        # first_piler = next(iter(pilers.values()))
+
+        # for piler in pilers.values():
+        #     if first_piler.metadata.num_piles != piler.metadata.num_piles:
+        #         raise ValueError(
+        #             f"Piler {piler.path} does not match first piler {first_piler.path}: {piler.metadata.num_piles} != {first_piler.metadata.num_piles}"
+        #         )
+        #     if first_piler.shape[0] != piler.shape[0]:
+        #         raise ValueError(
+        #             f"Piler {piler.path} shape does not match first piler {first_piler.path}: {piler.shape[0]} != {first_piler.shape[0]}"
+        #         )
+        #     if first_piler.metadata.compression != piler.metadata.compression:
+        #         raise ValueError(
+        #             f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
+        #         )
+
+        dict_piler = DictPiler(
+            # metadata=metadata,
+            # piler_metadata=first_piler.metadata,
+            # pilers=pilers,
+            path=path,
+            use_async_distribute=use_async_distribute,
+            readonly=True,
+            skip_cache=skip_cache,
+        )
+
+        return dict_piler
+
+    @cached_property
+    def metadata(self):
+        metadata_path = self.get_metadata_path(self.path)
         if not metadata_path.exists():
             raise ValueError(f"DictPiler metadata not found at {metadata_path}")
+        return DictPilerMetadata.model_validate_json(metadata_path.read_text())
 
-        metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
+    @cached_property
+    def piler_metadata(self):
+        return next(iter(self.pilers.values())).metadata
 
-        pilers = {k: Piler.open(path / k, skip_cache=skip_cache) for k in metadata.keys}
+    @cached_property
+    def pilers(self):
+        pilers = {
+            k: Piler.open(self.path / k, skip_cache=self.skip_cache)
+            for k in self.metadata.keys
+        }
 
         first_piler = next(iter(pilers.values()))
 
@@ -157,20 +207,10 @@ class DictPiler:
                 raise ValueError(
                     f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
                 )
-
-        dict_piler = DictPiler(
-            metadata,
-            first_piler.metadata,
-            pilers,
-            path,
-            use_async_distribute,
-            readonly=True,
-        )
-
-        return dict_piler
+        return pilers
 
     @classmethod
-    def get_metadata_path(cls, path: Union[str, Path]):
+    def get_metadata_path(cls, path: str | Path):
         if isinstance(path, str):
             path = Path(path)
         return path / "dictpiler_metadata.json"
