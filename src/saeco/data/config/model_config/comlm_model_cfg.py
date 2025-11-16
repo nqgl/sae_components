@@ -1,32 +1,23 @@
 from functools import cached_property
-from typing import cast
+from typing import Any, cast
 
 import torch
-
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizer,
-)
-
-from saeco.data.config.locations import DATA_DIRS
-from typing import Any
-from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
-from comlm.utils import ModelCheckpointIdentifier
 from comlm.architecture import TransformerArchitecture
 from comlm.exprank import XRArch
+from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank.xr_transformer import XRTransformer
-from paramsight import takes_alias, get_resolved_typevars_for_base
+from comlm.utils import ModelCheckpointIdentifier
 from nnsight import NNsight
+from paramsight import get_resolved_typevars_for_base, takes_alias
 
+from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 from saeco.data.dict_batch.dict_batch import DictBatch
 
 
 class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
     ModelLoadingConfigBase[XRTransformer]
 ):
-    model_ident: ModelCheckpointIdentifier
+    chk_ident: ModelCheckpointIdentifier
 
     @takes_alias
     @classmethod
@@ -38,21 +29,21 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
     @cached_property
     def pretrained_arch(self) -> ArchT:
         arch_cls = self.get_arch_cls()
-        print(f"loading {arch_cls} from {self.model_ident.path}")
+        print(f"loading {arch_cls} from {self.chk_ident.path}")
         return arch_cls.load_from_checkpoint_identifier(
-            self.model_ident,
+            self.chk_ident,
             load_weights_only=True,
             update_arch_before_load=self.update_arch_before_load,
             update_arch_after_load=self.update_arch_after_load,
             # dont_load_checkpoint=self.run_cfg.finetuner_cfg.skip_loading_weights,#TODO
             strict_model_weights=True,
             state_dict_ignore_keys=self.state_dict_modify,
-            skip_mlog_init=True,
+            skip_mlog_init=False,
         )
 
     @property
-    def model_name(self) -> str:  # type: ignore
-        return self.model_ident.simple_name
+    def name(self) -> str:  # type: ignore
+        return self.chk_ident.simple_name
 
     @cached_property
     def tokenizer(self):
@@ -62,14 +53,19 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
         self,
         load_as_dtype: torch.dtype | None = None,
         device: str | torch.device = "cuda",
-    ) -> XRTransformer:
-        return self.pretrained_arch.model
+    ):
+        self.pretrained_arch.composer_model.compile_model = False
+        self.pretrained_arch.composer_model.eval()
+        return self.pretrained_arch.composer_model
 
-    def nnsight_wrap(self, model: XRTransformer) -> NNsight:
+    def nnsight_wrap(self, model) -> NNsight:
         return NNsight(model)
 
     def update_arch_before_load(self, arch: TransformerArchitecture):
-        pass
+        # disable any preemptive data loading
+        arch.run_cfg.train_cfg.evals_cfg.spearman_min_gene_counts = []
+        arch.run_cfg.train_cfg.evals_cfg.ce_min_gene_counts = []
+        arch.run_cfg.train_cfg.checkpoint_interval_batches = None
 
     def update_arch_after_load(self, arch: TransformerArchitecture):
         pass
@@ -83,9 +79,13 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
         #             del model_dict[key]
         return state_dict
 
-
     def input_data_transform(self, input_data: DictBatch) -> DictBatch:
-        
+        return NoisedBatch.construct_with_other_data(input_data).cuda()
+
+    def filter_acts(self, input_data: DictBatch, acts: DictBatch) -> DictBatch:
+        return acts
+
+
 # train_dataloader_filtered
 # [
 #     train_datagen_unfiltered[
