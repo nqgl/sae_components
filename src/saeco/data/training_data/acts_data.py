@@ -71,7 +71,7 @@ class ActsDataCreator:
             # assert (not isinstance(input_data, torch.Tensor)) or isinstance(
             #     input_data_split, torch.Tensor
             # )
-            assert isinstance(input_data_split, torch.Tensor | DictBatch)
+            assert isinstance(input_data, torch.Tensor | DictBatch)
             for acts in tqdm.tqdm(
                 self.acts_generator_from_tokens_generator(
                     input_data_split,
@@ -116,22 +116,22 @@ class ActsDataCreator:
                     model = self.model
                     d = {}
                     if isinstance(tx_inputs, torch.Tensor):
-                        trace_ctx = model.trace(
-                            tx_inputs[i : i + llm_batch_size],
+                        args = [tx_inputs[i : i + llm_batch_size]]
+                        kwargs = dict(
                             **self.cfg.model_cfg.model_kwargs,
                             **batch_kwargs,
                         )
                     else:
+                        batch = tx_inputs[i : i + llm_batch_size]
                         args = [
-                            tx_inputs.pop(k) for k in self.cfg.model_cfg.positional_args
+                            batch  # TODO change to more explicit. repack vs pos vs kwarg
+                            # batch.pop(k) for k in self.cfg.model_cfg.positional_args
                         ]
-                        trace_ctx = model.trace(
-                            *args,
-                            **tx_inputs[i : i + llm_batch_size],
+                        kwargs = dict(
                             **self.cfg.model_cfg.model_kwargs,
                             **batch_kwargs,
                         )
-                    with trace_ctx:
+                    with model.trace(*args, **kwargs):
                         for site in self.cfg.model_cfg.acts_cfg.sites:
                             acts_module = getsite(model, site)
                             acts = acts_module.save()
@@ -149,7 +149,7 @@ class ActsDataCreator:
 
         if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
             acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
-
+        # TODO Generate and use mask from custom
         toks_re = inputs
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
@@ -157,11 +157,16 @@ class ActsDataCreator:
         if not rearrange:
             assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
             return acts
+        acts = self.cfg.model_cfg.model_load_cfg.filter_acts(toks_re, acts)
         acts = acts.einops_rearrange("batch seq d_data -> (batch seq) d_data")
-        toks_re = einops.rearrange(
-            toks_re,
-            "batch seq -> (batch seq)",
-        )
+        toks_pattern = "batch seq ... -> (batch seq) ..."
+        if isinstance(toks_re, DictBatch):
+            toks_re = toks_re.einops_rearrange(toks_pattern)
+        else:
+            toks_re = einops.rearrange(
+                toks_re,
+                toks_pattern,
+            )
         if (
             self.cfg.model_cfg.acts_cfg.filter_pad
             and self.model.tokenizer.pad_token_id is not None
@@ -170,8 +175,8 @@ class ActsDataCreator:
             mask = toks_re != self.model.tokenizer.pad_token_id
             if not mask.all():
                 print(f"removing {(~mask).sum()} activations from pad token locations")
-                return acts[mask]
-        return acts
+                acts = acts[mask]
+        return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
 
     def acts_generator_from_tokens_generator(self, inputs_generator, llm_batch_size):
         for tokens in inputs_generator:
