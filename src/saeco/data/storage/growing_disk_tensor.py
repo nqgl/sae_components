@@ -141,11 +141,21 @@ class GrowingDiskTensor(DiskTensor):
 
     def append(self, tensor):
         length = tensor.shape[self.cat_axis]
-        assert (
-            list(tensor.shape[: self.cat_axis]) == self.metadata.shape[: self.cat_axis]
-            and list(tensor.shape[self.cat_axis + 1 :])
+        if (
+            not list(tensor.shape[: self.cat_axis])
+            == self.metadata.shape[: self.cat_axis]
+        ):
+            raise ValueError(
+                f"Shape mismatch (prefix): {tensor.shape} != {self.metadata.shape}"
+            )
+
+        if not (
+            list(tensor.shape[self.cat_axis + 1 :])
             == self.metadata.shape[self.cat_axis + 1 :]
-        )
+        ):
+            raise ValueError(
+                f"Shape mismatch (suffix): {tensor.shape} != {self.metadata.shape}"
+            )
         assert not self.finalized
         while self.metadata.shape[self.cat_axis] + length >= self.storage_len:
             self.resize(self.storage_len * 2)
