@@ -39,10 +39,11 @@ class DictPiledTokensData(TokensDataInterface[DictBatch]):
             num_tokens // self.seq_len if num_tokens is not None else end - start
         )
         if num_tokens is not None:
-            if num_tokens > end - start:
+            num_available = self.seq_len * (end - start)
+            if num_tokens > num_available:
                 raise ValueError(
                     f"Requested {num_tokens} tokens, "
-                    f"but only {end - start} are available"
+                    f"but only {num_available} are available"
                 )
             end = start + num_samples
 
