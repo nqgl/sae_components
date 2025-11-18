@@ -26,6 +26,7 @@ Example usage:
 from typing import Any, Callable, Literal, Optional
 import neptune
 import numpy as np
+import pandas as pd
 from dataclasses import dataclass, field
 
 
@@ -37,14 +38,35 @@ class RunInfo:
     name: str
     config: dict[str, Any]
     metrics: dict[str, float]
-    raw_run: Any = field(repr=False)
+    _run_id_for_lazy_load: str = field(repr=False, default=None)
+    _project: str = field(repr=False, default=None)
+    _api_token: Optional[str] = field(repr=False, default=None)
 
     def __repr__(self):
         return f"RunInfo(id={self.run_id}, name={self.name}, metrics={self.metrics})"
 
+    def _get_run_readonly(self):
+        """Lazily open run in read-only mode only when needed."""
+        if self._run_id_for_lazy_load and self._project:
+            return neptune.init_run(
+                project=self._project,
+                api_token=self._api_token,
+                with_id=self._run_id_for_lazy_load,
+                mode="read-only"
+            )
+        return None
+
 
 class NeptuneQuery:
-    """Query Neptune runs with filtering and top-k selection."""
+    """
+    Query Neptune runs with filtering and top-k selection.
+
+    This class uses an optimized approach:
+    1. Fetches runs table in bulk (fast, read-only)
+    2. Gets metrics from table when possible (no run initialization)
+    3. Only opens individual runs in read-only mode when needed for non-standard aggregations
+    4. Avoids creating write-mode connections entirely
+    """
 
     def __init__(self, project: str, api_token: Optional[str] = None):
         """
@@ -56,152 +78,157 @@ class NeptuneQuery:
         """
         self.project = project
         self.api_token = api_token
-        self._runs_cache: Optional[list[RunInfo]] = None
+        self._runs_table_cache: Optional[pd.DataFrame] = None
+        self._project_handle = None
 
-    def fetch_runs(self, state: Optional[str] = None, force_refresh: bool = False) -> list[RunInfo]:
+    def _init_project(self):
+        """Initialize project handle if not already done."""
+        if self._project_handle is None:
+            self._project_handle = neptune.init_project(
+                project=self.project,
+                api_token=self.api_token,
+                mode="read-only"
+            )
+        return self._project_handle
+
+    def fetch_runs_table(
+        self,
+        state: Optional[str] = None,
+        force_refresh: bool = False,
+        columns: Optional[list[str]] = None
+    ) -> pd.DataFrame:
         """
-        Fetch all runs from the project.
+        Fetch runs table from the project efficiently.
 
         Args:
             state: Filter by run state ('active', 'inactive', etc.)
             force_refresh: Force re-fetching runs (ignore cache)
+            columns: Specific columns to fetch (e.g., ["sys/id", "sys/name", "train/loss"])
 
         Returns:
-            List of RunInfo objects
+            Pandas DataFrame with runs data
         """
-        if self._runs_cache is not None and not force_refresh:
-            return self._runs_cache
+        if self._runs_table_cache is not None and not force_refresh:
+            return self._runs_table_cache
 
-        project = neptune.init_project(
-            project=self.project,
-            api_token=self.api_token,
-            mode="read-only"
-        )
+        project = self._init_project()
 
-        runs_table = project.fetch_runs_table(state=state).to_pandas()
-        project.stop()
+        # Fetch runs table - this is MUCH more efficient than opening individual runs
+        if columns:
+            runs_table = project.fetch_runs_table(state=state, columns=columns).to_pandas()
+        else:
+            runs_table = project.fetch_runs_table(state=state).to_pandas()
 
-        run_infos = []
-        for _, row in runs_table.iterrows():
-            # Fetch detailed run info
-            run = neptune.init_run(
-                project=self.project,
-                api_token=self.api_token,
-                with_id=row['sys/id'],
-                mode="read-only"
-            )
+        self._runs_table_cache = runs_table
+        return runs_table
 
-            # Extract config
-            config = {}
-            if 'sys/tags' in row:
-                config['tags'] = row['sys/tags']
-
-            # Try to get config from common config paths
-            for config_path in ['config', 'parameters', 'params']:
-                try:
-                    config_data = run[config_path].fetch()
-                    if isinstance(config_data, dict):
-                        config.update(config_data)
-                except:
-                    pass
-
-            # Store the run for later metric extraction
-            run_info = RunInfo(
-                run_id=row['sys/id'],
-                name=row.get('sys/name', row['sys/id']),
-                config=config,
-                metrics={},
-                raw_run=run
-            )
-            run_infos.append(run_info)
-
-        self._runs_cache = run_infos
-        return run_infos
-
-    def _get_metric_value(
+    def _get_metric_from_table_or_run(
         self,
-        run: Any,
+        run_id: str,
         metric_key: str,
+        runs_table: pd.DataFrame,
         aggregation: Literal["last", "mean_last_n", "min", "max", "mean_all"] = "last",
         n_steps: int = 10
     ) -> Optional[float]:
         """
-        Extract metric value from a run.
+        Extract metric value from table if available, otherwise fetch from run.
 
         Args:
-            run: Neptune run object
-            metric_key: Metric path (e.g., "train/loss" or "metrics/L0")
+            run_id: Neptune run ID
+            metric_key: Metric path (e.g., "train/loss_" or "metrics/L0_")
+            runs_table: DataFrame with runs data
             aggregation: How to aggregate metric values
             n_steps: Number of steps for mean_last_n aggregation
 
         Returns:
-            Aggregated metric value or None if metric not found
+            Metric value or None if not found
+        """
+        # First try to get from the table (most efficient)
+        row = runs_table[runs_table['sys/id'] == run_id]
+        if len(row) == 0:
+            return None
+
+        row = row.iloc[0]
+
+        # Neptune stores metrics with trailing underscore in the table for last value
+        table_key = metric_key if metric_key.endswith('_') else f"{metric_key}_"
+
+        # For "last" aggregation, try to get directly from table
+        if aggregation == "last" and table_key in runs_table.columns:
+            value = row.get(table_key)
+            if pd.notna(value):
+                return float(value)
+
+        # For other aggregations or if not in table, need to fetch from run
+        # Only do this if absolutely necessary
+        if aggregation != "last" or table_key not in runs_table.columns:
+            return self._fetch_metric_from_run(run_id, metric_key, aggregation, n_steps)
+
+        return None
+
+    def _fetch_metric_from_run(
+        self,
+        run_id: str,
+        metric_key: str,
+        aggregation: Literal["last", "mean_last_n", "min", "max", "mean_all"],
+        n_steps: int
+    ) -> Optional[float]:
+        """
+        Fetch metric from individual run (slower, only when needed).
+
+        Args:
+            run_id: Neptune run ID
+            metric_key: Metric path
+            aggregation: How to aggregate
+            n_steps: Number of steps for mean_last_n
+
+        Returns:
+            Metric value or None
         """
         try:
-            # Fetch metric values
-            metric_series = run[metric_key].fetch_values()
+            # Open run in read-only mode
+            run = neptune.init_run(
+                project=self.project,
+                api_token=self.api_token,
+                with_id=run_id,
+                mode="read-only"
+            )
 
-            if metric_series is None or len(metric_series) == 0:
-                return None
+            try:
+                # Fetch metric values
+                metric_series = run[metric_key].fetch_values()
 
-            # Convert to numpy array
-            values = np.array([v.value for v in metric_series['value']])
+                if metric_series is None or len(metric_series) == 0:
+                    return None
 
-            if len(values) == 0:
-                return None
+                # Convert to numpy array
+                values = np.array([v.value for v in metric_series['value']])
 
-            # Apply aggregation
-            if aggregation == "last":
-                return float(values[-1])
-            elif aggregation == "mean_last_n":
-                return float(np.mean(values[-n_steps:]))
-            elif aggregation == "min":
-                return float(np.min(values))
-            elif aggregation == "max":
-                return float(np.max(values))
-            elif aggregation == "mean_all":
-                return float(np.mean(values))
-            else:
-                raise ValueError(f"Unknown aggregation: {aggregation}")
+                if len(values) == 0:
+                    return None
+
+                # Apply aggregation
+                if aggregation == "last":
+                    result = float(values[-1])
+                elif aggregation == "mean_last_n":
+                    result = float(np.mean(values[-n_steps:]))
+                elif aggregation == "min":
+                    result = float(np.min(values))
+                elif aggregation == "max":
+                    result = float(np.max(values))
+                elif aggregation == "mean_all":
+                    result = float(np.mean(values))
+                else:
+                    raise ValueError(f"Unknown aggregation: {aggregation}")
+
+                return result
+            finally:
+                # Always close the run
+                run.stop()
 
         except Exception as e:
             # Metric not found or error accessing it
             return None
-
-    def _check_constraints(
-        self,
-        run_info: RunInfo,
-        constraints: dict[str, Callable[[float], bool]],
-        aggregation: str,
-        n_steps: int
-    ) -> bool:
-        """
-        Check if a run satisfies all constraints.
-
-        Args:
-            run_info: RunInfo object with raw_run
-            constraints: Dict mapping metric keys to constraint functions
-            aggregation: How to aggregate metric values
-            n_steps: Number of steps for mean_last_n aggregation
-
-        Returns:
-            True if all constraints are satisfied
-        """
-        for metric_key, constraint_fn in constraints.items():
-            value = self._get_metric_value(
-                run_info.raw_run,
-                metric_key,
-                aggregation=aggregation,
-                n_steps=n_steps
-            )
-
-            if value is None:
-                return False
-
-            if not constraint_fn(value):
-                return False
-
-        return True
 
     def query_topk(
         self,
@@ -240,62 +267,87 @@ class NeptuneQuery:
         """
         constraints = constraints or {}
 
-        # Fetch all runs
-        runs = self.fetch_runs(state=state)
+        # Collect all metric keys we need
+        all_metric_keys = [metric_key] + list(constraints.keys())
 
-        # Filter runs by constraints and extract target metric
+        # Fetch runs table with specific columns for efficiency
+        # Add trailing underscore for Neptune's metric naming convention
+        columns = ["sys/id", "sys/name", "sys/tags", "sys/state"]
+        for mk in all_metric_keys:
+            table_key = mk if mk.endswith('_') else f"{mk}_"
+            columns.append(table_key)
+
+        runs_table = self.fetch_runs_table(state=state, columns=columns)
+
+        # Process each run
         valid_runs = []
-        for run_info in runs:
-            # Check constraints
-            if not self._check_constraints(run_info, constraints, aggregation, n_steps):
+        for _, row in runs_table.iterrows():
+            run_id = row['sys/id']
+            run_name = row.get('sys/name', run_id)
+
+            # Extract metrics for this run
+            run_metrics = {}
+
+            # Check constraints first
+            satisfies_constraints = True
+            for constraint_key, constraint_fn in constraints.items():
+                value = self._get_metric_from_table_or_run(
+                    run_id, constraint_key, runs_table, aggregation, n_steps
+                )
+
+                if value is None:
+                    satisfies_constraints = False
+                    break
+
+                run_metrics[constraint_key] = value
+
+                if not constraint_fn(value):
+                    satisfies_constraints = False
+                    break
+
+            if not satisfies_constraints:
                 continue
 
             # Get target metric value
-            metric_value = self._get_metric_value(
-                run_info.raw_run,
-                metric_key,
-                aggregation=aggregation,
-                n_steps=n_steps
+            metric_value = self._get_metric_from_table_or_run(
+                run_id, metric_key, runs_table, aggregation, n_steps
             )
 
             if metric_value is None:
                 continue
 
-            # Store metric in run_info
-            run_info.metrics[metric_key] = metric_value
+            run_metrics[metric_key] = metric_value
 
-            # Also store constraint metrics for reference
-            for constraint_key in constraints.keys():
-                constraint_value = self._get_metric_value(
-                    run_info.raw_run,
-                    constraint_key,
-                    aggregation=aggregation,
-                    n_steps=n_steps
-                )
-                if constraint_value is not None:
-                    run_info.metrics[constraint_key] = constraint_value
+            # Extract config from tags
+            config = {}
+            if 'sys/tags' in row and pd.notna(row['sys/tags']):
+                config['tags'] = row['sys/tags']
 
+            # Create RunInfo without opening the run
+            run_info = RunInfo(
+                run_id=run_id,
+                name=run_name,
+                config=config,
+                metrics=run_metrics,
+                _run_id_for_lazy_load=run_id,
+                _project=self.project,
+                _api_token=self.api_token
+            )
             valid_runs.append(run_info)
 
         # Sort by metric value
         valid_runs.sort(key=lambda r: r.metrics[metric_key], reverse=not minimize)
 
         # Return top-k
-        result = valid_runs[:k]
-
-        # Close runs that aren't in the result
-        for run_info in runs:
-            if run_info not in result and hasattr(run_info.raw_run, 'stop'):
-                run_info.raw_run.stop()
-
-        return result
+        return valid_runs[:k]
 
     def get_run_details(
         self,
         run_info: RunInfo,
         metric_keys: Optional[list[str]] = None,
         aggregation: Literal["last", "mean_last_n", "min", "max", "mean_all"] = "last",
-        n_steps: int = 10
+        n_steps: int = 10,
+        fetch_full_config: bool = False
     ) -> dict[str, Any]:
         """
         Get detailed information about a run.
@@ -305,6 +357,7 @@ class NeptuneQuery:
             metric_keys: List of metric keys to fetch (None = already cached metrics)
             aggregation: How to aggregate metric values
             n_steps: Number of steps for mean_last_n aggregation
+            fetch_full_config: If True, fetch full config from run (requires opening run)
 
         Returns:
             Dict with run details including all requested metrics
@@ -312,34 +365,51 @@ class NeptuneQuery:
         details = {
             "run_id": run_info.run_id,
             "name": run_info.name,
-            "config": run_info.config,
+            "config": run_info.config.copy(),
             "metrics": run_info.metrics.copy()
         }
 
+        # Fetch additional metrics if requested
         if metric_keys:
+            runs_table = self.fetch_runs_table()
             for metric_key in metric_keys:
                 if metric_key not in details["metrics"]:
-                    value = self._get_metric_value(
-                        run_info.raw_run,
+                    value = self._get_metric_from_table_or_run(
+                        run_info.run_id,
                         metric_key,
+                        runs_table,
                         aggregation=aggregation,
                         n_steps=n_steps
                     )
                     if value is not None:
                         details["metrics"][metric_key] = value
 
+        # Fetch full config if requested (requires opening run)
+        if fetch_full_config:
+            run = run_info._get_run_readonly()
+            if run:
+                try:
+                    for config_path in ['config', 'parameters', 'params']:
+                        try:
+                            config_data = run[config_path].fetch()
+                            if isinstance(config_data, dict):
+                                details["config"].update(config_data)
+                        except:
+                            pass
+                finally:
+                    run.stop()
+
         return details
 
     def cleanup(self):
-        """Close all cached runs."""
-        if self._runs_cache:
-            for run_info in self._runs_cache:
-                if hasattr(run_info.raw_run, 'stop'):
-                    try:
-                        run_info.raw_run.stop()
-                    except:
-                        pass
-            self._runs_cache = None
+        """Close project handle if open."""
+        if self._project_handle:
+            try:
+                self._project_handle.stop()
+            except:
+                pass
+            self._project_handle = None
+        self._runs_table_cache = None
 
 
 # Example usage

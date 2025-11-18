@@ -4,11 +4,25 @@ A Python API for querying Neptune runs with metric-based filtering and top-k sel
 
 ## Overview
 
-The `NeptuneQuery` class provides an easy-to-use interface for:
+The `NeptuneQuery` class provides an **efficient, read-only** interface for:
 - Fetching all runs from a Neptune project
 - Filtering runs based on metric constraints
 - Finding top-k runs according to a target metric
 - Supporting different metric aggregation strategies (last value, mean of last N, min, max, mean all)
+
+### Performance Optimizations
+
+This tool is optimized for speed and safety:
+1. **No write-mode connections**: All operations are read-only
+2. **Bulk data fetching**: Uses Neptune's `fetch_runs_table()` to get all data at once
+3. **Table-first approach**: Gets metrics from the table when possible (no individual run initialization)
+4. **Lazy run loading**: Only opens individual runs when absolutely needed (e.g., for non-standard aggregations)
+5. **Automatic cleanup**: Properly closes connections
+
+This means:
+- ✅ **Fast queries** - fetches 100+ runs in seconds
+- ✅ **Safe** - no risk of accidentally modifying runs
+- ✅ **Efficient** - minimal API calls
 
 ## Installation
 
