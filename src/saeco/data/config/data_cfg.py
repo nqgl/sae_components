@@ -1,35 +1,34 @@
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 import datasets
 import torch
 from pydantic import Field
 from safetensors.torch import load_file, save_file
 from torch.utils.data import DataLoader
-from typing import Any
 
+from saeco.data.config.generation_config import DataGenerationProcessConfig
+from saeco.data.config.locations import DATA_DIRS
 from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
+from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
+from saeco.data.config.split_config import SplitConfig
+from saeco.data.piler.dict_piler import DictBatch, DictPiler
 from saeco.data.training_data.acts_data import (
-    ActsDataReader,
     ActsDataCreator,
+    ActsDataReader,
     ActsDataset,
 )
 from saeco.data.training_data.bufferized_iter import bufferized_iter
-from saeco.data.config.generation_config import DataGenerationProcessConfig
-
-from saeco.data.config.locations import DATA_DIRS
-from saeco.data.config.model_config.model_cfg import ModelConfig
-from saeco.data.piler import Piler
-from saeco.data.piler.dict_piler import DictBatch, DictPiler
-from saeco.data.config.split_config import SplitConfig
 from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
 from saeco.data.training_data.tokens_data import TokensData
 from saeco.data.training_data.tokens_data_interface import TokensDataInterface
 from saeco.sweeps import SweepableConfig
 
 
-class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any]](SweepableConfig):
+class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = HuggingFaceModelConfig](
+    SweepableConfig
+):
     model_cfg: ModelConfig[ModelLoadT]
     trainsplit: SplitConfig = Field(
         default_factory=lambda: SplitConfig(
@@ -119,7 +118,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any]](SweepableConfig):
         if write:
             num_piles = self.generation_config.num_act_piles(num_tokens)
             sites = self.model_cfg.acts_cfg.sites
-            dtypes = {site: self.model_cfg.acts_cfg.storage_dtype for site in sites}
+            dtypes = dict.fromkeys(sites, self.model_cfg.acts_cfg.storage_dtype)
             fixed_shapes = (
                 {site: [self.model_cfg.acts_cfg.d_data] for site in sites}
                 if not self.model_cfg.acts_cfg.site_d_datas

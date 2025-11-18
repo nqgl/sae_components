@@ -1,24 +1,19 @@
 from types import GenericAlias, UnionType
 from typing import (
-    Annotated,
     Any,
     ClassVar,
-    get_args,
-    get_origin,
-    TYPE_CHECKING,
     TypeVar,
     Union,
+    dataclass_transform,
+    get_args,
+    get_origin,
 )
 
 import pydantic._internal._model_construction as mc
 from pydantic import (
     BaseModel,
-    BeforeValidator,
-    create_model,
-    dataclasses,
     ValidationError,
 )
-from typing_extensions import dataclass_transform
 
 from saeco.sweeps.sweepable_config.has_sweep import (
     CouldHaveSweep,
@@ -28,11 +23,11 @@ from saeco.sweeps.sweepable_config.has_sweep import (
     set_collection,
     to_items,
 )
-
 from saeco.sweeps.sweepable_config.sweep_expressions import Op, SweepVar, Val
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+from paramsight.generic_restored_basemodel.generic_basemodel import GenericBaseModel
 
 T = TypeVar("T")
 
@@ -280,7 +275,7 @@ def fix_paramize(d):
     }
 
 
-class SweepableConfig(BaseModel, metaclass=SweepableMeta):
+class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
     _ignore_this: int = 0  # needs field due to being a dataclass
 
     def is_concrete(self):

@@ -3,8 +3,8 @@ from typing import Any, cast
 
 import torch
 from comlm.architecture import TransformerArchitecture
-from comlm.exprank import XRArch
 from comlm.datasource.training_batch import NoisedBatch
+from comlm.exprank import XRArch
 from comlm.exprank.xr_transformer import XRTransformer
 from comlm.utils import ModelCheckpointIdentifier
 from nnsight import NNsight
@@ -38,7 +38,8 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
             # dont_load_checkpoint=self.run_cfg.finetuner_cfg.skip_loading_weights,#TODO
             strict_model_weights=True,
             state_dict_ignore_keys=self.state_dict_modify,
-            skip_mlog_init=False,
+            skip_mlog_init=True,
+            project_name=None,
         )
 
     @property
@@ -70,14 +71,14 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
     def update_arch_after_load(self, arch: TransformerArchitecture):
         pass
 
-    def state_dict_modify(self, state_dict: dict):
+    def state_dict_modify(self, state_dict: dict) -> None:
+        ...
         # model_dict = state_dict["state"]["model"]
         # keysl = list(model_dict.keys())
         # for key in keysl:
         #     for rmname in self.STATE_DICT_REMOVE_KEYS:
         #         if rmname in key:
         #             del model_dict[key]
-        return state_dict
 
     def input_data_transform(self, input_data: DictBatch) -> DictBatch:
         return NoisedBatch.construct_with_other_data(input_data).cuda()
