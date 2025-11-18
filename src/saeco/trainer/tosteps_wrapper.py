@@ -50,10 +50,12 @@ from typing import TYPE_CHECKING, Annotated, get_origin, get_args
 if TYPE_CHECKING:
     from saeco.trainer.schedule_cfg import RunSchedulingConfig
 
+from typing_inspection.introspection import inspect_annotation
+
 
 def deannotate(annotation):
-    if isinstance(annotation, Annotated):
-        return get_args(annotation)[0]
+    if get_origin(annotation) is Annotated:
+        return deannotate(get_args(annotation)[0])
     return annotation
 
 
