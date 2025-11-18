@@ -1,13 +1,12 @@
-from pydantic import BaseModel, Field
-from typing_extensions import get_original_bases
+import importlib
+import inspect
+import json
+from pathlib import Path
+from typing import Any, Generic, TYPE_CHECKING, TypeVar
 
 import torch
-import inspect
-import importlib
-from pathlib import Path
-import json
-from typing import TYPE_CHECKING, Generic, TypeVar, Any
-from typing_extensions import Self
+from pydantic import BaseModel, Field
+from typing_extensions import get_original_bases, Self
 
 
 if TYPE_CHECKING:
@@ -27,7 +26,7 @@ def get_src(obj):
 class ArchClassRef(BaseModel):
     module: str
     cls_name: str
-    source_backup: str = None
+    source_backup: str | None = None
 
     @classmethod
     def from_arch(cls, arch: "Architecture[Any]") -> "ArchClassRef":
@@ -71,29 +70,43 @@ class ArchRef(BaseModel, Generic[T]):
     config: T = Field()
 
     @classmethod
-    def open(cls, path: Path) -> Self:
-
+    def open(cls, path: Path, xcls: "Architecture[Any] | None" = None) -> Self:
         try:
             bases = get_original_bases(cls)
             if hasattr(bases[0], "__args__") and bases[0].__args__[0] is not T:
                 raise ValueError("generic type T must not be instantiated")
         except AttributeError:
             pass
-        return cls.from_json(json.loads(path.read_text()))
+        return cls.from_json(json.loads(path.read_text()), xcls=xcls)
 
     @classmethod
-    def from_json(cls, d: dict):
+    def from_json(cls, d: dict, xcls: "Architecture[Any] | None" = None):
+        arch = ArchClassRef.model_validate(d["class_ref"]).get_arch_class()
 
-        config_class = (
-            ArchClassRef.model_validate(d["class_ref"])
-            .get_arch_class()
-            .get_config_class()
-        )
+        if xcls is not None and arch in xcls.mro():
+            print("using xcls")
+            print(f"xcls: {xcls}")
+            print(f"arch: {arch}")
+            print(f"xcls.mro(): {xcls.mro()}")
+            arch = xcls
+
+        config_class = arch.get_config_class()
         archref_cls = cls[config_class]
         return archref_cls.model_validate(d)
 
-    def load_arch(self, state_dict=None, device="cuda"):
+    def load_arch(
+        self, state_dict=None, device="cuda", xcls: "Architecture[Any] | None" = None
+    ):
         arch_cls = self.class_ref.get_arch_class()
+        if xcls is not None:
+            if issubclass(xcls, arch_cls):
+                arch_cls = xcls
+            if arch_cls in xcls.mro():
+                print("using xcls")
+                print(f"xcls: {xcls}")
+                print(f"arch_cls: {arch_cls}")
+                print(f"xcls.mro(): {xcls.mro()}")
+                arch_cls = xcls
         return arch_cls(self.config, state_dict=state_dict, device=device)
 
     @classmethod
@@ -142,6 +155,7 @@ class ArchStoragePaths(BaseModel):
         averaged_weights: bool | None = False,
         device: str | torch.device = "cuda",
         state_dict: dict[str, Any] | None = None,
+        xcls=None,
     ) -> "Architecture[Any]":
         from .arch_reload_info import ArchClassRef, ArchRef
 
@@ -166,8 +180,9 @@ class ArchStoragePaths(BaseModel):
                 raise ValueError(
                     f"weights do not exist at {self.model_weights}, but load_weights is set"
                 )
-        arch_ref = ArchRef.open(self.arch_ref)
-        arch_inst = arch_ref.load_arch(state_dict=state_dict, device=device)
+        arch_ref = ArchRef.open(self.arch_ref, xcls=xcls)
+        arch_inst = arch_ref.load_arch(state_dict=state_dict, device=device, xcls=xcls)
+        print(f"arch_inst_type: {arch_inst.__class__}")
         return arch_inst
 
     def exists(self):

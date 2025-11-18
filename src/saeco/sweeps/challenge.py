@@ -6,6 +6,7 @@ from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyL
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
 
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import Initializer
 from saeco.initializer.initializer_config import InitConfig
 from saeco.misc import useif
@@ -19,8 +20,8 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.data.data_config_definitions import gpt_2_block
+from saeco.data import DataConfig, ModelConfig
+from saeco.data.config.data_config_definitions import gpt_2_block
 from saeco.architectures.vanilla.vanilla_model import VanillaSAE, VanillaConfig
 
 PROJECT = "sae sweeps"

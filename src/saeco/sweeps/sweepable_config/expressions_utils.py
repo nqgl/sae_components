@@ -1,3 +1,4 @@
+from types import UnionType
 from typing import Any, Iterable, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ def common_type(objs: list["SweepExpression"]):
     return t
 
 
-def shared_type(it: Iterable[Any]):
+def shared_type[T](it: Iterable[T]) -> type[T] | UnionType:
     l = list(it)
     t = type(l[0])
     for v in l[1:]:

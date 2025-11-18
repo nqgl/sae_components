@@ -1,11 +1,55 @@
+from functools import cached_property
+
 from pydantic import Field
 
-from saeco.data.data_cfg import DataConfig
+from saeco.components.sae_cache import SAECache
+
+from saeco.data.config.data_cfg import DataConfig
 from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
 from .OptimConfig import get_optim_cls
 from .schedule_cfg import RunSchedulingConfig
+
+
+class EarlyStoppingBounds(SweepableConfig):
+    # check_timestamps: list[int] = Field(default_factory=list[int])
+    min_values: dict[str, dict[int, float]]
+    max_values: dict[str, dict[int, float]]
+
+    @classmethod
+    def none(cls):
+        return cls(min_values={}, max_values={})
+
+    @cached_property
+    def check_timestamps(self):
+        return list(
+            set.union(
+                *[
+                    set(d.keys())
+                    for d in list(self.min_values.values())
+                    + list(self.max_values.values())
+                ]
+            )
+        )
+
+    def should_stop(self, cache: SAECache, t: int):
+        if t not in self.check_timestamps:
+            return False
+        print("getfields", cache._getfields())
+        for k, v in self.min_values.items():
+            if t not in v:
+                continue
+            v = v[t]
+            if cache.get(k) < v:
+                return True
+        for k, v in self.max_values.items():
+            if t not in v:
+                continue
+            v = v[t]
+            if cache.get(k) > v:
+                return True
+        return False
 
 
 class TrainConfig(SweepableConfig):
@@ -33,6 +77,9 @@ class TrainConfig(SweepableConfig):
 
     input_sites: list[str] | None = None
     target_sites: list[str] | None = None
+    early_stopping_bounds: EarlyStoppingBounds = Field(
+        default_factory=EarlyStoppingBounds.none
+    )
 
     @property
     @lazycall

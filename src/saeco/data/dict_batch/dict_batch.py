@@ -10,6 +10,7 @@ from typing import (
     Callable,
     ClassVar,
     Generator,
+    Generic,
     get_args,
     get_origin,
     get_type_hints,
@@ -23,13 +24,18 @@ from torch import Tensor
 from typing_extensions import dataclass_transform
 
 T = TypeVar("T")
+from warnings import deprecated, warn
+
+from typing_extensions import Self
+
+DictBatch_T = TypeVar("DictBatch_T", bound="DictBatch")
 
 
 # --------------------------------------------------------------------------- #
 #  Utility wrapper (kept exactly as in NiceBatch so existing pipes still work) #
 # --------------------------------------------------------------------------- #
-class NiceConvertedIter:
-    def __init__(self, iterable: Iterator["DictBatch"]):
+class NiceConvertedIter(Generic[DictBatch_T]):
+    def __init__(self, iterable: Iterator[DictBatch_T]):
         self._iter = iterable
 
     def __iter__(self):  # pragma: no cover
@@ -41,21 +47,21 @@ class NiceConvertedIter:
     def __rshift__(  # Enables:   loader >> some_transform >> other_transform
         self,
         transform_gen: Callable[
-            [Iterator["DictBatch"]],
-            Iterator["DictBatch"] | Generator["DictBatch", None, None],
+            [Iterator[DictBatch_T]],
+            Iterator[DictBatch_T] | Generator[DictBatch_T, None, None],
         ],
-    ) -> "NiceConvertedIter":
+    ) -> "NiceConvertedIter[DictBatch_T]":
         return NiceConvertedIter(transform_gen(self._iter))
 
-    def as_dataset(self) -> "NiceIterDataset":
+    def as_dataset(self) -> "NiceIterDataset[DictBatch_T]":
         return NiceIterDataset(self)
 
 
-class NiceIterDataset(torch.utils.data.IterableDataset):
-    def __init__(self, iterable: Iterator["DictBatch"]):
+class NiceIterDataset(torch.utils.data.IterableDataset, Generic[DictBatch_T]):
+    def __init__(self, iterable: Iterator[DictBatch_T]):
         self.iterable = iterable
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[DictBatch_T]:
         return self.iterable
 
 
@@ -175,9 +181,19 @@ class DictBatch(dict):
                 setattr(self, k, None)
 
     # --------------------------- static helpers ------------------------------
-    @property
-    def data(self) -> dict[str, Tensor]:
-        return self
+    # @property
+    # def data(self) -> dict[str, Tensor]:
+    #     if "data" in self:
+    #         return self["data"]
+    #     elif "data" in self.__dict__:
+    #         return self.__dict__["data"]
+
+    #     warn(
+    #         "DictBatch.data was used to access self, this backwards compatibility feature will be deprecated",
+    #         DeprecationWarning,
+    #         stacklevel=2,
+    #     )
+    #     return self  # just for backwards compatibility
 
     @staticmethod
     def _check_contents(d: dict[str, Tensor]):
@@ -192,6 +208,14 @@ class DictBatch(dict):
                 raise TypeError(f"Value for {k!r} is not a torch.Tensor")
 
     # ------------------------------ dunder -----------------------------------
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in self.TENSOR_DATA_FIELDS:
+            assert isinstance(value, Tensor)
+            self[name] = value
+        else:
+            super().__setattr__(name, value)
+
     def __getattr__(self, name: str) -> Any:
         """Allow accessing TENSOR_DATA_FIELDS as attributes."""
         if name in self.TENSOR_DATA_FIELDS:
@@ -218,7 +242,7 @@ class DictBatch(dict):
             | tuple[slice, ...]
             | tuple[EllipsisType, Tensor]
         ),
-    ) -> "DictBatch": ...
+    ) -> Self: ...
 
     def __getitem__(self, key):  # type: ignore[override]
         if isinstance(key, str):
@@ -247,25 +271,28 @@ class DictBatch(dict):
         return self.to("cuda", *args, **kwargs)
 
     # -------------------- cloning / contiguity -------------------------------
-    def clone(self) -> "DictBatch":
+    def clone(self) -> Self:
         return self.__class__.construct_with_other_data(
             {k: v.clone() for k, v in self.items()}, self._get_other_dict()
         )
 
-    def contiguous(self) -> "DictBatch":
+    def contiguous(self) -> Self:
         return self.__class__.construct_with_other_data(
             {k: v.contiguous() for k, v in self.items()}, self._get_other_dict()
         )
 
     # ----------------------- cat / stack helpers -----------------------------
     @classmethod
-    def _validate_keysets(cls, batches: list["DictBatch"]):
+    def _validate_keysets(cls, batches: list[Self]):
         keys0 = batches[0].keys()
-        if not all(b.keys() == keys0 for b in batches):
-            raise ValueError("All batches must have identical tensor keys")
+        if not all((b.keys()) == keys0 for b in batches):
+            batch_keys = "\n\t".join(f"{i}: {b.keys()}" for i, b in enumerate(batches))
+            raise ValueError(
+                f"All batches must have identical tensor keys. Got: {batch_keys}"
+            )
 
     @classmethod
-    def cat_list(cls, batches: list["DictBatch"], dim: int = 0) -> "DictBatch":
+    def cat_list(cls, batches: list[Self], dim: int = 0) -> Self:
         cls._validate_keysets(batches)
         return cls.construct_with_other_data(
             {k: torch.cat([b[k] for b in batches], dim=dim) for k in batches[0].keys()},
@@ -273,7 +300,7 @@ class DictBatch(dict):
         )
 
     @classmethod
-    def stack_list(cls, batches: list["DictBatch"], dim: int = 0) -> "DictBatch":
+    def stack_list(cls, batches: list[Self], dim: int = 0) -> Self:
         cls._validate_keysets(batches)
         return cls.construct_with_other_data(
             {
@@ -287,7 +314,7 @@ class DictBatch(dict):
     @classmethod
     def convert_iterable(
         cls, iterable: Iterable[dict[str, Tensor]]
-    ) -> NiceConvertedIter:
+    ) -> NiceConvertedIter[Self]:
         def gen():
             for d in iterable:
                 yield cls(d)  # type: ignore[arg-type]
@@ -301,13 +328,13 @@ class DictBatch(dict):
     @classmethod
     def construct_with_other_data(
         cls, data: dict[str, Tensor], other: dict[str, Any] | None = None
-    ) -> "DictBatch":
+    ) -> Self:
         other = other or {}
         return cls(data, **other)
 
     # -- simple rule: enjoy equal extras or keep first; can customise in subclass
     @classmethod
-    def _merge_other_data(cls, batches: list["DictBatch"]) -> dict[str, Any]:
+    def _merge_other_data(cls, batches: list[Self]) -> dict[str, Any]:
         """Default strategy: require identical extras across all batches."""
         merged: dict[str, Any] = {}
         for field in cls.OTHER_DATA_FIELDS:
@@ -444,6 +471,84 @@ class DictBatch(dict):
         return self.construct_with_other_data(
             {k: v.gather(dim, indices) for k, v in self.items()}, self._get_other_dict()
         )
+
+    def apply_func(self, func: Callable[[Tensor], Tensor]) -> Self:
+        return self.construct_with_other_data(
+            {k: func(v) for k, v in self.items()}, self._get_other_dict()
+        )
+
+    def reshape(self, *shape: int) -> Self:
+        return self.apply_func(lambda x: x.reshape(*shape))
+
+    def set_split(self, sel: set[str] | list[str]) -> "SplitDictBatch[Self]":
+        keys = set(self.keys())
+        if sel - keys:
+            raise ValueError(f"Keys {sel - keys} not found in {keys}")
+        a_keys = sel
+        b_keys = keys - sel
+        a = DictBatch({k: v for k, v in self.items() if k in a_keys})
+        b = DictBatch({k: v for k, v in self.items() if k in b_keys})
+        return SplitDictBatch[self.__class__](
+            a, b, self._get_other_dict(), self.__class__
+        )
+
+    def index_subset(
+        self,
+        mask: Tensor,
+        include: list[str] | set[str] | None = None,
+        exclude: list[str] | set[str] | None = None,
+    ) -> Self:
+        if (include is None) == (exclude is None):
+            raise ValueError("Either include or exclude must be provided, but not both")
+        if isinstance(include, list):
+            include = set(include)
+        if isinstance(exclude, list):
+            exclude = set(exclude)
+        if include is None:
+            include = set(self.keys()) - exclude
+
+        split = self.set_split(include)
+        split.a = split.a[mask]
+        return split.recombine()
+
+    def split(
+        self,
+        split_size: int | list[int],
+        dim: int = 0,
+    ) -> list[Self]:
+        assert dim == 0
+        splitself = {k: v.split(split_size, dim=dim) for k, v in self.items()}
+        l0 = splitself[next(iter(self.keys()))]
+        assert all(len(v) == len(l0) for v in splitself.values())
+
+        return [
+            self.construct_with_other_data(
+                {**{k: v[i] for k, v in splitself.items()}}, self._get_other_dict()
+            )
+            for i in range(len(l0))
+        ]
+
+    def einops_rearrange(self, pattern: str, **kwargs):
+        import einops
+
+        return self.construct_with_other_data(
+            {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.items()},
+            self._get_other_dict(),
+        )
+
+
+from attrs import define
+
+
+@define
+class SplitDictBatch[T: DictBatch]:
+    a: DictBatch
+    b: DictBatch
+    other_data: dict[str, Any]
+    cls: type[T]
+
+    def recombine(self) -> T:
+        return self.cls.construct_with_other_data({**self.a, **self.b}, self.other_data)
 
 
 # Example usage:

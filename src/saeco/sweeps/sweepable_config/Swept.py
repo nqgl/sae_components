@@ -29,10 +29,13 @@ class SweptCheckerMeta(mc.ModelMetaclass):
         return False
 
 
-class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
+class Swept[T](BaseModel, metaclass=SweptCheckerMeta):
     values: list[T]
 
-    def __init__(self, *values, **kwargs):
+    def __init__(self, *values: T, **kwargs):
+        """
+        Enables the Swept(a,b,c) syntax for initializing Swept fields.
+        """
         if values:
             if "values" in kwargs:
                 raise Exception("two sources of values in Swept initialization!")
@@ -40,12 +43,13 @@ class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
         return super().__init__(**kwargs)
 
     @property
-    def generic_type(self):
+    def generic_type(self) -> type[T] | None:
         args = self.__pydantic_generic_metadata__["args"]
         if len(args) == 0:
             return None
         if len(args) > 1:
             raise Exception("Swept can only have one generic type")
+        assert len(args) == 1
         return args[0]
 
     def model_dump(

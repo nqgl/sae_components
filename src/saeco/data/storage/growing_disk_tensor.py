@@ -5,9 +5,13 @@ import torch
 from attrs import define, field
 
 from saeco.data.storage.compressed_safetensors import CompressionType
+from saeco.misc.dtypes import str_to_dtype
 
 from .disk_tensor import DiskTensor, DiskTensorMetadata
 
+
+SAECO_MIN_GDT_INITIAL_BYTES = 2**25  # 32 MB
+SAECO_MAX_GDT_INITIAL_BYTES = 2**32  # 4 GB
 
 # class DiskTensorMetadata(DiskTensorMetadata):
 #     cat_axis: int
@@ -33,9 +37,9 @@ class GrowingDiskTensor(DiskTensor):
         new_tensor = self.create_tensor()
         if truncate:
             new_slice = slice(None)
-            old_slice = [slice(None)] * self.cat_axis + [slice(None, new_len)]
+            old_slice = (slice(None),) * self.cat_axis + (slice(None, new_len),)
         else:
-            new_slice = [slice(None)] * self.cat_axis + [slice(None, old_len)]
+            new_slice = (slice(None),) * self.cat_axis + (slice(None, old_len),)
             old_slice = slice(None)
         new_tensor[new_slice] = old_tensor[old_slice]
         temp.unlink()
@@ -97,7 +101,15 @@ class GrowingDiskTensor(DiskTensor):
     ):
         shape = list(shape)
         if initial_nnz is None:
-            initial_nnz = 2**15
+            # shape2 = shape.copy()
+            # shape2[cat_axis] = 1
+            # numel_per_nnz = torch.prod(torch.tensor(shape2)).item()
+            # bytes_per_nnz = int(numel_per_nnz * dtype.itemsize)
+            if isinstance(dtype, str):
+                dtype = str_to_dtype(dtype)  # TODO fix callers that cause this problem
+            initial_nnz = SAECO_MIN_GDT_INITIAL_BYTES // dtype.itemsize
+
+            # initial_nnz = 2**20
         else:
             shape[cat_axis] = None
         cat_len = shape[cat_axis] or int(
@@ -129,20 +141,30 @@ class GrowingDiskTensor(DiskTensor):
 
     def append(self, tensor):
         length = tensor.shape[self.cat_axis]
-        assert (
-            list(tensor.shape[: self.cat_axis]) == self.metadata.shape[: self.cat_axis]
-            and list(tensor.shape[self.cat_axis + 1 :])
+        if (
+            not list(tensor.shape[: self.cat_axis])
+            == self.metadata.shape[: self.cat_axis]
+        ):
+            raise ValueError(
+                f"Shape mismatch (prefix): {tensor.shape} != {self.metadata.shape}"
+            )
+
+        if not (
+            list(tensor.shape[self.cat_axis + 1 :])
             == self.metadata.shape[self.cat_axis + 1 :]
-        )
+        ):
+            raise ValueError(
+                f"Shape mismatch (suffix): {tensor.shape} != {self.metadata.shape}"
+            )
         assert not self.finalized
         while self.metadata.shape[self.cat_axis] + length >= self.storage_len:
             self.resize(self.storage_len * 2)
-        append_slice = [slice(None)] * self.cat_axis + [
+        append_slice = (slice(None),) * self.cat_axis + (
             slice(
                 self.metadata.shape[self.cat_axis],
                 self.metadata.shape[self.cat_axis] + length,
-            )
-        ]
+            ),
+        )
         self.tensor[append_slice] = tensor
         self.metadata.shape[self.cat_axis] += length
 

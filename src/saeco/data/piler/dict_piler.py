@@ -1,3 +1,6 @@
+from functools import cached_property
+import itertools
+import random
 from enum import Enum
 from pathlib import Path
 
@@ -17,7 +20,6 @@ from typing import (
 )
 
 import einops
-
 import torch
 import tqdm
 from attrs import define, field
@@ -25,7 +27,7 @@ from pydantic import BaseModel
 
 from typing_extensions import Self
 
-from saeco.data.dict_batch import DictBatch
+from saeco.data.dict_batch.dict_batch import DictBatch
 
 from saeco.data.piler import Piler, PilerMetadata
 from saeco.data.storage.compressed_safetensors import CompressionType
@@ -34,17 +36,34 @@ from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
 
+import torch.utils.data
+
 
 class DictPilerMetadata(BaseModel):
     keys: set[str]
 
 
+def shuffled_range(start, stop, mod, shuffle=True):
+    shrange = list(range(start, stop, mod))
+    if not shuffle:
+        return shrange
+    random.shuffle(shrange)
+    return shrange
+
+
+### TODO flip:
+# currently it's DictPiler[tensor name key -> Piler[ index -> Pile]]
+# seems better to flip it to DictPiler[ index -> DictPile[tensor name key -> Pile/tensor]]
+# not high priority though
+
+
 @define
 class DictPiler:
-    metadata: DictPilerMetadata
-    piler_metadata: PilerMetadata
-    pilers: dict[str, Piler]
+    # metadata: DictPilerMetadata
+    # piler_metadata: PilerMetadata
+    # pilers: dict[str, Piler]
     path: Path
+    skip_cache: bool
     use_async_distribute: bool = (
         True  # this is a flag just bc it's a new/experimental feature
     )
@@ -59,6 +78,7 @@ class DictPiler:
         num_piles: int,
         use_async_distribute: bool = True,
         compress: bool = False,
+        skip_cache: bool = True,
     ):
         keys = set(dtypes.keys())
 
@@ -91,38 +111,86 @@ class DictPiler:
             for k in keys
         }
 
-        first_piler = next(iter(pilers.values()))
+        # first_piler = next(iter(pilers.values()))
 
         dict_piler = DictPiler(
-            metadata,
-            first_piler.metadata,
-            pilers,
-            path,
-            use_async_distribute,
-            False,
+            # metadata=metadata,
+            # piler_metadata=first_piler.metadata,
+            # pilers=pilers,
+            path=path,
+            skip_cache=False,
+            use_async_distribute=use_async_distribute,
+            readonly=False,
         )
-
+        assert not cls.get_metadata_path(path).exists()
         cls.get_metadata_path(path).write_text(metadata.model_dump_json())
+        dict_piler.pilers = pilers
 
         return dict_piler
 
     @classmethod
     def open(
         cls,
-        path: Union[str, Path],
+        path: Path,
         use_async_distribute: bool = True,
         skip_cache: bool = True,
         # we could allow options to be passed in here and then assert that they match the properties of the opened piler
         # not sure that's necessary though
     ):
-        metadata_path = cls.get_metadata_path(path)
+        # metadata_path = cls.get_metadata_path(path)
 
+        # if not metadata_path.exists():
+        #     raise ValueError(f"DictPiler metadata not found at {metadata_path}")
+
+        # metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
+
+        # pilers = {k: Piler.open(path / k, skip_cache=skip_cache) for k in metadata.keys}
+
+        # first_piler = next(iter(pilers.values()))
+
+        # for piler in pilers.values():
+        #     if first_piler.metadata.num_piles != piler.metadata.num_piles:
+        #         raise ValueError(
+        #             f"Piler {piler.path} does not match first piler {first_piler.path}: {piler.metadata.num_piles} != {first_piler.metadata.num_piles}"
+        #         )
+        #     if first_piler.shape[0] != piler.shape[0]:
+        #         raise ValueError(
+        #             f"Piler {piler.path} shape does not match first piler {first_piler.path}: {piler.shape[0]} != {first_piler.shape[0]}"
+        #         )
+        #     if first_piler.metadata.compression != piler.metadata.compression:
+        #         raise ValueError(
+        #             f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
+        #         )
+
+        dict_piler = DictPiler(
+            # metadata=metadata,
+            # piler_metadata=first_piler.metadata,
+            # pilers=pilers,
+            path=path,
+            use_async_distribute=use_async_distribute,
+            readonly=True,
+            skip_cache=skip_cache,
+        )
+
+        return dict_piler
+
+    @cached_property
+    def metadata(self):
+        metadata_path = self.get_metadata_path(self.path)
         if not metadata_path.exists():
             raise ValueError(f"DictPiler metadata not found at {metadata_path}")
+        return DictPilerMetadata.model_validate_json(metadata_path.read_text())
 
-        metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
+    @cached_property
+    def piler_metadata(self):
+        return next(iter(self.pilers.values())).metadata
 
-        pilers = {k: Piler.open(path / k, skip_cache=skip_cache) for k in metadata.keys}
+    @cached_property
+    def pilers(self):
+        pilers = {
+            k: Piler.open(self.path / k, skip_cache=self.skip_cache)
+            for k in self.metadata.keys
+        }
 
         first_piler = next(iter(pilers.values()))
 
@@ -139,20 +207,10 @@ class DictPiler:
                 raise ValueError(
                     f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
                 )
-
-        dict_piler = DictPiler(
-            metadata,
-            first_piler.metadata,
-            pilers,
-            path,
-            use_async_distribute,
-            readonly=True,
-        )
-
-        return dict_piler
+        return pilers
 
     @classmethod
-    def get_metadata_path(cls, path: Union[str, Path]):
+    def get_metadata_path(cls, path: str | Path):
         if isinstance(path, str):
             path = Path(path)
         return path / "dictpiler_metadata.json"
@@ -202,6 +260,9 @@ class DictPiler:
         yield_dicts: Literal[False] = False,
         id=None,
         nw=None,
+        num_epochs: int | None = 1,
+        shuffle: bool = True,
+        shuffle_piles_order: bool = False,
     ) -> Generator[DictBatch, None, None]: ...
 
     @overload
@@ -211,52 +272,97 @@ class DictPiler:
         yield_dicts: Literal[True],
         id=None,
         nw=None,
+        num_epochs: int | None = 1,
+        shuffle: bool = True,
+        shuffle_piles_order: bool = False,
     ) -> Generator[dict[str, torch.Tensor], None, None]: ...
-
+    @torch.inference_mode()
     def batch_generator(
         self,
         batch_size,
         yield_dicts: bool = False,
         id=None,
         nw=None,
+        num_epochs: int | None = 1,
+        shuffle: bool = True,
+        shuffle_piles_order: bool = True,
     ):
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
         nw = nw or 1
+        if num_epochs is not None:
+            epoch_gen = range(num_epochs)
+        else:
+            epoch_gen = itertools.count()
 
         spares: list[DictBatch] = []
         nspare = 0
-        for p in range(id % nw, self.piler_metadata.num_piles, nw):
-            pile = self[p]
-            # below we clone before yielding to prevent yielding a view of the pile.
-            # if a yielded view were to get pinned by the consumer of this,
-            # (eg a dataloader), the entire mmapped pile would get pinned as well
-            for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-                yield (
-                    pile[i : i + batch_size].clone().data
-                    if yield_dicts
-                    else pile[i : i + batch_size].clone()
-                )
-            spare = pile[len(pile) // batch_size * batch_size :].clone()
-            if len(spare) > 0:
-                spares.append(spare)
-                nspare += len(spare)
-                if nspare > batch_size:
-                    consolidated = DictBatch.cat_list(spares, dim=0)
-                    for i in range(
-                        0, len(consolidated) // batch_size * batch_size, batch_size
-                    ):
-                        yield (
-                            consolidated[i : i + batch_size].data
-                            if yield_dicts
-                            else consolidated[i : i + batch_size]
-                        )
-                    spare = consolidated[len(consolidated) // batch_size * batch_size :]
-                    spares = [spare]
-                    nspare = len(spare)
-            for piler in self.pilers.values():
-                del piler.piles.cache[str(p)]
+        perm = None
+
+        def newperm(pile):
+            nonlocal perm
+            if shuffle:
+                perm = torch.randperm(len(pile))
+
+        def getslice(pile, a, b):
+            nonlocal perm
+            if perm is None:
+                return pile[a:b]
+            return pile[perm[a:b]]
+
+        for epoch in epoch_gen:
+            if epoch != 0:
+                print(f"finished epoch {epoch - 1}")
+            for p in shuffled_range(
+                (id) % nw,
+                self.piler_metadata.num_piles,
+                nw,
+                shuffle=shuffle and shuffle_piles_order,
+            ):
+                pile = self[p]
+                newperm(pile)
+                # perm = torch.randperm(len(pile))
+                # below we clone before yielding to prevent yielding a view of the pile.
+                # if a yielded view were to get pinned by the consumer of this,
+                # (eg a dataloader), the entire mmapped pile would get pinned as well
+                for i in shuffled_range(
+                    0, len(pile) // batch_size * batch_size, batch_size, shuffle=shuffle
+                ):
+                    pile_slice = getslice(pile, i, i + batch_size).clone()
+                    yield (pile_slice.data if yield_dicts else pile_slice)
+                spare = getslice(
+                    pile, len(pile) // batch_size * batch_size, None
+                ).clone()
+                if len(spare) > 0:
+                    spares.append(spare)
+                    nspare += len(spare)
+                    if nspare >= batch_size:
+                        consolidated = DictBatch.cat_list(spares, dim=0)
+                        for i in shuffled_range(
+                            0, len(consolidated) // batch_size * batch_size, batch_size
+                        ):
+                            consolidated_slice = consolidated[
+                                i : i + batch_size
+                            ].clone()  # no getslice because this was already permed
+                            yield (
+                                consolidated_slice.data
+                                if yield_dicts
+                                else consolidated_slice
+                            )
+                        spare = consolidated[
+                            len(consolidated) // batch_size * batch_size :
+                        ]
+                        spares = [spare]
+                        nspare = len(spare)
+                for piler in self.pilers.values():
+                    if not piler.piles.skip_cache:
+                        try:
+                            del piler.piles.cache[str(p)]
+                        except KeyError as e:
+                            print(
+                                f"Warning, deleting item from piler cache failed: {e}"
+                            )
 
     @overload
     def sized_generator(
@@ -352,8 +458,56 @@ class DictPiler:
     def shapes(self) -> dict[str, list[list[int]]]:
         return {k: piler.shapes for k, piler in self.pilers.items()}
 
+    @cached_property
+    def pile_indices(self) -> list[int]:
+        assert self.readonly
 
-import torch.utils.data
+        l = [[shape[0] for shape in piler.shapes] for piler in self.pilers.values()]
+        assert all(e == l[0] for e in l)
+        return l[0]
+
+    def _index_by_sample(self, index: int | slice) -> DictBatch:
+        if isinstance(index, int):
+            pile_idx, sample_idx = convert_sample_index_to_pile_pair(
+                index, self.pile_indices
+            )
+            return self[pile_idx][sample_idx]
+        start, stop, step = index.indices(self.num_samples)
+        start_pile, start_sample = convert_sample_index_to_pile_pair(
+            start, self.pile_indices
+        )
+        stop_pile, _ = convert_sample_index_to_pile_pair(stop, self.pile_indices)
+        dist = stop - start
+        data = self[start_pile : stop_pile + 1]
+        assert data.batch_size >= dist + start_sample, (
+            data.batch_size,
+            dist,
+            start_sample,
+        )
+        return data[start_sample : start_sample + dist]
+
+    @property
+    def sample_indexer(self) -> "DictPilerSampleIndexer":
+        return DictPilerSampleIndexer(piler=self)
+
+
+def convert_sample_index_to_pile_pair(
+    idx: int, pile_sizes: list[int]
+) -> tuple[int, int]:
+    pile_idx = idx
+    for i, pile_size in enumerate(pile_sizes):
+        if pile_idx < pile_size:
+            return i, pile_idx
+        pile_idx -= pile_size
+    raise ValueError(f"Index {idx} is out of bounds for pile sizes {pile_sizes}")
+
+
+@define
+class DictPilerSampleIndexer:
+    piler: DictPiler
+
+    def __getitem__(self, index: int | slice) -> DictBatch:
+        return self.piler._index_by_sample(index)
 
 
 class PilerDataset(torch.utils.data.IterableDataset):

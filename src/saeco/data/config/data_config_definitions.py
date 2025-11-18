@@ -1,11 +1,16 @@
+from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
+from .model_config.acts_data_cfg import ActsDataConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
 from .data_cfg import DataConfig, DataGenerationProcessConfig, SplitConfig
-from .model_cfg import ActsDataConfig, ModelConfig
+from .model_config.model_cfg import ModelConfig
 
 
 gemma_2_2b_openwebtext = DataConfig(
     dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
     model_cfg=ModelConfig(
+        model_load_cfg=HuggingFaceModelConfig(
+            model_name="google/gemma-2-2b",
+        ),
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
@@ -13,7 +18,7 @@ gemma_2_2b_openwebtext = DataConfig(
             storage_dtype_str="bfloat16",
             autocast_dtype_str=None,
         ),
-        model_name="google/gemma-2-2b",
+        # model_name="google/gemma-2-2b",
         torch_dtype_str="bfloat16",
     ),
     trainsplit=SplitConfig(start=0, end=25, tokens_from_split=250_000_000),
@@ -29,6 +34,9 @@ gemma_2_2b_openwebtext = DataConfig(
 gemma_2_2b_openwebtext_test = DataConfig(
     dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
     model_cfg=ModelConfig(
+        model_load_cfg=HuggingFaceModelConfig(
+            model_name="google/gemma-2-2b",
+        ),
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
@@ -36,7 +44,7 @@ gemma_2_2b_openwebtext_test = DataConfig(
             storage_dtype_str="bfloat16",
             autocast_dtype_str=None,
         ),
-        model_name="google/gemma-2-2b",
+        # model_name="google/gemma-2-2b",
         torch_dtype_str="bfloat16",
     ),
     trainsplit=SplitConfig(start=0, end=25, tokens_from_split=10_000_000),
@@ -51,6 +59,9 @@ gemma_2_2b_openwebtext_test = DataConfig(
 gemma_2_2b_openwebtext_test_fp32 = DataConfig(
     dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
     model_cfg=ModelConfig(
+        model_load_cfg=HuggingFaceModelConfig(
+            model_name="google/gemma-2-2b",
+        ),
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
@@ -58,7 +69,7 @@ gemma_2_2b_openwebtext_test_fp32 = DataConfig(
             storage_dtype_str="float32",
             autocast_dtype_str=None,
         ),
-        model_name="google/gemma-2-2b",
+        # model_name="google/gemma-2-2b",
         torch_dtype_str=None,
     ),
     trainsplit=SplitConfig(start=0, end=23, tokens_from_split=10_000_000),
@@ -74,6 +85,9 @@ gemma_2_2b_openwebtext_test_fp32 = DataConfig(
 gemma_2_2b_openwebtext_test_fp16 = DataConfig(
     dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
     model_cfg=ModelConfig(
+        model_load_cfg=HuggingFaceModelConfig(
+            model_name="google/gemma-2-2b",
+        ),
         acts_cfg=ActsDataConfig(
             excl_first=True,
             d_data=2304,
@@ -82,7 +96,7 @@ gemma_2_2b_openwebtext_test_fp16 = DataConfig(
             autocast_dtype_str="bfloat16",
             force_cast_dtype_str="float16",
         ),
-        model_name="google/gemma-2-2b",
+        # model_name="google/gemma-2-2b",
         torch_dtype_str="bfloat16",
     ),
     trainsplit=SplitConfig(start=0, end=24, tokens_from_split=10_000_000),
@@ -122,6 +136,9 @@ def gemma_2_2b_openwebtext_fp32(layer=17):
     return DataConfig(
         dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
         model_cfg=ModelConfig(
+            model_load_cfg=HuggingFaceModelConfig(
+                model_name="google/gemma-2-2b",
+            ),
             acts_cfg=ActsDataConfig(
                 excl_first=True,
                 d_data=2304,
@@ -129,7 +146,7 @@ def gemma_2_2b_openwebtext_fp32(layer=17):
                 storage_dtype_str="float32",
                 autocast_dtype_str=None,
             ),
-            model_name="google/gemma-2-2b",
+            # model_name="google/gemma-2-2b",
             torch_dtype_str=None,
         ),
         trainsplit=SplitConfig(start=0, end=25, tokens_from_split=200_000_000),
@@ -147,6 +164,9 @@ def gemma_2_2b_openwebtext_bf16(layer=17):
     return DataConfig(
         dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
         model_cfg=ModelConfig(
+            model_load_cfg=HuggingFaceModelConfig(
+                model_name="google/gemma-2-2b",
+            ),
             acts_cfg=ActsDataConfig(
                 excl_first=True,
                 d_data=2304,
@@ -154,7 +174,7 @@ def gemma_2_2b_openwebtext_bf16(layer=17):
                 storage_dtype_str="bfloat16",
                 autocast_dtype_str="bfloat16",
             ),
-            model_name="google/gemma-2-2b",
+            # model_name="google/gemma-2-2b",
             torch_dtype_str="bfloat16",
         ),
         trainsplit=SplitConfig(start=0, end=25, tokens_from_split=250_000_000),
@@ -172,6 +192,9 @@ def gpt_2(block_postfix):
     return DataConfig(
         dataset="alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2",
         model_cfg=ModelConfig(
+            model_load_cfg=HuggingFaceModelConfig(
+                model_name="gpt2",
+            ),
             acts_cfg=ActsDataConfig(
                 excl_first=True,
                 sites=(
@@ -184,7 +207,6 @@ def gpt_2(block_postfix):
                 force_cast_dtype_str="bfloat16",
                 storage_dtype_str="bfloat16",
             ),
-            model_name="gpt2",
         ),
         trainsplit=SplitConfig(start=0, end=50, tokens_from_split=20_000_000),
         generation_config=DataGenerationProcessConfig(

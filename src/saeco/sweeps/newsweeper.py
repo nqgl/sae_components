@@ -173,9 +173,8 @@ class SweepManager:
     def get_worker_run_commands_for_manual_sweep(self, suffix: str = ""):
         root = self.arch.run_cfg
         root_swept = root.to_swept_nodes()
-        N = root_swept.swept_combinations_count_including_vars()
         variants = []
-        for i in range(N):
+        for i in range(root_swept.swept_combinations_count_including_vars()):
             cfg = root.from_selective_sweep(root_swept.select_instance_by_index(i))
             variants.append((i, cfg.get_hash()))
         return [

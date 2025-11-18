@@ -1,35 +1,35 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import einops
 import torch
 import tqdm
-from nnsight import LanguageModel
+from nnsight import LanguageModel, NNsight
 from torch import Tensor
 
-from saeco.data.split_config import SplitConfig
+from saeco.data.config.split_config import SplitConfig
 from saeco.data.piler import Piler
+from functools import cached_property
+import datasets
+from attrs import define, field
+
+from saeco.data.piler.dict_piler import DictPiler
+from saeco.data.training_data.tokens_data_interface import TokensDataInterface
+
 
 if TYPE_CHECKING:
-    from saeco.data.data_cfg import DataConfig
+    from saeco.data.config.data_cfg import DataConfig
 
 
-class TokensData:
-    def __init__(
-        self, cfg: "DataConfig", model: LanguageModel | None, split: SplitConfig
-    ):
-        self.cfg = cfg
-        self.model = model
-        self.split = split
-        self._data = None
-        self._documents = None
+@define
+class TokensData(TokensDataInterface[torch.Tensor]):
+    cfg: "DataConfig[Any ]"
+    split: SplitConfig
 
-    @property
+    @cached_property
     def src_dataset_data(self):
-        if self._data is not None:
-            return self._data
         dataset = self.cfg.load_dataset_from_split(self.split)
-        self._data = dataset[self.cfg.tokens_column_name]
-        assert self.src_dataset_data.ndim == 2
+        data = dataset[self.cfg.tokens_column_name]
+        assert data.ndim == 2
         if self.dataset_document_length < self.seq_len:
             raise ValueError(
                 f"Document length {self.dataset_document_length} is less than the requested sequence length {self.seq_len}"
@@ -39,10 +39,10 @@ class TokensData:
                 f"Document length {self.dataset_document_length} is not a multiple of the requested sequence length {self.seq_len}, truncating documents"
             )
             input("Press enter to continue and acknowledge this warning")
-            self._data = self.src_dataset_data[
+            data = data[
                 :, : self.seq_len * (self.dataset_document_length // self.seq_len)
             ]
-        return self._data
+        return data
 
     @property
     def dataset_document_length(self):
@@ -52,22 +52,20 @@ class TokensData:
     def seq_len(self):
         return self.cfg.seq_len or self.dataset_document_length
 
-    @property
+    @cached_property
     def documents(self) -> torch.Tensor:
-        if self._documents is not None:
-            return self._documents
         if self.dataset_document_length != self.seq_len:
-            self._documents = einops.rearrange(
+            docs = einops.rearrange(
                 self.src_dataset_data,
                 "batch (x seq_len) -> (batch x) seq_len",
                 x=self.dataset_document_length // self.seq_len,
                 seq_len=self.seq_len,
             )
         else:
-            self._documents = self.src_dataset_data
+            docs = self.src_dataset_data
         if self.cfg.set_bos:
-            self._documents[:, 0] = self.model.tokenizer.bos_token_id
-        return self._documents
+            docs[:, 0] = self.cfg.model_cfg.tokenizer.bos_token_id
+        return docs
 
     @property
     def num_tokens(self):
@@ -79,7 +77,6 @@ class TokensData:
         if num_tokens is not None and (not write):
             raise ValueError("num_tokens was specified but write=False")
         if write:
-
             return Piler.create(
                 self.cfg._tokens_piles_path(self.split),
                 dtype=torch.int64,
@@ -108,7 +105,7 @@ class TokensData:
             piler.distribute(self.documents[i : i + doc_dist_batch_size])
         piler.shuffle_piles()
 
-    def get_tokens(self, num_tokens=None):
+    def get_tokens(self, num_tokens: int | None = None) -> torch.Tensor:
         if not self.cfg._tokens_piles_path(self.split).exists():
             self._store_split(self.split)
         piler = self.tokens_piler()
@@ -119,46 +116,25 @@ class TokensData:
             else (num_tokens + self.cfg.generation_config.tokens_per_pile - 1)
             // self.cfg.generation_config.tokens_per_pile
         )
-        assert (
-            num_piles <= piler.metadata.num_piles
-        ), f"{num_tokens}, {self.cfg.generation_config.tokens_per_pile}, {piler.num_piles}"
+        assert num_piles <= piler.metadata.num_piles, (
+            f"{num_tokens}, {self.cfg.generation_config.tokens_per_pile}, {piler.num_piles}"
+        )
         tokens = piler[0:num_piles]
         assert (
             num_tokens is None
             or abs(tokens.numel() - num_tokens)
             < self.cfg.generation_config.tokens_per_pile
-        ), f"{tokens.shape} from piler vs {num_tokens} requested\
+        ), (
+            f"{tokens.shape} from piler vs {num_tokens} requested\
                 this is expected if tokens per split is small, otherwise a bug.\
                     \n piles requested: {num_piles}, available: {piler.num_piles}"
+        )
+        assert isinstance(tokens, torch.Tensor)
         return (
             tokens[: num_tokens // tokens.shape[1] + 1]
             if num_tokens is not None
             else tokens
         )
-
-    def get_tokens_iter(
-        self,
-        batch_size,
-        id=None,
-        nw=None,
-    ):
-        assert id == nw == None or id is not None and nw is not None
-        id = id or 0
-        nw = nw or 1
-        if not self.cfg._tokens_piles_path(self.split).exists():
-            self._store_split(self.split)
-
-        piler = self.tokens_piler()
-        for p in range(id % nw, piler.num_piles, nw):
-            print("get next tokens pile")
-            print(id, nw, p)
-            pile = piler[p]
-            for i in range(0, len(pile) // batch_size * batch_size, batch_size):
-                yield pile[i : i + batch_size]
-
-
-import datasets
-from attrs import define, field
 
 
 @define
@@ -206,6 +182,7 @@ class PermutedDocs:
         # cols =
         for i in range(0, len(self.perm) // batch_size * batch_size, batch_size):
             ds = self.dataset[self.perm[i : i + batch_size]]
-            yield ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len], {
-                col: ds[col] for col in columns
-            }
+            yield (
+                ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len],
+                {col: ds[col] for col in columns},
+            )

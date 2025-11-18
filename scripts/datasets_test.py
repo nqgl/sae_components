@@ -1,7 +1,8 @@
 import datasets
 from pydantic import BaseModel
 
-from saeco.data.split_config import SplitConfig
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
+from saeco.data.config.split_config import SplitConfig
 
 datasets.ReadInstruction(
     "train",
@@ -20,7 +21,6 @@ print(c.model_dump())
 from saeco.data import (
     DataConfig,
     ModelConfig,
-    ActsDataConfig,
     DataGenerationProcessConfig,
 )
 

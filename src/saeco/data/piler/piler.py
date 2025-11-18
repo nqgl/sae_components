@@ -77,7 +77,9 @@ class Piler:
         )
 
         for i in range(num_piles):
-            piles.create(i, dtype, [0] + list(fixed_shape), compression)
+            piles.create(
+                i, dtype=dtype, shape=[0] + list(fixed_shape), compression=compression
+            )
 
         piler = Piler(
             metadata=metadata,
@@ -107,7 +109,10 @@ class Piler:
             skip_cache=skip_cache,
         )
 
-        assert len(gdtc) == metadata.num_piles
+        if len(gdtc) != metadata.num_piles:
+            raise ValueError(
+                f"expected {metadata.num_piles} piles, got {len(gdtc)} for {path}"
+            )
 
         piler = Piler(metadata, path, readonly=True, piles=gdtc)
 
@@ -198,7 +203,7 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
         self.piles.shuffle_then_finalize(perms=perms)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i) -> torch.Tensor:
         if isinstance(i, int):
             piles = [self.piles[i]]
         elif isinstance(i, list):
@@ -208,6 +213,7 @@ class Piler:
         else:
             piles = self.piles[i]
         if isinstance(piles, list) and len(piles) == 1:
+            assert isinstance(piles[0], torch.Tensor)
             return piles[0]
         return torch.cat(piles)  # type: ignore
 
@@ -232,7 +238,6 @@ class Piler:
 
 
 def main():
-
     testdata = Path("testdata")
 
     # remove contents of testdata

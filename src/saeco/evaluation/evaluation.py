@@ -16,7 +16,7 @@ from torch import Tensor
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 from saeco.architecture.architecture import Architecture
 
-from saeco.data.locations import DATA_DIRS
+from saeco.data.config.locations import DATA_DIRS
 from saeco.evaluation.eval_components.coacts import Coactivity
 from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
@@ -434,9 +434,9 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             tokens = [tokens]
         if isinstance(tokens, list):
             tokens = torch.tensor(tokens, dtype=torch.long)
-        assert isinstance(
-            tokens, Tensor
-        ), "hmu if this assumption is wrong somewhere, easy fix"
+        assert isinstance(tokens, Tensor), (
+            "hmu if this assumption is wrong somewhere, easy fix"
+        )
         if tokens.ndim == 0:
             return self.tokenizer._tokenizer.decode([tokens])
         if tokens.ndim == 1:

@@ -107,9 +107,9 @@ def Sweepable(t, name=None):
         s_t = t
     if t is ClassVar:
         return t
-    assert not isinstance(
-        t, Swept
-    ), "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
+    assert not isinstance(t, Swept), (
+        "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
+    )
 
     # return Annotated[
     #     Union[Swept[t], s_t], BeforeValidator(SweptValidatorConverter(t, name=name))
@@ -355,6 +355,11 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
 
     def random_sweep_configuration(self):
         return self.from_selective_sweep(self.random_sweep_inst_dict())
+
+    def select_instance_by_index(self, index: int):
+        return self.from_selective_sweep(
+            self.to_swept_nodes().select_instance_by_index(index)
+        )
 
     def to_swept_nodes(self):
         return SweptNode.from_sweepable(self)
