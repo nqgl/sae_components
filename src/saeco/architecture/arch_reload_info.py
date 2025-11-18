@@ -2,12 +2,11 @@ import importlib
 import inspect
 import json
 from pathlib import Path
-from typing import Any, Generic, TYPE_CHECKING, TypeVar
+from types import get_original_bases
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
 import torch
 from pydantic import BaseModel, Field
-from typing_extensions import get_original_bases, Self
-
 
 if TYPE_CHECKING:
     from .architecture import Architecture
@@ -19,6 +18,8 @@ ARCH_REF_PATH_EXT = ".arch_ref"
 
 
 def get_src(obj):
+    if obj.__module__ == "builtins":
+        return "builtins"
     module = importlib.import_module(obj.__module__)
     return inspect.getsource(module)
 
@@ -59,13 +60,7 @@ class ArchClassRef(BaseModel):
         return arch_cls
 
 
-T = TypeVar("T", bound=SweepableConfig)
-
-
-T2 = TypeVar("T2", bound=SweepableConfig)
-
-
-class ArchRef(BaseModel, Generic[T]):
+class ArchRef[T: SweepableConfig](BaseModel):
     class_ref: ArchClassRef
     config: T = Field()
 
@@ -157,7 +152,7 @@ class ArchStoragePaths(BaseModel):
         state_dict: dict[str, Any] | None = None,
         xcls=None,
     ) -> "Architecture[Any]":
-        from .arch_reload_info import ArchClassRef, ArchRef
+        from .arch_reload_info import ArchRef
 
         assert load_weights or not averaged_weights
         if state_dict is not None and (load_weights or averaged_weights):
