@@ -20,6 +20,14 @@ from saeco.components.resampling.freq_tracker.freq_tracker import (
 from .freq_tracker import FreqTracker
 
 
+from abc import ABC, abstractmethod
+
+from pydantic import Field
+
+from saeco.misc import lazycall
+from saeco.sweeps import SweepableConfig
+
+
 def find_matching_submodules(module: nn.Module, matchfn):
     matches = set()
 
@@ -31,12 +39,20 @@ def find_matching_submodules(module: nn.Module, matchfn):
     return matches
 
 
-from abc import ABC
+class ResampleableModule(ABC):
+    @abstractmethod
+    def resample(
+        self,
+        *,
+        indices: torch.Tensor,
+        new_directions: torch.Tensor,
+        bias_reset_value: float,
+        optim: torch.optim.Optimizer,
+    ) -> None: ...
 
-from pydantic import Field
 
-from saeco.misc import lazycall
-from saeco.sweeps import SweepableConfig
+def get_resampleable_modules(model: nn.Module) -> set[FeaturesParam]:
+    return find_matching_submodules(model, lambda m: isinstance(m, ResampleableModule))
 
 
 class ResamplerConfig(SweepableConfig):
@@ -91,8 +107,10 @@ class Resampler(ABC):
         assert self.cfg.expected_decs is None or self.cfg.expected_decs == len(
             self.decs
         )
+
         for r in self.encs + self.decs + self.biases + self.other_types:
-            r.set_cfg(self.cfg)
+            if isinstance(r, FeaturesParam):
+                r.set_cfg(self.cfg)
             r.resample(
                 indices=i,
                 new_directions=d,
@@ -127,6 +145,7 @@ class Resampler(ABC):
             else:
                 other_types.append(param)
 
+        other_types.extend(list(get_resampleable_modules(self.model)))
         if self._encs is None:
             self._encs = encs
         if self._decs is None:
@@ -185,7 +204,6 @@ class Resampler(ABC):
         indices,
         target_l0,
     ):
-
         original_beta = self.freq_tracker.beta
         self.freq_tracker.beta = 0.9
         for bias in self.biases:

@@ -16,7 +16,7 @@ from saeco.components.wrap import WrapsModule
 
 @runtime_checkable  # TODO
 class Resamplable(Protocol):
-    def resample(self, *, indices, new_directions, bias_reset_value): ...
+    def resample(self, *, indices, new_directions, bias_reset_value, optim): ...
 
 
 # @runtime_checkable
@@ -156,9 +156,9 @@ class OrthogonalizeFeatureGrads(WrapsModule):
             return
         assert (
             grad_orth / (grad_orth.norm(dim=-1, keepdim=True) + 1e-6) * dec_normed
-        ).sum(
-            -1
-        ).abs().mean() < 1e-4, f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        ).sum(-1).abs().mean() < 1e-4, (
+            f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        )
         fp.grad[:] = grad_orth
 
 
@@ -255,9 +255,9 @@ class OrthogonalizeFeatureGradsMixin:
             return
         assert (
             grad_orth / (grad_orth.norm(dim=-1, keepdim=True) + 1e-6) * dec_normed
-        ).sum(
-            -1
-        ).abs().mean() < 1e-4, f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        ).sum(-1).abs().mean() < 1e-4, (
+            f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        )
         fp.grad[:] = grad_orth
         return 1
 

@@ -35,7 +35,7 @@ data_cfg = DataConfig[ComlmModelConfig](
         ),
         torch_dtype_str="bfloat16",
     ),
-    trainsplit=SplitConfig(start=0, end=25, tokens_from_split=30_000 * 512),
+    trainsplit=SplitConfig(start=0, end=80, tokens_from_split=None),
     generation_config=DataGenerationProcessConfig(
         # tokens_per_pile=2**25,
         acts_per_pile=2**18,
@@ -44,5 +44,7 @@ data_cfg = DataConfig[ComlmModelConfig](
     ),
     seq_len=1024,
 )
+v = DataConfig.model_validate_json(data_cfg.model_dump_json())
+assert v == data_cfg
 if __name__ == "__main__":
     data_cfg.store_split(data_cfg.trainsplit)

@@ -1,5 +1,7 @@
 import saeco.components as co
 import saeco.components.features.features as ft
+from saeco.components.features.optim_reset import FeatureParamType
+from saeco.components.resampling.resampler import ResampleableModule
 import saeco.core as cl
 import torch
 
@@ -53,6 +55,7 @@ class ThreshConfig(SweepableConfig):
     log_diff: bool = True
     l0_diff_mult: float = 30
     initial_value: float = 0
+    freq_tracker_beta: float = 0.99
     # l0_targ_lin: bool = Swept(True, False)
 
     # min_freq_ratio: float | None = Swept(3, 10)
@@ -84,7 +87,7 @@ def log(x):
         return math.log(x)
 
 
-class Thresholder(cl.Module):
+class Thresholder(cl.Module, ResampleableModule):
     thresh_values: torch.Tensor
     thresh_value_momentum: torch.Tensor
 
@@ -97,7 +100,10 @@ class Thresholder(cl.Module):
         self.register_buffer("thresh_value_momentum", torch.zeros(init.d_dict))
         self.nonlinearity = nn.ReLU()
         self.target = init.l0_target
-        self.freqs: co.FreqTracker = None
+        self.freqs: co.FreqTracker = EMAFreqTracker(
+            beta=cfg.freq_tracker_beta, encoder_index=None
+        )
+        self.freqs.logs_freqs = False
         self.freq_target = init.l0_target / init.d_dict
         self.t = 0
         # self.prev_cache = None
@@ -105,26 +111,29 @@ class Thresholder(cl.Module):
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         x = cache(self).nonlinearity(x)
         # self.prev_cache = cache
-        return torch.where(
-            x > self.thresh_values.unsqueeze(0),
-            x,
-            0,
+        return cache(self).freqs(
+            torch.where(
+                x > self.thresh_values.unsqueeze(0),
+                x,
+                0,
+            )
         )
 
     @property
     def features(self):
-        return dict(
-            thresh_values=ft.FeaturesParam(
+        return {
+            "thresh_values": ft.FeaturesParam(
                 self.thresh_values,
                 feature_index=0,
-                feature_parameter_type="bias",
+                feature_parameter_type=FeatureParamType.bias,
                 reset_optim_on_resample=False,
             )
-        )
+        }
 
-    def register_freq_tracker(self, ft):
-        self.freqs = ft
-        return ft
+    # def register_freq_tracker(self, ft):
+    #     assert self.freqs is None
+    #     self.freqs = ft
+    #     return ft
 
     def diff(self, x, target) -> torch.Tensor:
         if self.cfg.log_diff:
@@ -157,6 +166,9 @@ class Thresholder(cl.Module):
             )
         self.t += 1
 
+    def resample(self, *, indices, new_directions, bias_reset_value, optim):
+        self.thresh_values[indices] = -bias_reset_value
+
 
 class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
     def setup(self):
@@ -179,7 +191,7 @@ class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
                     nonlinearity=thrlu,
                 )
             ),
-            freqs=thrlu.register_freq_tracker(EMAFreqTracker()),
+            freqs=EMAFreqTracker(),
             penalty=LinearDecayL1Penalty(
                 begin=self.cfg.l1_decay_start,
                 end=self.cfg.l1_decay_end,

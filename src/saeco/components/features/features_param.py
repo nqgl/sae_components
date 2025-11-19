@@ -116,6 +116,8 @@ class FeaturesParam:
     def set_cfg(self, cfg):
         if self.resampler_cfg is cfg:
             return
+        if self.resampler_cfg is not None:
+            raise ValueError("Cannot set cfg twice")
         self.field_handlers = OptimResetValues(cfg.optim_reset_cfg)
         self.resampler_cfg = cfg
 
@@ -219,9 +221,9 @@ class FeaturesParam:
             if self.get_optim(optim).state[field] == {}:
                 continue
             field_state = optim_state[field]
-            assert (
-                field_state[:].shape == self.features.shape
-            ), f"{field}: {field_state[:].shape} != {self.features.shape}"
+            assert field_state[:].shape == self.features.shape, (
+                f"{field}: {field_state[:].shape} != {self.features.shape}"
+            )
 
             optim_state[field, indices] = self.field_handlers.get_value(
                 field=field,
@@ -300,7 +302,6 @@ class HasFeaturesCachedProperty(Protocol):
 
 @runtime_checkable
 class HasFeaturesProperty(Protocol):
-
     @property
     def features(self) -> dict[str, FeaturesParam]: ...
 

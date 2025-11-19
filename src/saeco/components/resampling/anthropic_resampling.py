@@ -56,7 +56,6 @@ from saeco.sweeps import SweepableConfig
 
 
 class ResampleType(IntEnum):
-
     enc_in = 0
     error = 1
     model_in = 2
@@ -75,6 +74,8 @@ class AnthResamplerConfig(ResamplerConfig):
 
 
 class AnthResampler(Resampler):
+    cfg: AnthResamplerConfig
+
     @torch.no_grad()
     def get_reset_feature_directions(self, num_directions, data_source, model):
         # gotta make sure to treat the normalization correctly!

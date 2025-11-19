@@ -6,9 +6,11 @@ from saeco.core import PassThroughModule
 
 
 class FreqTracker(PassThroughModule, ABC):
-    def __init__(self):
+    def __init__(self, encoder_index: int | None = 0):
         super().__init__()
         self.is_active = True
+        self.logs_freqs: bool = True
+        self.encoder_index: int | None = encoder_index
 
     @property
     @abstractmethod
@@ -27,11 +29,12 @@ class FreqTracker(PassThroughModule, ABC):
             freqs = (acts != 0).float().mean(dim=0)
             self.update_freqs(freqs, cache=cache)
         if cache._ancestor.has.trainstep:
-            if cache._ancestor.trainstep % 100 == 0:
+            if cache._ancestor.trainstep % 10 == 0:
                 cache._write("below_3e-5", (self.freqs < 3e-5).sum().item())
                 cache._write("below_1e-5", (self.freqs < 1e-5).sum().item())
                 cache._write("below_3e-6", (self.freqs < 3e-6).sum().item())
                 cache._write("below_1e-6", (self.freqs < 1e-6).sum().item())
+                cache._write("below_1e-8", (self.freqs < 1e-8).sum().item())
 
     @abstractmethod
     def update_freqs(self, freqs: torch.Tensor, cache): ...
@@ -40,7 +43,7 @@ class FreqTracker(PassThroughModule, ABC):
     def reset(self): ...
 
 
-def get_freq_trackers(model: nn.Module):
+def get_freq_trackers(model: nn.Module) -> set[FreqTracker]:
     l = set()
     for m in model.modules():
         if isinstance(m, FreqTracker):
@@ -49,4 +52,8 @@ def get_freq_trackers(model: nn.Module):
 
 
 def get_active_freq_trackers(model: nn.Module):
-    return {ft for ft in get_freq_trackers(model) if ft.is_active}
+    return {
+        ft
+        for ft in get_freq_trackers(model)
+        if ft.is_active and ft.encoder_index is not None
+    }
