@@ -3,7 +3,6 @@ from .losses import Loss, L2Loss, SparsityPenaltyLoss
 from .penalties import Penalty, L1Penalty, LambdaPenalty, LinearDecayL1Penalty
 from . import penalties
 from .resampling import (
-    FreqTracked,
     EMAFreqTracker,
     FreqTracker,
 )
