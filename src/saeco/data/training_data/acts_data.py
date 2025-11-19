@@ -1,6 +1,4 @@
-from contextlib import contextmanager
-from functools import cached_property
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import einops
 import torch
@@ -10,17 +8,16 @@ import tqdm
 from attrs import define
 from nnsight import LanguageModel, NNsight
 
-from saeco.data.training_data.bufferized_iter import bufferized_iter
-from saeco.data.dict_batch import DictBatch
 from saeco.data.config.split_config import SplitConfig
+from saeco.data.dict_batch import DictBatch
+from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.misc.nnsite import getsite
-from typing import Any
 
 if TYPE_CHECKING:
+    from saeco.data.config.data_cfg import DataConfig
     from saeco.data.config.model_config.model_type_cfg_base import (
         ModelLoadingConfigBase,
     )
-    from saeco.data.config.data_cfg import DataConfig
 
 
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
@@ -150,32 +147,46 @@ class ActsDataCreator:
         if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
             acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
         # TODO Generate and use mask from custom
-        toks_re = inputs
+        # toks_re = tx_inputs
+        flatten_pattern = "batch seq ... -> (batch seq) ..."
+
+        acts = acts[:, : self.cfg.seq_len]
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
-            toks_re = toks_re[:, 1:]
+            # toks_re = toks_re[:, 1:]
+        acts = acts.einops_rearrange(flatten_pattern)
+        mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
+            tx_inputs, self.cfg.seq_len
+        )
+
+        # if isinstance(toks_re, DictBatch):
+        #     toks_re = toks_re.einops_rearrange(flatten_pattern)
+        # else:
+        #     toks_re = einops.rearrange(
+        #         toks_re,
+        #         flatten_pattern,
+        #     )
+        if mask is not None:
+            mask = einops.rearrange(mask, flatten_pattern)
+            acts = acts[mask]
+            # toks_re = toks_re[mask]
         if not rearrange:
             assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
             return acts
-        acts = self.cfg.model_cfg.model_load_cfg.filter_acts(toks_re, acts)
-        acts = acts.einops_rearrange("batch seq d_data -> (batch seq) d_data")
-        toks_pattern = "batch seq ... -> (batch seq) ..."
-        if isinstance(toks_re, DictBatch):
-            toks_re = toks_re.einops_rearrange(toks_pattern)
-        else:
-            toks_re = einops.rearrange(
-                toks_re,
-                toks_pattern,
-            )
-        if (
-            self.cfg.model_cfg.acts_cfg.filter_pad
-            and self.model.tokenizer.pad_token_id is not None
-        ):
-            assert isinstance(self.model.tokenizer.pad_token_id, int)
-            mask = toks_re != self.model.tokenizer.pad_token_id
-            if not mask.all():
-                print(f"removing {(~mask).sum()} activations from pad token locations")
-                acts = acts[mask]
+
+        # if (
+        #     self.cfg.model_cfg.acts_cfg.filter_pad
+        #     and self.model.tokenizer.pad_token_id is not None
+        # ):
+        #     # TODO get_padding_mask method
+
+        #     # if structured data is needed, instead of short-circuiting, we should
+        #     # return the data + the mask
+        #     assert isinstance(self.model.tokenizer.pad_token_id, int)
+        #     mask = toks_re != self.model.tokenizer.pad_token_id
+        #     if not mask.all():
+        #         print(f"removing {(~mask).sum()} activations from pad token locations")
+        #         acts = acts[mask]
         return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
 
     def acts_generator_from_tokens_generator(self, inputs_generator, llm_batch_size):

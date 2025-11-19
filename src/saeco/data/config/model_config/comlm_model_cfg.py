@@ -83,8 +83,13 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
     def input_data_transform(self, input_data: DictBatch) -> DictBatch:
         return NoisedBatch.construct_with_other_data(input_data).cuda()
 
-    def filter_acts(self, input_data: DictBatch, acts: DictBatch) -> DictBatch:
-        return acts
+    def create_acts_mask(
+        self, input_data: DictBatch, seq_len: int
+    ) -> torch.Tensor | None:
+        assert isinstance(input_data, NoisedBatch)
+        return input_data.loss_mask[:, :seq_len]
+
+    # def get_acts_mask(self, )
 
 
 # train_dataloader_filtered

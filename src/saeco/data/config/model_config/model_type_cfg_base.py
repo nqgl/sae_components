@@ -52,10 +52,10 @@ class ModelLoadingConfigBase[
     def custom_data_source(self) -> Iterable[DictBatch]:
         raise NotImplementedError
 
-    def filter_acts(
-        self, input_data: torch.Tensor | DictBatch, acts: DictBatch
-    ) -> DictBatch:
-        return acts
+    def create_acts_mask(
+        self, input_data: torch.Tensor | DictBatch, seq_len: int
+    ) -> torch.Tensor | None:
+        return None
 
 
 # @runtime_checkable
