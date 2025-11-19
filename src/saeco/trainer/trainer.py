@@ -161,12 +161,19 @@ class Trainer:
     @contextmanager
     def evaluate(self):
         self.trainable.eval()
+        if self.cfg.use_schedulefree:
+            assert isinstance(self.optim, AdamWScheduleFree)
+            self.optim.eval()
         if self.cfg.use_averaged_model:
             self.averaged_model.eval()
         try:
             yield
         finally:
             self.trainable.train()
+            if self.cfg.use_schedulefree:
+                assert isinstance(self.optim, AdamWScheduleFree)
+                self.optim.train()
+
             if self.cfg.use_averaged_model:
                 self.averaged_model.train()
 
@@ -183,12 +190,13 @@ class Trainer:
                 )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def make_cache(self):
+    def make_cache(self, eval_mode: bool = False):
         cache = TrainCache()
         cache._watch(self.trainable.get_losses_and_metrics_names())
         cache.trainer = ...
         cache.trainer = self
-        cache.trainstep = self.t
+        if not eval_mode:
+            cache.trainstep = self.t
         return cache
 
     def train(
@@ -209,6 +217,9 @@ class Trainer:
             buffer = self.cfg.get_databuffer()
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
+        if self.cfg.use_schedulefree:
+            self.optim.train()
+        self.trainable.train()
         self.post_step()
 
         if num_steps is not None:
@@ -227,8 +238,8 @@ class Trainer:
             buffer = buf()
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
             input, target = x.input, x.target
-            print(input.shape)
-            print(target.shape)
+            # print(input.shape)
+            # print(target.shape)
             if not self.cfg.use_autocast:
                 input = input.float()  # TODO maybe cast other direction instead
                 target = target.float()  # TODO maybe cast other direction instead
@@ -238,9 +249,8 @@ class Trainer:
                 and self.t > self.cfg.schedule.run_length - 1000
                 and self.t % 5 == 0
             ):
-                self.trainable.eval()
-                self.eval_step(input, y=target)
-                self.trainable.train()
+                with self.evaluate():
+                    self.eval_step(input, y=target)
 
             cache = self.make_cache()
             self.trainstep(input, cache, y=target)
@@ -253,9 +263,8 @@ class Trainer:
             if self.cfg.use_averaged_model:
                 self.averaged_model.update_parameters(self.trainable)
             if self.t % self.cfg.intermittent_metric_freq == 0:
-                self.trainable.eval()
-                self.do_intermittent_metrics()
-                self.trainable.train()
+                with self.evaluate():
+                    self.do_intermittent_metrics()
             if (
                 self.cfg.checkpoint_period is not None
                 and self.t % self.cfg.checkpoint_period == 0
@@ -321,7 +330,7 @@ class Trainer:
             model = self.averaged_model.module
         else:
             model = self.trainable
-        cache = self.make_cache()
+        cache = self.make_cache(eval_mode=True)
         with torch.no_grad():
             with self.cast():
                 loss = model.loss(x, cache=cache, y=y, coeffs=self.coeffs())
