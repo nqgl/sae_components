@@ -7,6 +7,12 @@ from saeco.core.basic_ops import Add
 from saeco.initializer.linear_factory import LinearFactory, Tied
 from .initializer_config import InitConfig
 
+from typing import TypeGuard
+
+
+def intersect_isinstance[T](obj, typ: type[T]) -> TypeGuard[T]:
+    return all(isinstance(obj, t) for t in typ.__bases__)
+
 
 class Initializer:
     def __init__(
@@ -100,11 +106,15 @@ class Initializer:
 
     @property
     def encoder(self) -> co.LinEncoder:
-        return self._encoder.get()
+        enc = self._encoder.get()
+        assert intersect_isinstance(enc, co.LinEncoder)
+        return enc
 
     @property
     def decoder(self) -> co.LinDecoder:
-        return self._decoder.get()
+        dec = self._decoder.get()
+        assert intersect_isinstance(dec, co.LinDecoder)
+        return dec
 
     @property
     def b_dec(self):
