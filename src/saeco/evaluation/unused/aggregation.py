@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from enum import Enum
 
-from attr import define
+from attrs import define
 
 
 class AggregationType(Enum):

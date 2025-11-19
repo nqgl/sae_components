@@ -6,8 +6,7 @@ from types import EllipsisType
 from typing import (
     Any,
     ClassVar,
-    Generic,
-    TypeVar,
+    Self,
     dataclass_transform,
     get_origin,
     get_type_hints,
@@ -17,17 +16,11 @@ from typing import (
 import torch
 from torch import Tensor
 
-T = TypeVar("T")
-
-from typing import Self
-
-DictBatch_T = TypeVar("DictBatch_T", bound="DictBatch")
-
 
 # --------------------------------------------------------------------------- #
 #  Utility wrapper (kept exactly as in NiceBatch so existing pipes still work) #
 # --------------------------------------------------------------------------- #
-class NiceConvertedIter(Generic[DictBatch_T]):
+class NiceConvertedIter[DictBatch_T: "DictBatch"]:
     def __init__(self, iterable: Iterator[DictBatch_T]):
         self._iter = iterable
 
@@ -50,7 +43,7 @@ class NiceConvertedIter(Generic[DictBatch_T]):
         return NiceIterDataset(self)
 
 
-class NiceIterDataset(torch.utils.data.IterableDataset, Generic[DictBatch_T]):
+class NiceIterDataset[DictBatch_T: "DictBatch"](torch.utils.data.IterableDataset):
     def __init__(self, iterable: Iterator[DictBatch_T]):
         self.iterable = iterable
 

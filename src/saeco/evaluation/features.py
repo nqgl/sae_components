@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import torch
-from attr import define
+from attrs import define
 from torch import Tensor
 
 # from .storage.filtered_chunk import FilteredChunk

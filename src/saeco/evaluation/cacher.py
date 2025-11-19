@@ -9,7 +9,7 @@ from jaxtyping import Int
 from torch import Tensor
 
 from saeco.architecture.architecture import Architecture
-from saeco.data import ActsData
+from saeco.data.training_data import ActsData
 from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.training_data.tokens_data import PermutedDocs
 from saeco.evaluation.saved_acts_config import CachingConfig

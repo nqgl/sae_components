@@ -2,15 +2,12 @@ import types
 from collections import defaultdict
 from collections.abc import Callable
 from typing import (
-    Generic,
     Literal,
-    ParamSpec,
     Protocol,
     TypeVar,
     overload,
 )
 
-_T = TypeVar("_T")
 _fields_dict: dict[type, dict[type["typeacc_method"], list[str]]] = defaultdict(dict)
 # (cls -> (field_categ_name -> field_name/names))
 _missing_name: set["typeacc_method"] = set()
@@ -64,17 +61,12 @@ class Singular(Protocol):
 
 from functools import wraps
 
-P = ParamSpec("P")
 
-
-class typeacc_method(
-    # cached_property[_T],
-    Generic[_T, P]
-):  # generic_T?
+class typeacc_method[T, **P]:
     # COLLECTED_FIELD_NAME = ...
     COLLECTED_FIELD_SINGULAR = False
 
-    def __init__(self, func: Callable[P, _T]) -> None:
+    def __init__(self, func: Callable[P, T]) -> None:
         _missing_name.add(self)
         self.func = func
         self._name = None
@@ -83,7 +75,7 @@ class typeacc_method(
     def __get__(self, instance, owner):
         return types.MethodType(self, instance)
 
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> _T:
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
         return self.func(*args, **kwargs)
 
     def __set_name__(self, owner: type, name: str) -> None:

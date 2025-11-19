@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import torch
-from attr import define
+from attrs import define
 from jaxtyping import Int
 from torch import Tensor
 
@@ -31,7 +31,7 @@ class SavedActs:
         )
 
     @classmethod
-    def _cfg_initializer(cls, path: Path):
+    def _cfg_initializer(cls, path: Path) -> CachingConfig:
         return CachingConfig.model_validate_json(
             (path / CachingConfig.STANDARD_FILE_NAME).read_text()
         )

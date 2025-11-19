@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import torch
-from attr import define, field
+from attrs import define, field
 from pydantic import BaseModel
 
 from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor

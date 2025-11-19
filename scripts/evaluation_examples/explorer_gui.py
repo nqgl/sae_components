@@ -35,7 +35,7 @@ def active(document, position):
 
 
 active(4, 5)
-from attr import define
+from attrs import define
 from rich.console import Console
 
 console = Console()

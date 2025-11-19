@@ -7,12 +7,13 @@ from typing import Union
 import einops
 import torch
 import tqdm
-from attr import define, field
+from attrs import define, field
 from torch import Tensor
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from saeco.architecture.architecture import Architecture
 from saeco.data.config.locations import DATA_DIRS
+from saeco.evaluation.BMStorShelf import BMStorShelf
 from saeco.evaluation.eval_components.coacts import Coactivity
 from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
@@ -20,7 +21,7 @@ from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
 from saeco.trainer import RunConfig
 
 from .cached_artifacts import CachedCalls
-from .cacher2 import ActsCacher, CachingConfig
+from .cacher import ActsCacher, CachingConfig
 from .eval_components.family_generation import FamilyGenerator
 from .eval_components.family_ops import FamilyOps
 from .fastapi_models import (
@@ -34,42 +35,6 @@ from .named_filter import NamedFilter
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
 from .storage.stored_metadata import Artifacts, Filters, Metadatas
-
-
-@define
-class BMStorShelf:
-    path: Path
-    shelf: shelve.Shelf
-
-    @classmethod
-    def from_path(cls, path: Path):
-        return cls(
-            path=path,
-            shelf=shelve.open(str(path / "shelf")),
-        )
-
-    def fnkey(self, func, args, kwargs):
-        key = f"{func.__name__}__{args}__{kwargs}"
-        vkey = f"{key}__version"
-        return key, vkey
-
-    def version(self, func):
-        return getattr(func, "_version", None)
-
-    def has(self, func, args, kwargs):
-        key, vkey = self.fnkey(func, args, kwargs)
-        version = self.version(func)
-        return vkey in self.shelf and self.shelf[vkey] == version and key in self.shelf
-
-    def get(self, func, args, kwargs):
-        key, vkey = self.fnkey(func, args, kwargs)
-        return self.shelf[key]
-
-    def set(self, func, args, kwargs, value):
-        key, vkey = self.fnkey(func, args, kwargs)
-        self.shelf[key] = value
-        self.shelf[vkey] = self.version(func)
-        self.shelf.sync()
 
 
 @define
@@ -433,9 +398,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         flatl = self.tokenizer._tokenizer.decode_batch(flat, skip_special_tokens=False)
         return [flatl[i : i + lens] for i in range(0, len(flatl), lens)]
 
-    def seq_aggregated_chunks_yielder(
-        self, seq_agg
-    ) -> Generator[FilteredTensor]:
+    def seq_aggregated_chunks_yielder(self, seq_agg) -> Generator[FilteredTensor]:
         """
         seq_agg options: "mean", "max", "sum", "count", "any"
         - count: count number of non-zero activations in each doc
