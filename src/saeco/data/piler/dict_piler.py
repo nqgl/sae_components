@@ -439,9 +439,6 @@ class DictPiler:
 
         return get, num_samples_total
 
-    def as_dataset(self, batch_size, converter=None):
-        return PilerDataset(self, batch_size, converter)
-
     @property
     def num_piles(self):
         n = next(iter(self.pilers.values())).num_piles
@@ -508,39 +505,6 @@ class DictPilerSampleIndexer:
 
     def __getitem__(self, index: int | slice) -> DictBatch:
         return self.piler._index_by_sample(index)
-
-
-class PilerDataset(torch.utils.data.IterableDataset):
-    """
-    IterableDataset for activations
-    """
-
-    def __init__(self, piler: DictPiler, batch_size, converter=None):
-        self.batch_size = batch_size
-        self.piler = piler
-        self.converter = converter
-
-    def __iter__(self):
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info is None:
-            gen = self.piler.batch_generator(
-                self.batch_size, yield_dicts=self.converter is None
-            )
-
-        else:
-            id = worker_info.id
-            nw = worker_info.num_workers
-            assert id % nw == id, (id, nw)
-            print("worker", id, nw, worker_info)
-            gen = self.piler.batch_generator(
-                batch_size=self.batch_size,
-                yield_dicts=self.converter is None,
-                id=id,
-                nw=nw,
-            )
-        if self.converter is not None:
-            return self.converter(gen)
-        return gen
 
 
 def main():
