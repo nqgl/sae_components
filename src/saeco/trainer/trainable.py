@@ -176,7 +176,7 @@ class Trainable(cl.Module):
         return (
             list(self.losses.keys())
             + list(self.metrics.keys())
-            + ["below_3e-5", "below_1e-5", "below_3e-6", "below_1e-6"]
+            + ["below_3e-5", "below_1e-5", "below_3e-6", "below_1e-6", "below_1e-8"]
         )
 
     def param_groups(self, optim_kwargs: dict) -> list[dict]:
