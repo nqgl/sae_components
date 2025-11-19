@@ -11,5 +11,6 @@ jaxtyping
 datasets
 transformers
 neptune
+neptune-query
 zstd
 paramsight @ git+https://github.com/nqgl/paramsight.git

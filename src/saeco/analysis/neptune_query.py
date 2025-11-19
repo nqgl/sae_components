@@ -1,6 +1,11 @@
 """
 Neptune query tool for fetching and filtering runs based on metrics.
 
+This implementation uses:
+- neptune-query for efficient bulk data fetching (no run initialization)
+- ProcessPoolExecutor for parallel processing when needed
+- Caching to avoid re-downloading data
+
 Example usage:
     from saeco.analysis.neptune_query import NeptuneQuery
 
@@ -24,10 +29,11 @@ Example usage:
 """
 
 from typing import Any, Callable, Literal, Optional
-import neptune
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
-import pandas as pd
 from dataclasses import dataclass, field
+from neptune_query import Query
+import os
 
 
 @dataclass
@@ -38,23 +44,9 @@ class RunInfo:
     name: str
     config: dict[str, Any]
     metrics: dict[str, float]
-    _run_id_for_lazy_load: str = field(repr=False, default=None)
-    _project: str = field(repr=False, default=None)
-    _api_token: Optional[str] = field(repr=False, default=None)
 
     def __repr__(self):
         return f"RunInfo(id={self.run_id}, name={self.name}, metrics={self.metrics})"
-
-    def _get_run_readonly(self):
-        """Lazily open run in read-only mode only when needed."""
-        if self._run_id_for_lazy_load and self._project:
-            return neptune.init_run(
-                project=self._project,
-                api_token=self._api_token,
-                with_id=self._run_id_for_lazy_load,
-                mode="read-only"
-            )
-        return None
 
 
 class NeptuneQuery:
@@ -62,10 +54,10 @@ class NeptuneQuery:
     Query Neptune runs with filtering and top-k selection.
 
     This class uses an optimized approach:
-    1. Fetches runs table in bulk (fast, read-only)
-    2. Gets metrics from table when possible (no run initialization)
-    3. Only opens individual runs in read-only mode when needed for non-standard aggregations
-    4. Avoids creating write-mode connections entirely
+    1. Uses neptune-query for efficient bulk data fetching
+    2. Never opens individual runs (pure read-only API queries)
+    3. Optionally uses ProcessPoolExecutor for parallel fetching
+    4. Caches query results to avoid re-downloading
     """
 
     def __init__(self, project: str, api_token: Optional[str] = None):
@@ -77,158 +69,187 @@ class NeptuneQuery:
             api_token: Neptune API token (or set NEPTUNE_API_TOKEN env var)
         """
         self.project = project
-        self.api_token = api_token
-        self._runs_table_cache: Optional[pd.DataFrame] = None
-        self._project_handle = None
+        self.api_token = api_token or os.getenv("NEPTUNE_API_TOKEN")
+        self._runs_cache: Optional[list[dict]] = None
+        self._query_client = None
 
-    def _init_project(self):
-        """Initialize project handle if not already done."""
-        if self._project_handle is None:
-            self._project_handle = neptune.init_project(
+    def _init_query_client(self):
+        """Initialize neptune-query client if not already done."""
+        if self._query_client is None:
+            self._query_client = Query(
                 project=self.project,
-                api_token=self.api_token,
-                mode="read-only"
+                api_token=self.api_token
             )
-        return self._project_handle
+        return self._query_client
 
-    def fetch_runs_table(
+    def fetch_runs(
         self,
-        state: Optional[str] = None,
+        columns: Optional[list[str]] = None,
         force_refresh: bool = False,
-        columns: Optional[list[str]] = None
-    ) -> pd.DataFrame:
+        state: Optional[str] = None
+    ) -> list[dict]:
         """
-        Fetch runs table from the project efficiently.
+        Fetch all runs from the project efficiently using neptune-query.
 
         Args:
-            state: Filter by run state ('active', 'inactive', etc.)
+            columns: Specific columns/fields to fetch (e.g., ["sys/id", "sys/name", "train/loss"])
             force_refresh: Force re-fetching runs (ignore cache)
-            columns: Specific columns to fetch (e.g., ["sys/id", "sys/name", "train/loss"])
+            state: Filter by run state ('active', 'inactive', etc.)
 
         Returns:
-            Pandas DataFrame with runs data
+            List of run dictionaries with requested fields
         """
-        if self._runs_table_cache is not None and not force_refresh:
-            return self._runs_table_cache
+        if self._runs_cache is not None and not force_refresh:
+            return self._runs_cache
 
-        project = self._init_project()
+        query = self._init_query_client()
 
-        # Fetch runs table - this is MUCH more efficient than opening individual runs
+        # Build query filter
+        query_filter = {}
+        if state:
+            query_filter["sys/state"] = state
+
+        # Fetch runs - neptune-query fetches everything efficiently
         if columns:
-            runs_table = project.fetch_runs_table(state=state, columns=columns).to_pandas()
+            runs_data = query.query(
+                fields=columns,
+                query=query_filter if query_filter else None
+            )
         else:
-            runs_table = project.fetch_runs_table(state=state).to_pandas()
+            runs_data = query.query(query=query_filter if query_filter else None)
 
-        self._runs_table_cache = runs_table
-        return runs_table
+        # Convert to list of dicts
+        runs_list = []
+        for run in runs_data:
+            runs_list.append(run)
 
-    def _get_metric_from_table_or_run(
+        self._runs_cache = runs_list
+        return runs_list
+
+    def _get_metric_value(
         self,
-        run_id: str,
+        run_data: dict,
         metric_key: str,
-        runs_table: pd.DataFrame,
         aggregation: Literal["last", "mean_last_n", "min", "max", "mean_all"] = "last",
         n_steps: int = 10
     ) -> Optional[float]:
         """
-        Extract metric value from table if available, otherwise fetch from run.
+        Extract metric value from run data.
 
         Args:
-            run_id: Neptune run ID
-            metric_key: Metric path (e.g., "train/loss_" or "metrics/L0_")
-            runs_table: DataFrame with runs data
+            run_data: Run data dictionary from neptune-query
+            metric_key: Metric path (e.g., "train/loss" or "metrics/L0")
             aggregation: How to aggregate metric values
             n_steps: Number of steps for mean_last_n aggregation
 
         Returns:
             Metric value or None if not found
         """
-        # First try to get from the table (most efficient)
-        row = runs_table[runs_table['sys/id'] == run_id]
-        if len(row) == 0:
+        try:
+            # neptune-query returns metrics directly
+            # For "last" aggregation, the metric is typically available directly
+            if metric_key in run_data:
+                metric_data = run_data[metric_key]
+
+                # Handle different data types
+                if isinstance(metric_data, (int, float)):
+                    return float(metric_data)
+                elif isinstance(metric_data, dict):
+                    # If it's a dict, try to get 'last' or 'value'
+                    if 'last' in metric_data:
+                        return float(metric_data['last'])
+                    elif 'value' in metric_data:
+                        return float(metric_data['value'])
+                elif isinstance(metric_data, list):
+                    # If it's a list of values, apply aggregation
+                    values = np.array([float(v) for v in metric_data])
+                    if len(values) == 0:
+                        return None
+
+                    if aggregation == "last":
+                        return float(values[-1])
+                    elif aggregation == "mean_last_n":
+                        return float(np.mean(values[-n_steps:]))
+                    elif aggregation == "min":
+                        return float(np.min(values))
+                    elif aggregation == "max":
+                        return float(np.max(values))
+                    elif aggregation == "mean_all":
+                        return float(np.mean(values))
+
             return None
 
-        row = row.iloc[0]
+        except Exception as e:
+            return None
 
-        # Neptune stores metrics with trailing underscore in the table for last value
-        table_key = metric_key if metric_key.endswith('_') else f"{metric_key}_"
-
-        # For "last" aggregation, try to get directly from table
-        if aggregation == "last" and table_key in runs_table.columns:
-            value = row.get(table_key)
-            if pd.notna(value):
-                return float(value)
-
-        # For other aggregations or if not in table, need to fetch from run
-        # Only do this if absolutely necessary
-        if aggregation != "last" or table_key not in runs_table.columns:
-            return self._fetch_metric_from_run(run_id, metric_key, aggregation, n_steps)
-
-        return None
-
-    def _fetch_metric_from_run(
+    def _fetch_run_data(
         self,
         run_id: str,
-        metric_key: str,
-        aggregation: Literal["last", "mean_last_n", "min", "max", "mean_all"],
-        n_steps: int
-    ) -> Optional[float]:
+        metric_keys: list[str]
+    ) -> Optional[dict]:
         """
-        Fetch metric from individual run (slower, only when needed).
+        Fetch specific metrics for a single run.
 
         Args:
             run_id: Neptune run ID
-            metric_key: Metric path
-            aggregation: How to aggregate
-            n_steps: Number of steps for mean_last_n
+            metric_keys: List of metric keys to fetch
 
         Returns:
-            Metric value or None
+            Dict with run data or None
         """
         try:
-            # Open run in read-only mode
-            run = neptune.init_run(
-                project=self.project,
-                api_token=self.api_token,
-                with_id=run_id,
-                mode="read-only"
+            query = self._init_query_client()
+
+            # Fetch specific run with specific fields
+            fields = ["sys/id", "sys/name", "sys/state"] + metric_keys
+            run_data = query.query_single_run(
+                run_id=run_id,
+                fields=fields
             )
 
-            try:
-                # Fetch metric values
-                metric_series = run[metric_key].fetch_values()
-
-                if metric_series is None or len(metric_series) == 0:
-                    return None
-
-                # Convert to numpy array
-                values = np.array([v.value for v in metric_series['value']])
-
-                if len(values) == 0:
-                    return None
-
-                # Apply aggregation
-                if aggregation == "last":
-                    result = float(values[-1])
-                elif aggregation == "mean_last_n":
-                    result = float(np.mean(values[-n_steps:]))
-                elif aggregation == "min":
-                    result = float(np.min(values))
-                elif aggregation == "max":
-                    result = float(np.max(values))
-                elif aggregation == "mean_all":
-                    result = float(np.mean(values))
-                else:
-                    raise ValueError(f"Unknown aggregation: {aggregation}")
-
-                return result
-            finally:
-                # Always close the run
-                run.stop()
+            return run_data
 
         except Exception as e:
-            # Metric not found or error accessing it
             return None
+
+    def _fetch_runs_parallel(
+        self,
+        run_ids: list[str],
+        metric_keys: list[str],
+        max_workers: Optional[int] = None
+    ) -> dict[str, dict]:
+        """
+        Fetch multiple runs in parallel using ProcessPoolExecutor.
+
+        Args:
+            run_ids: List of run IDs to fetch
+            metric_keys: List of metric keys to fetch for each run
+            max_workers: Maximum number of parallel workers (None = auto)
+
+        Returns:
+            Dict mapping run_id to run data
+        """
+        results = {}
+
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all fetch tasks
+            future_to_run_id = {
+                executor.submit(self._fetch_run_data, run_id, metric_keys): run_id
+                for run_id in run_ids
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_run_id):
+                run_id = future_to_run_id[future]
+                try:
+                    run_data = future.result()
+                    if run_data:
+                        results[run_id] = run_data
+                except Exception as e:
+                    # Skip failed runs
+                    pass
+
+        return results
 
     def query_topk(
         self,
@@ -238,7 +259,9 @@ class NeptuneQuery:
         constraints: Optional[dict[str, Callable[[float], bool]]] = None,
         aggregation: Literal["last", "mean_last_n", "min", "max", "mean_all"] = "last",
         n_steps: int = 10,
-        state: Optional[str] = None
+        state: Optional[str] = None,
+        use_parallel: bool = False,
+        max_workers: Optional[int] = None
     ) -> list[RunInfo]:
         """
         Query top-k runs based on a metric, subject to constraints.
@@ -252,6 +275,8 @@ class NeptuneQuery:
             aggregation: How to aggregate metric values
             n_steps: Number of steps for mean_last_n aggregation
             state: Filter by run state
+            use_parallel: Use parallel processing for fetching (faster for many runs)
+            max_workers: Maximum parallel workers (None = auto)
 
         Returns:
             List of top-k RunInfo objects sorted by metric value
@@ -270,20 +295,27 @@ class NeptuneQuery:
         # Collect all metric keys we need
         all_metric_keys = [metric_key] + list(constraints.keys())
 
-        # Fetch runs table with specific columns for efficiency
-        # Add trailing underscore for Neptune's metric naming convention
-        columns = ["sys/id", "sys/name", "sys/tags", "sys/state"]
-        for mk in all_metric_keys:
-            table_key = mk if mk.endswith('_') else f"{mk}_"
-            columns.append(table_key)
+        # Build columns list for fetching
+        columns = ["sys/id", "sys/name", "sys/state", "sys/tags"] + all_metric_keys
 
-        runs_table = self.fetch_runs_table(state=state, columns=columns)
+        # Fetch all runs with the needed fields
+        runs_data = self.fetch_runs(columns=columns, state=state)
+
+        # If using parallel fetching and we have many runs, fetch in parallel
+        if use_parallel and len(runs_data) > 10:
+            run_ids = [run["sys/id"] for run in runs_data]
+            runs_detailed = self._fetch_runs_parallel(run_ids, all_metric_keys, max_workers)
+            # Merge with basic data
+            for run in runs_data:
+                run_id = run["sys/id"]
+                if run_id in runs_detailed:
+                    run.update(runs_detailed[run_id])
 
         # Process each run
         valid_runs = []
-        for _, row in runs_table.iterrows():
-            run_id = row['sys/id']
-            run_name = row.get('sys/name', run_id)
+        for run in runs_data:
+            run_id = run.get("sys/id", "unknown")
+            run_name = run.get("sys/name", run_id)
 
             # Extract metrics for this run
             run_metrics = {}
@@ -291,9 +323,7 @@ class NeptuneQuery:
             # Check constraints first
             satisfies_constraints = True
             for constraint_key, constraint_fn in constraints.items():
-                value = self._get_metric_from_table_or_run(
-                    run_id, constraint_key, runs_table, aggregation, n_steps
-                )
+                value = self._get_metric_value(run, constraint_key, aggregation, n_steps)
 
                 if value is None:
                     satisfies_constraints = False
@@ -309,29 +339,29 @@ class NeptuneQuery:
                 continue
 
             # Get target metric value
-            metric_value = self._get_metric_from_table_or_run(
-                run_id, metric_key, runs_table, aggregation, n_steps
-            )
+            metric_value = self._get_metric_value(run, metric_key, aggregation, n_steps)
 
             if metric_value is None:
                 continue
 
             run_metrics[metric_key] = metric_value
 
-            # Extract config from tags
+            # Extract config from tags and other fields
             config = {}
-            if 'sys/tags' in row and pd.notna(row['sys/tags']):
-                config['tags'] = row['sys/tags']
+            if "sys/tags" in run:
+                config['tags'] = run["sys/tags"]
 
-            # Create RunInfo without opening the run
+            # Try to get config fields
+            for key in run:
+                if key.startswith("config/") or key.startswith("parameters/"):
+                    config[key] = run[key]
+
+            # Create RunInfo
             run_info = RunInfo(
                 run_id=run_id,
                 name=run_name,
                 config=config,
-                metrics=run_metrics,
-                _run_id_for_lazy_load=run_id,
-                _project=self.project,
-                _api_token=self.api_token
+                metrics=run_metrics
             )
             valid_runs.append(run_info)
 
@@ -346,8 +376,7 @@ class NeptuneQuery:
         run_info: RunInfo,
         metric_keys: Optional[list[str]] = None,
         aggregation: Literal["last", "mean_last_n", "min", "max", "mean_all"] = "last",
-        n_steps: int = 10,
-        fetch_full_config: bool = False
+        n_steps: int = 10
     ) -> dict[str, Any]:
         """
         Get detailed information about a run.
@@ -357,7 +386,6 @@ class NeptuneQuery:
             metric_keys: List of metric keys to fetch (None = already cached metrics)
             aggregation: How to aggregate metric values
             n_steps: Number of steps for mean_last_n aggregation
-            fetch_full_config: If True, fetch full config from run (requires opening run)
 
         Returns:
             Dict with run details including all requested metrics
@@ -371,45 +399,20 @@ class NeptuneQuery:
 
         # Fetch additional metrics if requested
         if metric_keys:
-            runs_table = self.fetch_runs_table()
-            for metric_key in metric_keys:
-                if metric_key not in details["metrics"]:
-                    value = self._get_metric_from_table_or_run(
-                        run_info.run_id,
-                        metric_key,
-                        runs_table,
-                        aggregation=aggregation,
-                        n_steps=n_steps
-                    )
-                    if value is not None:
-                        details["metrics"][metric_key] = value
-
-        # Fetch full config if requested (requires opening run)
-        if fetch_full_config:
-            run = run_info._get_run_readonly()
-            if run:
-                try:
-                    for config_path in ['config', 'parameters', 'params']:
-                        try:
-                            config_data = run[config_path].fetch()
-                            if isinstance(config_data, dict):
-                                details["config"].update(config_data)
-                        except:
-                            pass
-                finally:
-                    run.stop()
+            run_data = self._fetch_run_data(run_info.run_id, metric_keys)
+            if run_data:
+                for metric_key in metric_keys:
+                    if metric_key not in details["metrics"]:
+                        value = self._get_metric_value(run_data, metric_key, aggregation, n_steps)
+                        if value is not None:
+                            details["metrics"][metric_key] = value
 
         return details
 
     def cleanup(self):
-        """Close project handle if open."""
-        if self._project_handle:
-            try:
-                self._project_handle.stop()
-            except:
-                pass
-            self._project_handle = None
-        self._runs_table_cache = None
+        """Clear cache and cleanup resources."""
+        self._runs_cache = None
+        self._query_client = None
 
 
 # Example usage
@@ -423,7 +426,8 @@ if __name__ == "__main__":
         k=5,
         minimize=True,
         constraints={"metrics/L0": lambda x: x < 50},
-        aggregation="last"
+        aggregation="last",
+        use_parallel=True  # Use parallel processing
     )
 
     print("Top 5 runs with lowest loss (L0 < 50):")
