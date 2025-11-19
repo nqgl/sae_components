@@ -29,7 +29,6 @@ class SweepRunner:
             project=self.sweep_data.project,
             run_name=self.run_name,
         ):
-
             arch = self.sweep_data.root_arch_ref.load_arch()
             cfg = mlog.config()
             arch.instantiate(cfg)
@@ -63,6 +62,7 @@ class SweepRunner:
             project=self.sweep_data.project,
         ):
             mlog.update_config(full_cfg=arch.run_cfg.model_dump())
+            self.log_sweep_info(cfg)
             arch.run_training()
         return arch
 
