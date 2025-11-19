@@ -1,5 +1,5 @@
+
 from saeco.sweeps import SweepableConfig
-from pydantic import Discriminator
 
 
 class HFTokensConfig(SweepableConfig):

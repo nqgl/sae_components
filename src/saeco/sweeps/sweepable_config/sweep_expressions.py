@@ -1,21 +1,13 @@
 from enum import Enum
-
-from types import NoneType
-
-import types
-from typing import Any, Callable, Iterable, TypeVar, Union, get_args
-
-from pydantic import BaseModel
+from typing import Any, TypeVar, Union
 
 from saeco.sweeps.sweepable_config.expressions_utils import (
     common_type,
     convert_other,
     shared_type,
 )
-
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
-
 
 T = TypeVar("T")
 

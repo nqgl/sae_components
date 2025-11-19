@@ -1,18 +1,22 @@
-import inspect
 import typing
 from abc import abstractmethod
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Generic, Literal, overload, TypeVar
+from types import get_original_bases
+from typing import Any, Literal, overload
 
 import torch
+from paramsight import get_resolved_typevars_for_base, takes_alias
 from torch import nn
-from paramsight import takes_alias, get_resolved_typevars_for_base
-
-from typing_extensions import get_original_bases
 
 import saeco.components as co
 import saeco.core as cl
+from saeco.architecture.arch_prop import (
+    aux_model_prop,
+    loss_prop,
+    metric_prop,
+    model_prop,
+)
 from saeco.architecture.arch_reload_info import ArchStoragePaths
 from saeco.components.losses import Loss
 from saeco.components.metrics.metrics import ActMetrics, PreActMetrics
@@ -24,15 +28,8 @@ from saeco.sweeps import SweepableConfig
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
 from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 from saeco.trainer.run_config import RunConfig
-
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
-from saeco.architecture.arch_prop import (
-    aux_model_prop,
-    loss_prop,
-    metric_prop,
-    model_prop,
-)
 
 
 class SAE(cl.Seq):
@@ -306,7 +303,7 @@ class Architecture[ArchConfigT: SweepableConfig]:
                 f"file already existed at {path}, wrote to {path.path.name}_1"
             )
 
-        from .arch_reload_info import ArchClassRef, ArchRef
+        from .arch_reload_info import ArchRef
 
         arch_ref = ArchRef.from_arch(self)
 
@@ -494,7 +491,7 @@ class ArchitectureBase[ArchConfigT: SweepableConfig]:
                 f"file already existed at {path}, wrote to {path.path.name}_1"
             )
 
-        from .arch_reload_info import ArchClassRef, ArchRef
+        from .arch_reload_info import ArchRef
 
         arch_ref = ArchRef.from_arch(self)
 

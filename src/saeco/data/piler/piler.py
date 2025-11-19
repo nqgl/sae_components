@@ -4,12 +4,10 @@ import asyncio
 import os
 from functools import cached_property
 from pathlib import Path
-
-from typing import Any, List, TypeVar, Union
+from typing import Any, TypeVar
 
 import torch
 import tqdm
-
 from attrs import define
 from pydantic import BaseModel
 
@@ -17,7 +15,6 @@ from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
-
 from saeco.misc import str_to_dtype
 
 
@@ -47,7 +44,7 @@ class Piler:
     @classmethod
     def create(
         cls,
-        path: Union[str, Path],
+        path: str | Path,
         dtype: torch.dtype | str,
         fixed_shape: list[int],
         num_piles: int,
@@ -127,7 +124,7 @@ class Piler:
         return str_to_dtype(self.metadata.dtype)
 
     @classmethod
-    def get_metadata_path(cls, path: Union[str, Path]):
+    def get_metadata_path(cls, path: str | Path):
         if isinstance(path, str):
             path = Path(path)
         return path / "piler_metadata.json"

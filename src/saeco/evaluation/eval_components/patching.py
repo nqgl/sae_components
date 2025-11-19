@@ -4,21 +4,10 @@ import einops
 import nnsight
 import torch
 import tqdm
+from torch import Tensor
 
-from saeco.evaluation.cache_version import cache_version
-from saeco.evaluation.fastapi_models.families_draft import (
-    Family,
-    FamilyLevel,
-    FamilyRef,
-    GetFamiliesResponse,
-    ScoredFamilyRef,
-    ScoredFeature,
-)
-from saeco.evaluation.fastapi_models.Feature import Feature
-from saeco.evaluation.filtered import FilteredTensor
 from saeco.evaluation.utils import fwad_safe_sdp
 from saeco.misc.nnsite import getsite, setsite
-from torch import Tensor
 
 if TYPE_CHECKING:
     from ..evaluation import Evaluation
@@ -26,7 +15,6 @@ import torch.autograd.forward_ad as fwAD
 
 
 class Patching:
-
     def sae_with_patch(
         self: "Evaluation",
         patch_fn,

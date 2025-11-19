@@ -1,4 +1,3 @@
-import glob
 from pathlib import Path
 
 import torch
@@ -8,12 +7,9 @@ from torch import Tensor
 
 from saeco.evaluation.saved_acts_config import CachingConfig
 
-from ...data.storage.disk_tensor_collection import DiskTensorCollection
-
-from ..named_filter import NamedFilter
-
 from ...data.storage.disk_tensor import DiskTensor
-from ...data.storage.growing_disk_tensor import GrowingDiskTensor
+from ...data.storage.disk_tensor_collection import DiskTensorCollection
+from ..named_filter import NamedFilter
 
 
 @define(kw_only=True)

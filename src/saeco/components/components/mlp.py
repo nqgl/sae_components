@@ -1,7 +1,6 @@
-import saeco.core as cl
-import saeco.components as co
 import torch.nn as nn
-import torch
+
+import saeco.core as cl
 
 
 class MLP(cl.Seq):

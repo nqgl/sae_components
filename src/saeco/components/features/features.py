@@ -1,16 +1,15 @@
-from typing import Optional, Protocol, runtime_checkable
-from typing_extensions import Self
+from typing import Protocol, Self, runtime_checkable
+from warnings import deprecated
+
 import torch
 import torch.nn as nn
-from torch import Tensor
-from saeco.components.type_acc_methods import (
-    post_backward_hook,
-    PostBackwardHook,
-    post_step_hook,
-)
-from typing_extensions import deprecated
+
 import saeco.core as cl
 from saeco.components.features.features_param import FeaturesParam, HasFeatures
+from saeco.components.type_acc_methods import (
+    post_backward_hook,
+    post_step_hook,
+)
 from saeco.components.wrap import WrapsModule
 
 

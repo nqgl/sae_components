@@ -1,19 +1,10 @@
 #!/usr/bin/env python3
-import pandas as pd
-from pandas.api.types import is_bool_dtype, is_numeric_dtype
 
-import numpy as np
-from matplotlib import pyplot as plt
 from nicegui import ui
+
 from saeco.analysis.SAView import SAView
 
 # from saeco.analysis.update_render import update_render, render_update_list
-from saeco.analysis.wandb_analyze import (
-    Key,
-    ValueTarget,
-    SweepKey,
-    SetKeys,
-)
 
 # df = pd.DataFrame(
 #     data={
@@ -84,8 +75,6 @@ def make_setfield_menu(obj, field, options):
     # return wrap
 
 
-from nicegui import ui
-import matplotlib.pyplot as plt
 
 # with ui.pyplot(figsize=(3, 2)):
 #     x = np.linspace(0.0, 5.0)

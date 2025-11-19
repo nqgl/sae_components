@@ -1,6 +1,7 @@
-from saeco.sweeps.SweepRunner import SweepRunner
-from saeco.sweeps.newsweeper import SweepData
 from pathlib import Path
+
+from saeco.sweeps.newsweeper import SweepData
+from saeco.sweeps.SweepRunner import SweepRunner
 
 
 def start(sweepdata_path: str):

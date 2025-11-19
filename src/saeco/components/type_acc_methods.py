@@ -1,14 +1,14 @@
-from collections.abc import Callable
+import types
 from collections import defaultdict
+from collections.abc import Callable
 from typing import (
+    Generic,
     Literal,
+    ParamSpec,
     Protocol,
     TypeVar,
-    Generic,
     overload,
-    ParamSpec,
 )
-import types
 
 _T = TypeVar("_T")
 _fields_dict: dict[type, dict[type["typeacc_method"], list[str]]] = defaultdict(dict)

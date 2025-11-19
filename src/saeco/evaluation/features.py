@@ -1,19 +1,13 @@
-from functools import cached_property
 from pathlib import Path
 
 import torch
-from attr import define, field
-from jaxtyping import Float, Int
+from attr import define
 from torch import Tensor
-
-from .filtered import Filter, FilteredTensor
-
-from .named_filter import NamedFilter
-from .saved_acts_config import CachingConfig
-from .storage.chunk import Chunk
 
 # from .storage.filtered_chunk import FilteredChunk
 from ..data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from .filtered import Filter, FilteredTensor
+from .named_filter import NamedFilter
 
 
 @define

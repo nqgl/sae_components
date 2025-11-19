@@ -1,16 +1,14 @@
 from contextlib import nullcontext
 from functools import cached_property
-
-from nnsight import LanguageModel, NNsight
-from pydantic import Field
+from typing import Any
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from nnsight import NNsight
+from pydantic import Field
 
-from typing import Any
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
-from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
+from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
 

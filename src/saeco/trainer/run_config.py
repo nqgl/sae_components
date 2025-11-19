@@ -1,14 +1,12 @@
-from saeco.components.resampling.anthropic_resampling import AnthResamplerConfig
-from saeco.sweeps import SweepableConfig
-from saeco.trainer.normalizers import GNConfig
-from saeco.initializer.initializer_config import InitConfig
-from saeco.trainer.train_config import TrainConfig
-
+from typing import Generic, TypeVar
 
 from pydantic import Field
 
-
-from typing import Generic, TypeVar
+from saeco.components.resampling.anthropic_resampling import AnthResamplerConfig
+from saeco.initializer.initializer_config import InitConfig
+from saeco.sweeps import SweepableConfig
+from saeco.trainer.normalizers import GNConfig
+from saeco.trainer.train_config import TrainConfig
 
 T = TypeVar("T", bound=SweepableConfig)
 

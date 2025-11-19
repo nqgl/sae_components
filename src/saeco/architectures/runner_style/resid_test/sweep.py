@@ -1,4 +1,4 @@
-from saeco.architectures.anth_update import config, model
+from saeco.architectures.anth_update import model
 
 from saeco.sweeps import do_sweep
 

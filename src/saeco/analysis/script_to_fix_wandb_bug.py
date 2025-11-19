@@ -1,6 +1,6 @@
 # %%
 import wandb
-from wandb.apis.public import Project, Run, Sweep
+from wandb.apis.public import Run, Sweep
 
 api = wandb.Api()
 

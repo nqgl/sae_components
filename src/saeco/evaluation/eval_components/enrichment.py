@@ -1,18 +1,7 @@
 from typing import TYPE_CHECKING
 
-import einops
 import torch
-import tqdm
 
-from saeco.evaluation.fastapi_models.families_draft import (
-    Family,
-    FamilyLevel,
-    FamilyRef,
-    GetFamiliesResponse,
-    ScoredFamilyRef,
-    ScoredFeature,
-)
-from saeco.evaluation.fastapi_models.Feature import Feature
 from saeco.evaluation.fastapi_models.metadata_enrichment import (
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentResponse,

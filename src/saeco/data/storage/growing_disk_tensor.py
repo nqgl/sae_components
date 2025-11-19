@@ -1,4 +1,3 @@
-import asyncio
 from pathlib import Path
 
 import torch
@@ -8,7 +7,6 @@ from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.misc.dtypes import str_to_dtype
 
 from .disk_tensor import DiskTensor, DiskTensorMetadata
-
 
 SAECO_MIN_GDT_INITIAL_BYTES = 2**25  # 32 MB
 SAECO_MAX_GDT_INITIAL_BYTES = 2**32  # 4 GB

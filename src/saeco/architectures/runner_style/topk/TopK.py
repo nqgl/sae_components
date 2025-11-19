@@ -1,8 +1,7 @@
+import torch
+
 import saeco.components as co
 from saeco.components.ops.fnlambda import Lambda
-
-
-import torch
 
 
 def TopK(k):

@@ -1,20 +1,16 @@
+from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
+import datasets
 import einops
 import torch
 import tqdm
-from nnsight import LanguageModel, NNsight
+from attrs import define, field
 from torch import Tensor
 
 from saeco.data.config.split_config import SplitConfig
 from saeco.data.piler import Piler
-from functools import cached_property
-import datasets
-from attrs import define, field
-
-from saeco.data.piler.dict_piler import DictPiler
 from saeco.data.training_data.tokens_data_interface import TokensDataInterface
-
 
 if TYPE_CHECKING:
     from saeco.data.config.data_cfg import DataConfig

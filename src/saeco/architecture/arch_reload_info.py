@@ -3,7 +3,7 @@ import inspect
 import json
 from pathlib import Path
 from types import get_original_bases
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Self
 
 import torch
 from pydantic import BaseModel, Field

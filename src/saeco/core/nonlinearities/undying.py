@@ -1,7 +1,7 @@
 # by Glen Taggart @nqgl
+
 import torch
 import torch.nn.functional as F
-from typing import Optional
 
 
 class PositiveGradthruIdentityFunction(torch.autograd.Function):

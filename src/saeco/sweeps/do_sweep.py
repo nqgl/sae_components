@@ -31,7 +31,7 @@ def do_sweep(purge_after=True, in_cmd=None):
             n = int(n)
         except ValueError:
             n = False
-        from ezpod import Pods, RunFolder, RunProject
+        from ezpod import Pods
 
         pods = Pods.All()
         if n:

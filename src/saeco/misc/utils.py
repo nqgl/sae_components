@@ -17,7 +17,6 @@ def useif(cond, *args, **kwargs) -> dict[str, Any] | list[Any] | tuple[Any]:
 
 
 def iter_chunk_ranges(start, stop, chunk_size):  # TODO double check me
-
     for i in range(start, stop, chunk_size):
         yield i, min(i + chunk_size, stop)
 
@@ -34,7 +33,7 @@ def iter_chunk_ranges_tqdm(  # TODO double check me
             range(start, stop, chunk_size),
             unit_scale=chunk_size,
             total=stop - start,
-            **tqdm_kwargs
+            **tqdm_kwargs,
         ):
             yield i, min(i + chunk_size, stop)
 
@@ -42,7 +41,6 @@ def iter_chunk_ranges_tqdm(  # TODO double check me
 def iter_chunk_qty_tqdm(
     start, stop, chunk_size, measure_chunks=True, tqdm_kwargs={}
 ):  # TODO double check me
-
     if measure_chunks:
         for i in tqdm.trange(start, stop, chunk_size, **tqdm_kwargs):
             yield min(i + chunk_size, stop) - i
@@ -52,7 +50,7 @@ def iter_chunk_qty_tqdm(
             range(start, stop, chunk_size),
             unit_scale=chunk_size,
             total=stop - start,
-            **tqdm_kwargs
+            **tqdm_kwargs,
         ):
             yield min(i + chunk_size, stop) - i
 

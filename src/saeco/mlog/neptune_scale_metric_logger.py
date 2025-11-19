@@ -50,7 +50,6 @@ def stringify_unsupported(d, parent_key: str = "", sep: str = "/"):
             if isinstance(v, (dict, list, tuple, set)):
                 items |= stringify_unsupported(v, new_key, sep=sep)
             else:
-
                 items[new_key] = (
                     v
                     if type(v) in SUPPORTED_DATATYPES

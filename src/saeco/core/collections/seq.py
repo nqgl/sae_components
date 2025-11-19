@@ -1,9 +1,6 @@
-from typing import Any
-import torch.nn as nn
-from saeco.core.cache import Cache
-from saeco.core.module import Module
-from saeco.core.collections.propagator import Propagator
 import torch
+
+from saeco.core.collections.propagator import Propagator
 
 
 def sequential_rule(x, l, **k):

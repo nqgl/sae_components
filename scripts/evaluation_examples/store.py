@@ -3,7 +3,6 @@ from context import model_name, storage_name
 from saeco.evaluation.evaluation import Evaluation
 from saeco.evaluation.saved_acts_config import CachingConfig
 
-
 root_eval = Evaluation.from_model_path(model_name)
 root_eval.store_acts(
     CachingConfig(

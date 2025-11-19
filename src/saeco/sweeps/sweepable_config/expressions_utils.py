@@ -1,5 +1,6 @@
+from collections.abc import Iterable
 from types import UnionType
-from typing import Any, Iterable, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression

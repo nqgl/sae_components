@@ -1,36 +1,27 @@
-import torch
+from collections.abc import Callable
 
+import torch
 import torch.nn as nn
-from typing import Callable
+from torch.cuda.amp import custom_bwd, custom_fwd
 
 import saeco.components as co
 import saeco.components.features.features as ft
-from saeco.components.features.optim_reset import FeatureParamType
 import saeco.core as cl
-from saeco.core import ReuseForward
-from saeco.initializer import Initializer, Tied
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
-
-from saeco.components.hooks.clipgrad import ClipGrad
-from saeco.core import Seq
-
-from saeco.misc import useif
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
+from saeco.components.features.optim_reset import FeatureParamType
+from saeco.components.jumprelu.kernels_fns import gauss
 from saeco.components.penalties.l1_penalizer import (
     L0TargetingL1Penalty,
     LinearDecayL1Penalty,
 )
+from saeco.core import ReuseForward, Seq
+from saeco.initializer import Initializer, Tied
+from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-import einops
-from saeco.components.hierarchical import hl2ll
-from torch.cuda.amp import custom_bwd, custom_fwd
-from saeco.components.jumprelu.kernels_fns import rect, gauss
-from saeco.sweeps.sweepable_config.Swept import Swept
 
 
 def thresh_shrink(shrink_amount, eps, mult_by_shrank):
@@ -416,7 +407,6 @@ def multigate_sae(
     init: Initializer,
     cfg: Config,
 ):
-
     init._encoder.d_out *= cfg.num_layers
     init._decoder._weight_tie = None
     init.decoder
@@ -502,4 +492,4 @@ def run(cfg):
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    from .tg2_config import cfg, PROJECT
+    pass

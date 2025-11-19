@@ -1,30 +1,26 @@
 from functools import cached_property
-import torch
-from saeco.core.reused_forward import ReuseForward
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
-from saeco.core import Seq
 
-from saeco.misc import useif
+import torch
+import torch.nn as nn
+
+import saeco.components as co
+import saeco.components.features.features as ft
+import saeco.core as cl
+from saeco.architecture import (
+    SAE,
+    Architecture,
+    aux_model_prop,
+    model_prop,
+)
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
-import saeco.components.features.features as ft
-import torch.nn as nn
-import saeco.core as cl
-import saeco.components as co
-
-from saeco.architecture import (
-    loss_prop,
-    model_prop,
-    aux_model_prop,
-    Architecture,
-    SAE,
-)
-from saeco.architecture.arch_prop import arch_prop
-from types import GenericAlias
+from saeco.core import Seq
+from saeco.core.reused_forward import ReuseForward
+from saeco.misc import useif
+from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
 class GatedConfig(SweepableConfig):

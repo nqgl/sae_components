@@ -1,5 +1,5 @@
 from schedulefree import AdamWScheduleFree
-from torch.optim import Adam, Adamax, AdamW, ASGD, NAdam, RAdam, RMSprop, Rprop, SGD
+from torch.optim import ASGD, SGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSprop, Rprop
 
 
 def get_optim_cls(opt: str):

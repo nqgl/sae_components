@@ -1,6 +1,5 @@
-from typing import Callable, ContextManager, Protocol
-
-import torch
+from collections.abc import Callable
+from typing import ContextManager, Protocol
 
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.trainer.trainable import Trainable

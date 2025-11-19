@@ -2,6 +2,7 @@ import os
 from typing import TYPE_CHECKING
 
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+
 from .fns import NeptuneCustomLogger, NeptuneScaleLogger, WandbCustomLogger
 
 if TYPE_CHECKING:

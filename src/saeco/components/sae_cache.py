@@ -1,5 +1,6 @@
-from saeco.core.cache import Cache
 import torch
+
+from saeco.core.cache import Cache
 
 
 class SAECache(Cache):

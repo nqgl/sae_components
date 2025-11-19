@@ -1,13 +1,11 @@
+from collections.abc import Sequence
 from pathlib import Path
-from typing import ClassVar, Generic, Literal, overload, Sequence
+from typing import ClassVar, Generic, Literal, TypeVar, overload
 
 import torch
-
-from attrs import define, field
-from typing_extensions import TypeVar
+from attrs import define
 
 from saeco.data.storage import DiskTensor, GrowingDiskTensor
-
 from saeco.data.storage.compressed_safetensors import CompressionType
 
 DiskTensorType = TypeVar("DiskTensorType", bound=DiskTensor)

@@ -1,56 +1,39 @@
 import shelve
+from collections.abc import Generator
 from functools import cached_property
 from pathlib import Path
-from typing import Generator, Iterable, Iterator, Tuple, Union
+from typing import Union
 
 import einops
-import nnsight
 import torch
-import torch.autograd.forward_ad as fwAD
 import tqdm
 from attr import define, field
-
-from pydantic import BaseModel
 from torch import Tensor
-
 from transformers import AutoTokenizer, PreTrainedTokenizerFast
-from saeco.architecture.architecture import Architecture
 
+from saeco.architecture.architecture import Architecture
 from saeco.data.config.locations import DATA_DIRS
 from saeco.evaluation.eval_components.coacts import Coactivity
 from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
-
 from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
+from saeco.trainer import RunConfig
 
-from saeco.trainer import RunConfig, TrainingRunner
-from ..misc.nnsite import getsite, setsite
 from .cached_artifacts import CachedCalls
 from .cacher2 import ActsCacher, CachingConfig
 from .eval_components.family_generation import FamilyGenerator
 from .eval_components.family_ops import FamilyOps
 from .fastapi_models import (
     Feature,
-    MetadataEnrichmentLabelResult,
-    MetadataEnrichmentResponse,
-    MetadataEnrichmentSortBy,
-    TokenEnrichmentMode,
-    TokenEnrichmentSortBy,
 )
 from .fastapi_models.families_draft import (
-    Family,
-    FamilyLevel,
     FamilyRef,
-    GetFamiliesResponse,
-    ScoredFamilyRef,
-    ScoredFeature,
 )
-
 from .filtered import FilteredTensor
-from .storage.stored_metadata import Filters, Metadatas, Artifacts
 from .named_filter import NamedFilter
 from .saved_acts import SavedActs
 from .storage.chunk import Chunk
+from .storage.stored_metadata import Artifacts, Filters, Metadatas
 
 
 @define
@@ -452,7 +435,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     def seq_aggregated_chunks_yielder(
         self, seq_agg
-    ) -> Generator[FilteredTensor, None, None]:
+    ) -> Generator[FilteredTensor]:
         """
         seq_agg options: "mean", "max", "sum", "count", "any"
         - count: count number of non-zero activations in each doc

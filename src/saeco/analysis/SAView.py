@@ -1,12 +1,10 @@
-import asyncio
 
 from nicegui import ui
-from saeco.analysis.ddmenuprop import ddmenuprop, ddupdate
+
 from saeco.analysis.uiitem import UIE
 from saeco.analysis.wandb_analyze import (
     Sweep,
     SweepAnalysis,
-    SweepKey,
     SweepKeys,
     ValueTarget,
 )
@@ -246,9 +244,9 @@ class SAView:
             "med",
             "min",
         ]
-        style_normal = f"background-color: #f0f0f0; border: 4px solid #f0f0f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
-        style_selected = f"background-color: #f0f0f0; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
-        style_clicked = f"background-color: #f0AA77; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        style_normal = "background-color: #f0f0f0; border: 4px solid #f0f0f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        style_selected = "background-color: #f0f0f0; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        style_clicked = "background-color: #f0AA77; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
         INITIAL = 3
         i = 0
         labels = []
@@ -307,9 +305,9 @@ class SAView:
     @UIE
     def target_aggregation(self, cb):
         vals = ["max", "mean", "med", "min", "std", None]
-        style_normal = f"background-color: #f0f0f0; border: 4px solid #f0f0f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
-        style_selected = f"background-color: #f0f0f0; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
-        style_clicked = f"background-color: #f0AA77; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        style_normal = "background-color: #f0f0f0; border: 4px solid #f0f0f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        style_selected = "background-color: #f0f0f0; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        style_clicked = "background-color: #f0AA77; border: 4px solid #8888f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
 
         i = 0
         INITIAL = 1

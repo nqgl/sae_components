@@ -10,6 +10,7 @@ from typing import (
 )
 
 import pydantic._internal._model_construction as mc
+from paramsight.generic_restored_basemodel.generic_basemodel import GenericBaseModel
 from pydantic import (
     BaseModel,
     ValidationError,
@@ -27,7 +28,6 @@ from saeco.sweeps.sweepable_config.sweep_expressions import Op, SweepVar, Val
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
-from paramsight.generic_restored_basemodel.generic_basemodel import GenericBaseModel
 
 T = TypeVar("T")
 

@@ -1,17 +1,15 @@
+import torch.nn as nn
+
 import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
-from saeco.initializer import Initializer
+import saeco.misc.utils
 from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
 from saeco.components.ops.detach import Thresh
 from saeco.components.ops.fnlambda import Lambda
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
-
-
-import torch.nn as nn
-
-import saeco.misc.utils
+from saeco.initializer import Initializer
 
 
 def gate_two_weights(init: Initializer, detach=True, untied=True):

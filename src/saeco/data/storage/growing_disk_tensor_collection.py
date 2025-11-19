@@ -1,6 +1,6 @@
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import torch
 import tqdm
@@ -8,10 +8,9 @@ from attrs import define, field
 from pydantic import BaseModel
 
 from saeco.data.storage.compressed_safetensors import CompressionType
-
 from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
 
-from . import DiskTensor, DiskTensorCollection, GrowingDiskTensor
+from . import DiskTensorCollection, GrowingDiskTensor
 
 
 class GrowingDiskTensorCollectionMetadata(BaseModel):

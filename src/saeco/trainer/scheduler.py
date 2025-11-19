@@ -1,7 +1,7 @@
 from saeco.sweeps import SweepableConfig
 
 # from .schedule_cfg
-from .tosteps_wrapper import RunFloat, ResFloat
+from .tosteps_wrapper import ResFloat, RunFloat
 
 
 class Schedule(SweepableConfig):

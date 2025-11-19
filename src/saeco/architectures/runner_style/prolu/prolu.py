@@ -72,9 +72,9 @@ def paramaterized_prolu(cfg: ProLUConfig):
     return ProLUp.apply
 
 
-from saeco.components.features.features_param import FeaturesParam
+from collections.abc import Callable
 
-from typing import Callable
+from saeco.components.features.features_param import FeaturesParam
 from saeco.core import Module
 
 

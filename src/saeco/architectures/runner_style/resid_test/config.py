@@ -2,23 +2,19 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import DataConfig, ModelConfig
 from saeco.data.config.data_config_definitions import gpt_2_block
-from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import InitConfig
-from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig, TrainingRunner
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
-
 
 if __name__ == "__main__":
     from saeco.sweeps import do_sweep
 
     do_sweep(True)
 else:
-    from .model import resid_sae, ResidConfig
+    from .model import ResidConfig, resid_sae
 
     PROJECT = "L0Targeting"
     cfg = RunConfig[ResidConfig](

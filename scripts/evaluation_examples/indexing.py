@@ -2,7 +2,6 @@ import nqgl.mlutils.profiling.time_gpu as tg
 import torch
 from load import root_eval
 
-
 # doc_ids = torch.arange(10)
 # doc_ids[5:] += 200
 # doc_ids = doc_ids[torch.randperm(10)]

@@ -1,26 +1,20 @@
 from enum import IntEnum
 
+import torch
+import torch.nn as nn
+from torch.autograd.function import Function
+
 import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
-import torch
-
-import torch.nn as nn
 from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
 from saeco.components.features.linear_type import LinDecoder, LinEncoder
-
-from saeco.components.hooks.clipgrad import ClipGrad
 from saeco.components.metrics.metrics import Metrics
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.core import Seq
-
 from saeco.initializer import Initializer
-
 from saeco.misc import useif
-from saeco.sweeps import do_sweep, SweepableConfig
-from saeco.trainer.runner import TrainingRunner
-
-from torch.autograd.function import Function
+from saeco.sweeps import SweepableConfig
 
 
 class AttributedPositiveSum(Function):

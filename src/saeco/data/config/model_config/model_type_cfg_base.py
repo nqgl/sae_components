@@ -1,23 +1,13 @@
+from collections.abc import Iterable
 from functools import cached_property
+from typing import Protocol
 
-from nnsight import NNsight
-from pydantic import Field
 import torch
-
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    PreTrainedTokenizerFast,
-    PreTrainedTokenizer,
-)
-
-from saeco.data.config.locations import DATA_DIRS
+import torch.nn as nn
+from nnsight import NNsight
 
 from saeco.data.dict_batch import DictBatch
 from saeco.sweeps import SweepableConfig
-from typing import Protocol, runtime_checkable
-from typing import Iterable
-import torch.nn as nn
 
 
 class TokenizerProto(Protocol): ...

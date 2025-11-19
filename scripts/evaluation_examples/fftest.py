@@ -2,8 +2,9 @@
 import torch
 import tqdm
 from load import root_eval
-from saeco.misc.nnsite import getsite, setsite
 from torch import Tensor
+
+from saeco.misc.nnsite import getsite, setsite
 
 e = root_eval.average_aggregated_patching_effect_on_dataset(65)
 
@@ -78,7 +79,6 @@ def topk(fd, k=35):
 
 @torch.no_grad()
 def procedure(tokens, feat_id, offset=1):
-
     def patch_fn(acts):
         acts = acts.clone()
         acts[
@@ -133,7 +133,6 @@ def topk(fd, k=35):
 
 # %%
 if False:
-
     feat = 605
     fd1 = procedure(root_eval.docs[torch.arange(5, 6, 1)], feat)
     tk = topk(fd1)

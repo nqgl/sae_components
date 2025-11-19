@@ -1,37 +1,21 @@
 # %%
-from functools import wraps
-from pathlib import Path
 
 import nnsight
-import saeco.core as cl
 import torch
-
-from jaxtyping import Float, Int
 from load import root_eval
-from pydantic import BaseModel
-
-from rich.highlighter import Highlighter
-
-from saeco.architectures.anth_update import anth_update_model, cfg
-from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.storage.chunk import Chunk
-from saeco.misc.nnsite import getsite, setsite, tlsite_to_nnsite
-from saeco.trainer import Trainable
-from saeco.trainer.runner import TrainingRunner
-from saeco.trainer.train_cache import TrainCache
 from torch import Tensor
+
+from saeco.evaluation.evaluation import Evaluation
+from saeco.misc.nnsite import tlsite_to_nnsite
 
 # from transformers import GPT2LMHeadModel
 # %%
 nnsight_model = nnsight.LanguageModel("openai-community/gpt2", device_map="cuda")
 
-import einops
 
 # %%
 
 # %%
-import tqdm
 
 root_eval.nnsight_model = nnsight_model
 
@@ -45,8 +29,7 @@ def active(document, position):
 
 
 active(4, 5)
-from attr import define, field
-
+from attr import define
 from rich.console import Console
 
 console = Console()
@@ -179,7 +162,6 @@ class Explorer:
         self.view_top(tangent)
 
     def show_patch(self):
-
         def patch(acts):
             with torch.no_grad():
                 acts[:, self.pos, self.feat] *= 0.99
@@ -218,7 +200,6 @@ class Explorer:
         for i in range(self.pos):
             attrib = to_feat_attrib[i, self.pos, self.feat]
             if torch.any(attrib != 0):
-
                 print(tokstrs[i], attrib)
             else:
                 print(tokstrs[i])

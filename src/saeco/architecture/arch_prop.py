@@ -1,22 +1,19 @@
-import abc
+from collections import defaultdict
 from collections.abc import Callable
 from functools import cached_property
-from collections import defaultdict
 from typing import (
-    Any,
     TYPE_CHECKING,
+    Any,
     Literal,
     Protocol,
-    TypeVar,
-    Generic,
+    Self,
     overload,
     runtime_checkable,
 )
-import types
-from typing_extensions import Self, deprecated, override
+from warnings import deprecated
 
 if TYPE_CHECKING:
-    from .architecture import Architecture
+    pass
 
 # _T = TypeVar("_T")
 _fields_dict: dict[type, dict[type["arch_prop[Any]"], list[str]]] = defaultdict(
@@ -81,12 +78,12 @@ class SetupComplete(Protocol):
     _setup_complete: Literal[True] = True
 
 
-class arch_prop[_T](
+class arch_prop[T](
     cached_property,
 ):
     COLLECTED_FIELD_SINGULAR = False
 
-    def __init__(self, func: Callable[[Any], _T]) -> None:
+    def __init__(self, func: Callable[[Any], T]) -> None:
         super().__init__(func)
         _missing_name.add(self)
 
@@ -94,9 +91,9 @@ class arch_prop[_T](
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
 
     @overload
-    def __get__(self, instance: object, owner: type[Any] | None = None) -> _T: ...
+    def __get__(self, instance: object, owner: type[Any] | None = None) -> T: ...
 
-    def __get__(self, instance: object | None, owner: Any | None = None) -> _T | Self:
+    def __get__(self, instance: object | None, owner: Any | None = None) -> T | Self:
         if instance is not None:
             assert isinstance(instance, Instantiable) and isinstance(
                 instance, SetupComplete
@@ -137,23 +134,23 @@ class arch_prop[_T](
 
     @overload
     @classmethod
-    def get_from_fields(cls: type[NonSingular], inst: object) -> dict[str, _T]: ...
+    def get_from_fields(cls: type[NonSingular], inst: object) -> dict[str, T]: ...
     @overload
     @classmethod
-    def get_from_fields(cls: type[Singular], inst: object) -> _T: ...
+    def get_from_fields(cls: type[Singular], inst: object) -> T: ...
 
     @classmethod
-    def get_from_fields(cls, inst: object) -> dict[str, _T] | _T:
+    def get_from_fields(cls, inst: object) -> dict[str, T] | T:
         fields = cls.get_fields(inst.__class__)
         assert not cls.COLLECTED_FIELD_SINGULAR
         return {f: getattr(inst, f) for f in fields}
 
 
-class arch_prop_singular[_T](arch_prop[_T]):
+class arch_prop_singular[T](arch_prop[T]):
     COLLECTED_FIELD_SINGULAR = True
 
     @classmethod
-    def get_from_fields(cls, inst: object) -> _T:
+    def get_from_fields(cls, inst: object) -> T:
         fields = cls.get_fields(inst.__class__)
         assert cls.COLLECTED_FIELD_SINGULAR
         assert len(fields) == 1
@@ -196,7 +193,7 @@ class metric_prop[Metric_T: nn.Module](arch_prop[Metric_T]):
         return super().__get__(instance, owner)
 
 
-class _model_prop_base[_T](arch_prop[_T]):
+class _model_prop_base[T](arch_prop[T]):
     """
     Base class for model_prop and aux_model_prop.
     Adds on top of arch_prop: methods for attaching losses and metrics to a model.

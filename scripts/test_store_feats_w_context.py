@@ -1,23 +1,11 @@
 # %%
-from functools import wraps
-from pathlib import Path
 
 import nnsight
-import saeco.core as cl
 import torch
-
-from jaxtyping import Float, Int
-from pydantic import BaseModel
-
-from saeco.architectures.anth_update import anth_update_model, cfg
-from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.storage.chunk import Chunk
-from saeco.trainer import Trainable
-from saeco.trainer.runner import TrainingRunner
-from saeco.trainer.train_cache import TrainCache
+from jaxtyping import Int
 from torch import Tensor
 
+from saeco.evaluation.evaluation import Evaluation
 
 # ec = Evaluation.from_model_name(
 #     "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"
@@ -35,12 +23,9 @@ from rich.console import Console
 #     ),
 #     displace_existing=True,
 # )
-
-
 # %%
 # c = Chunk.load_chunks_from_dir(path, load_sparse_only=True)
 # print(len(c))
-from saeco.evaluation.saved_acts import SavedActs
 
 console = Console()
 console.print("Hello", style="rgb(175,0,255)")
@@ -61,7 +46,6 @@ color_vecs = [
 
 # %%
 
-from rich.highlighter import Highlighter
 
 color = color_vecs[0]
 
@@ -121,16 +105,12 @@ ec = Evaluation.from_cache_name("ec_test2")
 import einops
 
 # %%
-
-
 import tqdm
-
 
 # s = einops.einsum(feats, feats, "f d s, f2 d s -> f f2")
 
 
 def select_active():
-
     feature_ids = [14, 15, 16, 17, 18, 19]
     feats = ec.get_features(feature_ids)
     top_feats = [ec._get_top_activating(f, p=10) for f in feats]

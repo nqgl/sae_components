@@ -1,7 +1,8 @@
 # @dataclass
-from saeco.sweeps import SweepableConfig
-from typing import Optional
+
 from datasets import ReadInstruction
+
+from saeco.sweeps import SweepableConfig
 
 
 class SplitConfig(SweepableConfig):

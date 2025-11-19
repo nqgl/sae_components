@@ -1,29 +1,21 @@
 import torch
-
 import torch.nn as nn
+from saeco.architectures.topk.TopK import NormalizedResidL2Loss, TopK, TopKDead
 
 import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
-
-from saeco.initializer import Initializer
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
-
-from saeco.components.hooks.clipgrad import ClipGrad
-from saeco.core import Seq
-
-from saeco.misc import useif
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
-from saeco.sweeps import SweepableConfig
-from saeco.core.basic_ops import Sub
-
 from saeco.components.ops.fnlambda import Lambda
-from saeco.architectures.topk.TopK import NormalizedResidL2Loss, TopK, TopKDead
+from saeco.core import Seq
+from saeco.core.basic_ops import Sub
+from saeco.initializer import Initializer
+from saeco.misc import useif
+from saeco.sweeps import SweepableConfig
 
 
 class SilodTopKConfig(SweepableConfig):
@@ -116,4 +108,4 @@ def run(cfg):
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    from .config import cfg, PROJECT
+    pass

@@ -1,9 +1,7 @@
-from pydantic import BaseModel
-
-
-from typing import Any, Dict, Generic, Literal, Set, TypeVar
+from typing import Any, Literal, TypeVar
 
 import pydantic._internal._model_construction as mc
+from pydantic import BaseModel
 
 T = TypeVar("T")
 
@@ -56,8 +54,8 @@ class Swept[T](BaseModel, metaclass=SweptCheckerMeta):
         self,
         *,
         mode: str = "python",
-        include: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
-        exclude: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
+        include: set[int] | set[str] | dict[int, Any] | dict[str, Any] | None = None,
+        exclude: set[int] | set[str] | dict[int, Any] | dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
         by_alias: bool = False,
         exclude_unset: bool = False,

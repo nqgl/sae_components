@@ -1,3 +1,5 @@
+from typing import TypeGuard
+
 import torch
 import torch.nn as nn
 
@@ -5,9 +7,6 @@ import saeco.components as co
 from saeco.components.features.linear_type import LinDecoderMixin, LinEncoderMixin
 from saeco.core.basic_ops import Add
 from saeco.initializer.linear_factory import LinearFactory, Tied
-from .initializer_config import InitConfig
-
-from typing import TypeGuard
 
 
 def intersect_isinstance[T](obj, typ: type[T]) -> TypeGuard[T]:

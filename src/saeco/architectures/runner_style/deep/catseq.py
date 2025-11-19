@@ -1,27 +1,26 @@
 import torch.nn as nn
 
-from saeco.initializer.tools import (
-    reused,
-    weight,
-    bias,
-    mlp_layer,
-    layer,
-)
+import saeco.components as co
+import saeco.components.features.features as ft
 import saeco.core as cl
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
+    L1Penalty,
     L2Loss,
     SparsityPenaltyLoss,
 )
+from saeco.core import Seq
 
 # from saeco.core.linear import Bias, NegBias, Affine, MatMul
 from saeco.core.basic_ops import Add, MatMul, Sub
-from saeco.core import Seq
-import saeco.components.features.features as ft
-
-import saeco.components as co
 from saeco.core.collections.seq import CatSeq, CatSeqResid
+from saeco.initializer.tools import (
+    bias,
+    layer,
+    mlp_layer,
+    reused,
+    weight,
+)
 
 
 def deep_catseq(

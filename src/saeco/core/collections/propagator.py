@@ -1,8 +1,8 @@
-from types import FunctionType, LambdaType
-from typing import Any, Callable, Literal, overload, Protocol, runtime_checkable, Union
+from collections.abc import Callable
+from types import FunctionType
+from typing import Any, Protocol, Self, runtime_checkable
 
 from torch import Tensor
-from typing_extensions import Self
 
 from saeco.core.cache import Cache
 from saeco.core.collections.collection import Collection
@@ -12,6 +12,8 @@ from saeco.core.proc_appropriately import proc_appropriately
 @runtime_checkable
 class PropagateRule(Protocol):
     def __call__(self, x: Tensor, l: list[Tensor], **k) -> Tensor: ...
+
+
 @runtime_checkable
 class OutputRule(Protocol):
     def __call__(self, out: Tensor, x: Tensor, l: list[Tensor], **k) -> Tensor: ...

@@ -2,7 +2,6 @@
 from functools import wraps
 from pathlib import Path
 
-import saeco.core as cl
 import torch
 
 # from saeco.architectures.threshgate_gradjust.tg_grad_deep_model import (
@@ -10,13 +9,9 @@ import torch
 #     deep_tg_grad_sae,
 # )
 from pydantic import BaseModel
-
 from saeco.architectures.anth_update import anth_update_model, cfg
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.storage.chunk import Chunk
-from saeco.trainer import Trainable
+
 from saeco.trainer.runner import TrainingRunner
-from saeco.trainer.train_cache import TrainCache
 
 
 def timed(func, name=""):
@@ -69,7 +64,7 @@ tr.trainable.eval()
 import time
 
 # %%
-from saeco.evaluation.acts_cacher import ActsCacher, Chunk
+from saeco.evaluation.acts_cacher import ActsCacher
 
 
 @timed
@@ -183,7 +178,6 @@ color_vecs = [
 # %%
 
 llm = tr.cfg.train_cfg.data_cfg.model_cfg.model
-from rich.highlighter import Highlighter
 
 color = color_vecs[0]
 

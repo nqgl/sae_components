@@ -16,7 +16,6 @@ from .metadata_enrichment import (
     MetadataEnrichmentResponse,
     MetadataEnrichmentSortBy,
 )
-
 from .token_enrichment import (
     GeneInfo,
     TokenEnrichmentMode,

@@ -3,11 +3,10 @@ from functools import cached_property
 from pydantic import Field
 
 from saeco.components.sae_cache import SAECache
-
 from saeco.data.config.data_cfg import DataConfig
 from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
+
 from .OptimConfig import get_optim_cls
 from .schedule_cfg import RunSchedulingConfig
 

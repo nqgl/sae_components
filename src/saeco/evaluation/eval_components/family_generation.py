@@ -17,8 +17,7 @@ from saeco.evaluation.fastapi_models.Feature import Feature
 
 if TYPE_CHECKING:
     from ..evaluation import Evaluation
-from attrs import define, field
-
+from attrs import define
 from torch import Tensor
 
 INFOC_VERSION = 4
@@ -128,7 +127,6 @@ def bid_on_dists(dists):
 
 
 class FamilyGenerator:
-
     @torch.no_grad()
     def _get_feature_family_treesz(
         self: "Evaluation",
@@ -203,7 +201,6 @@ class FamilyGenerator:
     def _get_feature_families_unlabeled(
         self: "Evaluation", **kwargs
     ) -> GetFamiliesResponse:
-        from ..mst import Families, FamilyTreeNode
 
         # TODO .cached_call
         # levels = self._get_feature_family_treesz(**kwargs)
@@ -458,9 +455,8 @@ class FamilyGenerator:
             bound = (feat_probs >= fmin) & (feat_probs <= fmax)
             C[~bound] = 0
             C[:, ~bound] = 0
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import mst
 
         levels = []
         feat_counts = feat_counts.to(self.cuda)
@@ -525,9 +521,8 @@ class FamilyGenerator:
         C = self.get_C(
             doc_agg=doc_agg, use_D=use_D, threshold=threshold, freq_bounds=freq_bounds
         )
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import Families, mst
 
         levels = []
         families = []
@@ -666,9 +661,8 @@ class FamilyGenerator:
 
         # C[C.isnan()] = 0
         C[C < threshold] = 0
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import my_mst
 
         levels = []
         feat_counts = feat_counts.to(self.cuda)
@@ -745,9 +739,8 @@ class FamilyGenerator:
             bound = (feat_probs >= fmin) & (feat_probs <= fmax)
             C[~bound] = 0
             C[:, ~bound] = 0
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import Families, mst
 
         levels = []
         families = []
@@ -967,7 +960,7 @@ class FamilyGenerator:
         return C
 
 
-from typing import Callable
+from collections.abc import Callable
 
 
 @define

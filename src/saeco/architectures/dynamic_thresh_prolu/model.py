@@ -1,39 +1,29 @@
-import saeco.components as co
-import saeco.components.features.features as ft
-from saeco.components.features.optim_reset import FeatureParamType
-from saeco.components.resampling.resampler import ResampleableModule
-import saeco.core as cl
 import torch
-
 import torch.nn as nn
 from pydantic import Field
+
+import saeco.components as co
+import saeco.components.features.features as ft
+import saeco.core as cl
+from saeco.architecture import (
+    SAE,
+    Architecture,
+    loss_prop,
+    model_prop,
+)
 from saeco.components import (
     EMAFreqTracker,
-    FreqTracker,
-    L1Penalty,
     L2Loss,
     LinearDecayL1Penalty,
     SparsityPenaltyLoss,
 )
-
-from saeco.components.hooks.clipgrad import ClipGrad
-from saeco.components.losses.losses import TruncatedL2Loss
-from saeco.components.metrics.metrics import PreActMetrics
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
+from saeco.components.features.optim_reset import FeatureParamType
+from saeco.components.resampling.resampler import ResampleableModule
 from saeco.core import Seq
 from saeco.initializer import Initializer
-
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.architecture import (
-    Architecture,
-    arch_prop,
-    loss_prop,
-    model_prop,
-    aux_model_prop,
-    SAE,
-)
 
 # torch.backends.cudnn.benchmark = True
 

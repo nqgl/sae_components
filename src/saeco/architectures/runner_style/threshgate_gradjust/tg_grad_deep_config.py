@@ -2,11 +2,8 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import DataConfig, ModelConfig
 from saeco.data.config.data_config_definitions import gpt_2_block
-from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import InitConfig
-from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from setuptools import find_packages, setup, find_namespace_packages
+from setuptools import find_namespace_packages, setup
 
 requirements = Path("requirements.txt").read_text("utf-8").splitlines()
 

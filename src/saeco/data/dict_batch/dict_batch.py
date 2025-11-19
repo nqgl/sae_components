@@ -1,32 +1,25 @@
 from __future__ import annotations
 
-import sys
-
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
 from functools import cached_property
 from types import EllipsisType
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Generator,
     Generic,
-    get_args,
+    TypeVar,
+    dataclass_transform,
     get_origin,
     get_type_hints,
     overload,
-    Type,
-    TypeVar,
 )
 
 import torch
 from torch import Tensor
-from typing_extensions import dataclass_transform
 
 T = TypeVar("T")
-from warnings import deprecated, warn
 
-from typing_extensions import Self
+from typing import Self
 
 DictBatch_T = TypeVar("DictBatch_T", bound="DictBatch")
 
@@ -48,12 +41,12 @@ class NiceConvertedIter(Generic[DictBatch_T]):
         self,
         transform_gen: Callable[
             [Iterator[DictBatch_T]],
-            Iterator[DictBatch_T] | Generator[DictBatch_T, None, None],
+            Iterator[DictBatch_T] | Generator[DictBatch_T],
         ],
-    ) -> "NiceConvertedIter[DictBatch_T]":
+    ) -> NiceConvertedIter[DictBatch_T]:
         return NiceConvertedIter(transform_gen(self._iter))
 
-    def as_dataset(self) -> "NiceIterDataset[DictBatch_T]":
+    def as_dataset(self) -> NiceIterDataset[DictBatch_T]:
         return NiceIterDataset(self)
 
 
@@ -357,7 +350,7 @@ class DictBatch(dict):
 
     @staticmethod
     @dataclass_transform(kw_only_default=True)
-    def auto_other_fields(cls: Type[T]) -> Type[T]:
+    def auto_other_fields(cls: type[T]) -> type[T]:
         """
         Enhanced decorator that automatically populates OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS from annotations.
 
@@ -480,7 +473,7 @@ class DictBatch(dict):
     def reshape(self, *shape: int) -> Self:
         return self.apply_func(lambda x: x.reshape(*shape))
 
-    def set_split(self, sel: set[str] | list[str]) -> "SplitDictBatch[Self]":
+    def set_split(self, sel: set[str] | list[str]) -> SplitDictBatch[Self]:
         keys = set(self.keys())
         if sel - keys:
             raise ValueError(f"Keys {sel - keys} not found in {keys}")
@@ -602,8 +595,8 @@ if __name__ == "__main__":
             f"Error: {e}"
         )  # Error: Missing required tensor field 'labels' from TENSOR_DATA_FIELDS
 
-    def __or__(self, other: "DictBatch") -> "DictBatch":
+    def __or__(self, other: DictBatch) -> DictBatch:
         raise ValueError("ambiguous")
 
-    def __and__(self, other: "DictBatch") -> "DictBatch":
+    def __and__(self, other: DictBatch) -> DictBatch:
         raise ValueError("ambiguous")

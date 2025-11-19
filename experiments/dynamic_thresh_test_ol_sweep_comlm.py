@@ -1,3 +1,5 @@
+from comlm.utils import ComposerModelName
+
 from saeco.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshConfig,
     DynamicThreshSAE,
@@ -8,10 +10,6 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data.config.data_cfg import DataConfig
-from saeco.data.config.data_config_definitions import (
-    gemma_2_2b_openwebtext_bf16,
-    gpt_2_block,
-)
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
@@ -22,7 +20,6 @@ from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import EarlyStoppingBounds, TrainConfig
-from comlm.utils import ComposerModelName
 
 
 def s(x, *a):
@@ -109,7 +106,7 @@ cfg = RunConfig[DynamicThreshConfig](
                     1000: 0.35,
                     2000: 0.3,
                 }
-                | {i: 3.0 for i in range(0, 4000, 100)},
+                | dict.fromkeys(range(0, 4000, 100), 3.0),
                 "L0": {
                     1000: 500.0,
                     4000: 70.0,

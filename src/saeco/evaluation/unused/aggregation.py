@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable
 
 from attr import define
 
@@ -16,6 +16,7 @@ class AggregationType(Enum):
 class Aggregation:
     agg: AggregationType | Callable = lambda x: x
     e = 2
+
     def aggregate(self, dim):
         return dim
 
@@ -36,8 +37,13 @@ class Aggregation:
             results._max(c_agg)
         else:
             ...
+
+
 import abc
-abc.ABC # comment
+
+abc.ABC  # comment
+
+
 def afn(a, b, c):
     return a + b + c
 
@@ -53,22 +59,23 @@ a.agg = 2
 a.e = 5
 v = a.e
 
-def Afunc(x):
-    ...
-f1 = afn(1,2,3)
+
+def Afunc(x): ...
+
+
+f1 = afn(1, 2, 3)
 f2 = Afunc(2)
 a.aggregate(2)
 a = 2
 b = a + 23
 
+
 class Cls:
-    def __init__(self):
-        ...
+    def __init__(self): ...
     @classmethod
     def make_class(cls):
         return cls()
 
 
-
-c= Cls()
+c = Cls()
 c2 = Cls.make_class()

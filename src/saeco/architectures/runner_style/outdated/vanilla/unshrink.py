@@ -1,20 +1,20 @@
 import torch
 import torch.nn as nn
 
-from saeco.initializer import Initializer
+import saeco.components as co
+import saeco.components.features.features as ft
 import saeco.core as cl
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
+    L1Penalty,
     L2Loss,
     SparsityPenaltyLoss,
 )
+from saeco.core import Seq
 
 # from saeco.core.linear import Bias, NegBias, Affine, MatMul
 from saeco.core.basic_ops import Add, Sub
-from saeco.core import Seq
-import saeco.components.features.features as ft
-import saeco.components as co
+from saeco.initializer import Initializer
 
 
 class SaveScale(cl.Module):

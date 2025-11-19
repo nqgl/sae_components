@@ -1,13 +1,13 @@
 from functools import cached_property
 from pathlib import Path
-from attrs import define
 from typing import TYPE_CHECKING, Any
-from saeco.data.dict_batch.dict_batch import DictBatch
-from saeco.data.training_data.tokens_data_interface import TokensDataInterface
+
+from attrs import define
 
 from saeco.data.config.split_config import SplitConfig
-
+from saeco.data.dict_batch.dict_batch import DictBatch
 from saeco.data.piler.dict_piler import DictPiler
+from saeco.data.training_data.tokens_data_interface import TokensDataInterface
 
 if TYPE_CHECKING:
     from saeco.data.config.data_cfg import DataConfig

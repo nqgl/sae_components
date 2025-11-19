@@ -1,11 +1,10 @@
+from collections.abc import Iterable
 from contextlib import contextmanager
 from functools import cached_property
-from typing import Iterable
 
 import torch
 import torch.utils
 import tqdm
-
 from schedulefree import AdamWScheduleFree
 from torch.amp.grad_scaler import GradScaler
 
@@ -13,6 +12,7 @@ from saeco.core import Cache
 from saeco.misc.paths import SAVED_MODELS_DIR
 from saeco.mlog import mlog
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
+
 from .call_training_hooks import (
     do_post_backward,
     do_post_forward,
@@ -21,7 +21,6 @@ from .call_training_hooks import (
 )
 from .l0targeter import TARGETER_TYPES
 from .OptimConfig import get_optim_cls
-from .recons import get_recons_loss
 from .run_config import RunConfig
 from .train_cache import TrainCache
 from .train_config import TrainConfig

@@ -1,46 +1,25 @@
-from typing import Iterator
+from collections.abc import Callable
+
 import torch
-
 import torch.nn as nn
-
-import saeco.components as co
-import saeco.components.features.features as ft
-from saeco.components.hierarchical import get_acts_only
-from saeco.components.hierarchical import ActsGateSubstitutor
-import saeco.core as cl
-
-from saeco.initializer import Initializer
-from saeco.components import (
-    L1Penalty,
-    EMAFreqTracker,
-    L2Loss,
-    SparsityPenaltyLoss,
-)
-
-from saeco.components.hooks.clipgrad import ClipGrad
-from saeco.core import Seq
-from saeco.components.resampling.freq_tracker.freq_tracker import get_freq_trackers
-from saeco.misc import useif
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
-from saeco.sweeps import SweepableConfig
-from saeco.components.threshgate import (
-    ThreshGate,
-    SoftenedThreshGate,
-)
+from pydantic import BaseModel
 
 # TODO
 # add feature to specify dominant encoder
 # oh, we've actually got to just fully disable resampling on the earlier layers
-
 # TODO
 # do an "update optim" step when incrementing the level
+from saeco.architectures.anth_update.model import AnthUpdateConfig, anth_update_model
+from saeco.architectures.topk.model import TopKConfig, topk_sae
 
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.architectures.anth_update.model import anth_update_model, AnthUpdateConfig
-
-from saeco.architectures.topk.model import topk_sae, TopKConfig
-from pydantic import BaseModel
-from typing import Callable
+import saeco.core as cl
+from saeco.components import (
+    L2Loss,
+    SparsityPenaltyLoss,
+)
+from saeco.components.hierarchical import ActsGateSubstitutor, get_acts_only
+from saeco.initializer import Initializer
+from saeco.sweeps import SweepableConfig
 
 
 class LLModelSpec(BaseModel):
@@ -139,7 +118,6 @@ class HSAELayer(cl.Module):
         return acts
 
 
-from saeco.components.features.features_param import get_featuresparams
 
 
 class HSAE(cl.Module):
@@ -279,4 +257,4 @@ from saeco.sweeps import do_sweep
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    from .config import cfg, PROJECT
+    pass

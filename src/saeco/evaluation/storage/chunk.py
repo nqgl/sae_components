@@ -1,16 +1,16 @@
-from functools import cached_property
 
 from pathlib import Path
 
 import torch
-from attrs import define, field
+from attrs import define
 from jaxtyping import Float, Int
-from saeco.evaluation.saved_acts_config import CachingConfig
 from safetensors.torch import load_file, save_file
 
+from saeco.evaluation.saved_acts_config import CachingConfig
+
+from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from ..filtered import Filter, FilteredTensor
 from ..named_filter import NamedFilter
-from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 
 
 @define

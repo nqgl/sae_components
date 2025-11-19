@@ -8,7 +8,6 @@ from saeco.components.resampling.anthropic_resampling import (
     OptimResetValuesConfig,
 )
 from saeco.data.config.data_config_definitions import (
-    gemma_2_2b_openwebtext_bf16,
     gpt_2_block,
 )
 from saeco.initializer import InitConfig
@@ -69,7 +68,7 @@ cfg = RunConfig[DynamicThreshConfig](
                     1000: 0.35,
                     2000: 0.3,
                 }
-                | {i: 3.0 for i in range(0, 4000, 100)},
+                | dict.fromkeys(range(0, 4000, 100), 3.0),
                 "L0": {
                     1000: 500.0,
                     4000: 70.0,

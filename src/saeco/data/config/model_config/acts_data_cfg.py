@@ -1,8 +1,7 @@
+import torch
+
 from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
-
-
-import torch
 
 
 class ActsDataConfig(SweepableConfig):

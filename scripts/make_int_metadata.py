@@ -1,4 +1,5 @@
 import torch
+
 from saeco.evaluation import Evaluation
 
 STORAGE_NAME = "stored_acts"

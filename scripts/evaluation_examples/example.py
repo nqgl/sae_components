@@ -1,5 +1,6 @@
 import torch
-from saeco.evaluation import CachingConfig, Evaluation
+
+from saeco.evaluation import Evaluation
 
 MODEL_NAME = "sae sweeps/dynamic_thresh_sae0.001[50.0]-10384/50001"  # relative path from ~/workspace/saved_models/ to the SAE, minus the extensions
 STORAGE_NAME = "stored_acts"
@@ -114,7 +115,10 @@ top_tensor = root.top_activating_examples(FEAT_NUM, p=0.1)
 metadata = root.metadatas["average active features"]
 top_tensor_filtered = top_tensor.filter_inactive_docs()
 filtered_metadata = top_tensor_filtered.to_filtered_like_self(
-    metadata, presliced=False, premasked=False, ndim=1  # might change this
+    metadata,
+    presliced=False,
+    premasked=False,
+    ndim=1,  # might change this
 )
 
 # simpler but only works on root Evaluations

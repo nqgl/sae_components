@@ -2,7 +2,6 @@
 from functools import wraps
 from pathlib import Path
 
-import saeco.core as cl
 import torch
 from pydantic import BaseModel
 
@@ -11,11 +10,8 @@ from saeco.architectures.threshgate_gradjust.tg_grad_deep_model import (
     cfg,
     deep_tg_grad_sae,
 )
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.storage.chunk import Chunk
-from saeco.trainer import Trainable
+
 from saeco.trainer.runner import TrainingRunner
-from saeco.trainer.train_cache import TrainCache
 
 
 def timed(func, name=""):
@@ -60,7 +56,7 @@ tr.trainable.eval()
 import time
 
 # %%
-from saeco.evaluation.acts_cacher import ActsCacher, Chunk
+from saeco.evaluation.acts_cacher import ActsCacher
 
 
 @timed
@@ -207,7 +203,6 @@ active_tensor_documents = torch.cat(
 # feat_ids = ids[2]
 # %%
 # torch.ones().to_sparse(,)
-import colorama
 from rich.console import Console
 
 console = Console()
@@ -259,7 +254,6 @@ def index_sparse(tensor: torch.Tensor, index):
             # else:
             #     mask &= (ids[i] >= idx.start) & (ids[i] < idx.stop)
         elif isinstance(idx, torch.Tensor) and idx.ndim >= 1:
-
             if tensor.dtype == torch.bool:
                 ...
                 assert False

@@ -1,5 +1,4 @@
 import saeco.core as cl
-import saeco.components as co
 
 
 class IfTraining(cl.Module):

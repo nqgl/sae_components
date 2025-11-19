@@ -696,27 +696,19 @@
 # =========================
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import (
     Any,
     ClassVar,
-    Dict,
     get_args,
     get_origin,
-    Iterable,
-    Iterator,
-    Mapping,
-    overload,
-    Sequence,
-    Tuple,
-    Union,
 )
 
 import torch
 from torch import Tensor
 
 from saeco.data.dict_batch.dict_batch import DictBatch
-
 
 # ---------- Dim descriptors ----------
 
@@ -781,11 +773,11 @@ class Dim:
 class DimUnion:
     __slots__ = ("options",)
 
-    def __init__(self, options: Tuple[Dim, ...] | Sequence[Dim]):
+    def __init__(self, options: tuple[Dim, ...] | Sequence[Dim]):
         opts = tuple(options)
         if len(opts) < 2:
             raise ValueError("DimUnion requires >=2 dims")
-        self.options: Tuple[Dim, ...] = opts
+        self.options: tuple[Dim, ...] = opts
 
     def __or__(self, other: Dim) -> DimUnion:
         if isinstance(other, Dim):
@@ -803,18 +795,18 @@ class AxisSpec:
 
     kind: str  # "axis" | "broadcast" | "union"
     dim: Dim | None = None
-    union: Tuple[Dim, ...] | None = None
+    union: tuple[Dim, ...] | None = None
 
     @staticmethod
-    def axis(d: Dim) -> "AxisSpec":
+    def axis(d: Dim) -> AxisSpec:
         return AxisSpec("axis", dim=d)
 
     @staticmethod
-    def broadcast(d: Dim) -> "AxisSpec":
+    def broadcast(d: Dim) -> AxisSpec:
         return AxisSpec("broadcast", dim=d)
 
     @staticmethod
-    def union(ds: Sequence[Dim]) -> "AxisSpec":
+    def union(ds: Sequence[Dim]) -> AxisSpec:
         return AxisSpec("union", union=tuple(ds))
 
 
@@ -903,7 +895,7 @@ class Constraint:
     left: Dim
     right: Expr
 
-    def try_solve_into(self, env: Dict[Dim, int]) -> bool:
+    def try_solve_into(self, env: dict[Dim, int]) -> bool:
         if self.left in env:
             return False
         # compute RHS if possible
@@ -926,7 +918,7 @@ class InstDim:
         self.inst = inst
         self.dim = dim
 
-    def __and__(self, other: "InstDim | Dim") -> "PairedInstDims":
+    def __and__(self, other: InstDim | Dim) -> PairedInstDims:
         other_dim = other.dim if isinstance(other, InstDim) else other
         return PairedInstDims(self.inst, (self.dim, other_dim))
 
@@ -943,7 +935,7 @@ class InstDim:
 class PairedInstDims:
     __slots__ = ("inst", "dims")
 
-    def __init__(self, inst: DictBatch, dims: Tuple[Dim, Dim]):
+    def __init__(self, inst: DictBatch, dims: tuple[Dim, Dim]):
         self.inst = inst
         self.dims = dims
 
@@ -1018,7 +1010,7 @@ def _axis_for_dim(
 # Public decorator to enable dims on a DictBatch subclass
 def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
     # Gather per-field axis specs
-    cls._FIELD_DIMS: Dict[str, list[AxisSpec]] = {}
+    cls._FIELD_DIMS: dict[str, list[AxisSpec]] = {}
     hints = getattr(cls, "__annotations__", {})
     for name, hint in hints.items():
         if name in getattr(cls, "TENSOR_DATA_FIELDS", ()) or name in getattr(
@@ -1051,9 +1043,9 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
     cls._DIM_CONSTRAINTS = constraints
 
     # Attach helpers to the class
-    def _dim_env(self: DictBatch) -> Dict[Dim, int]:
+    def _dim_env(self: DictBatch) -> dict[Dim, int]:
         # cache lazily per-instance
-        env: Dict[Dim, int] = {}
+        env: dict[Dim, int] = {}
         # 1) fill from const dims
         for d in getattr(self.__class__, "_registered_dims", {}).values():
             if d._const_len is not None:
@@ -1160,7 +1152,7 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
         Accept Dim instances or their names (str).
         """
         # normalize keys (Dim or str) -> Dim
-        key2dim: Dict[Dim, Any] = {}
+        key2dim: dict[Dim, Any] = {}
         for k, v in indexers.items():
             if isinstance(k, Dim):
                 key2dim[k] = v
@@ -1173,7 +1165,7 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
                 raise TypeError("isel keys must be Dim or str")
 
         env = self._dim_env()
-        out_data: Dict[str, Tensor] = {}
+        out_data: dict[str, Tensor] = {}
         for field, t in self.items():
             specs = self.__class__._FIELD_DIMS.get(field)
             if specs is None:
@@ -1209,7 +1201,7 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
     def gather_dim(self: DictBatch, dim: Dim | str, indices: Tensor) -> DictBatch:
         d = dim if isinstance(dim, Dim) else self.__class__._registered_dims[dim]
         env = self._dim_env()
-        out_data: Dict[str, Tensor] = {}
+        out_data: dict[str, Tensor] = {}
         for field, t in self.items():
             specs = self.__class__._FIELD_DIMS.get(field)
             if specs is None:
@@ -1234,11 +1226,11 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
 
     # ---- cat/stack on named dims ----
     @classmethod
-    def cat_named(cls, batches: list["DictBatch"], dim: Dim | str) -> "DictBatch":
+    def cat_named(cls, batches: list[DictBatch], dim: Dim | str) -> DictBatch:
         d = dim if isinstance(dim, Dim) else cls._registered_dims[dim]
         cls._validate_keysets(batches)
         envs = [b._dim_env() for b in batches]
-        out: Dict[str, Tensor] = {}
+        out: dict[str, Tensor] = {}
         for key in batches[0].keys():
             specs = getattr(cls, "_FIELD_DIMS", {}).get(key)
             if specs is None:
@@ -1270,11 +1262,11 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
         return cls.construct_with_other_data(out, cls._merge_other_data(batches))
 
     @classmethod
-    def stack_named(cls, batches: list["DictBatch"], dim: Dim | str) -> "DictBatch":
+    def stack_named(cls, batches: list[DictBatch], dim: Dim | str) -> DictBatch:
         d = dim if isinstance(dim, Dim) else cls._registered_dims[dim]
         cls._validate_keysets(batches)
         env = batches[0]._dim_env()
-        out: Dict[str, Tensor] = {}
+        out: dict[str, Tensor] = {}
         for key in batches[0].keys():
             specs = getattr(cls, "_FIELD_DIMS", {}).get(key)
             if specs is None:

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import torch
+
 from saeco.data.dict_batch import DictBatch
 
 

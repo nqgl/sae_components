@@ -1,19 +1,11 @@
 from typing import TYPE_CHECKING
 
-import einops
 import torch
 import tqdm
 
-from saeco.evaluation.cache_version import cache_version
 from saeco.evaluation.fastapi_models.families_draft import (
     Family,
-    FamilyLevel,
-    FamilyRef,
-    GetFamiliesResponse,
-    ScoredFamilyRef,
-    ScoredFeature,
 )
-from saeco.evaluation.fastapi_models.Feature import Feature
 from saeco.evaluation.filtered import FilteredTensor
 
 if TYPE_CHECKING:
@@ -145,7 +137,6 @@ class FamilyOps:
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
     ):
-
         return self.batched_top_activations_and_metadatas(
             features=self.get_family_psuedofeature_tensors(
                 families=families, aggregation_method=aggregation_method

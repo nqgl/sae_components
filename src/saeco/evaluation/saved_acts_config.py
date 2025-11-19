@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel
-from saeco.architecture.arch_reload_info import ArchStoragePaths
 
 
 class CachingConfig(BaseModel):

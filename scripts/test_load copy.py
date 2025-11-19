@@ -1,11 +1,11 @@
 # %%
 from pathlib import Path
-from saeco.trainer import Trainable
-from saeco.architectures.dg_test.dg_gate import cfg, gated_dg_sae
-from pydantic import BaseModel
-from saeco.trainer.runner import TrainingRunner
-import saeco.core as cl
+
 import torch
+from pydantic import BaseModel
+from saeco.architectures.dg_test.dg_gate import cfg, gated_dg_sae
+
+from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_cache import TrainCache
 
 modelss = Path.home() / "workspace/saved_models/"
@@ -68,7 +68,6 @@ if False:
 # %%
 
 # %%
-from transformers import GPT2Model
 
 # subj_model = GPT2Model.from_pretrained("gpt2")
 # %%
@@ -127,7 +126,6 @@ nnsm.transformer.wte
 # %%
 import time
 
-
 nnsight_name_0 = "transformer.h.1.ln_1.input"
 nnsight_name_1 = "transformer.h.11.ln_1.input"
 
@@ -143,7 +141,6 @@ def test(name):
 
 
 with torch.inference_mode():
-
     test(nnsight_name_0)
     test(nnsight_name_1)
     test(nnsight_name_0)
@@ -152,7 +149,6 @@ with torch.inference_mode():
 
 # %%
 with torch.inference_mode():
-
     with nnsm.trace(next(tg)):
         acts2 = acc(nnsm, "transformer.h.1.ln_1.input").save()
         acc(nnsm, "transformer.h.2.ln_1").input = "abc"
@@ -161,7 +157,6 @@ acts2.value
 
 
 # %%
-import time
 
 
 def getname(layer):
@@ -177,7 +172,7 @@ def test(layer, n=10):
                 with nnsm.trace(next(tg)):
                     zacts = acc(nnsm, getname(layer)).input.save()
                     # acc(nnsm, getname(layer + 1)).input = "abc"
-            except Exception as e:
+            except Exception:
                 # print(e)
                 pass
             z = zacts.value[0][0] + 1

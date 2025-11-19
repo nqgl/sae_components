@@ -1,5 +1,8 @@
+from collections.abc import Callable
+from typing import Protocol
+
 import torch
-from typing import Protocol, Optional, Callable
+
 from .schedule_cfg import RunSchedulingConfig
 
 
@@ -162,10 +165,9 @@ class AMultiEma(MultiEma):
 class L0Targeter(L0TargeterProto):
     def __init__(
         self,
-        l0_target: Optional[float],
+        l0_target: float | None,
         schedule: RunSchedulingConfig,
     ):
-
         self.target = l0_target
         self.schedule = schedule
 
@@ -342,7 +344,7 @@ class L0Targeter(L0TargeterProto):
 class BasicL0Targeter(L0TargeterProto):
     def __init__(
         self,
-        l0_target: Optional[float],
+        l0_target: float | None,
         schedule: RunSchedulingConfig,
     ):
         self.target = l0_target
@@ -360,7 +362,7 @@ class BasicL0Targeter(L0TargeterProto):
 class GentleBasicL0Targeter(L0TargeterProto):
     def __init__(
         self,
-        l0_target: Optional[float],
+        l0_target: float | None,
         schedule: RunSchedulingConfig,
     ):
         self.target = l0_target

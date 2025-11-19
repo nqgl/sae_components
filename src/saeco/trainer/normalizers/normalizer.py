@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Iterable, Iterator, Protocol
+from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
@@ -7,7 +7,6 @@ from jaxtyping import Float
 from torch import Tensor
 
 import saeco.core as cl
-
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 
 
@@ -237,10 +236,6 @@ from enum import IntEnum
 #     primed: bool
 #     running: bool
 #     batch: bool
-
-
-from jaxtyping import Float
-
 from saeco.sweeps import SweepableConfig
 
 

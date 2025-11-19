@@ -1,12 +1,10 @@
+from abc import abstractmethod
+
+import saeco.core as cl
 from saeco.components.sae_cache import SAECache
 
 
-import saeco.core as cl
-from abc import abstractmethod
-
-
 class Penalty(cl.PassThroughModule):
-
     def process_data(self, x, *, cache: SAECache, **kwargs):
         cache.sparsity_penalty = self.penalty(x, cache=cache)
 

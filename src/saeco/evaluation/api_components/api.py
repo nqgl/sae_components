@@ -1,9 +1,7 @@
 import json
-
 from pathlib import Path
 
 from fastapi import FastAPI
-
 from fastapi.middleware.cors import CORSMiddleware
 
 from ..evaluation import Evaluation
@@ -18,7 +16,6 @@ from ..fastapi_models import (
     LogitEffectsRequest,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
-    TokenEnrichmentMode,
     TokenEnrichmentRequest,
     TokenEnrichmentResponse,
     TokenEnrichmentResponseItem,
@@ -30,16 +27,12 @@ from ..fastapi_models import (
 from ..fastapi_models.families_draft import (
     ActivationsOnDoc,
     ActivationsOnDocsRequest,
-    Family,
-    FamilyLevel,
     FamilyTopActivatingExamplesQuery,
-    Feature,
     GetFamiliesRequest,
     GetFamiliesResponse,
     SetFamilyLabelRequest,
     TopFamilyOverlappingExamplesResponseDoc,
 )
-from ..fastapi_models.Feature import Feature
 from ..fastapi_models.intersection_filter import GetIntersectionFilterKey
 
 LLM = True
@@ -66,7 +59,7 @@ def create_app(app: FastAPI, root: Evaluation):
     def get_top_activating_examples(
         query: TopActivatingExamplesQuery,
     ) -> TopActivatingExamplesResult:
-        print(f"calling top_activating_examples")
+        print("calling top_activating_examples")
         evaluation = query.filter(root)
         docs, acts, metadatas, doc_indices = evaluation.top_activations_and_metadatas(
             query.feature,
@@ -120,7 +113,7 @@ def create_app(app: FastAPI, root: Evaluation):
     def get_metadata_enrichment(
         query: MetadataEnrichmentRequest,
     ) -> MetadataEnrichmentResponse:
-        print(f"calling top_activating_examples")
+        print("calling top_activating_examples")
         ev = query.filter(root)
         return ev.top_activations_metadata_enrichments(
             feature=query.feature,
@@ -132,7 +125,7 @@ def create_app(app: FastAPI, root: Evaluation):
 
     @app.put("/token_enrichment")
     def get_token_enrichment(query: TokenEnrichmentRequest) -> TokenEnrichmentResponse:
-        print(f"calling token_enrichment")
+        print("calling token_enrichment")
         ev = query.filter(root)
         tokens, counts, normalized_counts, scores = (
             ev.top_activations_token_enrichments(
@@ -190,7 +183,7 @@ def create_app(app: FastAPI, root: Evaluation):
     def get_feature_active_docs_count(
         query: FeatureActiveDocsRequest,
     ) -> FeatureActiveDocsResponse:
-        print(f"calling feature_active_docs_count")
+        print("calling feature_active_docs_count")
         ev = query.filter(root)
         return FeatureActiveDocsResponse(
             num_active_docs=ev.num_active_docs_for_feature(query.feature)
@@ -198,7 +191,7 @@ def create_app(app: FastAPI, root: Evaluation):
 
     @app.put("/top_coactivating_features")
     def get_top_coactive_features(query: CoActivationRequest):
-        print(f"calling top_coactivating_features")
+        print("calling top_coactivating_features")
         ev = query.filter(root)
         ids, values = ev.top_coactivating_features(
             feature_id=query.feature_id,
@@ -214,7 +207,7 @@ def create_app(app: FastAPI, root: Evaluation):
 
     @app.put("/get_families")
     def get_families(query: GetFamiliesRequest) -> GetFamiliesResponse:
-        print(f"calling get_families")
+        print("calling get_families")
         ev = query.filter(root)
         return ev.get_feature_families()
 
@@ -222,7 +215,7 @@ def create_app(app: FastAPI, root: Evaluation):
     def get_family_top_activating_examples(
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopActivatingExamplesResult]:
-        print(f"calling family_top_activating_examples")
+        print("calling family_top_activating_examples")
         ev = query.filter(root)
         all_families = ev.get_feature_families()
 
@@ -283,7 +276,7 @@ def create_app(app: FastAPI, root: Evaluation):
     def get_family_top_overlapping_examples(
         query: FamilyTopActivatingExamplesQuery,
     ) -> list[TopFamilyOverlappingExamplesResponseDoc]:
-        print(f"calling family_top_overlapping_examples")
+        print("calling family_top_overlapping_examples")
         ev = query.filter(root)
         all_families = ev.get_feature_families()
 
@@ -324,7 +317,7 @@ def create_app(app: FastAPI, root: Evaluation):
     def get_families_activations_on_docs(
         query: ActivationsOnDocsRequest,
     ) -> list[ActivationsOnDoc]:
-        print(f"calling get_families_activations_on_docs")
+        print("calling get_families_activations_on_docs")
         ev = query.filter(root)
         all_families = ev.get_feature_families()
 
@@ -355,7 +348,7 @@ def create_app(app: FastAPI, root: Evaluation):
 
     @app.put("/init_all_families")
     def init_all_families(query: FilterableQuery, batches=None) -> None:
-        print(f"calling init_all_families")
+        print("calling init_all_families")
         ev = query.filter(root)
         all_families = ev.get_feature_families()
         families = [
@@ -365,7 +358,7 @@ def create_app(app: FastAPI, root: Evaluation):
 
     @app.put("/get_intersection_filter_key")
     def get_intersection_filter_key(query: GetIntersectionFilterKey) -> str:
-        print(f"calling get_intersection_filter_key")
+        print("calling get_intersection_filter_key")
         key = root.get_metadata_intersection_filter_key(query.metadatas_values)
 
         if query.initialize_families:
@@ -374,12 +367,12 @@ def create_app(app: FastAPI, root: Evaluation):
 
     @app.put("/get_metadata_names")
     def get_metadata_names() -> list[str]:
-        print(f"calling get_metadata_names")
+        print("calling get_metadata_names")
         return root.metadatas.keys()
 
     @app.put("/get_metadata_key_names")
     def get_metadata_key_names(metadata: str) -> list[str] | None:
-        print(f"calling get_metadata_key_names")
+        print("calling get_metadata_key_names")
         md = root.metadatas.get(metadata)
         if md.info.tostr is None:
             return None
@@ -387,13 +380,13 @@ def create_app(app: FastAPI, root: Evaluation):
 
     @app.put("/set_family_label")
     def set_family_label(query: SetFamilyLabelRequest) -> None:
-        print(f"calling set_family_label")
+        print("calling set_family_label")
         ev = query.filter(root)
         ev.set_family_label(query.family, query.label)
 
     @app.put("/set_feature_label")
     def set_feature_label(feat_id: int, label: str) -> None:
-        print(f"calling set_feature_label")
+        print("calling set_feature_label")
         root.set_feature_label(feat_id, label)
 
     @app.put("/patching_logit_effects")
@@ -404,7 +397,7 @@ def create_app(app: FastAPI, root: Evaluation):
         #     neg_tokens=[str(i) for i in range(query.k)],
         #     neg_values=list(range(query.k)),
         # )
-        print(f"calling patching_logit_effects")
+        print("calling patching_logit_effects")
         ev = query.filter(root)
         effects = ev.average_aggregated_patching_effect_on_dataset(
             feature_id=query.feature,

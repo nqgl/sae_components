@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import Union
 
 import torch
 from attrs import Converter, define, field, validators
@@ -16,7 +16,7 @@ def convert(fld, takes_self=False, takes_field=False):
     return converter_wrapper
 
 
-def slice_shape(input_shape, slices: list[slice]) -> Tuple[int, ...]:
+def slice_shape(input_shape, slices: list[slice]) -> tuple[int, ...]:
     if isinstance(slices, slice):
         slices = [slices]
     out_shape = []
@@ -38,7 +38,7 @@ def slice_shape(input_shape, slices: list[slice]) -> Tuple[int, ...]:
 class Filter:
     slices: list[slice | int] = field()
     _mask: Tensor | torch.device = field()
-    shape: Tuple[int, ...] = field()
+    shape: tuple[int, ...] = field()
 
     @property
     def mask(self):
@@ -292,9 +292,9 @@ class FilteredTensor:
     def __attrs_post_init__(self):
         if self.filter._mask is not None:
             assert tuple(self.value.shape) == self.filter._inner_shape()
-            assert (
-                self.value.shape[0] == self.filter.mask.sum()
-            ), f"Value shape at dimension 0 ({self.value.shape}) does not match number of mask elements ({self.filter.mask.sum()})"
+            assert self.value.shape[0] == self.filter.mask.sum(), (
+                f"Value shape at dimension 0 ({self.value.shape}) does not match number of mask elements ({self.filter.mask.sum()})"
+            )
         else:
             assert True  # TODO
             # self.value.shape[0] == self.filter
@@ -319,7 +319,6 @@ class FilteredTensor:
 
     @classmethod
     def from_unmasked_value(cls, value: Tensor, filter: Filter, presliced=False):
-
         if filter is None:
             return cls.from_value_and_mask(value, filter)
         if isinstance(filter, NamedFilter):
@@ -520,7 +519,7 @@ class FilteredTensor:
         return self.value.is_sparse
 
     @property
-    def shape(self) -> Tuple[int, ...]:
+    def shape(self) -> tuple[int, ...]:
         return self.filter.shape
 
     def cuda(self) -> "FilteredTensor":

@@ -1,21 +1,14 @@
+import torch
+import torch.nn as nn
+from saeco.architectures.threshgate_gradjust.other_lin import OtherLinear
+from saeco.architectures.threshgate_gradjust.threshgrad import BinaryEncoder, GTTest
+
 import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
-import torch
-
-import torch.nn as nn
-
-from saeco.architectures.threshgate_gradjust.other_lin import OtherLinear
-from saeco.architectures.threshgate_gradjust.threshgrad import BinaryEncoder, GTTest
-from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
-
-from saeco.components.hooks.clipgrad import ClipGrad
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
+from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.core import Seq
-
 from saeco.initializer import Initializer
-from saeco.initializer.tools import bias, reused, weight
-
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 
@@ -256,4 +249,4 @@ def run(cfg):
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    from .tg_grad_deep_config import cfg, PROJECT
+    pass

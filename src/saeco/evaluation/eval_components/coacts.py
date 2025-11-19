@@ -3,26 +3,6 @@ from typing import TYPE_CHECKING
 import einops
 import torch
 import tqdm
-from saeco.evaluation.cache_version import cache_version
-from saeco.evaluation.fastapi_models.families_draft import (
-    Family,
-    FamilyLevel,
-    FamilyRef,
-    GetFamiliesResponse,
-    ScoredFamilyRef,
-    ScoredFeature,
-)
-from saeco.evaluation.fastapi_models.Feature import Feature
-from saeco.evaluation.fastapi_models.metadata_enrichment import (
-    MetadataEnrichmentLabelResult,
-    MetadataEnrichmentResponse,
-    MetadataEnrichmentSortBy,
-)
-from saeco.evaluation.fastapi_models.token_enrichment import (
-    TokenEnrichmentMode,
-    TokenEnrichmentSortBy,
-)
-from saeco.evaluation.filtered import FilteredTensor
 from torch import Tensor
 
 if TYPE_CHECKING:

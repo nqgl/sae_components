@@ -52,8 +52,6 @@ def get_param_parent_module(param, model: nn.Module):
 
 from enum import IntEnum
 
-from saeco.sweeps import SweepableConfig
-
 
 class ResampleType(IntEnum):
     enc_in = 0
@@ -61,10 +59,6 @@ class ResampleType(IntEnum):
     model_in = 2
 
 
-from saeco.components.features.optim_reset import (
-    OptimResetValues,
-    OptimResetValuesConfig,
-)
 
 
 class AnthResamplerConfig(ResamplerConfig):

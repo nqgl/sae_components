@@ -1,8 +1,7 @@
 from functools import cached_property
 
-from nnsight import LanguageModel, NNsight
 import torch
-
+from nnsight import NNsight
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -11,7 +10,6 @@ from transformers import (
 )
 
 from saeco.data.config.locations import DATA_DIRS
-
 from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 
 

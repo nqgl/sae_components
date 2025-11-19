@@ -6,5 +6,4 @@ PROJECT = "sae sweeps"
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    from .model import run
-    from .config import cfg
+    pass

@@ -5,10 +5,6 @@ from saeco.core import Seq
 from saeco.core.basic_ops import Add, MatMul
 from saeco.core.reused_forward import ReuseForward
 
-from saeco.core.basic_ops import Add, MatMul
-from saeco.core.reused_forward import ReuseForward
-from saeco.core import Seq
-
 
 def bias(d):
     return nn.Parameter(torch.zeros(d))

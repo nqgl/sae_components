@@ -1,8 +1,9 @@
-import saeco.core as cl
-import saeco.components as co
 import einops
 import torch
 import torch.nn as nn
+
+import saeco.components as co
+import saeco.core as cl
 from saeco.initializer import Initializer
 from saeco.misc import useif
 
@@ -187,9 +188,7 @@ class HGated:
             {
                 1: L1Normalize,
                 2: L2Normalize,
-            }[
-                normalization
-            ](bf)
+            }[normalization](bf)
             if isinstance(normalization, int)
             else normalization
         )

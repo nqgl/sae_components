@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 
 from .Feature import Feature
-
 from .filtered_query import FilterableQuery
 
 

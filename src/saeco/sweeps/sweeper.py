@@ -1,12 +1,12 @@
 import importlib
 import importlib.util
 import os
-import sys
 from functools import cached_property
 from pathlib import Path
 from typing import Protocol
 
 import wandb
+
 from saeco.sweeps.sweepable_config import SweepableConfig
 
 

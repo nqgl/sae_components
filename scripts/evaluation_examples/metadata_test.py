@@ -1,5 +1,6 @@
 import torch
 from load import root_eval
+
 from saeco.evaluation.evaluation import Evaluation
 
 torch.backends.cuda.enable_mem_efficient_sdp(False)
@@ -29,7 +30,6 @@ if "test_filter" not in root_eval.filters:
 filtered_eval = root_eval.open_filtered("test_filter")
 
 if __name__ == "__main__" and False:
-
     filt_cosims = filtered_eval.cached_call.activation_cosims()
     filt_cosims2 = filtered_eval.cached_call.activation_cosims()
     cosims = root_eval.cached_call.activation_cosims()

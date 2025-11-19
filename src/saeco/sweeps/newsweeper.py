@@ -1,22 +1,18 @@
-import importlib
-import importlib.util
 import json
-import os
-import sys
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from functools import cached_property
 from pathlib import Path
-from typing import Generator, Generic, Protocol, TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from attrs import define, field
 from pydantic import BaseModel
-from typing_extensions import TypeVar
 
 from saeco.architecture import Architecture
-from saeco.architecture.arch_reload_info import ArchClassRef, ArchRef
+from saeco.architecture.arch_reload_info import ArchRef
 from saeco.mlog import mlog
 from saeco.sweeps.sweepable_config import SweepableConfig
+
 from .SweepRunner import SweepRunner
 
 if TYPE_CHECKING:
@@ -222,7 +218,6 @@ class SweepManager:
         keep_after=False,
         setup_min=None,
     ):
-
         with self.created_pods(new_pods, keep=keep_after, setup_min=setup_min) as pods:
             print("running on remotes")
             task = pods.runpy_with_monitor(
@@ -240,7 +235,6 @@ class SweepManager:
         setup_min=None,
         prefix_vars=None,
     ):
-
         with self.created_pods(
             total_pods, create_n=new_pods, keep=keep_after, setup_min=setup_min
         ) as pods:
@@ -260,7 +254,7 @@ class SweepManager:
         keep=False,
         setup_min=None,
         skip_setup=False,
-    ) -> Generator["Pods", None, None]:
+    ) -> Generator["Pods"]:
         from ezpod import Pods
 
         if num_pods is None:
@@ -310,7 +304,7 @@ class SweepManager:
     def existing_pods(
         self,
         keep=True,
-    ) -> Generator["Pods", None, None]:
+    ) -> Generator["Pods"]:
         from ezpod import Pods
 
         pods = Pods.All(group=self.ezpod_group)

@@ -1,8 +1,10 @@
-import torch.nn as nn
+from typing import TypeVar
+
 import torch
+import torch.nn as nn
+
 from saeco.core.cache import Cache
 from saeco.core.module import Module
-from typing import TypeVar
 
 
 class ReuseCache(Cache):
@@ -45,7 +47,7 @@ def reuse_method(mth):
             keyobj=(self, mth),
             callable=lambda *a, **k: mth(self, *a, **k),
             cache=cache,
-            **kwargs
+            **kwargs,
         )
         print("re_method end")
         return re

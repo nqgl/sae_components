@@ -1,12 +1,7 @@
 import json
-
 from pathlib import Path
 
 import modal
-
-from fastapi import FastAPI
-
-from fastapi.middleware.cors import CORSMiddleware
 
 from ..evaluation import Evaluation
 from ..fastapi_models import (
@@ -18,7 +13,6 @@ from ..fastapi_models import (
     GeneInfo,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
-    TokenEnrichmentMode,
     TokenEnrichmentRequest,
     TokenEnrichmentResponse,
     TokenEnrichmentResponseItem,
@@ -26,20 +20,14 @@ from ..fastapi_models import (
     TopActivatingExamplesResult,
     TopActivationResultEntry,
 )
-
 from ..fastapi_models.families_draft import (
     ActivationsOnDoc,
     ActivationsOnDocsRequest,
-    Family,
-    FamilyLevel,
     FamilyTopActivatingExamplesQuery,
-    Feature,
     GetFamiliesRequest,
     GetFamiliesResponse,
     TopFamilyOverlappingExamplesResponseDoc,
 )
-
-from ..fastapi_models.Feature import Feature
 
 
 def create_app(app: modal.App, root: Evaluation):

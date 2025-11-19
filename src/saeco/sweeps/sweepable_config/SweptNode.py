@@ -1,5 +1,5 @@
 import random
-from typing import Any, TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -228,10 +228,8 @@ class SweptNode(BaseModel):
 
 
 def main():
-    from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
     from saeco.sweeps.sweepable_config import (
         SweepableConfig,
-        SweepExpression,
         SweepVar,
         Swept,
     )

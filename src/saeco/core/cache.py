@@ -1,8 +1,7 @@
 import inspect
 import re
-from typing import Any, List, TypeVar
+from typing import Any, TypeVar
 
-from jaxtyping import Float, jaxtyped
 from torch import NumberType, Tensor
 
 from saeco.misc.exception_location_hint import locate_cache_exception
@@ -64,9 +63,9 @@ def dlmerge(da, db, unique=True):
     da = dlcopy(da)
     for k, vb in db.items():
         if k in da:
-            assert type(da[k]) == type(
-                vb
-            ), f"Type mismatch: {type(da[k])} and {type(vb)}"
+            assert type(da[k]) == type(vb), (
+                f"Type mismatch: {type(da[k])} and {type(vb)}"
+            )
             if isinstance(vb, list):
                 summed = da[k] + vb
                 da[k] = list(dict.fromkeys(summed)) if unique else summed
@@ -184,7 +183,7 @@ class Cache:
             return super().__setattr__(_name, __value)
 
         if __value == self._NULL_ATTR:
-            if hasattr(self, _name) and not getattr(self, _name) in self._NULLTYPES:
+            if hasattr(self, _name) and getattr(self, _name) not in self._NULLTYPES:
                 raise AttributeError(
                     f"Cache error: Tried to watch attribute {_name}, but {_name} already set to {getattr(self, _name)}"
                 )
@@ -227,7 +226,7 @@ class Cache:
         names = {
             name
             for name in self.__dict__
-            if not ((name.startswith("_") or name in self.__RESERVED_NAMES))
+            if not (name.startswith("_") or name in self.__RESERVED_NAMES)
         }  # - set(self.__class__.__dict__.keys()) TODO was I correct to remove this?
         for name in names:
             if self._has(name):
@@ -344,8 +343,8 @@ class Cache:
     def logdict(
         self,
         name="cache",
-        excluded: List[str] = [],
-        exclude_contains: List[str] = [],
+        excluded: list[str] = [],
+        exclude_contains: list[str] = [],
         itemize=True,
     ):
         _, vals = self._getfields()
@@ -542,7 +541,6 @@ def main():
     c = Cache()
     tc = TC()
     tc2 = TC()
-    import torch
 
     tc.tf = 3
     tc2.tf = 5

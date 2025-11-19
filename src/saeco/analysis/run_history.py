@@ -1,9 +1,10 @@
-import wandb
-from wandb.apis.public import Api, Runs, Run, Sweep, Project
-from pathlib import Path
-import pandas as pd
 import subprocess
 import time
+from pathlib import Path
+
+import pandas as pd
+import wandb
+from wandb.apis.public import Run, Runs
 
 api = wandb.Api()
 

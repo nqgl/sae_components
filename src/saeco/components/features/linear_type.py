@@ -1,14 +1,10 @@
-from abc import abstractmethod
 
 from functools import cached_property
-from typing import Optional, TypedDict
+from typing import Self
 
 import torch.nn as nn
-from torch import Tensor
-from typing_extensions import Self
 
 from saeco.components.features.features_param import FeaturesParam
-
 
 # class LinWeights(WrapsModule):
 #     wrapped: nn.Linear
@@ -139,7 +135,7 @@ from saeco.components.features.features_param import FeaturesParam
 class LinWeightsMixin:
     self: nn.Linear
     weight: nn.Parameter
-    bias: Optional[nn.Parameter]
+    bias: nn.Parameter | None
 
     @property
     def features(self) -> dict[str, FeaturesParam]: ...

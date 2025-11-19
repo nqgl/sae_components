@@ -1,9 +1,6 @@
-import sys
 
 import jaal
 import pandas as pd
-
-import torch
 from load import root_eval
 
 all_families = root_eval.get_feature_families()
@@ -36,8 +33,6 @@ for level in feat2fams:
     for i in range(level.max() + 1):
         fam2feat.append(set((level == i).nonzero()[:, 0].tolist()))
     fams2feat.append(fam2feat)
-import networkx as nx
-from pyvis.network import Network
 
 i = -1
 

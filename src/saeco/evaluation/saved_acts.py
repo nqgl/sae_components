@@ -1,13 +1,11 @@
-from functools import cached_property
 from pathlib import Path
 
 import torch
-from attr import define, field
-from jaxtyping import Float, Int
+from attr import define
+from jaxtyping import Int
 from torch import Tensor
 
 from .features import Features
-
 from .named_filter import NamedFilter
 from .saved_acts_config import CachingConfig
 from .storage.chunk import Chunk

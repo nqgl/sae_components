@@ -1,4 +1,5 @@
 import torch
+
 from saeco.core import Cache
 
 
@@ -12,7 +13,7 @@ def geometric_median(x, eps=1e-5, max_iter=100):
         print(i)
         y0 = y
         y = (x / (y.unsqueeze(1) + eps)).sum(dim=1) / (
-            ((y.unsqueeze(1) + eps)).sum(dim=1)
+            (y.unsqueeze(1) + eps).sum(dim=1)
         )
         if torch.allclose(y0, y, atol=1e-8):
             break

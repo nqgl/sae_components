@@ -1,9 +1,8 @@
 from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
-from .model_config.acts_data_cfg import ActsDataConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
-from .data_cfg import DataConfig, DataGenerationProcessConfig, SplitConfig
-from .model_config.model_cfg import ModelConfig
 
+from .data_cfg import DataConfig, DataGenerationProcessConfig, SplitConfig
+from .model_config.acts_data_cfg import ActsDataConfig
+from .model_config.model_cfg import ModelConfig
 
 gemma_2_2b_openwebtext = DataConfig(
     dataset="jbloom/openwebtext_tokenized_gemma-2-9b",

@@ -1,21 +1,19 @@
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Callable, Iterator
 
 import einops
 import torch
-
 import tqdm
 from attrs import define, field
-from jaxtyping import Float, Int
+from jaxtyping import Int
 from torch import Tensor
+
 from saeco.architecture.architecture import Architecture
-
-from saeco.data import ActsData, DataConfig
+from saeco.data import ActsData
+from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.training_data.tokens_data import PermutedDocs
-
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
-from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 
 
 def to_token_chunk_yielder(tokens: Tensor, chunk_size: int):

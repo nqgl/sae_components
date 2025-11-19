@@ -1,10 +1,10 @@
-from nicegui import ui
+import pandas as pd
 import plotly.graph_objects as go
+from nicegui import ui
+
 from saeco.analysis.SAView import KeyFilters
 from saeco.analysis.uiitem import UIE
 from saeco.analysis.wandb_analyze import Sweep, SweepKeys, ValueTarget
-import numpy as np
-import pandas as pd
 
 VALUE_TARGETS = [
     ValueTarget("cache/L0"),
@@ -88,9 +88,9 @@ class SweepCompareConfigurationPanel:
 
 class L0CompareView:
     def __init__(self):
-        self.sweep_panels: dict[str, SweepCompareConfigurationPanel] = (
-            {}
-        )  # name -> SweepCompareConfigurationPanel
+        self.sweep_panels: dict[
+            str, SweepCompareConfigurationPanel
+        ] = {}  # name -> SweepCompareConfigurationPanel
         self.fig = None
 
         # Initialize UI components

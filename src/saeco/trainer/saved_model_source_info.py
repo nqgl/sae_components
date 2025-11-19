@@ -1,10 +1,8 @@
-from pydantic import BaseModel
-
-import torch
-import inspect
 import importlib
+import inspect
+from warnings import deprecated
 
-from typing_extensions import deprecated
+from pydantic import BaseModel
 
 
 def get_src(fn):

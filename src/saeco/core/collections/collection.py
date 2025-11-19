@@ -12,9 +12,9 @@ class Collection(Module):
         **collection_dict: nn.Parameter | nn.Module,
     ):
         super().__init__()
-        assert (len(collection_list) == 0) or (
-            len(collection_dict) == 0
-        ), "Either unnamed or named modules should be provided, but not both"
+        assert (len(collection_list) == 0) or (len(collection_dict) == 0), (
+            "Either unnamed or named modules should be provided, but not both"
+        )
 
         if len(collection_list) > 0:
             d = {"item" + str(i): module for i, module in enumerate(collection_list)}

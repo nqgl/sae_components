@@ -1,8 +1,10 @@
-from saeco.sweeps.SweepRunner import SweepRunner
-from saeco.sweeps.newsweeper import SweepData
-from saeco.mlog import mlog
 from pathlib import Path
+
 import click
+
+from saeco.mlog import mlog
+from saeco.sweeps.newsweeper import SweepData
+from saeco.sweeps.SweepRunner import SweepRunner
 
 
 @click.command()
@@ -39,8 +41,9 @@ def start(
         sweep_data, sweep_index=sweep_index, sweep_hash=sweep_hash
     )
     if distributed_skip_log:
-        import torch
         import os
+
+        import torch
 
         local_rank = int(os.environ["LOCAL_RANK"])
         world_size = int(os.environ["WORLD_SIZE"])

@@ -1,11 +1,10 @@
-from safetensors import serialize
-from safetensors.torch import _flatten, load, save
-from typing import Dict, Optional, Union
-import torch
 import os
-from pathlib import Path
-import zstd
 from enum import Enum
+from pathlib import Path
+
+import torch
+import zstd
+from safetensors.torch import load, save
 
 
 class CompressionType(str, Enum):
@@ -28,10 +27,10 @@ class CompressionType(str, Enum):
 
 
 def save_file_compressed(
-    tensors: Dict[str, torch.Tensor],
-    filename: Union[str, os.PathLike],
+    tensors: dict[str, torch.Tensor],
+    filename: str | os.PathLike,
     compression: CompressionType,
-    metadata: Optional[Dict[str, str]] = None,
+    metadata: dict[str, str] | None = None,
 ):
     file = Path(filename)
     if file.exists():
@@ -42,10 +41,10 @@ def save_file_compressed(
 
 
 def load_file_compressed(
-    filename: Union[str, os.PathLike],
+    filename: str | os.PathLike,
     compression: CompressionType,
     device: torch.device | str = "cpu",
-) -> Dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     file = Path(filename)
     b = compression.decompress(file.read_bytes())
     return {k: v.to(device) for k, v in load(b).items()}

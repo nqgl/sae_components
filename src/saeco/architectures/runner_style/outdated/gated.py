@@ -1,33 +1,30 @@
 import torch
 import torch.nn as nn
 
-from saeco.initializer import Initializer
-from saeco.components.ops.detach import Thresh
+import saeco.components as co
+import saeco.components.features.features as ft
 import saeco.core as cl
-from saeco.core.collections.parallel import Parallel
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
+    L1Penalty,
     L2Loss,
-    SparsityPenaltyLoss,
     SAECache,
+    SparsityPenaltyLoss,
 )
+from saeco.components.ops.detach import Thresh
 
 # from saeco.core.linear import Bias, NegBias, Affine, MatMul
 from saeco.components.ops.fnlambda import Lambda
-from saeco.core.reused_forward import ReuseForward, ReuseCache
 from saeco.core import Seq
-import saeco.components.features.features as ft
-
-import saeco.components as co
-from saeco.trainer.trainable import Trainable
+from saeco.core.collections.parallel import Parallel
+from saeco.core.reused_forward import ReuseCache, ReuseForward
+from saeco.initializer import Initializer
 
 
 def gated_sae(
     init: Initializer,
     detach=True,
 ):
-
     init._encoder.bias = False
     init._encoder.add_wrapper(ReuseForward)
     init._decoder.add_wrapper(ft.NormFeatures)

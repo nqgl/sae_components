@@ -1,15 +1,15 @@
-from abc import ABC, abstractmethod
 from pathlib import Path
 
 import torch
 from attr import define, field
 from pydantic import BaseModel
+
 from saeco.misc import str_to_dtype
-from safetensors.torch import load_file, save_file
+
 from .compressed_safetensors import (
     CompressionType,
-    save_file_compressed,
     load_file_compressed,
+    save_file_compressed,
 )
 
 

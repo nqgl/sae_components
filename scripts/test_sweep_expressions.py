@@ -1,12 +1,8 @@
-from saeco.sweeps.sweepable_config.sweep_expressions import (
-    ExpressionOpEnum,
-    Op,
-    Val,
-    SweepVar,
-    Swept,
-)
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config import SweepableConfig
+from saeco.sweeps.sweepable_config.sweep_expressions import (
+    SweepVar,
+    Val,
+)
 
 
 class Cfg(SweepableConfig):

@@ -1,4 +1,3 @@
-import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -6,8 +5,8 @@ if TYPE_CHECKING:
 from attrs import define, field
 
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
-
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+
 from .neptune_scale_metric_logger import NeptuneScaleMetricLogger
 
 
@@ -94,7 +93,7 @@ class NeptuneLogger:
 
 
 if TYPE_CHECKING:
-    from saeco.architecture.arch_reload_info import ArchRef
+    pass
 
 
 class CustomSweeper:
@@ -400,7 +399,7 @@ class WandbCustomLogger:
         self.project = "default-project"
         self.run_name: str | None = None
 
-        self.root_config: "SweepableConfig" = SweepableConfig()
+        self.root_config: SweepableConfig = SweepableConfig()
         self._sweep_inst_config: dict | None = None
         self.run_config = RunConfig()
 
@@ -592,7 +591,6 @@ class WandbCustomLogger:
         return self._sweep_inst_config
 
 
-from abc import ABC, abstractmethod
 from attrs import define, field
 
 

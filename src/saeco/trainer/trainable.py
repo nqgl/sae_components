@@ -1,7 +1,6 @@
-from typing import cast, Optional, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 import einops
-
 import torch
 import torch.nn as nn
 
@@ -10,14 +9,12 @@ from saeco.components.losses import (
     CosineSimilarityLoss,
     L2Loss,
     Loss,
-    SparsityPenaltyLoss,
 )
-from saeco.components.resampling import AnthResampler, RandomResampler, Resampler
+from saeco.components.resampling import Resampler
 from saeco.core import Cache
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
+
 from .normalizers import (
-    ConstL2Normalizer,
-    GeneralizedNormalizer,
     Normalized,
     Normalizer,
 )
@@ -27,7 +24,6 @@ if TYPE_CHECKING:
     from saeco.architecture.architecture import SAE
 
 from functools import wraps
-from typing import Mapping
 
 
 @runtime_checkable
@@ -83,8 +79,8 @@ class Trainable(cl.Module):
         resampler: Resampler,
         losses: dict[str, Loss],
         normalizer: Normalizer,
-        extra_losses: Optional[dict[str, Loss]] = None,
-        metrics: Optional[dict[str, Loss]] = None,
+        extra_losses: dict[str, Loss] | None = None,
+        metrics: dict[str, Loss] | None = None,
     ):
         super().__init__()
         self.normalizer = normalizer
@@ -107,7 +103,7 @@ class Trainable(cl.Module):
             }
         )
         metrics = metrics or {"cosim": CosineSimilarityLoss(model)}
-        if not "L2_loss" in self.losses:
+        if "L2_loss" not in self.losses:
             metrics["L2_loss"] = L2Loss(model)
         self.metrics = nn.ModuleDict(
             {
@@ -182,7 +178,6 @@ class Trainable(cl.Module):
     def param_groups(self, optim_kwargs: dict) -> list[dict]:
         from saeco.components.features.param_metadata import (
             MetaDataParam,
-            ParamMetadata,
         )
 
         normal = []
@@ -203,7 +198,7 @@ class Trainable(cl.Module):
         for kvs, params in has_metadata.items():
             groups.append({"params": params, **{k: v for k, v in kvs}})
         assert sum(len(g["params"]) for g in groups) == len(list(self.parameters())), (
-            f"param_groups did not cover all parameters"
+            "param_groups did not cover all parameters"
         )
         return groups
 

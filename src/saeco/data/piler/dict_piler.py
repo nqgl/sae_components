@@ -1,42 +1,21 @@
-from functools import cached_property
 import itertools
 import random
-from enum import Enum
+from collections.abc import Callable, Generator, Mapping, Sequence
+from functools import cached_property
 from pathlib import Path
-
 from typing import (
-    Any,
-    Callable,
-    cast,
-    ClassVar,
-    Generator,
-    Iterable,
-    List,
     Literal,
-    Mapping,
+    cast,
     overload,
-    Sequence,
-    Union,
 )
 
-import einops
 import torch
-import tqdm
-from attrs import define, field
+import torch.utils.data
+from attrs import define
 from pydantic import BaseModel
 
-from typing_extensions import Self
-
 from saeco.data.dict_batch.dict_batch import DictBatch
-
-from saeco.data.piler import Piler, PilerMetadata
-from saeco.data.storage.compressed_safetensors import CompressionType
-
-from saeco.data.storage.growing_disk_tensor_collection import (
-    GrowingDiskTensorCollection,
-)
-
-import torch.utils.data
+from saeco.data.piler import Piler
 
 
 class DictPilerMetadata(BaseModel):
@@ -72,7 +51,7 @@ class DictPiler:
     @classmethod
     def create(
         cls,
-        path: Union[str, Path],
+        path: str | Path,
         dtypes: Mapping[str, torch.dtype] | Mapping[str, str],
         fixed_shapes: Mapping[str, torch.Size] | Mapping[str, Sequence[int]],
         num_piles: int,
@@ -263,7 +242,7 @@ class DictPiler:
         num_epochs: int | None = 1,
         shuffle: bool = True,
         shuffle_piles_order: bool = False,
-    ) -> Generator[DictBatch, None, None]: ...
+    ) -> Generator[DictBatch]: ...
 
     @overload
     def batch_generator(
@@ -275,7 +254,7 @@ class DictPiler:
         num_epochs: int | None = 1,
         shuffle: bool = True,
         shuffle_piles_order: bool = False,
-    ) -> Generator[dict[str, torch.Tensor], None, None]: ...
+    ) -> Generator[dict[str, torch.Tensor]]: ...
     @torch.inference_mode()
     def batch_generator(
         self,

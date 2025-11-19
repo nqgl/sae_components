@@ -1,6 +1,4 @@
 from nicegui import ui
-from saeco.analysis.ddmenuprop import ui_item
-
 
 # class UIItemTest:
 #     def __init__(self):
@@ -85,7 +83,6 @@ class Updating:
 
 class UIE:
     def __init__(self, init_fn):
-
         self.init_fn = init_fn
         self.cls = None
         self.val = 0

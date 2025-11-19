@@ -1,8 +1,8 @@
-from saeco.core.basic_ops import Sub
+
 import torch
-from typing import Optional
 import torch.nn as nn
-from functools import cached_property
+
+from saeco.core.basic_ops import Sub
 from saeco.misc import lazycall
 
 
@@ -111,8 +111,8 @@ class LinearFactory:
         self._linear_raw = None
         self.wrappers = wrappers
         self.mixins = mixins
-        self._weight_tie: Optional[Tied] = None
-        self._bias_tie: Optional[Tied] = None
+        self._weight_tie: Tied | None = None
+        self._bias_tie: Tied | None = None
 
     @property
     def unset(self):
@@ -164,7 +164,6 @@ class LinearFactory:
 
     def make_hierarchical(self, bf):
         assert self.d_out % bf == 0
-        import einops
 
         lin = nn.Linear(self.d_in, self.d_out // bf, bias=True)
         ll = self.raw.weight.data

@@ -1,8 +1,8 @@
 from functools import update_wrapper
-from typing import Any, NewType, Type, Union
+from typing import Any
 
-from pydantic import GetCoreSchemaHandler, TypeAdapter
-from pydantic_core import core_schema, CoreSchema
+from pydantic import GetCoreSchemaHandler
+from pydantic_core import CoreSchema, core_schema
 
 
 def tosteps(n: int | float, period: int | None = None) -> int:
@@ -45,12 +45,11 @@ class ResFloat(float, metaclass=FloatCheckMeta):
     PERIOD_FIELD_NAME = "resample_period"
 
 
-from typing import TYPE_CHECKING, Annotated, get_origin, get_args
+from typing import TYPE_CHECKING, Annotated, get_args, get_origin
 
 if TYPE_CHECKING:
     from saeco.trainer.schedule_cfg import RunSchedulingConfig
 
-from typing_inspection.introspection import inspect_annotation
 
 
 def deannotate(annotation):
@@ -59,7 +58,7 @@ def deannotate(annotation):
     return annotation
 
 
-def tosteps_wrapper(cls: Type["RunSchedulingConfig"]):
+def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
     class Class2:
         _IS_WRAPPED = True
 

@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING
 from attrs import define, field
 
 from saeco.mlog import mlog
-
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 if TYPE_CHECKING:
