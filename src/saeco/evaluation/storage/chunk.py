@@ -2,7 +2,7 @@ from pathlib import Path
 
 import torch
 from attrs import define
-from jaxtyping import Float, Int
+from jaxtyping import Float
 from safetensors.torch import load_file, save_file
 
 from saeco.data import DictBatch
@@ -17,7 +17,7 @@ from ..named_filter import NamedFilter
 class Chunk[InputsT: torch.Tensor | DictBatch]:
     idx: int
     path: Path
-    loaded_tokens: Int[torch.Tensor, "doc seq"] | None = None
+    loaded_input_data: InputsT | None = None
     _dense_acts: Float[torch.Tensor, "doc seq d_dict"] | None = None
     _sparse_acts: Float[torch.Tensor, "nnz 3"] | None = None
     _cfg: CachingConfig | None = None
@@ -101,9 +101,9 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         save_file({"acts": self._dense_acts}, self.dense_path)
 
     def save_tokens(self):
-        assert self.loaded_tokens is not None
+        assert self.loaded_input_data is not None
         assert not self.tokens_path.exists()
-        save_file({"tokens": self.loaded_tokens.contiguous()}, self.tokens_path)
+        save_file({"tokens": self.loaded_input_data.contiguous()}, self.tokens_path)
 
     def load_sparse(self):
         self._sparse_acts = self.read_sparse_raw()
@@ -112,7 +112,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         self._dense_acts = self.read_dense_raw()
 
     def load_tokens(self):
-        self.loaded_tokens = self.read_tokens_raw()
+        self.loaded_input_data = self.read_tokens_raw()
 
     def _to_filtered(self, chunk_tensor: torch.Tensor):
         assert chunk_tensor.shape[0] == self.cfg.docs_per_chunk
@@ -140,8 +140,8 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         return load_file(self.dense_path)["acts"]
 
     def read_tokens_raw(self):
-        if self.loaded_tokens is not None:
-            return self.loaded_tokens
+        if self.loaded_input_data is not None:
+            return self.loaded_input_data
         return load_file(self.tokens_path)["tokens"]
 
     def read_sparse(self):

@@ -4,6 +4,7 @@ import torch
 from torch import Tensor
 
 from saeco.evaluation.filtered import FilteredTensor
+from saeco.evaluation.named_filter import NamedFilter
 from saeco.evaluation.storage.chunk import Chunk
 
 
@@ -72,10 +73,6 @@ class MetadataBuilder:
 
     def __setitem__(self, chunk, value):
         return self._recv(chunk, value)
-
-
-from ..filtered import FilteredTensor
-from ..named_filter import NamedFilter
 
 
 class FilteredBuilder:
