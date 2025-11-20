@@ -1,4 +1,3 @@
-
 from pathlib import Path
 
 import torch
@@ -6,6 +5,7 @@ from attrs import define
 from jaxtyping import Float, Int
 from safetensors.torch import load_file, save_file
 
+from saeco.data import DictBatch
 from saeco.evaluation.saved_acts_config import CachingConfig
 
 from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
@@ -14,7 +14,7 @@ from ..named_filter import NamedFilter
 
 
 @define
-class Chunk:
+class Chunk[InputsT: torch.Tensor | DictBatch]:
     idx: int
     path: Path
     loaded_tokens: Int[torch.Tensor, "doc seq"] | None = None

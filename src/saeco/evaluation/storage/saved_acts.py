@@ -5,10 +5,10 @@ from attrs import define
 from jaxtyping import Int
 from torch import Tensor
 
-from .features import Features
-from .named_filter import NamedFilter
-from .saved_acts_config import CachingConfig
-from .storage.chunk import Chunk
+from ..features import Features
+from ..named_filter import NamedFilter
+from ..saved_acts_config import CachingConfig
+from .chunk import Chunk
 
 
 @define

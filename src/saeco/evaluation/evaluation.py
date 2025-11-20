@@ -17,11 +17,11 @@ from saeco.evaluation.BMStorShelf import BMStorShelf
 from saeco.evaluation.eval_components.coacts import Coactivity
 from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
-from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
+from saeco.evaluation.storage.MetadataBuilder import FilteredBuilder, MetadataBuilder
 from saeco.trainer import RunConfig
 
 from .cached_artifacts import CachedCalls
-from .cacher import ActsCacher, CachingConfig
+from .storage.cacher import ActsCacher, CachingConfig
 from .eval_components.family_generation import FamilyGenerator
 from .eval_components.family_ops import FamilyOps
 from .fastapi_models import (
@@ -32,8 +32,7 @@ from .fastapi_models.families_draft import (
 )
 from .filtered import FilteredTensor
 from .named_filter import NamedFilter
-from .saved_acts import SavedActs
-from .storage.chunk import Chunk
+from .storage.saved_acts import SavedActs
 from .storage.stored_metadata import Artifacts, Filters, Metadatas
 
 
@@ -144,23 +143,6 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     def open_filtered(self, filter_name: str):
         return self._apply_filter(self.filters[filter_name])
-
-    def _make_metadata_builder_iter(  ###
-        self, dtype, device, item_size=[]
-    ) -> Generator[Chunk, FilteredTensor, Tensor]:
-        assert self._filter is None
-        new_tensor = torch.zeros(
-            self.cache_cfg.num_docs, *item_size, dtype=dtype, device=device
-        )
-
-        for chunk in self.saved_acts.chunks:
-            value = yield chunk
-            yield
-            assert isinstance(value, FilteredTensor | Tensor)
-            if isinstance(value, Tensor):
-                value = chunk._to_filtered(value)
-            value.filter.writeat(new_tensor, value.value)
-        return new_tensor
 
     def metadata_builder(self, dtype, device, item_size=[]) -> "MetadataBuilder":
         return MetadataBuilder(

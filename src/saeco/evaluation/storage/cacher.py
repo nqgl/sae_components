@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import einops
 import torch
@@ -9,11 +10,12 @@ from jaxtyping import Int
 from torch import Tensor
 
 from saeco.architecture.architecture import Architecture
-from saeco.data.training_data import ActsData
+from saeco.data.training_data import ActsDataCreator
 from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.training_data.tokens_data import PermutedDocs
 from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
+from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
 def to_token_chunk_yielder(tokens: Tensor, chunk_size: int):
@@ -26,7 +28,7 @@ class ActsCacher:
     cfg: CachingConfig
     tokens_source: Iterator
     architecture: Architecture
-    acts_data: ActsData
+    acts_data: ActsDataCreator
     seq_len: int
     feature_tensors: list[SparseGrowingDiskTensor] | None = field(
         init=False, default=None
@@ -34,10 +36,10 @@ class ActsCacher:
     chunk_counter: int = 0
 
     @classmethod
-    def from_cache_and_runner(
+    def from_cache_and_runner[ArchCfgT: SweepableConfig](
         cls,
         caching_config: CachingConfig,
-        architecture: Architecture,
+        architecture: Architecture[ArchCfgT],
         split="val",
     ):
         pd = PermutedDocs(

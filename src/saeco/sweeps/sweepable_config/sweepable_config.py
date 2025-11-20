@@ -2,6 +2,7 @@ from types import GenericAlias, UnionType
 from typing import (
     Any,
     ClassVar,
+    Self,
     TypeVar,
     Union,
     dataclass_transform,
@@ -302,7 +303,7 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
             d["sweep_vars"] = {"parameters": sv_dict}
         return d
 
-    def from_selective_sweep(self, sweep: dict[str, Any]):
+    def from_selective_sweep(self, sweep: dict[str, Any]) -> Self:
         sweep = sweep.copy()
         print("sweep", sweep)
         self_copy = self.model_copy(deep=True)  # I think this is no longer needed

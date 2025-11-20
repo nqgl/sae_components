@@ -148,7 +148,7 @@ class SAE(cl.Seq):
 class Architecture[ArchConfigT: SweepableConfig]:
     def __init__(
         self,
-        run_cfg: RunConfig[ArchConfigT],
+        run_cfg: "RunConfig[ArchConfigT]",
         state_dict: dict[str, Any] | None = None,
         device: torch.device | str = "cuda",
     ):

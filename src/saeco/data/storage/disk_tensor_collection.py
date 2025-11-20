@@ -5,8 +5,9 @@ from typing import ClassVar, Generic, Literal, TypeVar, overload
 import torch
 from attrs import define
 
-from saeco.data.storage import DiskTensor, GrowingDiskTensor
 from saeco.data.storage.compressed_safetensors import CompressionType
+from saeco.data.storage.disk_tensor import DiskTensor
+from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
 
 DiskTensorType = TypeVar("DiskTensorType", bound=DiskTensor)
 
