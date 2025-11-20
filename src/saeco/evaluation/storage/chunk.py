@@ -5,6 +5,7 @@ from pathlib import Path
 import torch
 from attrs import define, field
 from jaxtyping import Float, Int
+from saeco.data.dict_batch import DictBatch
 from saeco.evaluation.saved_acts_config import CachingConfig
 from safetensors.torch import load_file, save_file
 
@@ -17,7 +18,7 @@ from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_t
 class Chunk:
     idx: int
     path: Path
-    loaded_tokens: Int[torch.Tensor, "doc seq"] | None = None
+    loaded_tokens: Int[torch.Tensor, "doc seq"] | DictBatch | None = None
     _dense_acts: Float[torch.Tensor, "doc seq d_dict"] | None = None
     _sparse_acts: Float[torch.Tensor, "nnz 3"] | None = None
     _cfg: CachingConfig | None = None
@@ -103,7 +104,11 @@ class Chunk:
     def save_tokens(self):
         assert self.loaded_tokens is not None
         assert not self.tokens_path.exists()
-        save_file({"tokens": self.loaded_tokens.contiguous()}, self.tokens_path)
+        if isinstance(self.loaded_tokens, DictBatch):
+            tensors = {k: v.contiguous() for k, v in self.loaded_tokens.items()}
+            save_file(tensors, self.tokens_path)
+        else:
+            save_file({"tokens": self.loaded_tokens.contiguous()}, self.tokens_path)
 
     def load_sparse(self):
         self._sparse_acts = self.read_sparse_raw()
@@ -114,15 +119,36 @@ class Chunk:
     def load_tokens(self):
         self.loaded_tokens = self.read_tokens_raw()
 
-    def _to_filtered(self, chunk_tensor: torch.Tensor):
-        assert chunk_tensor.shape[0] == self.cfg.docs_per_chunk
+    def _to_filtered(self, chunk_tensor: torch.Tensor | DictBatch):
         sl = slice(
             self.cfg.docs_per_chunk * self.idx, self.cfg.docs_per_chunk * (self.idx + 1)
         )
+        mask = self._filter.filter[sl] if self._filter is not None else None
 
+        if isinstance(chunk_tensor, DictBatch):
+            assert all(
+                v.shape[0] == self.cfg.docs_per_chunk for v in chunk_tensor.values()
+            )
+            ft_dict = {
+                k: FilteredTensor.from_unmasked_value(
+                    v,
+                    filter=Filter(
+                        [sl],
+                        mask=mask,
+                        shape=[self.cfg.num_docs, *v.shape[1:]],
+                    ),
+                    presliced=True,
+                )
+                for k, v in chunk_tensor.items()
+            }
+            return chunk_tensor.__class__.construct_with_other_data(
+                ft_dict, chunk_tensor._get_other_dict()
+            )
+
+        assert chunk_tensor.shape[0] == self.cfg.docs_per_chunk
         filt = Filter(
             [sl],
-            mask=self._filter.filter[sl] if self._filter is not None else None,
+            mask=mask,
             shape=[self.cfg.num_docs, *chunk_tensor.shape[1:]],
         )
         return FilteredTensor.from_unmasked_value(
@@ -142,7 +168,10 @@ class Chunk:
     def read_tokens_raw(self):
         if self.loaded_tokens is not None:
             return self.loaded_tokens
-        return load_file(self.tokens_path)["tokens"]
+        loaded = load_file(self.tokens_path)
+        if set(loaded.keys()) == {"tokens"}:
+            return loaded["tokens"]
+        return DictBatch(loaded)
 
     def read_sparse(self):
         return self._to_filtered(self.read_sparse_raw())
@@ -210,8 +239,22 @@ class Chunk:
         return self.read_sparse()
 
     @property
-    def tokens(self) -> FilteredTensor:
+    def tokens_batch(self):
         return self.read_tokens()
+
+    @cached_property
+    def _primary_token_key(self) -> str:
+        tb = self.tokens_batch
+        if isinstance(tb, DictBatch):
+            return "clean_tokens" if "clean_tokens" in tb else next(iter(tb.keys()))
+        return "tokens"
+
+    @property
+    def tokens(self) -> FilteredTensor:
+        tb = self.tokens_batch
+        if isinstance(tb, DictBatch):
+            return tb[self._primary_token_key]
+        return tb
 
     @property
     def acts_raw(self):

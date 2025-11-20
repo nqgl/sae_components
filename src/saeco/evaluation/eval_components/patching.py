@@ -5,6 +5,7 @@ import nnsight
 import torch
 import tqdm
 
+from saeco.data.dict_batch import DictBatch
 from saeco.evaluation.cache_version import cache_version
 from saeco.evaluation.fastapi_models.families_draft import (
     Family,
@@ -109,27 +110,41 @@ class Patching:
 
         return apply_nnsight
 
-    def run_with_sae(self: "Evaluation", tokens, patch=lambda x: x):
-        with self.nnsight_model.trace(
-            tokens, **self.sae_cfg.train_cfg.data_cfg.model_cfg.model_kwargs
-        ) as tracer:
+    def run_with_sae(
+        self: "Evaluation",
+        tokens_or_batch,
+        patch=lambda x: x,
+        doc_indices=None,
+        metadata=None,
+        batch=None,
+        return_batch=False,
+    ):
+        batch = batch or self._build_model_batch(
+            tokens_or_batch, doc_indices=doc_indices, metadata=metadata
+        )
+        with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
             lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
             res = self.sae_with_patch(patch, return_sae_acts=True)(lm_acts)
             patch_in = self._skip_bos_if_appropriate(lm_acts, res[0])
             setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
-            out = self.nnsight_model.output.save()
+            out = self.model_adapter.unwrap_output(self.nnsight_model.output.save())
+        if return_batch:
+            return out, batch
         return out
 
     def forward_ad_with_sae(
         self: "Evaluation",
-        tokens,
+        tokens_or_batch,
         tangent=None,
         tangent_gen=None,
         patch_fn=lambda x: x,
         return_prob_grads=False,
+        doc_indices=None,
+        metadata=None,
     ):
         with fwad_safe_sdp():
-            assert tokens.ndim == 2
+            if torch.is_tensor(tokens_or_batch):
+                assert tokens_or_batch.ndim == 2
             assert tangent or tangent_gen
             if tangent:
 
@@ -145,19 +160,23 @@ class Patching:
 
             patched_sae = self.sae_with_patch(fwad_hook)
             with fwAD.dual_level():
-                with self.nnsight_model.trace(
-                    tokens, **self.sae_cfg.train_cfg.data_cfg.model_cfg.model_kwargs
-                ) as tracer:
+                batch = self._build_model_batch(
+                    tokens_or_batch, doc_indices=doc_indices, metadata=metadata
+                )
+                with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
                     lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
                     orig_lm_acts = lm_acts.save()
                     acts_re = patched_sae(orig_lm_acts).save()
                     patch_in = self._skip_bos_if_appropriate(lm_acts, acts_re)
                     setsite(self.nnsight_model, self.nnsight_site_name, patch_in)
-                    out = self.nnsight_model.output.save()
-                    ls_logits = out.logits.log_softmax(dim=-1)
+                    out = self.model_adapter.unwrap_output(
+                        self.nnsight_model.output.save()
+                    )
+                    logits = self.model_adapter.get_logits(out)
+                    ls_logits = logits.log_softmax(dim=-1)
                     tangent = nnsight.apply(fwAD.unpack_dual, ls_logits).tangent.save()
                 if return_prob_grads:
-                    soft = out.logits.softmax(dim=-1)
+                    soft = logits.softmax(dim=-1)
                     probspace = fwAD.unpack_dual(soft).tangent
             if return_prob_grads:
                 return out, tangent, probspace
@@ -169,15 +188,40 @@ class Patching:
         return reconstructed_acts
 
     def patchdiff(
-        self: "Evaluation", tokens, patch_fn, return_prob_diffs=False, invert=False
+        self: "Evaluation",
+        tokens,
+        patch_fn,
+        return_prob_diffs=False,
+        invert=False,
+        doc_indices=None,
+        use_loss=False,
     ):
-        normal = self.run_with_sae(tokens)
-        patched = self.run_with_sae(tokens, patch_fn)
-        diff = patched.logits.log_softmax(-1) - normal.logits.log_softmax(-1)
+        normal, batch = self.run_with_sae(
+            tokens, doc_indices=doc_indices, return_batch=True
+        )
+        patched, _ = self.run_with_sae(
+            tokens, patch_fn, doc_indices=doc_indices, batch=batch, return_batch=True
+        )
+
+        if use_loss:
+            normal_loss = self.model_adapter.compute_loss(
+                self.subject_model, normal, batch
+            )
+            patched_loss = self.model_adapter.compute_loss(
+                self.subject_model, patched, batch
+            )
+            diff = patched_loss - normal_loss
+            if invert:
+                diff = -diff
+            return diff
+
+        normal_logits = self.model_adapter.get_logits(normal)
+        patched_logits = self.model_adapter.get_logits(patched)
+        diff = patched_logits.log_softmax(-1) - normal_logits.log_softmax(-1)
         if invert:
             diff = -diff
         if return_prob_diffs:
-            probdiff = patched.logits.softmax(-1) - normal.logits.softmax(-1)
+            probdiff = patched_logits.softmax(-1) - normal_logits.softmax(-1)
             if invert:
                 probdiff = -probdiff
             return diff, probdiff
@@ -347,30 +391,44 @@ class Patching:
         feature = feature.to_dense()
 
         def batch_iter(bbatch):
-            docs = None
-            mask = None
-            seq_pos = None
             for chunk in tqdm.tqdm(self.saved_acts.chunks):
+                token_store = chunk.tokens_batch
+                doc_tokens = None
+                doc_ids = None
+                seq_pos = None
                 tokens = chunk.tokens.to(self.cuda)
                 docs_i, mask_i = tokens.index_where_valid(feature_active[0:1])
+                doc_ids_i = feature_active[0, mask_i]
                 seq_pos_i = feature_active[1, mask_i]
-                docs = docs_i if docs is None else torch.cat([docs, docs_i])
+                doc_tokens = (
+                    docs_i if doc_tokens is None else torch.cat([doc_tokens, docs_i])
+                )
+                doc_ids = doc_ids_i if doc_ids is None else torch.cat([doc_ids, doc_ids_i])
                 seq_pos = (
                     seq_pos_i if seq_pos is None else torch.cat([seq_pos, seq_pos_i])
                 )
-                if docs.shape[0] >= bbatch:
-                    yield docs, seq_pos
-                    docs = None
-                    mask = None
-                    seq_pos = None
-            if docs is not None:
-                yield docs, seq_pos
+                while doc_tokens is not None and doc_tokens.shape[0] >= bbatch:
+                    yield token_store, doc_tokens[:bbatch], doc_ids[:bbatch], seq_pos[:bbatch]
+                    doc_tokens = doc_tokens[bbatch:] if doc_tokens.shape[0] > bbatch else None
+                    doc_ids = doc_ids[bbatch:] if doc_ids is not None and doc_ids.shape[0] > bbatch else None
+                    seq_pos = seq_pos[bbatch:] if seq_pos.shape[0] > bbatch else None
+                if doc_tokens is not None and doc_tokens.shape[0] > 0:
+                    yield token_store, doc_tokens, doc_ids, seq_pos
 
         with torch.no_grad():
-            for docs, seq_pos in batch_iter(batch_size * 4):
+            for token_store, docs, doc_ids, seq_pos in batch_iter(batch_size * 4):
                 for i in range(0, docs.shape[0], batch_size):
                     batch_docs = docs[i : i + batch_size]
+                    batch_doc_ids = doc_ids[i : i + batch_size] if doc_ids is not None else None
                     batch_seq_pos = seq_pos[i : i + batch_size]
+
+                    def select_batch_tokens(ts, indices):
+                        if isinstance(ts, DictBatch):
+                            return ts.__class__.construct_with_other_data(
+                                {k: v.index_select(indices, dim=0) for k, v in ts.items()},
+                                ts._get_other_dict(),
+                            )
+                        return ts.index_select(dim=0, index=indices)
 
                     def patch_fn(acts):
                         acts = acts.clone()
@@ -380,6 +438,11 @@ class Patching:
                             feature_id,
                         ] *= scale
                         return acts
+
+                    if batch_doc_ids is None:
+                        batch_doc_ids = torch.arange(batch_docs.shape[0], device=batch_docs.device)
+
+                    batch_input = select_batch_tokens(token_store.to(self.cuda), batch_doc_ids)
 
                     if by_fwad:
 
@@ -428,19 +491,26 @@ class Patching:
                             tangent_gen = tangent_gen3
 
                         out, ldiff = self.forward_ad_with_sae(
-                            batch_docs,
+                            batch_input,
                             tangent_gen=tangent_gen,
                             patch_fn=patch_fn,
+                            doc_indices=batch_doc_ids,
                         )
 
                     else:
-                        ldiff = self.patchdiff(batch_docs, patch_fn, invert=True)
+                        ldiff = self.patchdiff(
+                            batch_input,
+                            patch_fn,
+                            invert=True,
+                            doc_indices=batch_doc_ids,
+                        )
                     yield ldiff, batch_seq_pos
 
     def get_acts_with_intervention(
-        self: "Evaluation", tokens, write_in_site, intervention_fn
+        self: "Evaluation", tokens, write_in_site, intervention_fn, doc_indices=None, metadata=None
     ):
-        with self.nnsight_model.trace(tokens) as tracer:
+        batch = self._build_model_batch(tokens, doc_indices=doc_indices, metadata=metadata)
+        with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
             setsite(
                 self.nnsight_model,
                 write_in_site,
@@ -500,8 +570,10 @@ class Patching:
 
         input_embedding = self.nnsight_model._model.get_input_embeddings()
 
-        normal_emb = (normal_out1.logits.softmax(-1)) @ input_embedding.weight
-        patched_emb = (patched_out1.logits.softmax(-1)) @ input_embedding.weight
+        normal_logits = self.model_adapter.get_logits(normal_out1)
+        patched_logits = self.model_adapter.get_logits(patched_out1)
+        normal_emb = (normal_logits.softmax(-1)) @ input_embedding.weight
+        patched_emb = (patched_logits.softmax(-1)) @ input_embedding.weight
 
         def make_intervention(patch_in_value):
             def intervention_fn(acts: Tensor):

@@ -17,9 +17,15 @@ from transformers import AutoTokenizer, PreTrainedTokenizerFast
 from saeco.architecture.architecture import Architecture
 
 from saeco.data.config.locations import DATA_DIRS
+from saeco.data.dict_batch import DictBatch
 from saeco.evaluation.eval_components.coacts import Coactivity
 from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
+from saeco.evaluation.model_interface import (
+    ComlmEvalAdapter,
+    LanguageModelEvalAdapter,
+    ModelEvalAdapter,
+)
 
 from saeco.evaluation.MetadataBuilder import FilteredBuilder, MetadataBuilder
 
@@ -97,6 +103,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     saved_acts: SavedActs | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
+    model_adapter: ModelEvalAdapter = field(default=None, repr=False)
     _root: Union["Evaluation", None] = field(default=None, repr=False)
 
     @tokenizer.default
@@ -105,6 +112,24 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name,
             cache_dir=DATA_DIRS.CACHE_DIR,
         )
+
+    @model_adapter.default
+    def _model_adapter_default(self):
+        model_kwargs = getattr(
+            self.sae_cfg.train_cfg.data_cfg.model_cfg, "model_kwargs", {}
+        )  # type: ignore[attr-defined]
+        try:
+            from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
+
+            if isinstance(
+                self.sae_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg,
+                ComlmModelConfig,
+            ):
+                return ComlmEvalAdapter(model_kwargs=model_kwargs)
+        except Exception:
+            # Fallback to the language model adapter if comlm isn't present/desired
+            pass
+        return LanguageModelEvalAdapter(model_kwargs=model_kwargs)
 
     @cached_property
     def feature_labels(self):
@@ -146,6 +171,13 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     def nnsight_model(self):
         return self.sae_cfg.train_cfg.data_cfg.model_cfg.model
 
+    @property
+    def subject_model(self):
+        """
+        Underlying model object (without the nnsight wrapper).
+        """
+        return getattr(self.nnsight_model, "_model", self.nnsight_model)
+
     @classmethod
     def from_cache_name(cls, name: Path | str):
         if isinstance(name, str):
@@ -178,6 +210,44 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         else:
             assert self._filter is None
 
+    def _metadata_for_doc_indices(
+        self, doc_indices: Tensor | None, metadata: dict[str, Tensor] | None = None
+    ) -> dict[str, Tensor]:
+        meta: dict[str, Tensor] = {} if metadata is None else dict(metadata)
+        if doc_indices is None:
+            return meta
+        if not self.cache_cfg.metadatas_from_src_column_names:
+            return meta
+        idx = doc_indices.detach().cpu()
+        for name in self.cache_cfg.metadatas_from_src_column_names:
+            m = self._root_metadatas[name][idx]
+            if isinstance(m, Tensor):
+                meta[name] = m.to(self.cuda)
+        return meta
+
+    def _build_model_batch(
+        self,
+        tokens_or_batch,
+        doc_indices: Tensor | None = None,
+        metadata: dict[str, Tensor] | None = None,
+    ):
+        meta = self._metadata_for_doc_indices(doc_indices, metadata)
+
+        def unwrap_tokens(tokens):
+            if isinstance(tokens, FilteredTensor):
+                return tokens.value
+            if isinstance(tokens, DictBatch):
+                return tokens.__class__.construct_with_other_data(
+                    {
+                        k: (v.value if isinstance(v, FilteredTensor) else v)
+                        for k, v in tokens.items()
+                    },
+                    tokens._get_other_dict(),
+                )
+            return tokens
+
+        return self.model_adapter.make_batch(unwrap_tokens(tokens_or_batch), meta)
+
     def _apply_filter(self, filter: NamedFilter | Tensor):
         if isinstance(filter, Tensor):
             filter = NamedFilter(filter=filter, filter_name=None)
@@ -192,6 +262,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             filter=filter,
             root=self,
             tokenizer=self.tokenizer,
+            model_adapter=self.model_adapter,
         )
 
     def open_filtered(self, filter_name: str):
