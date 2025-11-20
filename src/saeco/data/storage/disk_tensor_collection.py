@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from pathlib import Path
-from typing import ClassVar, Generic, Literal, TypeVar, overload
+from typing import ClassVar, Generic, Literal, TypeVar, cast, overload
 
 import torch
 from attrs import define
@@ -8,16 +8,25 @@ from attrs import define
 from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.disk_tensor import DiskTensor
 from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
-
-DiskTensorType = TypeVar("DiskTensorType", bound=DiskTensor)
+from paramsight import get_resolved_typevars_for_base, takes_alias
 
 
 @define
-class DiskTensorCollection(Generic[DiskTensorType]):
+class DiskTensorCollection[DiskTensorType: DiskTensor = DiskTensor]:
     path: Path | None = None
     stored_tensors_subdirectory_name: str = "tensors"
     return_raw: bool = False
-    disk_tensor_cls: ClassVar[type] = DiskTensor
+
+    @property
+    def disk_tensor_cls(self) -> type[DiskTensorType]:
+        return self.get_disk_tensor_cls()
+
+    @takes_alias
+    @classmethod
+    def get_disk_tensor_cls(cls) -> type[DiskTensorType]:
+        base = get_resolved_typevars_for_base(cls, DiskTensorCollection)[0]
+        assert base is not None
+        return cast("type[DiskTensorType]", base)
 
     @property
     def storage_dir(self) -> Path:
@@ -43,7 +52,7 @@ class DiskTensorCollection(Generic[DiskTensorType]):
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             raise ValueError(f"Metadata already exists at {path}")
-        self.disk_tensor_cls: type[DiskTensorType]
+
         return self.disk_tensor_cls.create(
             path=path,
             shape=tuple(shape),
@@ -75,15 +84,11 @@ class DiskTensorCollection(Generic[DiskTensorType]):
 
     def keys(self):
         return sorted(
-            list(
-                set(
-                    [
-                        p.stem
-                        for p in self.storage_dir.glob("*")
-                        if p.suffix not in (".json", ".metadata")
-                    ]
-                )
-            )
+            {
+                p.stem
+                for p in self.storage_dir.glob("*")
+                if p.suffix not in (".json", ".metadata")
+            }
         )
 
     def __iter__(self):
@@ -111,14 +116,6 @@ class DiskTensorCollection(Generic[DiskTensorType]):
 
     def __len__(self):
         return len(self.keys())
-
-    def __class_getitem__(cls, dt_cls: type):
-        class SubClass(super().__class_getitem__(dt_cls)):
-            disk_tensor_cls = dt_cls
-
-        SubClass.__name__ = f"{cls.__name__}[{dt_cls}]"
-
-        return SubClass
 
 
 def main():

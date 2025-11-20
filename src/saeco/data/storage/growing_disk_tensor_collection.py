@@ -4,13 +4,12 @@ from pathlib import Path
 
 import torch
 import tqdm
-from attrs import define, field
+from attrs import Factory, define, field
 from pydantic import BaseModel
 
 from saeco.data.storage.compressed_safetensors import CompressionType
+from saeco.data.storage.disk_tensor_collection import DiskTensorCollection
 from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
-
-from . import DiskTensorCollection, GrowingDiskTensor
 
 
 class GrowingDiskTensorCollectionMetadata(BaseModel):
@@ -35,9 +34,6 @@ class GrowingDiskTensorCollectionMetadata(BaseModel):
                 raise FileNotFoundError(f"Metadata file not found at {metadata_path}")
             return cls()
         return cls.model_validate_json(metadata_path.read_text())
-
-
-from attrs import Factory
 
 
 def _metadata_default(
