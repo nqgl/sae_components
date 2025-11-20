@@ -126,11 +126,9 @@ class Filter:
 
     def slice_indices(self, outer_indices: Tensor, return_mask=False):
         assert all(
-            [
-                sl.step is None or sl.step == 1
-                for sl in self.slices
-                if isinstance(sl, slice)
-            ]
+            sl.step is None or sl.step == 1
+            for sl in self.slices
+            if isinstance(sl, slice)
         )
         adjustment = self.slice_starts_tensor(
             remove_ints=False, device=outer_indices.device
@@ -173,11 +171,9 @@ class Filter:
 
     def invert_indices_slicing(self, sliced_indices):
         assert all(
-            [
-                sl.step is None or sl.step == 1
-                for sl in self.slices
-                if isinstance(sl, slice)
-            ]
+            sl.step is None or sl.step == 1
+            for sl in self.slices
+            if isinstance(sl, slice)
         )
         adjustment = self.slice_starts_tensor(
             remove_ints=True, device=sliced_indices.device
@@ -300,35 +296,37 @@ class FilteredTensor:
             # self.value.shape[0] == self.filter
 
     @classmethod
-    def from_value_and_mask(cls, value: Tensor, mask: Tensor | NamedFilter | None):
-        if isinstance(mask, NamedFilter):
-            mask = mask.filter
-        if mask is None:
+    def from_value_and_mask(cls, value: Tensor, mask_obj: Tensor | NamedFilter | None):
+        if isinstance(mask_obj, NamedFilter):
+            mask_obj = mask_obj.filter
+        if mask_obj is None:
             return cls(
                 value=value,
                 filter=Filter(
                     slices=[None] * value.ndim, mask=value.device, shape=value.shape
                 ),
             )
-        shape = list(mask.shape) + list(value.shape[1:])
-        mask = mask.to(value.device)
+        shape = list(mask_obj.shape) + list(value.shape[1:])
+        mask_obj = mask_obj.to(value.device)
         return cls(
             value=value,
-            filter=Filter(slices=[None] * len(shape), mask=mask, shape=shape),
+            filter=Filter(slices=[None] * len(shape), mask=mask_obj, shape=shape),
         )
 
     @classmethod
-    def from_unmasked_value(cls, value: Tensor, filter: Filter, presliced=False):
-        if filter is None:
-            return cls.from_value_and_mask(value, filter)
-        if isinstance(filter, NamedFilter):
-            filter = filter.filter
-        if isinstance(filter, Tensor):
-            shape = list(filter.shape) + list(value.shape[1:])
-            filter = Filter(slices=[None] * len(shape), mask=filter, shape=shape)
+    def from_unmasked_value(
+        cls, value: Tensor, filter_obj: Filter | NamedFilter | Tensor | None, presliced=False
+    ):
+        if filter_obj is None:
+            return cls.from_value_and_mask(value, filter_obj)
+        if isinstance(filter_obj, NamedFilter):
+            filter_obj = filter_obj.filter
+        if isinstance(filter_obj, Tensor):
+            shape = list(filter_obj.shape) + list(value.shape[1:])
+            filter_obj = Filter(slices=[None] * len(shape), mask=filter_obj, shape=shape)
         if presliced:
-            return cls(value=filter.apply_mask(value), filter=filter)
-        return cls(value=filter.apply(value), filter=filter)
+            return cls(value=filter_obj.apply_mask(value), filter=filter_obj)
+        return cls(value=filter_obj.apply(value), filter=filter_obj)
 
     ### -> FT
 
@@ -562,12 +560,10 @@ class FilteredTensor:
 def right_expand(t, shape):
     assert len(shape) >= len(t.shape)
     assert all(
-        [
-            t.shape[i] == shape[i] or shape[i] == -1 or t.shape[i] == 1
-            for i in range(len(t.shape))
-        ]
+        t.shape[i] == shape[i] or shape[i] == -1 or t.shape[i] == 1
+        for i in range(len(t.shape))
     ), f"Shapes do not match for right-expand: {t.shape} and {shape}"
-    for i in range(len(shape) - len(t.shape)):
+    for _ in range(len(shape) - len(t.shape)):
         t = t.unsqueeze(-1)
     return t.expand(shape)
 

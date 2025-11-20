@@ -17,14 +17,14 @@ class Features:
     filter: NamedFilter | None = None
 
     @classmethod
-    def from_path(cls, path: Path, filter: NamedFilter | None):
+    def from_path(cls, path: Path, filter_obj: NamedFilter | None):
         return cls(
             feature_tensors=cls._feature_tensors_initializer(path),
-            filter=filter,
+            filter=filter_obj,
         )
 
     @classmethod
-    def _feature_tensors_initializer(cls, path: Path):
+    def _feature_tensors_initializer(cls, path: Path) -> tuple[SparseGrowingDiskTensor, ...]:
         import time
 
         for i in range(10):
@@ -42,8 +42,9 @@ class Features:
                     "opening features failed, waiting 1 second and retrying up to 10 times"
                 )
                 time.sleep(1)
+        raise FileNotFoundError(f"Could not find features at {path}")
 
-    def get_active(self, key):
+    def get_active(self, key: int | Tensor | list | tuple) -> FilteredTensor | list[FilteredTensor]:
         # for now does doc level filtering, in future with nested masks or indices could filter at token level
         if isinstance(key, Tensor | list | tuple):
             if isinstance(key, Tensor):
@@ -65,7 +66,7 @@ class Features:
 
         return FilteredTensor.from_unmasked_value(
             value=tensor,
-            filter=Filter(
+            filter_obj=Filter(
                 slices=slicing,
                 mask=mask,
                 shape=shape,
@@ -73,7 +74,7 @@ class Features:
             presliced=True,
         ).to_dense()
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int | Tensor | list | tuple) -> FilteredTensor | list[FilteredTensor]:
         if isinstance(key, Tensor | list | tuple):
             if isinstance(key, Tensor):
                 assert key.dtype == torch.int64
@@ -87,7 +88,7 @@ class Features:
 
         return FilteredTensor.from_unmasked_value(
             value=tensor.coalesce(),
-            filter=Filter(
+            filter_obj=Filter(
                 slices=slicing,
                 mask=self.filter.filter if self.filter is not None else None,
                 shape=shape,

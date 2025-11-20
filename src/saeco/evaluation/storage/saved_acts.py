@@ -27,7 +27,7 @@ class SavedActs:
             path=path,
             cfg=cfg,
             chunks=chunks,
-            features=Features.from_path(path, filter=None),
+            features=Features.from_path(path, filter_obj=None),
         )
 
     @classmethod
@@ -37,14 +37,14 @@ class SavedActs:
         )
 
     @classmethod
-    def _chunks_initializer(cls, path: Path):
+    def _chunks_initializer(cls, path: Path) -> list[Chunk]:
         return Chunk.load_chunks_from_dir(path, lazy=True)
 
     @classmethod
-    def _filtered_chunks_initializer(cls, path: Path, filter):
-        return Chunk.load_chunks_from_dir(filter=filter, path=path, lazy=True)
+    def _filtered_chunks_initializer(cls, path: Path, filter_obj: NamedFilter) -> list[Chunk]:
+        return Chunk.load_chunks_from_dir(filter_obj=filter_obj, path=path, lazy=True)
 
-    def filtered(self, filter: NamedFilter):
+    def filtered(self, filter_obj: NamedFilter):
         if self.data_filter is not None:
             raise ValueError(
                 "Tried to add a filter to already filtered dataset. Add filters to root (unfiltered) dataset instead"
@@ -52,9 +52,9 @@ class SavedActs:
         return SavedActs(
             path=self.path,
             cfg=self.cfg,
-            chunks=self._filtered_chunks_initializer(self.path, filter),
-            features=Features.from_path(self.path, filter=filter),
-            data_filter=filter,
+            chunks=self._filtered_chunks_initializer(self.path, filter_obj),
+            features=Features.from_path(self.path, filter_obj=filter_obj),
+            data_filter=filter_obj,
         )
 
     @property
@@ -102,7 +102,7 @@ class ChunksGetter:
     def get_chunk(self, i) -> Tensor:
         return getattr(self.saved_acts.chunks[i], self.target_attr)
 
-    def docsel(self, doc_ids: Int[Tensor, "sdoc"], dense=True):
+    def docsel(self, doc_ids: Int[Tensor, "sdoc"], dense=True) -> Tensor:
         assert doc_ids.ndim == 1
         sdi = doc_ids.argsort(descending=False)
         doc_ids = doc_ids[sdi]
@@ -139,7 +139,7 @@ class ChunksGetter:
             ).coalesce()
         return out
 
-    def __getitem__(self, sl: torch.Tensor) -> Tensor:
+    def __getitem__(self, sl: slice | torch.Tensor) -> Tensor:
         if isinstance(sl, slice):
             sl = torange(sl)
         if sl.ndim == 0:

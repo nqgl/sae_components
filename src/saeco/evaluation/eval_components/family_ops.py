@@ -17,15 +17,19 @@ class FamilyOps:
         self: "Evaluation",
         families: list[Family],
         doc_indices: list[int],
-        features: list[int] = [],
-        metadata_keys: list[str] = [],
+        features: list[int] | None = None,
+        metadata_keys: list[str] | None = None,
         return_str_docs: bool = False,
         str_metadatas: bool = False,
     ):
+        if features is None:
+            features = []
+        if metadata_keys is None:
+            metadata_keys = []
         doc_indices = torch.tensor(doc_indices, dtype=torch.long, device=self.cuda)
         print("getting families")
         print(self.cuda)
-        docs, acts, metadatas = self.getDAM(
+        docs, acts, metadatas = self.get_docs_acts_metadatas(
             doc_indices,
             features=self.get_family_psuedofeature_tensors(families=families)
             + [self.features[f].to(self.cuda) for f in features],
@@ -39,14 +43,16 @@ class FamilyOps:
         self: "Evaluation",
         family: Family,
         aggregation_method: str = "sum",
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
         return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
     ):
+        if metadata_keys is None:
+            metadata_keys = []
         feature = self.get_family_psuedofeature_tensors([family], aggregation_method)[0]
         return self.top_activations_and_metadatas(
             feature=feature,
@@ -129,14 +135,16 @@ class FamilyOps:
         self: "Evaluation",
         families: list[Family],
         aggregation_method: str = "sum",
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
         return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
     ):
+        if metadata_keys is None:
+            metadata_keys = []
         return self.batched_top_activations_and_metadatas(
             features=self.get_family_psuedofeature_tensors(
                 families=families, aggregation_method=aggregation_method
@@ -153,12 +161,14 @@ class FamilyOps:
     def top_overlapped_feature_family_documents(
         self: "Evaluation",
         families: list[Family],
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
         return_str_docs: bool = False,
         str_metadatas: bool = False,
     ):
+        if metadata_keys is None:
+            metadata_keys = []
         if len(families) == 0:
             return [], [], [], []
         famfeats = self.get_family_psuedofeature_tensors(families=families)
@@ -183,7 +193,7 @@ class FamilyOps:
         topk = agg_doc.value.topk(k, sorted=True)
         top_outer_indices = agg_doc.externalize_indices(topk.indices.unsqueeze(0))
         doc_indices = top_outer_indices[0].to(self.cuda)
-        docs, acts, metadatas = self.getDAM(
+        docs, acts, metadatas = self.get_docs_acts_metadatas(
             doc_indices,
             features=famfeats,
             metadata_keys=metadata_keys,

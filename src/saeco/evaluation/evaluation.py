@@ -54,7 +54,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     _root: Union["Evaluation", None] = field(default=None, repr=False)
 
     @tokenizer.default
-    def _tokenizer_default(self):
+    def _tokenizer_default(self) -> PreTrainedTokenizerFast:
         return AutoTokenizer.from_pretrained(
             self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name,
             cache_dir=DATA_DIRS.CACHE_DIR,
@@ -195,9 +195,9 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
         return self.model_adapter.make_batch(unwrap_tokens(tokens_or_batch), meta)
 
-    def _apply_filter(self, filter: NamedFilter | Tensor):
-        if isinstance(filter, Tensor):
-            filter = NamedFilter(filter=filter, filter_name=None)
+    def _apply_filter(self, filter_obj: NamedFilter | Tensor) -> "Evaluation":
+        if isinstance(filter_obj, Tensor):
+            filter_obj = NamedFilter(filter=filter_obj, filter_name=None)
         if self._filter is not None:
             raise ValueError(
                 "Filter already set, create filtered from the root Evaluation"
@@ -205,17 +205,22 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         return Evaluation(
             model_path=self.model_path,
             architecture=self.architecture,
-            saved_acts=self.saved_acts.filtered(filter),
-            filter=filter,
+            saved_acts=self.saved_acts.filtered(filter_obj),
+            filter=filter_obj,
             root=self,
             tokenizer=self.tokenizer,
             model_adapter=self.model_adapter,
         )
 
-    def open_filtered(self, filter_name: str):
+    def open_filtered(self, filter_name: str) -> "Evaluation":
         return self._apply_filter(self.filters[filter_name])
 
-    def metadata_builder(self, dtype, device, item_size=[]) -> "MetadataBuilder":
+    def metadata_builder(
+        self,
+        dtype: torch.dtype,
+        device: str | torch.device,
+        item_size: list[int] | None = None,
+    ) -> "MetadataBuilder":
         return MetadataBuilder(
             self.saved_acts.chunks,
             dtype=dtype,
@@ -223,7 +228,14 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             shape=[self.cache_cfg.num_docs, *item_size],
         )
 
-    def filtered_builder(self, dtype, device, item_size=[]) -> "FilteredBuilder":
+    def filtered_builder(
+        self,
+        dtype: torch.dtype,
+        device: str | torch.device,
+        item_size: list[int] | None = None,
+    ) -> "FilteredBuilder":
+        if item_size is None:
+            item_size = []
         return FilteredBuilder(
             self.saved_acts.chunks,
             dtype=dtype,
@@ -233,7 +245,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         )
 
     @property
-    def path(self):
+    def path(self) -> Path:
         if self.saved_acts is None:
             raise ValueError("cache_name must be set")
         if self._filter is None:
@@ -253,7 +265,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         return Metadatas(self.path, cached_config=self.cache_cfg)
 
     @property
-    def _root_metadatas(self):
+    def _root_metadatas(self) -> Metadatas:
         if self._root is None:
             return self.metadatas
         return self._root.metadatas
@@ -272,7 +284,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         return Filters(self.path, cached_config=self.cache_cfg)
 
     @property
-    def d_dict(self):
+    def d_dict(self) -> int:
         return self.architecture.run_cfg.init_cfg.d_dict
 
     @property
@@ -284,26 +296,26 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         return self.saved_acts.cfg
 
     @property
-    def features(self):
+    def features(self) -> "Features":  # noqa: F821
         return self.saved_acts.features
 
     @property
-    def sae(self):
+    def sae(self) -> "Trainable":  # noqa: F821
         return self.architecture.trainable
 
     @property
-    def nnsight_site_name(self):
+    def nnsight_site_name(self) -> str:
         return self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.site
 
     @property
-    def seq_len(self):
+    def seq_len(self) -> int:
         return self.sae_cfg.train_cfg.data_cfg.seq_len
 
     @property
-    def d_vocab(self):
+    def d_vocab(self) -> int:
         return self.tokenizer.vocab_size
 
-    def store_acts(self, caching_cfg: CachingConfig, displace_existing=False):
+    def store_acts(self, caching_cfg: CachingConfig, displace_existing: bool = False):
         if caching_cfg.model_path is None:
             caching_cfg.model_path = self.model_path
         assert caching_cfg.model_path == self.model_path
@@ -338,13 +350,20 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             self.metadatas[name] = builder.value
             self.metadatas.set_str_translator(name, builder.unique_labels)
 
-    def get_features(self, feature_ids):  ###
+    def get_features(
+        self, feature_ids: list[int] | Tensor
+    ) -> list[FilteredTensor]:  ###
         return [self.features[fid] for fid in feature_ids]
 
-    def get_feature(self, feature_id) -> FilteredTensor:  ###
+    def get_feature(self, feature_id: int) -> FilteredTensor:  ###
         return self.features[feature_id]
 
-    def filter_docs(self, docs_filter, only_return_selected=False, seq_level=False):
+    def filter_docs(
+        self,
+        docs_filter: Tensor,
+        only_return_selected: bool = False,
+        seq_level: bool = False,
+    ) -> FilteredTensor | Tensor:
         ###
         if not only_return_selected:
             if seq_level:
@@ -370,7 +389,9 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             return values
         return FilteredTensor.from_value_and_mask(value=values, mask=mask)
 
-    def filter_acts(self, docs_filter, only_return_selected=False):
+    def filter_acts(
+        self, docs_filter: Tensor, only_return_selected: bool = False
+    ) -> FilteredTensor | Tensor:
         ###
         if not only_return_selected:
             mask = torch.zeros(self.cache_cfg.num_docs, dtype=torch.bool)
@@ -412,25 +433,27 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     #     assert prod < 1.001 and prod > 0.999
     #     return coact_counts, sims
 
-    def get_feature_label(self, feature_id):
+    def get_feature_label(self, feature_id: int | str) -> str | None:
         return self.feature_labels.get(str(int(feature_id)))
 
-    def set_feature_label(self, feature_id, label):
+    def set_feature_label(self, feature_id: int | str, label: str):
         self.feature_labels[str(int(feature_id))] = label
 
-    def get_family_label(self, family):
+    def get_family_label(self, family: FamilyRef) -> str | None:
         return self.family_labels.get(str((int(family.level), int(family.family_id))))
 
     def set_family_label(self, family: FamilyRef, label: str):
         self.family_labels[str((int(family.level), int(family.family_id)))] = label
 
-    def get_feature(self, feat_id) -> Feature:
+    def get_feature_model(self, feat_id: int | str) -> Feature:
         return Feature(
             feature_id=int(feat_id),
             label=self.get_feature_label(feat_id),
         )
 
-    def detokenize(self, tokens) -> list[str] | list[list[str]] | str:
+    def detokenize(
+        self, tokens: int | list[int] | list[list[int]] | Tensor
+    ) -> list[str] | list[list[str]] | str:
         if isinstance(tokens, int):
             tokens = [tokens]
         if isinstance(tokens, list):
@@ -451,7 +474,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         flatl = self.tokenizer._tokenizer.decode_batch(flat, skip_special_tokens=False)
         return [flatl[i : i + lens] for i in range(0, len(flatl), lens)]
 
-    def seq_aggregated_chunks_yielder(self, seq_agg) -> Generator[FilteredTensor]:
+    def seq_aggregated_chunks_yielder(self, seq_agg: str) -> Generator[FilteredTensor]:
         """
         seq_agg options: "mean", "max", "sum", "count", "any"
         - count: count number of non-zero activations in each doc
@@ -479,7 +502,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             return self._filter.filter.sum().item()
         return self.cache_cfg.num_docs
 
-    def acts_avg_over_dataset(self, seq_agg="mean", docs_agg="mean"):
+    def acts_avg_over_dataset(self, seq_agg: str = "mean", docs_agg: str = "mean"):
         """
         seq_agg options: "mean", "max", "sum", "count", "any"
         docs_agg options: "mean", "max", "sum"
@@ -499,16 +522,18 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             results /= self.num_docs
 
     @property
-    def token_occurrence_count(self):
+    def token_occurrence_count(self) -> Tensor:
         return self.cached_call.count_token_occurrence()
 
-    def top_activating_examples(self, feature_id: int, p=None, k=None):
+    def top_activating_examples(
+        self, feature_id: int, p: float | None = None, k: int | None = None
+    ) -> FilteredTensor:
         feature = self.features[feature_id]
         top = self._get_top_activating(feature.value, p=p, k=k)
         return feature.to_filtered_like_self(top)
 
     @staticmethod
-    def _pk_to_k(p, k, quantity):
+    def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:
         if (p is None) == (k is None):
             raise ValueError("Exactly one of p and k must be set")
         if p is not None and not (0 < p <= 1):
@@ -520,7 +545,9 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         return min(k, quantity)
 
     @staticmethod
-    def _get_top_activating(feature: Tensor, p=None, k=None):
+    def _get_top_activating(
+        feature: Tensor, p: float | None = None, k: int | None = None
+    ) -> Tensor:
         k = Evaluation._pk_to_k(p, k, feature.shape[0])
         values = feature.values()
         if k >= values.shape[0]:
@@ -534,7 +561,11 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         )
 
     def seq_agg_feat(
-        self, feature_id=None, feature=None, agg="max", docs_filter=True
+        self,
+        feature_id: int | None = None,
+        feature: FilteredTensor | None = None,
+        agg: str = "max",
+        docs_filter: bool = True,
     ) -> FilteredTensor:
         assert agg in ("max", "sum"), "Only max implemented currently"
         if (feature_id is None) == (feature is None):
@@ -555,14 +586,16 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     def top_activations_and_metadatas(
         self,
         feature: int | FilteredTensor,
-        p: float = None,
-        k: int = None,
-        metadata_keys: list[str] = [],
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
         return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
     ):
+        if metadata_keys is None:
+            metadata_keys = []
         if isinstance(feature, int):
             feature = self.features[feature]
         doc_acts = self.seq_agg_feat(feature=feature)
@@ -587,14 +620,16 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     def batched_top_activations_and_metadatas(
         self,
         features: list[int | FilteredTensor],
-        p=None,
-        k=None,
-        metadata_keys=[],
-        return_str_docs=False,
-        return_acts_sparse=False,
-        return_doc_indices=True,
-        str_metadatas=False,
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
     ):
+        if metadata_keys is None:
+            metadata_keys = []
         return [
             self.top_activations_and_metadatas(
                 feature,
@@ -609,9 +644,9 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             for feature in features
         ]
 
-    def getDAM(
+    def get_docs_acts_metadatas(
         self,
-        doc_indices,
+        doc_indices: Tensor,
         features: list[FilteredTensor],
         metadata_keys: list[str],
         return_str_docs: bool,
@@ -644,15 +679,16 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             metadatas = self._root_metadatas.translate(metadatas)
         return docs, metadatas
 
-    def _metadata_unique_labels_and_counts_tensor(self, key):
+    def _metadata_unique_labels_and_counts_tensor(self, key: str) -> Tensor:
         meta = self._root_metadatas[key]
         if self._filter is not None:
             meta = meta[self._filter.filter]
-        assert meta.ndim == 1 and meta.dtype == torch.long
+        assert meta.ndim == 1
+        assert meta.dtype == torch.long
         labels, counts = meta.unique(return_counts=True)
         return torch.stack([labels, counts], dim=0)
 
-    def count_token_occurrence(self):
+    def count_token_occurrence(self) -> Tensor:
         counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
             toks = chunk.tokens.value.to(self.cuda).flatten()
@@ -665,23 +701,23 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             )
         return counts
 
-    def num_active_docs_for_feature(self, feature_id):
+    def num_active_docs_for_feature(self, feature_id: int) -> int:
         return self.cached_call._feature_num_active_docs()[feature_id].item()
 
     @property
-    def seq_activation_counts(self):
+    def seq_activation_counts(self) -> Tensor:
         return self.cached_call._feature_num_active_tokens().cpu()
 
     @property
-    def seq_activation_probs(self):
+    def seq_activation_probs(self) -> Tensor:
         return self.seq_activation_counts / (self.num_docs * self.seq_len)
 
     @property
-    def doc_activation_counts(self):
+    def doc_activation_counts(self) -> Tensor:
         return self.cached_call._feature_num_active_docs().cpu()
 
     @property
-    def doc_activation_probs(self):
+    def doc_activation_probs(self) -> Tensor:
         return self.doc_activation_counts / self.num_docs
 
     # @property
@@ -691,14 +727,14 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     # def feature_activation_proportion_thresholds(self, p):
 
-    def _feature_num_active_docs(self):
+    def _feature_num_active_docs(self) -> Tensor:
         activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
             acts = chunk.acts.value.to(self.cuda).to_dense()
             activity += (acts > 0).any(dim=1).sum(dim=0)
         return activity
 
-    def _feature_num_active_tokens(self):
+    def _feature_num_active_tokens(self) -> Tensor:
         activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
             acts = chunk.acts.value.to(self.cuda).to_dense()
@@ -707,7 +743,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     def get_metadata_intersection_filter_key(
         self, values: dict[str, str | list[str] | int | list[int]]
-    ):
+    ) -> str:
         val_list = list(values.items())
         val_list.sort()
         d = {}
@@ -725,23 +761,26 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             self.filters[key] = self._get_metadata_intersection_filter(d)
         return key
 
-    def _get_metadata_intersection_filter(self, map: dict[str, list[int]]):
-        filter = torch.ones(self.num_docs, dtype=torch.bool).to(self.cuda)
-        for mdname, values in map.items():
+    def _get_metadata_intersection_filter(
+        self, mapping: dict[str, tuple[int, ...]]
+    ) -> Tensor:
+        filter_tensor = torch.ones(self.num_docs, dtype=torch.bool).to(self.cuda)
+        for mdname, values in mapping.items():
             mdmask = torch.zeros(self.num_docs, dtype=torch.bool).to(self.cuda)
             meta = self.metadatas[mdname].to(self.cuda)
             for value in values:
                 mdmask |= meta == value
-            filter &= mdmask
-        return filter
+            filter_tensor &= mdmask
+        return filter_tensor
 
 
 @define
 class StrDocs:
     eval: Evaluation
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int | Tensor) -> list[str] | list[list[str]] | str:
         tokens = self.eval.docs[idx.cpu()]
         strs = self.eval.detokenize(tokens)
-        assert len(strs) == tokens.shape[0] and len(strs[0]) == tokens.shape[1]
+        assert len(strs) == tokens.shape[0]
+        assert len(strs[0]) == tokens.shape[1]
         return strs
