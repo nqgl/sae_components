@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Iterable, Iterator
+from collections.abc import Callable, Generator, ItemsView, Iterable, Iterator
 from functools import cached_property
 from types import EllipsisType
 from typing import (
@@ -318,6 +318,9 @@ class DictBatch(dict):
         other = other or {}
         return cls(data, **other)
 
+    def _construct_with_copied_other_data(self, data: dict[str, Tensor]) -> Self:
+        return self.construct_with_other_data(data, self._get_other_dict())
+
     # -- simple rule: enjoy equal extras or keep first; can customise in subclass
     @classmethod
     def _merge_other_data(cls, batches: list[Self]) -> dict[str, Any]:
@@ -343,7 +346,7 @@ class DictBatch(dict):
 
     @staticmethod
     @dataclass_transform(kw_only_default=True)
-    def auto_other_fields(cls: type[T]) -> type[T]:
+    def auto_other_fields[T: DictBatch](cls: type[T]) -> type[T]:
         """
         Enhanced decorator that automatically populates OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS from annotations.
 
@@ -355,6 +358,8 @@ class DictBatch(dict):
         - Automatically detects Tensor-annotated fields for TENSOR_DATA_FIELDS
         """
         # Get type hints with forward reference resolution
+        if not issubclass(cls, DictBatch):
+            raise ValueError(f"Class {cls.__name__} is not a subclass of DictBatch")
         try:
             # This handles forward references better
             hints = get_type_hints(cls, include_extras=True)
@@ -450,7 +455,7 @@ class DictBatch(dict):
     def float(self):
         return self.to(torch.float32)
 
-    def items(self) -> Iterator[tuple[str, Tensor]]:
+    def items(self) -> ItemsView[str, Tensor]:  # type:ignore
         return super().items()
 
     def gather(self, dim: int, indices: Tensor) -> Self:
@@ -459,14 +464,18 @@ class DictBatch(dict):
         )
 
     def apply_func(self, func: Callable[[Tensor], Tensor]) -> Self:
-        return self.construct_with_other_data(
-            {k: func(v) for k, v in self.items()}, self._get_other_dict()
+        return self._construct_with_copied_other_data(
+            {k: func(v) for k, v in self.items()}
         )
 
     def reshape(self, *shape: int) -> Self:
         return self.apply_func(lambda x: x.reshape(*shape))
 
-    def set_split(self, sel: set[str] | list[str]) -> SplitDictBatch[Self]:
+    def set_split(
+        self, sel: tuple[str, ...] | set[str] | list[str]
+    ) -> SplitDictBatch[Self]:
+        if not isinstance(sel, set):
+            sel = set(sel)
         keys = set(self.keys())
         if sel - keys:
             raise ValueError(f"Keys {sel - keys} not found in {keys}")
@@ -474,9 +483,7 @@ class DictBatch(dict):
         b_keys = keys - sel
         a = DictBatch({k: v for k, v in self.items() if k in a_keys})
         b = DictBatch({k: v for k, v in self.items() if k in b_keys})
-        return SplitDictBatch[self.__class__](
-            a, b, self._get_other_dict(), self.__class__
-        )
+        return SplitDictBatch(a, b, self._get_other_dict(), self.__class__)
 
     def index_subset(
         self,
