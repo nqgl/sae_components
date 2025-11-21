@@ -1,7 +1,6 @@
 from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
-import datasets
 import einops
 import torch
 import tqdm
@@ -137,11 +136,10 @@ class TokensData(TokensDataInterface[torch.Tensor]):
 class PermutedDocs:
     cfg: "DataConfig"
     split: SplitConfig
-    dataset: datasets.Dataset | datasets.DatasetDict = field(init=False)
     perm: Tensor = field(init=False)
 
-    @dataset.default
-    def _dataset_default_value(self):
+    @cached_property
+    def dataset(self):
         dataset = self.cfg.load_dataset_from_split(self.split)
         seq_len = dataset[0][self.cfg.tokens_column_name].shape[0]
         if self.cfg.seq_len:

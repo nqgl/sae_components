@@ -1,19 +1,21 @@
 from collections.abc import Iterator
+from functools import cached_property
 from pathlib import Path
 
 import einops
 import torch
 import tqdm
-from attrs import define, field
+from attrs import define
 from jaxtyping import Int
 from torch import Tensor
 
 from saeco.architecture.architecture import Architecture
 from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.training_data import ActsDataCreator
+from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
 from saeco.data.training_data.tokens_data import PermutedDocs
-from saeco.evaluation.saved_acts_config import CachingConfig
 from saeco.evaluation.storage.chunk import Chunk
+from saeco.evaluation.storage.saved_acts_config import CachingConfig
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
@@ -29,9 +31,6 @@ class ActsCacher:
     architecture: Architecture
     acts_data: ActsDataCreator
     seq_len: int
-    feature_tensors: list[SparseGrowingDiskTensor] | None = field(
-        init=False, default=None
-    )
     chunk_counter: int = 0
 
     @classmethod
@@ -41,21 +40,49 @@ class ActsCacher:
         architecture: Architecture[ArchCfgT],
         split="val",
     ):
-        pd = PermutedDocs(
-            architecture.run_cfg.train_cfg.data_cfg,
-            split=architecture.run_cfg.train_cfg.data_cfg.getsplit(split),
-        )
+        if caching_config.get_input_data_cls() == torch.Tensor:
+            assert (
+                architecture.run_cfg.train_cfg.data_cfg.override_dictpiler_path_str
+                is None
+            )
+            pd = PermutedDocs(
+                cfg=architecture.run_cfg.train_cfg.data_cfg,
+                split=architecture.run_cfg.train_cfg.data_cfg.getsplit(split),
+            )
+            tokens_source = pd.iter_docs_and_columns(
+                batch_size=caching_config.docs_per_chunk,
+                columns=caching_config.metadatas_from_src_column_names,
+            )
+        else:
+            assert (
+                architecture.run_cfg.train_cfg.data_cfg.override_dictpiler_path_str
+                is not None
+            )
+            tokens_data = architecture.run_cfg.train_cfg.data_cfg.tokens_data(split)
+            assert isinstance(tokens_data, DictPiledTokensData)
+
+            def gen_with_columns():
+                for tokens in tokens_data.piler.batch_generator(
+                    batch_size=caching_config.docs_per_chunk
+                ):
+                    yield (
+                        tokens,
+                        {
+                            col: tokens[col]
+                            for col in caching_config.metadatas_from_src_column_names
+                        },
+                    )
+
+            tokens_source = gen_with_columns()
         cfg = caching_config
         if cfg.exclude_bos_from_storage is None:
             cfg.exclude_bos_from_storage = (
                 architecture.run_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first
             )
+        assert architecture.run_cfg.train_cfg.data_cfg.seq_len is not None
         inst = cls(
             cfg=cfg,
-            tokens_source=pd.iter_docs_and_columns(
-                batch_size=caching_config.docs_per_chunk,
-                columns=caching_config.metadatas_from_src_column_names,
-            ),
+            tokens_source=tokens_source,
             architecture=architecture,
             acts_data=architecture.run_cfg.train_cfg.data_cfg.acts_data_creator(),
             seq_len=architecture.run_cfg.train_cfg.data_cfg.seq_len,
@@ -95,15 +122,17 @@ class ActsCacher:
     def sae_model(self):
         return self.architecture.trainable
 
-    # @feature_tensors.default
-    def _feature_tensors_initializer(self):
+    @cached_property
+    def feature_tensors(self):
         if (
             self.cfg.store_feature_tensors
             or self.cfg.deferred_blocked_store_feats_block_size
         ):
             return [
                 SparseGrowingDiskTensor.create(
-                    self.path / "features" / f"feature{i}", shape=[None, self.seq_len]
+                    self.path / "features" / f"feature{i}",
+                    shape=[0, self.seq_len],
+                    # TODO shape none fix and make path common
                 )
                 for i in range(self.d_dict)
             ]
@@ -111,7 +140,7 @@ class ActsCacher:
 
     def store(self, n_chunks=None):
         metadata_chunks = []
-        self.feature_tensors = self._feature_tensors_initializer()
+        # self.feature_tensors = self._feature_tensors_initializer()
         assert self.cfg.store_dense or self.cfg.store_sparse
         for chunk_id, (chunk, metadata_columns) in tqdm.tqdm(
             enumerate(self.chunk_generator()), total=self.cfg.num_chunks
@@ -125,14 +154,15 @@ class ActsCacher:
             if self.cfg.store_dense:
                 chunk.save_dense()
             if self.cfg.store_feature_tensors:
+                assert self.feature_tensors is not None
                 if not self.cfg.eager_sparse_generation:
                     print("Storing feature tensors")
-                    for i, feat_acts in enumerate(chunk._dense_acts.split(1, dim=2)):
+                    for i, feat_acts in enumerate(chunk.dense_acts.split(1, dim=2)):
                         self.feature_tensors[i].append(feat_acts.squeeze(-1))
                 else:
                     print("Storing feature tensors")
 
-                    ff_sparse_acts = chunk._sparse_acts.transpose(0, 2).transpose(1, 2)
+                    ff_sparse_acts = chunk.sparse_acts.transpose(0, 2).transpose(1, 2)
                     for i in range(self.d_dict):
                         self.feature_tensors[i].append(ff_sparse_acts[i])
 
@@ -141,6 +171,7 @@ class ActsCacher:
             metadata_chunks.append(metadata_columns)
 
         if self.cfg.deferred_blocked_store_feats_block_size:
+            assert self.feature_tensors is not None
             B = self.cfg.deferred_blocked_store_feats_block_size
             K = 1
             features_batch_size = (
@@ -149,7 +180,9 @@ class ActsCacher:
             prog = tqdm.tqdm(total=self.cfg.num_chunks)
             for i in range(0, self.d_dict, features_batch_size):
                 batch = self.feature_tensors[i : i + features_batch_size]
-                chunks = Chunk.load_chunks_from_dir(self.path, lazy=True)
+                chunks = Chunk[self.cfg.get_input_data_cls()].load_chunks_from_dir(
+                    self.path, lazy=True
+                )
                 for j in range(0, len(chunks), B):
                     acts = None
                     for ci, chunk in enumerate(chunks[j : j + B]):
@@ -173,6 +206,7 @@ class ActsCacher:
                             * self.cfg.docs_per_chunk
                         ][ids.unbind()] = vals
                     for k, feat_acts in enumerate(batch):
+                        assert acts is not None
                         feat_acts.append(acts[:, :, k])
                         # spa = acts.index_select(
                         #     dim=2,
@@ -202,7 +236,7 @@ class ActsCacher:
                 chunk = Chunk(
                     idx=self.chunk_counter,
                     path=self.path,
-                    loaded_tokens=tokens,
+                    loaded_input_data=tokens,
                     sparse_acts=self.batched_tokens_to_sae_acts(
                         tokens, sparse_eager=True
                     ),
@@ -212,7 +246,7 @@ class ActsCacher:
                 chunk = Chunk(
                     idx=self.chunk_counter,
                     path=self.path,
-                    loaded_tokens=tokens,
+                    loaded_input_data=tokens,
                     dense_acts=self.batched_tokens_to_sae_acts(tokens),
                 )
             self.chunk_counter += 1

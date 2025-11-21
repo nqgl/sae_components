@@ -22,6 +22,17 @@ def convert(fld):
     return converter_wrapper
 
 
+def right_expand(t, shape):
+    assert len(shape) >= len(t.shape)
+    assert all(
+        t.shape[i] == shape[i] or shape[i] == -1 or t.shape[i] == 1
+        for i in range(len(t.shape))
+    ), f"Shapes do not match for right-expand: {t.shape} and {shape}"
+    for _ in range(len(shape) - len(t.shape)):
+        t = t.unsqueeze(-1)
+    return t.expand(shape)
+
+
 def slice_shape(
     input_shape: tuple[int, ...] | list[int], slices: Sequence[slice | int | None]
 ) -> tuple[int, ...]:
@@ -49,7 +60,7 @@ def slice_shape(
 @define
 class Filter:
     slices: Sequence[slice | int | None] = field()
-    mask: Tensor = field()
+    mask: Tensor | None = field()
     shape: tuple[int, ...] = field()
 
     def __attrs_post_init__(self):
@@ -210,6 +221,11 @@ class Filter:
                 dtype=torch.long,
             ).unsqueeze(-1)
         ).all()
+
+        self.shape
+        self.mask
+        self.slices
+
         indices = sliced_indices + adjustment
         if any(isinstance(sl, int) for sl in self.slices):
             for i, sl in enumerate(self.slices):
@@ -285,6 +301,12 @@ def index_sparse_with_bool(value: Tensor, mask: Tensor):
 
 @define
 class FilteredTensor:
+    """
+    represents a hypothetical larger tensor via a prefix mask/filter and a value tensor
+    eg: self.filter(hypothetical larger tensor) = self.value
+
+    """
+
     value: Tensor = field(init=True, validator=validators.instance_of(Tensor))
     filter: Filter = field(
         init=True, repr=False, validator=validators.instance_of(Filter)
@@ -553,7 +575,7 @@ class FilteredTensor:
         return self.value.values()
 
     def nonzero(self):
-        return self.filter.invert_filter(self.value.nonzero())
+        return self.filter.invert_filter(self.value.nonzero().transpose(-2, -1))
 
     @property
     def is_sparse(self):
@@ -598,17 +620,6 @@ class FilteredTensor:
     #             slices=self.filter.slices, mask=mask, shape=self.filter.shape
     #         ),
     #     )
-
-
-def right_expand(t, shape):
-    assert len(shape) >= len(t.shape)
-    assert all(
-        t.shape[i] == shape[i] or shape[i] == -1 or t.shape[i] == 1
-        for i in range(len(t.shape))
-    ), f"Shapes do not match for right-expand: {t.shape} and {shape}"
-    for _ in range(len(shape) - len(t.shape)):
-        t = t.unsqueeze(-1)
-    return t.expand(shape)
 
 
 def checker1(shape, slice_dims, unmasked_dims=0):

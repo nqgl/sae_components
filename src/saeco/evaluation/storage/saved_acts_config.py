@@ -1,10 +1,14 @@
 from pathlib import Path
 from typing import ClassVar
 
+from paramsight import get_resolved_typevars_for_base, takes_alias
 from pydantic import BaseModel
+from torch import Tensor
+
+from saeco.data.dict_batch import DictBatch
 
 
-class CachingConfig(BaseModel):
+class CachingConfig[InputDataT: Tensor | DictBatch](BaseModel):
     model_path_str: str | None = None
     averaged_model_weights: bool = False
     docs_per_chunk: int = 100
@@ -20,6 +24,11 @@ class CachingConfig(BaseModel):
     deferred_blocked_store_feats_block_size: int = 10
     STANDARD_FILE_NAME: ClassVar = "cache_config.json"
     metadatas_from_src_column_names: list[str] = []
+
+    @takes_alias
+    @classmethod
+    def get_input_data_cls(cls) -> type[InputDataT]:
+        return get_resolved_typevars_for_base(cls, CachingConfig)[0]  # type: ignore
 
     @property
     def model_path(self) -> Path | None:

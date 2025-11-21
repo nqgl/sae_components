@@ -7,8 +7,8 @@ from torch import Tensor
 
 from ..features import Features
 from ..named_filter import NamedFilter
-from ..saved_acts_config import CachingConfig
 from .chunk import Chunk
+from .saved_acts_config import CachingConfig
 
 
 @define
@@ -41,7 +41,9 @@ class SavedActs:
         return Chunk.load_chunks_from_dir(path, lazy=True)
 
     @classmethod
-    def _filtered_chunks_initializer(cls, path: Path, filter_obj: NamedFilter) -> list[Chunk]:
+    def _filtered_chunks_initializer(
+        cls, path: Path, filter_obj: NamedFilter
+    ) -> list[Chunk]:
         return Chunk.load_chunks_from_dir(filter_obj=filter_obj, path=path, lazy=True)
 
     def filtered(self, filter_obj: NamedFilter):

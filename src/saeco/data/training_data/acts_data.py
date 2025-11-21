@@ -29,58 +29,36 @@ class ActsDataCreator:
     model: LanguageModel | NNsight
 
     def _store_split(self, split: SplitConfig):
-        if self.cfg.model_cfg.use_custom_data_source:
-            n_batches = 1000
-            acts_piler = self.cfg.acts_piler(
-                split,
-                write=True,
-                num_tokens=split.tokens_from_split or 32 * n_batches,
-            )
+        tokens_data = self.cfg.tokens_data(split=split)
+        input_data = tokens_data.get_tokens(num_tokens=split.tokens_from_split)
+        acts_piler = self.cfg.acts_piler(
+            split,
+            write=True,
+            num_tokens=split.tokens_from_split or tokens_data.num_tokens,
+        )
 
-            dataloader = self.cfg.model_cfg.model_load_cfg.custom_data_source()
-            data_iter = iter(dataloader)
-            for _ in tqdm.tqdm(
-                range(n_batches),
-                total=n_batches,
-                position=0,
-                desc="Storing",
-            ):
-                batch = next(data_iter)
-                acts = self.to_acts(batch, llm_batch_size=batch.batch_size)
-                acts_piler.distribute(acts)
-            acts_piler.shuffle_piles()
-            return
-        else:
-            tokens_data = self.cfg.tokens_data(split=split)
-            input_data = tokens_data.get_tokens(num_tokens=split.tokens_from_split)
-            acts_piler = self.cfg.acts_piler(
-                split,
-                write=True,
-                num_tokens=split.tokens_from_split or tokens_data.num_tokens,
-            )
+        tqdm.tqdm.write(f"Storing acts for {split.get_split_key()}")
 
-            tqdm.tqdm.write(f"Storing acts for {split.get_split_key()}")
-
-            meta_batch_size = (
-                self.cfg.generation_config.meta_batch_size // tokens_data.seq_len
-            )
-            input_data_split = input_data.split(meta_batch_size)
-            # assert (not isinstance(input_data, torch.Tensor)) or isinstance(
-            #     input_data_split, torch.Tensor
-            # )
-            assert isinstance(input_data, torch.Tensor | DictBatch)
-            for acts in tqdm.tqdm(
-                self.acts_generator_from_tokens_generator(
-                    input_data_split,
-                    llm_batch_size=self.cfg.generation_config.llm_batch_size
-                    // tokens_data.seq_len,
-                ),
-                total=len(input_data_split),
-                position=0,
-                desc="Storing",
-            ):
-                acts_piler.distribute(acts)
-            acts_piler.shuffle_piles()
+        meta_batch_size = (
+            self.cfg.generation_config.meta_batch_size // tokens_data.seq_len
+        )
+        input_data_split = input_data.split(meta_batch_size)
+        # assert (not isinstance(input_data, torch.Tensor)) or isinstance(
+        #     input_data_split, torch.Tensor
+        # )
+        assert isinstance(input_data, torch.Tensor | DictBatch)
+        for acts in tqdm.tqdm(
+            self.acts_generator_from_tokens_generator(
+                input_data_split,
+                llm_batch_size=self.cfg.generation_config.llm_batch_size
+                // tokens_data.seq_len,
+            ),
+            total=len(input_data_split),
+            position=0,
+            desc="Storing",
+        ):
+            acts_piler.distribute(acts)
+        acts_piler.shuffle_piles()
 
     def to_acts(
         self,

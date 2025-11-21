@@ -19,7 +19,6 @@ data_cfg = DataConfig[ComlmModelConfig](
     override_dictpiler_path_str="/home/g/markov/sample_data_comlm",
     dataset="custom",
     model_cfg=ModelConfig[ComlmModelConfig](
-        use_custom_data_source=False,
         model_load_cfg=ComlmModelConfig(
             chk_ident=model.get_latest_downloaded_checkpoint()
         ),

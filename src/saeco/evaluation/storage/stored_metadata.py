@@ -5,7 +5,7 @@ from attrs import define, field
 from pydantic import BaseModel
 from torch import Tensor
 
-from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.saved_acts_config import CachingConfig
 
 from ...data.storage.disk_tensor import DiskTensor
 from ...data.storage.disk_tensor_collection import DiskTensorCollection

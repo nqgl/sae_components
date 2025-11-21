@@ -9,10 +9,9 @@ import torch
 import tqdm
 from attrs import define, field
 from torch import Tensor
-from transformers import AutoTokenizer, PreTrainedTokenizerFast
+from transformers import PreTrainedTokenizerFast
 
 from saeco.architecture.architecture import Architecture
-from saeco.data.config.locations import DATA_DIRS
 from saeco.data.dict_batch import DictBatch
 from saeco.evaluation.BMStorShelf import BMStorShelf
 from saeco.evaluation.eval_components.coacts import Coactivity
@@ -50,15 +49,12 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     saved_acts: SavedActs | None = field(default=None, repr=False)
     _filter: NamedFilter | None = field(default=None)
     tokenizer: PreTrainedTokenizerFast = field()
-    model_adapter: ModelEvalAdapter = field(default=None, repr=False)
+    model_adapter: ModelEvalAdapter = field()
     _root: Union["Evaluation", None] = field(default=None, repr=False)
 
     @tokenizer.default
     def _tokenizer_default(self) -> PreTrainedTokenizerFast:
-        return AutoTokenizer.from_pretrained(
-            self.sae_cfg.train_cfg.data_cfg.model_cfg.model_name,
-            cache_dir=DATA_DIRS.CACHE_DIR,
-        )
+        return self.sae_cfg.train_cfg.data_cfg.model_cfg.tokenizer
 
     @model_adapter.default
     def _model_adapter_default(self):

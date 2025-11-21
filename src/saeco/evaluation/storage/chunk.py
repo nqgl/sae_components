@@ -1,13 +1,15 @@
+from functools import cached_property
 from pathlib import Path
 
 import torch
 from attrs import define
 from jaxtyping import Float
+from paramsight import get_resolved_typevars_for_base, takes_alias
 from safetensors.torch import load_file, save_file
 
 from saeco.data import DictBatch
 from saeco.data.dict_batch import DictBatch
-from saeco.evaluation.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.saved_acts_config import CachingConfig
 
 from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from ..filtered import Filter, FilteredTensor
@@ -19,64 +21,34 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
     idx: int
     path: Path
     loaded_input_data: InputsT | None = None
-    _dense_acts: Float[torch.Tensor, "doc seq d_dict"] | None = None
-    _sparse_acts: Float[torch.Tensor, "nnz 3"] | None = None
-    _cfg: CachingConfig | None = None
+    dense_acts: Float[torch.Tensor, "doc seq d_dict"] | None = None
+    sparse_acts: Float[torch.Tensor, "nnz 3"] | None = None
     sparsify_batch_size: int = 100
-    _filter: NamedFilter | None = None
+    named_filter: NamedFilter | None = None
 
     # default_sparse: bool = True
-    @property
-    def cfg(self):
-        if self._cfg is not None:
-            return self._cfg
+    @cached_property
+    def cfg(self) -> CachingConfig[InputsT]:
         cfg_path = self.path / CachingConfig.STANDARD_FILE_NAME
-        if cfg_path.exists():
-            self._cfg = CachingConfig.model_validate_json((cfg_path).read_text())
-        return self._cfg
+        if not cfg_path.exists():
+            raise FileNotFoundError(f"Could not find caching config at {cfg_path}")
+        return CachingConfig.model_validate_json((cfg_path).read_text())
 
     def sparsify(self):
-        if self._sparse_acts is not None:
+        if self.sparse_acts is not None:
             return
-        assert self._dense_acts is not None
-        self._sparse_acts = self._dense_acts.to_sparse_coo()
-        # if self.dense_acts.shape[0] > self.sparsify_batch_size:
-        #     indices = []
-        #     values = []
-        #     for i in range(0, self.dense_acts.shape[0], self.sparsify_batch_size):
-        #         batch = self.dense_acts[i : i + self.sparsify_batch_size]
-        #         sparse_batch = batch.to_sparse_coo()
-        #         indices.append(sparse_batch.indices())
-        #         values.append(sparse_batch.values())
-        #     indices = torch.cat(indices, dim=1)
-        #     values = torch.cat(values)
-        #     self.sparse_acts = torch.sparse_coo_tensor(
-        #         indices, values, self.dense_acts.shape
-        #     )
-        # else:
-
-    # def make_dense_disk_storage(self, seq_len, d_dict, dtype_bytes=4):
-    #     shape = [self.cfg.docs_per_chunk, seq_len, d_dict]
-    #     numel = shape[0] * shape[1] * shape[2]
-    #     assert not self.dense_disk_storage_path.exists()
-    #     storage = torch.FloatTensor(
-    #         torch.UntypedStorage.from_file(
-    #             str(self.dense_disk_storage_path),
-    #             shared=True,
-    #             nbytes=numel * dtype_bytes,
-    #         )
-    #     )
-    #     storage.reshape(shape)
+        assert self.dense_acts is not None
+        self.sparse_acts = self.dense_acts.to_sparse_coo()
 
     @property
     def dense_disk_storage_path(self):
         return self.dense_path.parent / f"{self.dense_path.stem}.bin"
 
     def densify(self):
-        assert self._sparse_acts is not None
-        if self._dense_acts is not None:
+        assert self.sparse_acts is not None
+        if self.dense_acts is not None:
             return self
-        self._dense_acts = self._sparse_acts.to_dense()
+        self.dense_acts = self.sparse_acts.to_dense()
 
     @property
     def sparse_path(self):
@@ -91,30 +63,32 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         return self.path / f"tokens_{self.idx}.safetensors"
 
     def save_sparse(self):
-        if self._sparse_acts is None:
+        if self.sparse_acts is None:
             self.sparsify()
         assert not self.sparse_path.exists()
-        save_sparse_tensor(self._sparse_acts, self.sparse_path)
+        save_sparse_tensor(self.sparse_acts, self.sparse_path)
 
     def save_dense(self):
-        assert self._dense_acts is not None
+        assert self.dense_acts is not None
         assert not self.dense_path.exists()
-        save_file({"acts": self._dense_acts}, self.dense_path)
+        save_file({"acts": self.dense_acts}, self.dense_path)
 
     def save_tokens(self):
-        assert self.loaded_input_data is not None
+        loaded_input_data = self.loaded_input_data
+        assert loaded_input_data is not None
         assert not self.tokens_path.exists()
-        if isinstance(self.loaded_input_data, DictBatch):
-            tensors = {k: v.contiguous() for k, v in self.loaded_input_data.items()}
+        if isinstance(loaded_input_data, DictBatch):
+            tensors = {k: v.contiguous() for k, v in loaded_input_data.items()}
             save_file(tensors, self.tokens_path)
         else:
-            save_file({"tokens": self.loaded_input_data.contiguous()}, self.tokens_path)
+            assert isinstance(loaded_input_data, torch.Tensor)
+            save_file({"tokens": loaded_input_data.contiguous()}, self.tokens_path)
 
     def load_sparse(self):
-        self._sparse_acts = self.read_sparse_raw()
+        self.sparse_acts = self.read_sparse_raw()
 
     def load_dense(self):
-        self._dense_acts = self.read_dense_raw()
+        self.dense_acts = self.read_dense_raw()
 
     def load_tokens(self):
         self.loaded_input_data = self.read_tokens_raw()
@@ -123,7 +97,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         sl = slice(
             self.cfg.docs_per_chunk * self.idx, self.cfg.docs_per_chunk * (self.idx + 1)
         )
-        mask = self._filter.filter[sl] if self._filter is not None else None
+        mask = self.named_filter.filter[sl] if self.named_filter is not None else None
 
         if isinstance(chunk_tensor, DictBatch):
             assert all(
@@ -132,7 +106,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
             ft_dict = {
                 k: FilteredTensor.from_unmasked_value(
                     v,
-                    filter=Filter(
+                    filter_obj=Filter(
                         [sl],
                         mask=mask,
                         shape=[self.cfg.num_docs, *v.shape[1:]],
@@ -156,22 +130,33 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         )
 
     def read_sparse_raw(self):
-        if self._sparse_acts is not None:
-            return self._sparse_acts
+        if self.sparse_acts is not None:
+            return self.sparse_acts
         return load_sparse_tensor(self.sparse_path)
 
     def read_dense_raw(self):
-        if self._dense_acts is not None:
-            return self._dense_acts
+        if self.dense_acts is not None:
+            return self.dense_acts
         return load_file(self.dense_path)["acts"]
 
-    def read_tokens_raw(self):
+    @takes_alias
+    @classmethod
+    def get_input_data_cls(cls) -> type[InputsT]:
+        return get_resolved_typevars_for_base(cls, Chunk)[0]  # type: ignore
+
+    @property
+    def input_data_cls(self) -> type[InputsT]:
+        return self.get_input_data_cls()
+
+    def read_tokens_raw(self) -> InputsT:
         if self.loaded_input_data is not None:
             return self.loaded_input_data
         loaded = load_file(self.tokens_path)
         if set(loaded.keys()) == {"tokens"}:
-            assert self.input_data_cls == Tensor
-            return loaded["tokens"]
+            assert self.input_data_cls == torch.Tensor
+            tokens = loaded["tokens"]
+            assert isinstance(tokens, self.input_data_cls)
+            return tokens
         assert issubclass(self.input_data_cls, DictBatch)
         return self.input_data_cls(loaded)
 
@@ -260,13 +245,13 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
 
     @property
     def acts_raw(self):
-        if self._filter is not None:
+        if self.named_filter is not None:
             raise ValueError("Accessing raw values, but the filter is not None")
         return self.read_sparse_raw()
 
     @property
     def tokens_raw(self):
-        if self._filter is not None:
+        if self.named_filter is not None:
             raise ValueError("Accessing raw values, but the filter is not None")
         return self.read_tokens_raw()
 
