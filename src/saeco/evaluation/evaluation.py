@@ -2,7 +2,7 @@ import shelve
 from collections.abc import Generator
 from functools import cached_property
 from pathlib import Path
-from typing import Union
+from typing import TYPE_CHECKING, Union
 
 import einops
 import torch
@@ -40,24 +40,34 @@ from .storage.cacher import ActsCacher, CachingConfig
 from .storage.saved_acts import SavedActs
 from .storage.stored_metadata import Artifacts, Filters, Metadatas
 
+if TYPE_CHECKING:
+    from saeco.evaluation.features import Features
+    from saeco.trainer.trainable import Trainable
+from attr._make import _CountingAttr
+
+_CountingAttr.default
+from attrs import Factory
+
 
 @define
 class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     model_path: Path
-    architecture: Architecture = field(repr=False)
+    architecture: Architecture = field(
+        repr=False,
+    )
     averaged_model_weights: bool = field(default=False, repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
-    _filter: NamedFilter | None = field(default=None)
-    tokenizer: PreTrainedTokenizerFast = field()
-    model_adapter: ModelEvalAdapter = field()
+    filter: NamedFilter | None = field(default=None)
     _root: Union["Evaluation", None] = field(default=None, repr=False)
 
-    @tokenizer.default
     def _tokenizer_default(self) -> PreTrainedTokenizerFast:
         return self.sae_cfg.train_cfg.data_cfg.model_cfg.tokenizer
 
-    @model_adapter.default
-    def _model_adapter_default(self):
+    tokenizer: PreTrainedTokenizerFast = field(
+        default=Factory(_tokenizer_default, takes_self=True)
+    )
+
+    def _model_adapter_default(self):  # TODO probably load this differently
         model_kwargs = getattr(
             self.sae_cfg.train_cfg.data_cfg.model_cfg, "model_kwargs", {}
         )  # type: ignore[attr-defined]
@@ -73,6 +83,10 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             # Fallback to the language model adapter if comlm isn't present/desired
             pass
         return LanguageModelEvalAdapter(model_kwargs=model_kwargs)
+
+    model_adapter: ModelEvalAdapter = field(
+        default=Factory(_model_adapter_default, takes_self=True)
+    )
 
     @cached_property
     def feature_labels(self):
@@ -90,7 +104,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     def root(self):
         if self._root is None:
             return self
-        return self._root
+        return self._root  # TODO return self._root.root?
 
     @property
     def cuda(self):
@@ -125,11 +139,16 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     def from_cache_name(cls, name: Path | str):
         if isinstance(name, str):
             name = Path(name)
-            if not name.exists():
-                name = Path.home() / "workspace" / "cached_sae_acts" / name
+            fp = Path.home() / "workspace" / "cached_sae_acts" / name
+            if fp.exists():
+                name = fp
+            elif not name.exists():
+                raise FileNotFoundError(f"Could not find cached acts at {name} or {fp}")
+
         saved = SavedActs.from_path(name)
+        assert saved.cfg.model_path is not None
         inst = cls.from_model_path(
-            saved.cfg.model_path, averaged_weights=saved.cfg.averaged_model_weights
+            path=saved.cfg.model_path, averaged_weights=saved.cfg.averaged_model_weights
         )
         inst.saved_acts = saved
         return inst
@@ -148,10 +167,10 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     def __attrs_post_init__(self):
         if self.saved_acts is not None:
-            if self.saved_acts.data_filter is not self._filter:
+            if self.saved_acts.data_filter is not self.filter:
                 raise ValueError("Filter mismatch between Evaluation and storage")
         else:
-            assert self._filter is None
+            assert self.filter is None
 
     def _metadata_for_doc_indices(
         self, doc_indices: Tensor | None, metadata: dict[str, Tensor] | None = None
@@ -194,7 +213,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     def _apply_filter(self, filter_obj: NamedFilter | Tensor) -> "Evaluation":
         if isinstance(filter_obj, Tensor):
             filter_obj = NamedFilter(filter=filter_obj, filter_name=None)
-        if self._filter is not None:
+        if self.filter is not None:
             raise ValueError(
                 "Filter already set, create filtered from the root Evaluation"
             )
@@ -237,16 +256,16 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             dtype=dtype,
             device=device,
             shape=[self.cache_cfg.num_docs, *item_size],
-            filter=self._filter,
+            filter=self.filter,
         )
 
     @property
     def path(self) -> Path:
         if self.saved_acts is None:
             raise ValueError("cache_name must be set")
-        if self._filter is None:
+        if self.filter is None:
             return self.cache_cfg.path
-        return self._filter.filtered_dir(self.cache_cfg.path)
+        return self.filter.filtered_dir(self.cache_cfg.path)
 
     @cached_property
     def cached_call(self) -> Union[CachedCalls, "Evaluation"]:
@@ -254,7 +273,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @cached_property
     def metadatas(self) -> Metadatas:
-        if self._filter is not None:
+        if self.filter is not None:
             raise NotImplementedError(
                 "Getting metadatas from a filtered Evaluation is TODO and pending some design choices."
             )
@@ -272,7 +291,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @cached_property
     def filters(self) -> Filters:
-        if self._filter is not None:
+        if self.filter is not None:
             raise ValueError(
                 "Cannot access filters from a filtered evaluation. If this could be useful though, let me (Glen) know."
             )
@@ -292,11 +311,11 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         return self.saved_acts.cfg
 
     @property
-    def features(self) -> "Features":  # noqa: F821
+    def features(self) -> "Features | None":
         return self.saved_acts.features
 
     @property
-    def sae(self) -> "Trainable":  # noqa: F821
+    def sae(self) -> "Trainable":
         return self.architecture.trainable
 
     @property
@@ -494,8 +513,8 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     @property
     def num_docs(self) -> int:
-        if self._filter:
-            return self._filter.filter.sum().item()
+        if self.filter:
+            return self.filter.filter.sum().item()
         return self.cache_cfg.num_docs
 
     def acts_avg_over_dataset(self, seq_agg: str = "mean", docs_agg: str = "mean"):
@@ -677,8 +696,8 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
 
     def _metadata_unique_labels_and_counts_tensor(self, key: str) -> Tensor:
         meta = self._root_metadatas[key]
-        if self._filter is not None:
-            meta = meta[self._filter.filter]
+        if self.filter is not None:
+            meta = meta[self.filter.filter]
         assert meta.ndim == 1
         assert meta.dtype == torch.long
         labels, counts = meta.unique(return_counts=True)

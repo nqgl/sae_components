@@ -1,7 +1,8 @@
+from functools import cached_property
 from pathlib import Path
 
 import torch
-from attrs import define, field
+from attrs import define
 from pydantic import BaseModel
 
 from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
@@ -31,13 +32,11 @@ class SparseGrowingDiskTensor:
     path: Path
     shape: list[int]
     dtype: torch.dtype = torch.float32
-    indices: GrowingDiskTensor = field(init=False)
-    values: GrowingDiskTensor = field(init=False)
     cat_axis: int = 0
     finalized: bool = False
 
-    @indices.default
-    def _indices_default(self):
+    @cached_property
+    def indices(self) -> GrowingDiskTensor:
         if self.indices_path.exists():
             return GrowingDiskTensor.open(path=self.indices_path)
         return GrowingDiskTensor.create(
@@ -47,8 +46,8 @@ class SparseGrowingDiskTensor:
             dtype=torch.int64,
         )
 
-    @values.default
-    def _values_default(self):
+    @cached_property
+    def values(self) -> GrowingDiskTensor:
         if self.values_path.exists():
             return GrowingDiskTensor.open(path=self.values_path)
         return GrowingDiskTensor.create(

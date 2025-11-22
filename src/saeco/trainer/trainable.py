@@ -206,7 +206,9 @@ class Trainable(cl.Module):
         return TrainCache()
 
     @make_cache_optional
-    def get_acts(self, x, cache: Cache = None, pre_acts=False):
+    def get_acts(
+        self, x: torch.Tensor, cache: Cache = None, pre_acts=False
+    ) -> torch.Tensor:
         cache.acts = ...
         if pre_acts:
             cache.pre_acts = ...

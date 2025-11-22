@@ -10,9 +10,11 @@ from jaxtyping import Int
 from torch import Tensor
 
 from saeco.architecture.architecture import Architecture
+from saeco.data.dict_batch.dict_batch import DictBatch
 from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.training_data import ActsDataCreator
 from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
+from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.data.training_data.tokens_data import PermutedDocs
 from saeco.evaluation.storage.chunk import Chunk
 from saeco.evaluation.storage.saved_acts_config import CachingConfig
@@ -95,17 +97,6 @@ class ActsCacher:
             self.cfg.model_dump_json()
         )
         return metadata_chunks
-
-    @torch.inference_mode()
-    def get_llm_acts(self, tokens: Int[Tensor, "doc seq"]):
-        return self.acts_data.to_acts(
-            tokens,
-            llm_batch_size=self.cfg.llm_batch_size
-            or self.cfg.documents_per_micro_batch,
-            rearrange=False,
-            force_not_skip_padding=True,
-            skip_exclude=True,
-        )
 
     @property
     def path(self):
@@ -253,10 +244,15 @@ class ActsCacher:
             yield chunk, columns
 
     @torch.inference_mode()
-    def batched_tokens_to_sae_acts(self, tokens: Tensor, sparse_eager: bool = False):
+    def batched_tokens_to_sae_acts(
+        self, tokens: Tensor | DictBatch, sparse_eager: bool = False
+    ):
         # this could be optimized more by having separate batch sizes for llm and sae
         sae_acts = []
-        for i in range(0, tokens.shape[0], self.cfg.documents_per_micro_batch):
+        batch_size = (
+            tokens.batch_size if isinstance(tokens, DictBatch) else tokens.shape[0]
+        )
+        for i in range(0, batch_size, self.cfg.documents_per_micro_batch):
             batch_tokens = tokens[i : i + self.cfg.documents_per_micro_batch]
             batch_subj_acts = self.get_llm_acts(batch_tokens)
             batch_sae_acts = self.get_sae_acts(batch_subj_acts)
@@ -273,12 +269,34 @@ class ActsCacher:
             return torch.cat(sae_acts, dim=0).coalesce()
         return torch.cat(sae_acts, dim=0)
 
-    def get_sae_acts(self, subj_acts) -> Tensor:
-        ndoc, seq_len, d_dict = subj_acts.shape
-        subj_acts_flat = einops.rearrange(
-            subj_acts, "doc seq d_dict -> (doc seq) d_dict"
+    @torch.inference_mode()
+    def get_llm_acts(self, tokens: Int[Tensor, "doc seq"] | DictBatch) -> DictBatch:
+        return self.acts_data.to_acts(
+            tokens,
+            llm_batch_size=self.cfg.llm_batch_size
+            or self.cfg.documents_per_micro_batch,
+            rearrange=False,
+            force_not_skip_padding=True,
+            skip_exclude=True,
         )
-        sae_acts_flat = self.sae_model.get_acts(subj_acts_flat)
+
+    def get_sae_acts(self, subj_acts: DictBatch) -> Tensor:
+        subj_acts_flat = subj_acts.einops_rearrange(
+            "doc seq d_dict -> (doc seq) d_dict"
+        )
+        batch = SAETrainBatch(
+            **subj_acts_flat,
+            input_sites=self.architecture.run_cfg.train_cfg.input_sites
+            or self.architecture.run_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.sites,
+            target_sites=self.architecture.run_cfg.train_cfg.target_sites,
+        )
+        shapes = [t.shape for t in subj_acts.values()]
+        assert all(shapes[0] == shape for shape in shapes)
+        shape = shapes[0]
+        ndoc, seq_len, d_dict = shape
+        sae_acts_flat = self.sae_model.get_acts(
+            batch.input
+        )  # Or mb encode? optionally?
         sae_acts = einops.rearrange(
             sae_acts_flat, "(doc seq) d_dict -> doc seq d_dict", doc=ndoc, seq=seq_len
         )

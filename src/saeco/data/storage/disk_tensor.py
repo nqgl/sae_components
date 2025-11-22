@@ -1,7 +1,8 @@
+from functools import cached_property
 from pathlib import Path
 
 import torch
-from attrs import define, field
+from attrs import define
 from pydantic import BaseModel
 
 from saeco.misc import str_to_dtype
@@ -48,20 +49,9 @@ class DiskTensor:
     path: Path
     metadata: DiskTensorMetadata
     finalized: bool = False
-    _tensor: torch.Tensor = field(init=False, default=None)
 
-    @property
+    @cached_property
     def tensor(self):
-        if self._tensor is None:
-            self._tensor = self._tensor_default()
-        return self._tensor
-
-    @tensor.setter
-    def tensor(self, value):
-        self._tensor = value
-
-    # @tensor.default
-    def _tensor_default(self):
         safepath = self.path.with_suffix(".safetensors")
         if safepath.exists():
             self.finalized = True
@@ -81,9 +71,6 @@ class DiskTensor:
     def __attrs_post_init__(self):
         if self.path.exists() or self.path.with_suffix(".safetensors").exists():
             self.finalized = True
-
-    #     assert self.tensor is None
-    #     self.tensor = self._tensor_default()
 
     def create_tensor(self):
         return self.open_disk_tensor(create=True)

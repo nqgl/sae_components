@@ -64,6 +64,7 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
 
     def update_arch_before_load(self, arch: TransformerArchitecture):
         # disable any preemptive data loading
+        # arch.run_cfg.arch_cfg.bfloat_model = True
         arch.run_cfg.train_cfg.evals_cfg.spearman_min_gene_counts = []
         arch.run_cfg.train_cfg.evals_cfg.ce_min_gene_counts = []
         arch.run_cfg.train_cfg.checkpoint_interval_batches = None

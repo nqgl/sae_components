@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING, Any
 import einops
 import torch
 import tqdm
-from attrs import define, field
-from torch import Tensor
+from attrs import define
 
 from saeco.data.config.split_config import SplitConfig
 from saeco.data.piler import Piler
@@ -136,7 +135,6 @@ class TokensData(TokensDataInterface[torch.Tensor]):
 class PermutedDocs:
     cfg: "DataConfig"
     split: SplitConfig
-    perm: Tensor = field(init=False)
 
     @cached_property
     def dataset(self):
@@ -153,24 +151,20 @@ class PermutedDocs:
                 )
         return dataset
 
-    @perm.default
-    def _perm_default_value(self):
+    @cached_property
+    def perm(self) -> torch.Tensor:
         return torch.randperm(self.dataset.num_rows)
 
-    @property
-    def dataset_document_length(self):
-        return self.src_dataset_data.shape[1]
+    # def get_docs(self, num_docs=None):
+    #     i = self.perm[:num_docs] if num_docs is not None else self.perm
+    #     return self.dataset[i][self.cfg.tokens_column_name][:, : self.cfg.seq_len]
 
-    def get_docs(self, num_docs=None):
-        i = self.perm[:num_docs] if num_docs is not None else self.perm
-        return self.dataset[i][self.cfg.tokens_column_name][:, : self.cfg.seq_len]
-
-    def get_docs_and_columns(self, num_docs=None, columns=[]):
-        i = self.perm[:num_docs] if num_docs is not None else self.perm
-        ds = self.dataset[i]
-        return ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len], {
-            col: ds[col] for col in columns
-        }
+    # def get_docs_and_columns(self, num_docs=None, columns=[]):
+    #     i = self.perm[:num_docs] if num_docs is not None else self.perm
+    #     ds = self.dataset[i]
+    #     return ds[self.cfg.tokens_column_name][:, : self.cfg.seq_len], {
+    #         col: ds[col] for col in columns
+    #     }
 
     def iter_docs_and_columns(self, batch_size, columns=[]):
         # cols =

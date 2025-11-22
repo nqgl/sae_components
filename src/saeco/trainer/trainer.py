@@ -9,6 +9,7 @@ from schedulefree import AdamWScheduleFree
 from torch.amp.grad_scaler import GradScaler
 
 from saeco.core import Cache
+from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.misc.paths import SAVED_MODELS_DIR
 from saeco.mlog import mlog
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
@@ -236,6 +237,7 @@ class Trainer:
 
             buffer = buf()
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
+            x: SAETrainBatch
             input, target = x.input, x.target
             # print(input.shape)
             # print(target.shape)

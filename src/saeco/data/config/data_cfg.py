@@ -9,7 +9,6 @@ from torch.utils.data import DataLoader
 
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 from saeco.data.config.locations import DATA_DIRS
-from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 from saeco.data.config.split_config import SplitConfig
@@ -26,7 +25,7 @@ from saeco.data.training_data.tokens_data_interface import TokensDataInterface
 from saeco.sweeps import SweepableConfig
 
 
-class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = HuggingFaceModelConfig](
+class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBase](
     SweepableConfig
 ):
     model_cfg: ModelConfig[ModelLoadT]

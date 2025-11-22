@@ -1,10 +1,11 @@
 import asyncio
 from collections.abc import Sequence
+from functools import cached_property
 from pathlib import Path
 
 import torch
 import tqdm
-from attrs import Factory, define, field
+from attrs import define, field
 from pydantic import BaseModel
 
 from saeco.data.storage.compressed_safetensors import CompressionType
@@ -36,21 +37,16 @@ class GrowingDiskTensorCollectionMetadata(BaseModel):
         return cls.model_validate_json(metadata_path.read_text())
 
 
-def _metadata_default(
-    self: "GrowingDiskTensorCollection",
-) -> GrowingDiskTensorCollectionMetadata:
-    return GrowingDiskTensorCollectionMetadata.load_from_dir(
-        self.storage_dir, assert_exists=False
-    )
-
-
 @define
 class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
-    metadata: GrowingDiskTensorCollectionMetadata = field(
-        default=Factory(_metadata_default, takes_self=True)
-    )
     cache: dict[str, GrowingDiskTensor] = field(factory=dict)
     skip_cache: bool = False
+
+    @cached_property
+    def metadata(self) -> GrowingDiskTensorCollectionMetadata:
+        return GrowingDiskTensorCollectionMetadata.load_from_dir(
+            self.storage_dir, assert_exists=False
+        )
 
     def get(self, name: str | int) -> GrowingDiskTensor:
         if isinstance(name, int):

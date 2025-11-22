@@ -87,7 +87,7 @@ class FamilyOps:
                     if cuda
                     else self.artifacts[artifact_name]
                 ),
-                self._filter,
+                self.filter,
             )
             for artifact_name in artifact_names
         ]

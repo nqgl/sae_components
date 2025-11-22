@@ -380,7 +380,7 @@ class FilteredTensor:
         other: "Filter| Tensor| FilteredTensor",
         return_ft: Literal[True],
         presliced: bool | None,
-        value_like: bool,
+        value_like: bool = False,
     ) -> "FilteredTensor": ...
     @overload
     def mask_by_other(
@@ -388,7 +388,7 @@ class FilteredTensor:
         other: "Filter| Tensor| FilteredTensor",
         return_ft: Literal[False],
         presliced: bool | None,
-        value_like: bool,
+        value_like: bool = False,
     ) -> "Tensor ": ...
 
     def mask_by_other(
