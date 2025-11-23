@@ -6,8 +6,8 @@ from saeco.evaluation.evaluation import Evaluation
 torch.backends.cuda.enable_mem_efficient_sdp(False)
 torch.backends.cuda.enable_flash_sdp(False)
 
-root_eval.tokenizer.encode(".")
-root_eval.detokenize([13])
+# root_eval.tokenizer.encode(".")
+# root_eval.detokenize([13])
 
 if "period_count" not in root_eval.metadatas:
     b = root_eval.metadata_builder(dtype=torch.long, device="cpu")

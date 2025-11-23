@@ -234,7 +234,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         self,
         dtype: torch.dtype,
         device: str | torch.device,
-        item_size: list[int] | None = None,
+        item_size: list[int] | tuple[int, ...] = (),
     ) -> "MetadataBuilder":
         return MetadataBuilder(
             self.saved_acts.chunks,

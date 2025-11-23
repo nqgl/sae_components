@@ -118,7 +118,7 @@ class Features:
             filter_obj=Filter(
                 slices=slicing,
                 mask=self.filter.filter if self.filter is not None else None,
-                shape=shape,
+                shape=tuple(shape),
             ),
             presliced=True,
         )

@@ -171,9 +171,14 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
 
     @classmethod
     def load_from_dir(
-        cls, path, index, load_sparse_only: bool = False, lazy=False, filter=None
+        cls,
+        path: Path,
+        index: int,
+        load_sparse_only: bool = False,
+        lazy: bool = False,
+        filter_obj: NamedFilter | None = None,
     ) -> "Chunk":
-        inst = cls(path=path, idx=index, filter=filter)
+        inst = cls(path=path, idx=index, named_filter=filter_obj)
         if lazy:
             return inst
         inst.load(load_sparse_only=load_sparse_only)
@@ -181,27 +186,37 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
 
     @classmethod
     def chunks_from_dir_iter(
-        cls, path, load_sparse_only: bool = False, lazy=False, filter=None
+        cls,
+        path: Path,
+        load_sparse_only: bool = False,
+        lazy: bool = False,
+        filter_obj: NamedFilter | None = None,
     ):
         i = 0
         while True:
             try:
                 chunk = cls.load_from_dir(
-                    path, i, load_sparse_only, lazy=lazy, filter=filter
+                    path, i, load_sparse_only, lazy=lazy, filter_obj=filter_obj
                 )
                 if not chunk.exists:
                     break
                 yield chunk
                 i += 1
-            except:
+            except Exception as e:
                 break
 
     @classmethod
     def load_chunks_from_dir(
-        cls, path, load_sparse_only: bool = False, lazy=False, filter=None
+        cls,
+        path: Path,
+        load_sparse_only: bool = False,
+        lazy: bool = False,
+        filter_obj: NamedFilter | None = None,
     ):
         return list(
-            cls.chunks_from_dir_iter(path, load_sparse_only, lazy=lazy, filter=filter)
+            cls.chunks_from_dir_iter(
+                path, load_sparse_only, lazy=lazy, filter_obj=filter_obj
+            )
         )
 
     def load(self, load_sparse_only: bool = False):

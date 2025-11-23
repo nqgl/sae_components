@@ -132,7 +132,6 @@ class ActsDataCreator:
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
             # toks_re = toks_re[:, 1:]
-        acts = acts.einops_rearrange(flatten_pattern)
         mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
             tx_inputs, self.cfg.seq_len
         )
@@ -144,13 +143,14 @@ class ActsDataCreator:
         #         toks_re,
         #         flatten_pattern,
         #     )
-        if mask is not None:
-            mask = einops.rearrange(mask, flatten_pattern)
-            acts = acts[mask]
-            # toks_re = toks_re[mask]
+        # toks_re = toks_re[mask]
         if not rearrange:
             assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
             return acts
+        acts = acts.einops_rearrange(flatten_pattern)
+        if mask is not None:
+            mask = einops.rearrange(mask, flatten_pattern)
+            acts = acts[mask]
 
         # if (
         #     self.cfg.model_cfg.acts_cfg.filter_pad
