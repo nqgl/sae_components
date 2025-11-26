@@ -5,7 +5,10 @@ import torch
 from attrs import Converter, define, field, validators
 from torch import Tensor
 
+from saeco.data.dict_batch.dict_batch import DictBatch
 from saeco.evaluation.named_filter import NamedFilter
+
+DEVICE_DEFAULT = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def assert_isint(x: Any) -> int:
@@ -93,22 +96,37 @@ class Filter:
             return other[self.slicing_tuple]
         return other[self.slicing_tuple[:ndim]]
 
-    def apply_mask(self, tensor: Tensor) -> Tensor:
+    @overload
+    def apply_mask(self, tensor: Tensor) -> Tensor: ...
+    @overload
+    def apply_mask(self, tensor: DictBatch) -> DictBatch: ...
+
+    def apply_mask(self, tensor: Tensor | DictBatch) -> Tensor | DictBatch:
         if self.mask is None:
             return tensor
+
+        if isinstance(tensor, DictBatch):
+            return tensor.apply_func(self.apply_mask)
+
         if tensor.is_sparse:
             if not tensor.is_coalesced():
                 tensor = tensor.coalesce()
-            tensor._nnz()
             return index_sparse_with_bool(tensor, self.mask).coalesce()
+
         return tensor[self.mask]
 
     def writeat(self, target: Tensor, value):
         self.slice(target)[self.mask] = value
 
-    def slice_attr_tensor(self, attr, default, remove_ints=False, device=None):
+    def _slice_attr_tensor(
+        self,
+        attr: str,
+        default: int | float,
+        remove_ints: bool = False,
+        device: torch.device | str | None = None,
+    ):
         if device is None:
-            device = self.mask.device
+            device = self.mask.device if self.mask is not None else DEVICE_DEFAULT
         if remove_ints:
             return torch.tensor(
                 [
@@ -132,14 +150,20 @@ class Filter:
             device=device,
         )
 
-    def slice_starts_tensor(self, remove_ints=False, device=None) -> Tensor:
-        return self.slice_attr_tensor("start", 0, remove_ints, device)
+    def slice_starts_tensor(
+        self, remove_ints: bool = False, device: torch.device | str | None = None
+    ) -> Tensor:
+        return self._slice_attr_tensor("start", 0, remove_ints, device)
 
-    def slice_stops_tensor(self, remove_ints=False, device=None) -> Tensor:
-        return self.slice_attr_tensor("stop", torch.inf, remove_ints, device)
+    def slice_stops_tensor(
+        self, remove_ints: bool = False, device: torch.device | str | None = None
+    ) -> Tensor:
+        return self._slice_attr_tensor("stop", torch.inf, remove_ints, device)
 
-    def slice_steps_tensor(self, remove_ints=False, device=None) -> Tensor:
-        return self.slice_attr_tensor("step", 1, remove_ints, device)
+    def slice_steps_tensor(
+        self, remove_ints: bool = False, device: torch.device | str | None = None
+    ) -> Tensor:
+        return self._slice_attr_tensor("step", 1, remove_ints, device)
 
     def slice_indices(self, outer_indices: Tensor, return_mask=False):
         assert all(
@@ -307,15 +331,17 @@ class FilteredTensor:
 
     """
 
-    value: Tensor = field(init=True, validator=validators.instance_of(Tensor))
+    value: Tensor | DictBatch = field(
+        init=True, validator=validators.instance_of(Tensor)
+    )
     filter: Filter = field(
         init=True, repr=False, validator=validators.instance_of(Filter)
     )
 
     @convert(value)
     @staticmethod
-    def value_converter(value: Tensor):
-        if value.is_sparse:
+    def value_converter(value: Tensor | DictBatch):
+        if value.is_sparse:  # TODO
             return value.coalesce()
         return value
 
@@ -329,9 +355,14 @@ class FilteredTensor:
         else:
             assert True  # TODO
             # self.value.shape[0] == self.filter
+        if isinstance(self.value, DictBatch):
+            assert len(self.filter.slices) <= 1
+            assert self.filter.mask is None or self.filter.mask.ndim == 1
 
     @classmethod
-    def from_value_and_mask(cls, value: Tensor, mask_obj: Tensor | NamedFilter | None):
+    def from_value_and_mask(
+        cls, value: Tensor | DictBatch, mask_obj: Tensor | NamedFilter | None
+    ):
         if isinstance(mask_obj, NamedFilter):
             mask_obj = mask_obj.filter
         if mask_obj is None:
@@ -355,7 +386,7 @@ class FilteredTensor:
     @classmethod
     def from_unmasked_value(
         cls,
-        value: Tensor,
+        value: Tensor | DictBatch,
         filter_obj: Filter | NamedFilter | Tensor | None,
         presliced=False,
     ):
@@ -397,7 +428,7 @@ class FilteredTensor:
         return_ft: bool = False,
         presliced: bool | None = None,
         value_like: bool = False,
-    ) -> "Tensor | FilteredTensor":
+    ) -> "Tensor | FilteredTensor | DictBatch":
         if isinstance(other, FilteredTensor):
             other = other.filter
         mask: Tensor | None = None
@@ -429,6 +460,7 @@ class FilteredTensor:
         if not return_ft:
             return value
         selfmask = self.filter.mask
+        assert selfmask is not None
         if selfmask.ndim < mask.ndim:
             selfmask = right_expand(selfmask, mask.shape)
         if value_like:
