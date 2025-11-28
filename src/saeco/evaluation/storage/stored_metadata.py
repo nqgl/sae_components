@@ -73,7 +73,7 @@ class Metadatas(CollectionWithCachingConfig):
         disk_tensor.tensor[:] = value
         disk_tensor.finalize()
 
-    def set_str_translator(self, name, d):
+    def set_str_translator(self, name: str, d: dict[str, int]):
         disk_tensor = self.get(name)
         disk_tensor.set_str_translator(d)
 
@@ -139,8 +139,9 @@ class MetadataTensorInfo(BaseModel):  # TODO
     def save(self, path: Path):
         path.with_suffix(".metadatainfo").write_text(self.model_dump_json())
 
-    def populate(self, d):
-        assert self.tostr is None and self.fromstr is None
+    def populate(self, d: dict[str, int]):
+        assert self.tostr is None
+        assert self.fromstr is None
         self.fromstr = d
         self.tostr = {v: k for k, v in d.items()}
 
@@ -165,7 +166,8 @@ class Metadata(DiskTensor):
         tensor = tensor if tensor is not None else self.tensor
         return [self.info.tostr[i] for i in tensor.tolist()]
 
-    def set_str_translator(self, d):
+    def set_str_translator(self, d: dict[str, int]):
+        assert self.info is not None
         self.info.populate(d)
         self.info.save(self.path)
 

@@ -5,20 +5,24 @@ from attrs import define
 from jaxtyping import Int
 from torch import Tensor
 
+from saeco.data.dict_batch.dict_batch import DictBatch
+
 from ..features import Features
 from ..named_filter import NamedFilter
 from .chunk import Chunk
 from .saved_acts_config import CachingConfig
+from paramsight import takes_alias, get_resolved_typevars_for_base
 
 
 @define
-class SavedActs:
+class SavedActs[InputsT: torch.Tensor | DictBatch]:
     path: Path
     cfg: CachingConfig
-    chunks: list[Chunk]
+    chunks: list[Chunk[InputsT]]
     features: Features | None = None
     data_filter: NamedFilter | None = None
 
+    @takes_alias
     @classmethod
     def from_path(cls, path: Path):
         cfg = cls._cfg_initializer(path)
@@ -30,28 +34,38 @@ class SavedActs:
             features=Features.from_path(path, filter_obj=None),
         )
 
+    @takes_alias
     @classmethod
     def _cfg_initializer(cls, path: Path) -> CachingConfig:
         return CachingConfig.model_validate_json(
             (path / CachingConfig.STANDARD_FILE_NAME).read_text()
         )
 
+    @takes_alias
     @classmethod
-    def _chunks_initializer(cls, path: Path) -> list[Chunk]:
-        return Chunk.load_chunks_from_dir(path, lazy=True)
+    def get_inputs_type(cls) -> type[InputsT]:
+        return get_resolved_typevars_for_base(cls, SavedActs)[0]  # type: ignore
 
+    @takes_alias
+    @classmethod
+    def _chunks_initializer(cls, path: Path) -> list[Chunk[InputsT]]:
+        return Chunk[cls.get_inputs_type()].load_chunks_from_dir(path, lazy=True)
+
+    @takes_alias
     @classmethod
     def _filtered_chunks_initializer(
         cls, path: Path, filter_obj: NamedFilter
-    ) -> list[Chunk]:
-        return Chunk.load_chunks_from_dir(filter_obj=filter_obj, path=path, lazy=True)
+    ) -> list[Chunk[InputsT]]:
+        return Chunk[cls.get_inputs_type()].load_chunks_from_dir(
+            filter_obj=filter_obj, path=path, lazy=True
+        )
 
     def filtered(self, filter_obj: NamedFilter):
         if self.data_filter is not None:
             raise ValueError(
                 "Tried to add a filter to already filtered dataset. Add filters to root (unfiltered) dataset instead"
             )
-        return SavedActs(
+        return SavedActs[self.get_inputs_type()](
             path=self.path,
             cfg=self.cfg,
             chunks=self._filtered_chunks_initializer(self.path, filter_obj),
@@ -61,7 +75,9 @@ class SavedActs:
 
     @property
     def iter_chunks(self):
-        return Chunk.chunks_from_dir_iter(path=self.path, lazy=True)
+        return Chunk[self.get_inputs_type()].chunks_from_dir_iter(
+            path=self.path, lazy=True
+        )
 
     @property
     def tokens(self):
@@ -95,16 +111,16 @@ def torange(s: slice):
 
 
 @define
-class ChunksGetter:
-    saved_acts: SavedActs
+class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
+    saved_acts: SavedActs[InputsT]
     target_attr: str
     dense_target: bool
     ft: bool = False
 
-    def get_chunk(self, i) -> Tensor:
+    def get_chunk(self, i) -> InputsT:
         return getattr(self.saved_acts.chunks[i], self.target_attr)
 
-    def docsel(self, doc_ids: Int[Tensor, "sdoc"], dense=True) -> Tensor:
+    def docsel(self, doc_ids: Int[Tensor, "sdoc"], dense=True) -> InputsT:
         assert doc_ids.ndim == 1
         sdi = doc_ids.argsort(descending=False)
         doc_ids = doc_ids[sdi]
@@ -126,19 +142,32 @@ class ChunksGetter:
             isel(chunk_id=chunk_id, dim=0, index=cdoc_idx[chunk_ids == chunk_id])
             for chunk_id in chunks
         ]
-        sorted_out = torch.cat(docs_l)
+        input_t = self.saved_acts.get_inputs_type()
         if dense:
-            out = torch.empty_like(sorted_out)
-            out[sdi] = sorted_out
+
+            def make_new(t: Tensor):
+                new = torch.empty_like(t)
+                new[sdi] = t
+                return new
         else:
-            sorted_out = sorted_out.coalesce()
-            oi = sorted_out.indices().clone()
-            oi[0][sdi[oi[0]]] = sorted_out.indices()[0]
-            out = torch.sparse_coo_tensor(
-                oi,
-                sorted_out.values(),
-                sorted_out.shape,
-            ).coalesce()
+
+            def make_new(t: Tensor):
+                sorted_out = t.coalesce()
+                oi = sorted_out.indices().clone()
+                oi[0][sdi[oi[0]]] = sorted_out.indices()[0]
+                new = torch.sparse_coo_tensor(
+                    oi,
+                    sorted_out.values(),
+                    sorted_out.shape,
+                ).coalesce()
+                return new
+
+        if issubclass(input_t, DictBatch):
+            sorted_out = input_t.cat_list(docs_l)
+            out = sorted_out.apply_func(make_new)
+        else:
+            sorted_out = torch.cat(docs_l)
+            out = make_new(sorted_out)
         return out
 
     def __getitem__(self, sl: slice | torch.Tensor) -> Tensor:

@@ -99,34 +99,34 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         )
         mask = self.named_filter.filter[sl] if self.named_filter is not None else None
 
-        if isinstance(chunk_tensor, DictBatch):
-            assert all(
-                v.shape[0] == self.cfg.docs_per_chunk for v in chunk_tensor.values()
-            )
-            ft_dict = {
-                k: FilteredTensor.from_unmasked_value(
-                    v,
-                    filter_obj=Filter(
-                        [sl],
-                        mask=mask,
-                        shape=[self.cfg.num_docs, *v.shape[1:]],
-                    ),
-                    presliced=True,
-                )
-                for k, v in chunk_tensor.items()
-            }
-            return chunk_tensor.__class__.construct_with_other_data(
-                ft_dict, chunk_tensor._get_other_dict()
-            )
+        # if isinstance(chunk_tensor, DictBatch):
+        #     assert all(
+        #         v.shape[0] == self.cfg.docs_per_chunk for v in chunk_tensor.values()
+        #     )
+        #     ft_dict = {
+        #         k: FilteredTensor.from_unmasked_value(
+        #             v,
+        #             filter_obj=Filter(
+        #                 [sl],
+        #                 mask=mask,
+        #                 shape=[self.cfg.num_docs, *v.shape[1:]],
+        #             ),
+        #             presliced=True,
+        #         )
+        #         for k, v in chunk_tensor.items()
+        #     }
+        #     return chunk_tensor.__class__.construct_with_other_data(
+        #         ft_dict, chunk_tensor._get_other_dict()
+        #     )
 
         assert chunk_tensor.shape[0] == self.cfg.docs_per_chunk
         filt = Filter(
             [sl],
             mask=mask,
-            shape=[self.cfg.num_docs, *chunk_tensor.shape[1:]],
+            virtual_shape=(self.cfg.num_docs,),
         )
         return FilteredTensor.from_unmasked_value(
-            chunk_tensor, filter=filt, presliced=True
+            chunk_tensor, filter_obj=filt, presliced=True
         )
 
     def read_sparse_raw(self):
@@ -157,7 +157,9 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
             tokens = loaded["tokens"]
             assert isinstance(tokens, self.input_data_cls)
             return tokens
-        assert issubclass(self.input_data_cls, DictBatch)
+        assert issubclass(self.input_data_cls, DictBatch), (
+            f"Expected DictBatch, got {self.input_data_cls}"
+        )
         return self.input_data_cls(loaded)
 
     def read_sparse(self):
@@ -169,6 +171,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
     def read_tokens(self):
         return self._to_filtered(self.read_tokens_raw())
 
+    @takes_alias
     @classmethod
     def load_from_dir(
         cls,
@@ -184,6 +187,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         inst.load(load_sparse_only=load_sparse_only)
         return inst
 
+    @takes_alias
     @classmethod
     def chunks_from_dir_iter(
         cls,
@@ -205,6 +209,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
             except Exception as e:
                 break
 
+    @takes_alias
     @classmethod
     def load_chunks_from_dir(
         cls,
@@ -244,19 +249,9 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
     def tokens_batch(self):
         return self.read_tokens()
 
-    @cached_property
-    def _primary_token_key(self) -> str:
-        tb = self.tokens_batch
-        if isinstance(tb, DictBatch):
-            return "clean_tokens" if "clean_tokens" in tb else next(iter(tb.keys()))
-        return "tokens"
-
     @property
     def tokens(self) -> FilteredTensor:
-        tb = self.tokens_batch
-        if isinstance(tb, DictBatch):
-            return tb[self._primary_token_key]
-        return tb
+        return self.tokens_batch
 
     @property
     def acts_raw(self):

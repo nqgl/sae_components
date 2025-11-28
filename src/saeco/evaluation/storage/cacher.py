@@ -130,7 +130,7 @@ class ActsCacher:
         return None
 
     def store(self, n_chunks=None):
-        metadata_chunks = []
+        metadata_chunks: list[dict] = []
         # self.feature_tensors = self._feature_tensors_initializer()
         assert self.cfg.store_dense or self.cfg.store_sparse
         for chunk_id, (chunk, metadata_columns) in tqdm.tqdm(
