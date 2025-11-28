@@ -173,7 +173,7 @@ def test_from_unmasked_value_with_filter_object():
     filt = Filter(
         slices=[None, None],
         mask=mask,
-        shape=base.shape,
+        virtual_shape=base.shape,
     )
 
     ft = FilteredTensor.from_unmasked_value(value=base, filter_obj=filt)
@@ -183,7 +183,7 @@ def test_from_unmasked_value_with_filter_object():
     assert ft.value.shape == expected_inner.shape
     assert torch.allclose(ft.value, expected_inner)
     assert torch.equal(ft.filter.mask, mask)
-    assert ft.filter.shape == base.shape
+    assert ft.filter.virtual_shape == base.shape
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ def test_mask_by_other_with_filter_intersects_outer_masks():
     other_filter = Filter(
         slices=[None, None],
         mask=mask2,
-        shape=base.shape,
+        virtual_shape=base.shape,
     )
 
     ft2 = ft.mask_by_other(other_filter, return_ft=True)

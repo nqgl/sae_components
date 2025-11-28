@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Union
 import einops
 import torch
 import tqdm
-from attrs import define, field
+from attrs import Factory, define, field
+from paramsight import get_resolved_typevars_for_base, takes_alias
 from torch import Tensor
 from transformers import PreTrainedTokenizerFast
 
@@ -43,14 +44,12 @@ from .storage.stored_metadata import Artifacts, Filters, Metadatas
 if TYPE_CHECKING:
     from saeco.evaluation.features import Features
     from saeco.trainer.trainable import Trainable
-from attr._make import _CountingAttr
-
-_CountingAttr.default
-from attrs import Factory
 
 
 @define
-class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
+class Evaluation[InputsT: torch.Tensor | DictBatch](
+    FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity
+):
     model_path: Path
     architecture: Architecture = field(
         repr=False,
@@ -58,7 +57,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     averaged_model_weights: bool = field(default=False, repr=False)
     saved_acts: SavedActs | None = field(default=None, repr=False)
     filter: NamedFilter | None = field(default=None)
-    _root: Union["Evaluation", None] = field(default=None, repr=False)
+    _root: "Evaluation | None" = field(default=None, repr=False)
 
     def _tokenizer_default(self) -> PreTrainedTokenizerFast:
         return self.sae_cfg.train_cfg.data_cfg.model_cfg.tokenizer
@@ -66,6 +65,11 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
     tokenizer: PreTrainedTokenizerFast = field(
         default=Factory(_tokenizer_default, takes_self=True)
     )
+
+    @takes_alias
+    @classmethod
+    def get_inputs_type(cls) -> type[InputsT]:
+        return get_resolved_typevars_for_base(cls, Evaluation)[0]  # type: ignore
 
     def _model_adapter_default(self):  # TODO probably load this differently
         model_kwargs = getattr(
@@ -135,6 +139,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         """
         return getattr(self.nnsight_model, "_model", self.nnsight_model)
 
+    @takes_alias
     @classmethod
     def from_cache_name(cls, name: Path | str):
         if isinstance(name, str):
@@ -145,7 +150,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
             elif not name.exists():
                 raise FileNotFoundError(f"Could not find cached acts at {name} or {fp}")
 
-        saved = SavedActs.from_path(name)
+        saved = SavedActs[cls.get_inputs_type()].from_path(name)
         assert saved.cfg.model_path is not None
         inst = cls.from_model_path(
             path=saved.cfg.model_path, averaged_weights=saved.cfg.averaged_model_weights
@@ -153,6 +158,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
         inst.saved_acts = saved
         return inst
 
+    @takes_alias
     @classmethod
     def from_model_path(cls, path: Path, averaged_weights: bool = False):
         path = path if isinstance(path, Path) else Path(path)
@@ -353,7 +359,7 @@ class Evaluation(FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity):
                 )
 
         metadata_chunks = acts_cacher.store_acts()
-        self.saved_acts = SavedActs.from_path(acts_cacher.path)
+        self.saved_acts = SavedActs[self.get_inputs_type()].from_path(acts_cacher.path)
         metadata_builders = {
             name: self.metadata_builder(torch.long, "cpu")
             for name in self.cache_cfg.metadatas_from_src_column_names
