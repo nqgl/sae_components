@@ -1,11 +1,18 @@
-from __future__ import annotations
-
-from collections.abc import Callable, Generator, ItemsView, Iterable, Iterator
+from collections.abc import (
+    Callable,
+    Generator,
+    ItemsView,
+    Iterable,
+    Iterator,
+    KeysView,
+    ValuesView,
+)
 from functools import cached_property
 from types import EllipsisType
 from typing import (
     Any,
     ClassVar,
+    Literal,
     Self,
     dataclass_transform,
     get_origin,
@@ -36,10 +43,10 @@ class NiceConvertedIter[DictBatch_T: "DictBatch"]:
             [Iterator[DictBatch_T]],
             Iterator[DictBatch_T] | Generator[DictBatch_T],
         ],
-    ) -> NiceConvertedIter[DictBatch_T]:
+    ) -> "NiceConvertedIter[DictBatch_T]":
         return NiceConvertedIter(transform_gen(self._iter))
 
-    def as_dataset(self) -> NiceIterDataset[DictBatch_T]:
+    def as_dataset(self) -> "NiceIterDataset[DictBatch_T]":
         return NiceIterDataset(self)
 
 
@@ -237,6 +244,12 @@ class DictBatch(dict):
         return self.__class__.construct_with_other_data(
             {k: v[key] for k, v in self.items()}, self._get_other_dict()
         )
+
+    def __setitem__(self, key: Any, value: Tensor) -> None:
+        if isinstance(key, str):
+            assert isinstance(value, Tensor)
+            super().__setitem__(key, value)
+        raise ValueError(f"Cannot set item {key} of type {type(key)}")
 
     # --------------------------- basic utilities -----------------------------
     @property
@@ -455,8 +468,14 @@ class DictBatch(dict):
     def float(self):
         return self.to(torch.float32)
 
-    def items(self) -> ItemsView[str, Tensor]:  # type:ignore
+    def items(self) -> ItemsView[str, Tensor]:
         return super().items()
+
+    def values(self) -> ValuesView[Tensor]:
+        return super().values()
+
+    def keys(self) -> KeysView[str]:
+        return super().keys()
 
     def gather(self, dim: int, indices: Tensor) -> Self:
         return self.construct_with_other_data(
@@ -473,7 +492,7 @@ class DictBatch(dict):
 
     def set_split(
         self, sel: tuple[str, ...] | set[str] | list[str]
-    ) -> SplitDictBatch[Self]:
+    ) -> "SplitDictBatch[Self]":
         if not isinstance(sel, set):
             sel = set(sel)
         keys = set(self.keys())
@@ -529,8 +548,50 @@ class DictBatch(dict):
             self._get_other_dict(),
         )
 
+    @property
+    def device(self) -> torch.device:
+        dev = next(iter(self.values())).device
+        assert all(v.device == dev for v in self.values())
+        return dev
+
+    @property
+    def is_sparse(self) -> bool:
+        return any(v.is_sparse for v in self.values())
+
+    @property
+    def is_coalesced(self) -> bool:
+        return all((not v.is_sparse) or v.is_coalesced() for v in self.values())
+
+    @property
+    def shapes(self) -> dict[str, tuple[int, ...]]:
+        return {k: v.shape for k, v in self.items()}
+
+    @property
+    def shape(self) -> "DictBatchShape":
+        return DictBatchShape(batch_size=self.batch_size, shapes=self.shapes)
+
 
 from attrs import define
+
+
+@define
+class DictBatchShape:
+    batch_size: int
+    shapes: dict[str, tuple[int, ...]]
+
+    @overload
+    def __getitem__(self, key: str) -> tuple[int, ...]: ...
+    @overload
+    def __getitem__(self, key: Literal[0]) -> int: ...
+    @overload
+    def __getitem__(self, key: int) -> dict[str, int]: ...
+    def __getitem__(self, key: str | int) -> tuple[int, ...] | int | dict[str, int]:
+        if key == 0:
+            return self.batch_size
+        if isinstance(key, str):
+            return self.shapes[key]
+        assert isinstance(key, int)
+        return {k: v[key] for k, v in self.shapes.items() if len(v) > key}
 
 
 @define
