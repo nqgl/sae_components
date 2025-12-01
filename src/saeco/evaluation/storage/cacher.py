@@ -215,10 +215,12 @@ class ActsCacher:
                     prog.update()
 
                 print(f"Stored features {i} to {i + features_batch_size}")
+                for spgdt in batch:
+                    spgdt.finalize()
             prog.close()
         if self.feature_tensors:
             for ft in self.feature_tensors:
-                ft.finalize()
+                assert ft.finalized, f"Feature tensor {ft} is not finalized"
         return metadata_chunks
 
     def chunk_generator(self):
