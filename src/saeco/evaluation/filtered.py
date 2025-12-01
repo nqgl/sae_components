@@ -1130,26 +1130,28 @@ def checker1(shape, slice_dims, unmasked_dims=0):
     print("success")
 
 
-def main():
-    for i in range(1, 4):
-        checker1([128, 128, 128, 128], i)
+# def main():
+#     for i in range(1, 4):
+#         checker1([128, 128, 128, 128], i)
 
-    value = torch.arange(20)
-    slice_mask = slice(2, 14, 2)
-    tensor_mask = torch.tensor([True, False, True, True, False, True])
-    mask = Filter(slices=[slice_mask], mask=tensor_mask, shape=(20,))
+#     value = torch.arange(20)
+#     slice_mask = slice(2, 14, 2)
+#     tensor_mask = torch.tensor([True, False, True, True, False, True])
+#     mask = Filter(slices=[slice_mask], mask=tensor_mask, shape=(20,))
 
-    ft = FilteredTensor.from_unmasked_value(value, mask)
+#     ft = FilteredTensor.from_unmasked_value(value, mask)
 
-    t = torch.arange(10, 30)
-    filtered_t = ft.filter.apply(t)
-    result = ft.value + filtered_t
+#     t = torch.arange(10, 30)
+#     filtered_t = ft.filter.apply(t)
+#     result = ft.value + filtered_t
 
-    ft_result = ft.to_filtered_like_self(result)
+#     ft_result = ft.to_filtered_like_self(result)
 
-    dense_result = ft_result.to_dense()
-    print(dense_result)
+#     dense_result = ft_result.to_dense()
+#     print(dense_result)
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
+
+from saeco.evaluation.filtered_modular import Filter, FilteredTensor

@@ -58,3 +58,9 @@ def iter_chunk_qty_tqdm(
 def cdiv(a, b):
     """ceiling division"""
     return (a + b - 1) // b
+
+
+def assert_cast[T](tp: type[T], value: Any) -> T:
+    if not isinstance(value, tp):
+        raise TypeError(f"Expected {tp.__name__}, got {type(value).__name__}")
+    return value

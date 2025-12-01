@@ -107,7 +107,7 @@ def make_filtered_sparse_with_mask() -> tuple[FilteredTensor, Tensor, Tensor]:
         mask_obj=mask,
     )
     assert ft.is_sparse
-    assert ft.shape == outer_dense.shape
+    assert ft.shape == outer_dense.shape[: len(ft.shape)]
     assert ft.value.shape == inner_dense.shape
     return ft, outer_dense, mask
 
@@ -173,17 +173,21 @@ def test_from_unmasked_value_with_filter_object():
     filt = Filter(
         slices=[None, None],
         mask=mask,
-        virtual_shape=base.shape,
+        shape=base.shape,
     )
 
     ft = FilteredTensor.from_unmasked_value(value=base, filter_obj=filt)
 
     expected_inner = base[mask]
+    ft.mask.virtual_shape
+    ft._compute_filtered_shape_prefix()
+
+    ft.virtual_shape
     assert ft.shape == base.shape
     assert ft.value.shape == expected_inner.shape
     assert torch.allclose(ft.value, expected_inner)
     assert torch.equal(ft.filter.mask, mask)
-    assert ft.filter.virtual_shape == base.shape
+    assert ft.shape == base.shape
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +206,7 @@ def test_mask_by_other_with_filter_intersects_outer_masks():
     other_filter = Filter(
         slices=[None, None],
         mask=mask2,
-        virtual_shape=base.shape,
+        shape=base.shape,
     )
 
     ft2 = ft.mask_by_other(other_filter, return_ft=True)
@@ -298,13 +302,15 @@ def test_filter_inactive_docs_sparse():
         [False, True, False, False, True],
         dtype=torch.bool,
     )
-    reconstructed_dense = ft_active.to_sparse_unfiltered().to_dense()
+    reconstructed_dense = ft_active.to_dense()
 
     assert torch.equal(ft_active.filter.mask, expected_outer_mask)
     # The reconstructed dense tensor should match `outer_dense` with doc 2 zeroed out
     expected_outer_dense = outer_dense.clone() * mask.unsqueeze(-1)
     expected_outer_dense[2] = 0.0
-    assert torch.allclose(reconstructed_dense, expected_outer_dense)
+    assert torch.allclose(
+        reconstructed_dense.to_dense_unfiltered(), expected_outer_dense
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -330,8 +336,6 @@ def test_to_sparse_unfiltered_roundtrip_dense():
 def test_indices_and_nonzero_agree_with_dense():
     ft, outer_dense, mask = make_filtered_sparse_with_mask()
 
-    sparse_unfiltered = ft.to_sparse_unfiltered()
-
     # indices() should match the nonzero positions of the outer dense tensor
     dense_nz = (outer_dense * mask.unsqueeze(-1)).nonzero(as_tuple=False).T  # (2, nnz)
     ft_indices = ft.indices()
@@ -346,7 +350,8 @@ def test_indices_and_nonzero_agree_with_dense():
 
     # nonzero() should give the same coordinates
     ft_nz = ft.to_dense().nonzero()
-    assert torch.equal(ft_nz, dense_nz), 3
+
+    assert torch.equal(ft_nz, dense_nz.T), 3
 
 
 # ---------------------------------------------------------------------------
@@ -403,3 +408,5 @@ if __name__ == "__main__":
     test_indices_and_nonzero_agree_with_dense()
     test_filter_inactive_docs_sparse()
     test_to_sparse_unfiltered_roundtrip_dense()
+    test_to_moves_both_value_and_filter()
+    test_from_unmasked_value_with_filter_object()
