@@ -6,43 +6,69 @@ from attrs import define, field
 from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.misc.dtypes import str_to_dtype
 
-from .disk_tensor import DiskTensor, DiskTensorMetadata
+from .disk_tensor import DiskTensor, DiskTensorMetadata, assert_isint
 
 SAECO_MIN_GDT_INITIAL_BYTES = 2**25  # 32 MB
 SAECO_MAX_GDT_INITIAL_BYTES = 2**32  # 4 GB
 
-# class DiskTensorMetadata(DiskTensorMetadata):
-#     cat_axis: int
 
-
-class UnsetCatAxis:
-    pass
+class GrowingDiskTensorMetadata(DiskTensorMetadata):
+    cat_axis: int = 0
 
 
 @define
-class GrowingDiskTensor(DiskTensor):
-    cat_axis: int = field(init=True, default=UnsetCatAxis)
+class GrowingDiskTensor[
+    MetadataT: GrowingDiskTensorMetadata = GrowingDiskTensorMetadata
+](DiskTensor[MetadataT]):
+    cat_axis: int = field(default=0)
     storage_len: int | None = 2**14
 
-    def resize(self, new_len, truncate=False):
+    def resize(self, new_len: int, truncate: bool = False):
         assert not self.finalized
-        old_tensor = self.tensor
-        temp = self.path.rename(
-            self.path.with_suffix(".old"),
-        )
-        old_len = self.storage_len
+        try:
+            del self.tensor
+        except AttributeError:
+            pass
+        # old_tensor = self.tensor
+        # temp = self.path.rename(
+        #     self.path.with_suffix(".old"),
+        # )
+        # old_len = self.storage_len
+        if not truncate:
+            assert new_len >= self.storage_len
         self.storage_len = new_len
-        new_tensor = self.create_tensor()
-        if truncate:
-            new_slice = slice(None)
-            old_slice = (slice(None),) * self.cat_axis + (slice(None, new_len),)
-        else:
-            new_slice = (slice(None),) * self.cat_axis + (slice(None, old_len),)
-            old_slice = slice(None)
-        new_tensor[new_slice] = old_tensor[old_slice]
-        temp.unlink()
+        # new_tensor = self.create_tensor()
+        # if truncate:
+        #     new_slice = slice(None)
+        #     old_slice = (slice(None),) * self.cat_axis + (slice(None, new_len),)
+        # else:
+        #     new_slice = (slice(None),) * self.cat_axis + (slice(None, old_len),)
+        #     old_slice = slice(None)
+        # new_tensor[new_slice] = old_tensor[old_slice]
+        # temp.unlink()
+        if not self.path.exists():
+            assert self.metadata.shape[self.cat_axis] == 0
+            self.path.touch()
+            # _ = self.tensor
+            # del self.tensor
+        with self.path.open("r+b") as f:
+            f.truncate(self.nbytes)
+        self._raw_tensor = self._open_raw_disk_tensor(create=False)
 
-        self.tensor = new_tensor
+    def view_storage(self, storage: torch.Tensor) -> torch.Tensor:
+        shape = tuple(assert_isint(s) for s in self.storage_shape)
+        if self.cat_axis != 0:
+            cat = shape[self.cat_axis]
+            zero = shape[0]
+            newshape = (
+                cat if i == 0 else zero if i == self.cat_axis else s
+                for i, s in enumerate(shape)
+            )
+            sview = storage.view(*newshape).transpose(0, self.cat_axis)
+            assert sview._is_view()
+            assert max(sview.stride()) == sview.stride()[self.cat_axis]
+            return sview
+        return storage.view(*shape)
 
     @property
     def cat_len(self) -> int:
@@ -70,7 +96,8 @@ class GrowingDiskTensor(DiskTensor):
         if perm is None:
             perm = torch.randperm(self.tensor.shape[shuffle_axis])
         else:
-            assert len(perm) == self.tensor.shape[shuffle_axis] and len(perm.shape) == 1
+            assert len(perm) == self.tensor.shape[shuffle_axis]
+            assert len(perm.shape) == 1
         self.tensor[:] = self.tensor.index_select(
             shuffle_axis,
             perm,
@@ -79,10 +106,12 @@ class GrowingDiskTensor(DiskTensor):
 
     @classmethod
     def open(cls, path: Path):
+        metadata = cls._open_metadata(path)
         inst = cls(
             path=path,
-            metadata=cls._open_metadata(path),
-            storage_len=None,
+            metadata=metadata,
+            storage_len=metadata.shape[metadata.cat_axis],
+            cat_axis=metadata.cat_axis,
         )
         assert inst.finalized
         return inst
@@ -121,10 +150,11 @@ class GrowingDiskTensor(DiskTensor):
             path=path,
             storage_len=cat_len,
             cat_axis=cat_axis,
-            metadata=DiskTensorMetadata(
+            metadata=cls.get_metadata_cls()(
                 shape=list(shape),
                 dtype_str=str(dtype),
                 compression=compression,
+                cat_axis=cat_axis,
             ),
             finalized=False,
         )
@@ -133,11 +163,11 @@ class GrowingDiskTensor(DiskTensor):
     @property
     def storage_shape(self):
         return [
-            s if i != self.cat_axis else self.storage_len
+            s if i != self.cat_axis else (self.storage_len if not self.finalized else s)
             for i, s in enumerate(self.metadata.shape)
         ]
 
-    def append(self, tensor):
+    def append(self, tensor: torch.Tensor):
         length = tensor.shape[self.cat_axis]
         if (
             not list(tensor.shape[: self.cat_axis])
@@ -154,7 +184,7 @@ class GrowingDiskTensor(DiskTensor):
             raise ValueError(
                 f"Shape mismatch (suffix): {tensor.shape} != {self.metadata.shape}"
             )
-        assert not self.finalized
+        assert not self.finalized, f"GrowingDiskTensor at {self.path} is finalized"
         while self.metadata.shape[self.cat_axis] + length >= self.storage_len:
             self.resize(self.storage_len * 2)
         append_slice = (slice(None),) * self.cat_axis + (

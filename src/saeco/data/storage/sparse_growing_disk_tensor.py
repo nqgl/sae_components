@@ -33,11 +33,19 @@ class SparseGrowingDiskTensor:
     shape: list[int]
     dtype: torch.dtype = torch.float32
     cat_axis: int = 0
-    finalized: bool = False
+    # finalized: bool = False
+
+    @property
+    def finalized(self) -> bool:
+        assert self.indices.finalized == self.values.finalized
+        return self.indices.finalized
 
     @cached_property
     def indices(self) -> GrowingDiskTensor:
-        if self.indices_path.exists():
+        if (
+            self.indices_path.exists()
+            or self.indices_path.with_suffix(".safetensors").exists()
+        ):
             return GrowingDiskTensor.open(path=self.indices_path)
         return GrowingDiskTensor.create(
             path=self.indices_path,
@@ -48,7 +56,10 @@ class SparseGrowingDiskTensor:
 
     @cached_property
     def values(self) -> GrowingDiskTensor:
-        if self.values_path.exists():
+        if (
+            self.values_path.exists()
+            or self.values_path.with_suffix(".safetensors").exists()
+        ):
             return GrowingDiskTensor.open(path=self.values_path)
         return GrowingDiskTensor.create(
             path=self.values_path, shape=[0], cat_axis=0, dtype=self.dtype

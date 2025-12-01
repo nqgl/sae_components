@@ -1,8 +1,11 @@
+from collections.abc import Sequence
 from functools import cached_property
 from pathlib import Path
+from typing import Any, cast
 
 import torch
 from attrs import define
+from paramsight import get_resolved_typevars_for_base, takes_alias
 from pydantic import BaseModel
 
 from saeco.misc import str_to_dtype
@@ -12,6 +15,11 @@ from .compressed_safetensors import (
     load_file_compressed,
     save_file_compressed,
 )
+
+
+def assert_isint(x: Any) -> int:
+    assert isinstance(x, int)
+    return x
 
 
 class DiskTensorMetadata(BaseModel):
@@ -44,14 +52,40 @@ def tensorclass(dtype):
         raise ValueError(f"Unsupported dtype {dtype}")
 
 
+def _numel_from_shape(shape: Sequence[int]):
+    assert all(s >= 0 for s in shape)
+    if len(shape) == 0:
+        return 0
+    size = 1
+    for s in shape:
+        size *= s
+    return size
+
+
 @define
-class DiskTensor:
+class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
     path: Path
-    metadata: DiskTensorMetadata
+    metadata: MetadataT
     finalized: bool = False
 
-    @cached_property
+    @takes_alias
+    @classmethod
+    def get_metadata_cls(cls) -> type[MetadataT]:
+        base = get_resolved_typevars_for_base(cls, DiskTensor)[0]
+        assert base is not None
+        return cast("type[MetadataT]", base)
+
+    @property
+    def tensor(self) -> torch.Tensor:
+        return self.view_storage(self._raw_tensor)
+
+    @tensor.deleter
     def tensor(self):
+        del self._raw_tensor
+
+    @cached_property
+    def _raw_tensor(self):
+        # print("opening tensor", self.path)
         safepath = self.path.with_suffix(".safetensors")
         if safepath.exists():
             self.finalized = True
@@ -60,22 +94,31 @@ class DiskTensor:
             )["finalized_tensor"]
         if self.path.exists():
             self.finalized = True
-        return self.open_disk_tensor(create=not self.finalized)
+        return self._open_raw_disk_tensor(create=not self.finalized)
 
+    @property
+    def metadata_path(self) -> Path:
+        return self.path.with_suffix(".metadata")
+
+    @takes_alias
     @classmethod
-    def _open_metadata(cls, path: Path):
-        return DiskTensorMetadata.model_validate_json(
+    def _open_metadata(cls, path: Path) -> MetadataT:
+        return cls.get_metadata_cls().model_validate_json(
             (path.with_suffix(".metadata")).read_text()
         )
 
     def __attrs_post_init__(self):
         if self.path.exists() or self.path.with_suffix(".safetensors").exists():
             self.finalized = True
+        # self.tensor  # init tensor
 
-    def create_tensor(self):
-        return self.open_disk_tensor(create=True)
+    # def create_tensor(self):
+    #     return self.open_disk_tensor(create=True)
 
     def open_disk_tensor(self, create=False):
+        return self.view_storage(self._open_raw_disk_tensor(create=create))
+
+    def _open_raw_disk_tensor(self, create=False):
         if self.path.exists() == create:
             if not self.path.exists():
                 raise FileNotFoundError(
@@ -85,13 +128,16 @@ class DiskTensor:
                 raise FileExistsError(
                     f"File {self.path} already exists and create flag is set"
                 )
-        return tensorclass(self.metadata.dtype)(
-            torch.UntypedStorage.from_file(
-                str(self.path),
-                shared=True,
-                nbytes=self.nbytes,
-            )
-        ).reshape(self.storage_shape)
+        return torch.from_file(
+            str(self.path),
+            shared=True,
+            size=self.numel,
+            dtype=self.metadata.dtype,
+        )
+
+    def view_storage(self, storage: torch.Tensor) -> torch.Tensor:
+        shape = tuple(assert_isint(s) for s in self.storage_shape)
+        return storage.view(*shape)
 
     @classmethod
     def open(cls, path):
@@ -100,6 +146,7 @@ class DiskTensor:
             metadata=cls._open_metadata(path),
         )
 
+    @takes_alias
     @classmethod
     def create(
         cls,
@@ -108,7 +155,7 @@ class DiskTensor:
         dtype: torch.dtype,
         compression: CompressionType = CompressionType.NONE,
     ):
-        metadata = DiskTensorMetadata(
+        metadata = cls.get_metadata_cls()(
             shape=list(shape), dtype_str=str(dtype), compression=compression
         )
 
@@ -129,19 +176,20 @@ class DiskTensor:
     def nbytes(self):
         return self._nbytes_from_shape(self.storage_shape)
 
+    @property
+    def numel(self):
+        assert not any(s is None for s in self.storage_shape)
+        return _numel_from_shape(self.storage_shape)
+
     def _nbytes_from_shape(self, shape):
         size = self.metadata.dtype.itemsize
         for s in shape:
             size *= s
         return size
 
-    @property
-    def metadata_path(self):
-        return self.path.with_suffix(".metadata")
-
     def _save_safe(self):
         save_file_compressed(
-            {"finalized_tensor": self.tensor},
+            {"finalized_tensor": self._raw_tensor},
             self.path.with_suffix(".safetensors"),
             compression=self.metadata.compression,
         )
@@ -157,10 +205,11 @@ class DiskTensor:
             self.path.unlink()
 
         self.metadata_path.write_text(self.metadata.model_dump_json())
+        del self.tensor
 
 
 def main():
-    path = Path("test")
+    path = Path("testdata/storage_testing")
     dt = DiskTensor.create(path, [10, 10], torch.int64)
     dt.tensor[:] = torch.arange(100).reshape(10, 10)
     dt.finalize()

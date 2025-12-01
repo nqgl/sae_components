@@ -4,7 +4,6 @@ import asyncio
 import os
 from functools import cached_property
 from pathlib import Path
-from typing import Any, TypeVar
 
 import torch
 import tqdm
@@ -16,6 +15,7 @@ from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
 from saeco.misc import str_to_dtype
+from saeco.misc.utils import assert_cast
 
 
 class PilerMetadata(BaseModel):
@@ -23,15 +23,6 @@ class PilerMetadata(BaseModel):
     fixed_shape: list[int]
     compression: CompressionType = CompressionType.NONE
     num_piles: int
-
-
-T = TypeVar("T")
-
-
-def assert_cast(tp: type[T], value: Any) -> T:
-    if not isinstance(value, tp):
-        raise TypeError(f"Expected {tp.__name__}, got {type(value).__name__}")
-    return value
 
 
 @define
