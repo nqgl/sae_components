@@ -171,8 +171,6 @@ class FamilyGenerator:
                 if fam not in fam2f:
                     fam2f[fam] = []
                 fam2f[fam].append(i)
-        # for i in range(self.d_dict):
-        #     for j in range(1,3):
 
         for l in range(len(levels)):
             for f, feats in family_to_feature_maps[l].items():
@@ -201,9 +199,7 @@ class FamilyGenerator:
     def _get_feature_families_unlabeled(
         self: "Evaluation", **kwargs
     ) -> GetFamiliesResponse:
-
         # TODO .cached_call
-        # levels = self._get_feature_family_treesz(**kwargs)
         levels, trees = self.generate_feature_families4(**kwargs)
         l = [i.indices for i in levels]
         levels = []
@@ -293,7 +289,6 @@ class FamilyGenerator:
         from ..mst import Families, FamilyTreeNode
 
         # TODO .cached_call
-        # levels = self._get_feature_family_treesz(**kwargs)
         levels, trees = self.generate_feature_families4(**kwargs)
         levels = trees
         # levels.shape
@@ -388,33 +383,7 @@ class FamilyGenerator:
         for level in ffs.levels:
             for family in level.families.values():
                 family.label = self.get_family_label(family)
-        ###
-        # feature_level = FamilyLevel(
-        #     level=3,
-        #     families={
-        #         i: Family(
-        #             level=3,
-        #             family_id=i,
-        #             label=None,
-        #             subfamilies=[],
-        #             subfeatures=[],
-        #         )
-        #         for i in range(self.d_dict)
-        #         if i < 1000
-        #     },
-        # )
-        # ffs.levels.append(feature_level)
-        # for family in ffs.levels[2].families.values():
-        #     family.subfamilies.extend(get_
-        #         [
-        #             ScoredFamilyRef(
-        #                 family=FamilyRef(level=3, family_id=feat.feature.feature_id),
-        #                 score=feat.score,
-        #             )
-        #             for feat in family.subfeatures
-        #         ]
-        #     )
-        # ###
+
         return ffs
 
     def generate_feature_families1(
@@ -425,7 +394,6 @@ class FamilyGenerator:
         use_d=False,
         freq_bounds=None,
     ):
-        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
         if use_d:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
         else:
@@ -477,7 +445,6 @@ class FamilyGenerator:
     def get_C(
         self: "Evaluation", doc_agg, use_d=False, threshold=None, freq_bounds=None
     ):
-        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
         if use_d:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
         else:
@@ -564,7 +531,6 @@ class FamilyGenerator:
         feat_counts = (
             self.doc_activation_counts if doc_agg else self.seq_activation_counts
         )
-        # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
 
         def denan(x):
             return torch.where(x.isnan() | x.isinf(), torch.zeros_like(x), x)
@@ -713,7 +679,6 @@ class FamilyGenerator:
     ):
         if min_family_sizes is None:
             min_family_sizes = [20, 12, 7]
-        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
         if use_d:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
         else:
@@ -757,8 +722,6 @@ class FamilyGenerator:
             for f in kept:
                 roots[f.feature_id] = 1
 
-            # tree = self.artifacts["tree_1234"]
-            # roots = self.artifacts["roots_1234"]
             dists = distances(tree.cuda(), roots.cuda())
             c = connectedness(tree.cuda() * 0.99, roots.cuda())
             c.shape
@@ -872,7 +835,6 @@ class FamilyGenerator:
         feat_counts = (
             self.doc_activation_counts if doc_agg else self.seq_activation_counts
         ).cpu()
-        # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
 
         def denan(x):
             return torch.where(x.isnan() | x.isinf(), torch.zeros_like(x), x)
@@ -1017,8 +979,6 @@ class FamilyGen:
 
         C = self.getC(doc_agg=doc_agg, use_d=use_d, threshold=threshold)
         from ..mst import mst
-
-        # self.fam_fn = lambda x: x.max(dim=0)
 
         levels = []
         roots_l = []

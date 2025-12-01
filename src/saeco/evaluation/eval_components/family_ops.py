@@ -185,7 +185,9 @@ class FamilyOps:
             agg_doc_score = filt_da[0].to(self.cuda).clone().to_dense()
             for da in filt_da[1:]:
                 agg_doc_score += da.to(self.cuda)
-        agg_doc = FilteredTensor.from_value_and_mask(value=agg_doc_score, mask=agg_mask)
+        agg_doc = FilteredTensor.from_value_and_mask(
+            value=agg_doc_score, mask_obj=agg_mask
+        )
 
         k = self._pk_to_k(p, k, agg_doc_score.shape[0])
         if k == 0:

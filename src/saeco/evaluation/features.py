@@ -88,7 +88,7 @@ class Features:
             filter_obj=Filter(
                 slices=slicing,
                 mask=mask,
-                virtual_shape=shape,
+                shape=shape,
             ),
             presliced=True,
         ).to_dense()
@@ -118,7 +118,7 @@ class Features:
             filter_obj=Filter(
                 slices=slicing,
                 mask=self.filter.filter if self.filter is not None else None,
-                virtual_shape=tuple(shape),
+                shape=tuple(shape),
             ),
             presliced=True,
         )

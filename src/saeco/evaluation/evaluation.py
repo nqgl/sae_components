@@ -408,7 +408,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         values = torch.cat(values, dim=0)
         if only_return_selected:
             return values
-        return FilteredTensor.from_value_and_mask(value=values, mask=mask)
+        return FilteredTensor.from_value_and_mask(value=values, mask_obj=mask)
 
     def filter_acts(
         self, docs_filter: Tensor, only_return_selected: bool = False
@@ -429,7 +429,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         values = torch.cat(values, dim=0)
         if only_return_selected:
             return values
-        return FilteredTensor.from_value_and_mask(value=values, mask=mask)
+        return FilteredTensor.from_value_and_mask(value=values, mask_obj=mask)
 
     # def coactivations(self, doc_agg=None):
     #     sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)

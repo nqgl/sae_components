@@ -123,7 +123,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         filt = Filter(
             [sl],
             mask=mask,
-            virtual_shape=(self.cfg.num_docs,),
+            shape=(self.cfg.num_docs,),
         )
         return FilteredTensor.from_unmasked_value(
             chunk_tensor, filter_obj=filt, presliced=True
