@@ -1,10 +1,11 @@
 from collections.abc import Sequence
 from functools import cached_property
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
+from weakref import WeakSet
 
 import torch
-from attrs import define
+from attrs import define, field
 from paramsight import get_resolved_typevars_for_base, takes_alias
 from pydantic import BaseModel
 
@@ -62,11 +63,20 @@ def _numel_from_shape(shape: Sequence[int]):
     return size
 
 
+class RemovableOnFinalize(Protocol):
+    def _remove_finalized_disktensor(
+        self, key: str, disk_tensor: "DiskTensor[Any]"
+    ) -> None: ...
+
+
 @define
 class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
     path: Path
     metadata: MetadataT
     finalized: bool = False
+    remove_on_finalize: WeakSet[tuple[str, RemovableOnFinalize]] = field(
+        factory=WeakSet
+    )
 
     @takes_alias
     @classmethod
@@ -206,6 +216,9 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
 
         self.metadata_path.write_text(self.metadata.model_dump_json())
         del self.tensor
+        while len(self.remove_on_finalize) > 0:
+            key, container = self.remove_on_finalize.pop()
+            container._remove_finalized_disktensor(key, self)
 
 
 def main():

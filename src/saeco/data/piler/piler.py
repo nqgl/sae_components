@@ -81,7 +81,7 @@ class Piler:
         return piler
 
     @classmethod
-    def open(cls, path: str | Path, skip_cache: bool = False):
+    def open(cls, path: str | Path):
         if isinstance(path, str):
             path = Path(path)
         metadata_path = cls.get_metadata_path(path)
@@ -94,7 +94,6 @@ class Piler:
         gdtc = GrowingDiskTensorCollection(
             path,
             stored_tensors_subdirectory_name="piles",
-            skip_cache=skip_cache,
         )
 
         if len(gdtc) != metadata.num_piles:

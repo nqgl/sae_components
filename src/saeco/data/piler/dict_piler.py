@@ -38,11 +38,7 @@ def shuffled_range(start, stop, mod, shuffle=True):
 
 @define
 class DictPiler:
-    # metadata: DictPilerMetadata
-    # piler_metadata: PilerMetadata
-    # pilers: dict[str, Piler]
     path: Path
-    skip_cache: bool
     use_async_distribute: bool = (
         True  # this is a flag just bc it's a new/experimental feature
     )
@@ -57,7 +53,6 @@ class DictPiler:
         num_piles: int,
         use_async_distribute: bool = True,
         compress: bool = False,
-        skip_cache: bool = True,
     ):
         keys = set(dtypes.keys())
 
@@ -89,15 +84,11 @@ class DictPiler:
             )
             for k in keys
         }
-
-        # first_piler = next(iter(pilers.values()))
-
-        dict_piler = DictPiler(
+        dict_piler = cls(
             # metadata=metadata,
             # piler_metadata=first_piler.metadata,
             # pilers=pilers,
             path=path,
-            skip_cache=False,
             use_async_distribute=use_async_distribute,
             readonly=False,
         )
@@ -112,43 +103,11 @@ class DictPiler:
         cls,
         path: Path,
         use_async_distribute: bool = True,
-        skip_cache: bool = True,
-        # we could allow options to be passed in here and then assert that they match the properties of the opened piler
-        # not sure that's necessary though
     ):
-        # metadata_path = cls.get_metadata_path(path)
-
-        # if not metadata_path.exists():
-        #     raise ValueError(f"DictPiler metadata not found at {metadata_path}")
-
-        # metadata = DictPilerMetadata.model_validate_json(metadata_path.read_text())
-
-        # pilers = {k: Piler.open(path / k, skip_cache=skip_cache) for k in metadata.keys}
-
-        # first_piler = next(iter(pilers.values()))
-
-        # for piler in pilers.values():
-        #     if first_piler.metadata.num_piles != piler.metadata.num_piles:
-        #         raise ValueError(
-        #             f"Piler {piler.path} does not match first piler {first_piler.path}: {piler.metadata.num_piles} != {first_piler.metadata.num_piles}"
-        #         )
-        #     if first_piler.shape[0] != piler.shape[0]:
-        #         raise ValueError(
-        #             f"Piler {piler.path} shape does not match first piler {first_piler.path}: {piler.shape[0]} != {first_piler.shape[0]}"
-        #         )
-        #     if first_piler.metadata.compression != piler.metadata.compression:
-        #         raise ValueError(
-        #             f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
-        #         )
-
         dict_piler = DictPiler(
-            # metadata=metadata,
-            # piler_metadata=first_piler.metadata,
-            # pilers=pilers,
             path=path,
             use_async_distribute=use_async_distribute,
             readonly=True,
-            skip_cache=skip_cache,
         )
 
         return dict_piler
@@ -166,10 +125,7 @@ class DictPiler:
 
     @cached_property
     def pilers(self):
-        pilers = {
-            k: Piler.open(self.path / k, skip_cache=self.skip_cache)
-            for k in self.metadata.keys
-        }
+        pilers = {k: Piler.open(self.path / k) for k in self.metadata.keys}
 
         first_piler = next(iter(pilers.values()))
 
@@ -335,7 +291,11 @@ class DictPiler:
                         spares = [spare]
                         nspare = len(spare)
                 for piler in self.pilers.values():
-                    if not piler.piles.skip_cache:
+                    print("checking through pilers")
+
+                    if not piler.piles:
+                        print(f"not deleting item from piler cache: {p}")
+                        continue
                         try:
                             del piler.piles.cache[str(p)]
                         except KeyError as e:
