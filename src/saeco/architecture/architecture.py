@@ -166,7 +166,8 @@ class Architecture[ArchConfigT: SweepableConfig]:
     def instantiate(self, inst_cfg: dict[str, Any] | None = None):
         if inst_cfg:
             self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
-        assert self.cfg.is_concrete() and self.run_cfg.is_concrete()
+        assert self.cfg.is_concrete()
+        assert self.run_cfg.is_concrete()
         self._instantiated = True
         self._setup()
 

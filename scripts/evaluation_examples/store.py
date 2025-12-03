@@ -10,13 +10,13 @@ root_eval = Evaluation.from_model_path(model_name)
 root_eval.store_acts(
     CachingConfig[NoisedBatch](
         dirname=storage_name,
-        num_chunks=100,
-        docs_per_chunk=4,
-        documents_per_micro_batch=2,
+        num_chunks=30,
+        docs_per_chunk=32,
+        documents_per_micro_batch=8,
         # exclude_bos_from_storage=True,
         eager_sparse_generation=True,
         store_feature_tensors=False,
-        deferred_blocked_store_feats_block_size=10,
+        deferred_blocked_store_feats_block_size=32,
         # metadatas_from_src_column_names=["tissue", "cell_type"],
     ),
     displace_existing=True,
