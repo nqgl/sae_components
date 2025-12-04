@@ -23,6 +23,8 @@ from typing import (
 import torch
 from torch import Tensor
 
+from saeco.misc.utils import assert_cast
+
 
 # --------------------------------------------------------------------------- #
 #  Utility wrapper (kept exactly as in NiceBatch so existing pipes still work) #
@@ -37,13 +39,15 @@ class NiceConvertedIter[DictBatch_T: "DictBatch"]:
     def __next__(self):  # pragma: no cover
         return next(self._iter)
 
-    def __rshift__(  # Enables:   loader >> some_transform >> other_transform
+    def __rshift__[
+        Transformed_T: DictBatch
+    ](  # Enables:   loader >> some_transform >> other_transform
         self,
         transform_gen: Callable[
             [Iterator[DictBatch_T]],
-            Iterator[DictBatch_T] | Generator[DictBatch_T],
+            Iterator[Transformed_T] | Generator[Transformed_T],
         ],
-    ) -> "NiceConvertedIter[DictBatch_T]":
+    ) -> "NiceConvertedIter[Transformed_T]":
         return NiceConvertedIter(transform_gen(self._iter))
 
     def as_dataset(self) -> "NiceIterDataset[DictBatch_T]":
@@ -246,10 +250,9 @@ class DictBatch(dict):
         )
 
     def __setitem__(self, key: Any, value: Tensor) -> None:
-        if isinstance(key, str):
-            assert isinstance(value, Tensor)
-            super().__setitem__(key, value)
-        raise ValueError(f"Cannot set item {key} of type {type(key)}")
+        if key in self.TENSOR_DATA_FIELDS and not isinstance(value, Tensor):
+            raise ValueError(f"Cannot set item {key} of type {type(key)}")
+        super().__setitem__(key, value)
 
     # --------------------------- basic utilities -----------------------------
     @property
@@ -592,6 +595,34 @@ class DictBatchShape:
             return self.shapes[key]
         assert isinstance(key, int)
         return {k: v[key] for k, v in self.shapes.items() if len(v) > key}
+
+
+@define
+class DictBatchShapes:
+    batch_sizes: tuple[int, ...]
+    shapes: dict[str, tuple[int, ...]]
+
+    @overload
+    def __getitem__(self, key: str) -> tuple[int, ...]: ...
+    @overload
+    def __getitem__(self, key: Literal[0]) -> int: ...
+    @overload
+    def __getitem__(self, key: int) -> dict[str, int]: ...
+    def __getitem__(self, key: str | int) -> tuple[int, ...] | int | dict[str, int]:
+        if isinstance(key, int) and key < len(self.batch_sizes):
+            return self.batch_sizes[key]
+        if isinstance(key, str):
+            return self.shapes[key]
+        assert isinstance(key, int)
+        return {k: v[key] for k, v in self.shapes.items() if len(v) > key}
+
+    def __radd__(self, other) -> Self:
+        if isinstance(other, (list, tuple)):
+            other_tup = tuple(assert_cast(int, o) for o in other)
+            return self.__class__(
+                batch_sizes=other_tup + self.batch_sizes, shapes=self.shapes
+            )
+        raise ValueError(f"Cannot add {type(other)} to {type(self)}")
 
 
 @define
