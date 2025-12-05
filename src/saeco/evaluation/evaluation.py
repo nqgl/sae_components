@@ -23,6 +23,7 @@ from saeco.evaluation.model_interface import (
     LanguageModelEvalAdapter,
     ModelEvalAdapter,
 )
+from saeco.evaluation.return_objects import Feature, TopActivations
 from saeco.evaluation.storage.MetadataBuilder import FilteredBuilder, MetadataBuilder
 from saeco.trainer import RunConfig
 
@@ -30,7 +31,7 @@ from .cached_artifacts import CachedCalls
 from .eval_components.family_generation import FamilyGenerator
 from .eval_components.family_ops import FamilyOps
 from .fastapi_models import (
-    Feature,
+    LabeledFeature,
 )
 from .fastapi_models.families_draft import (
     FamilyRef,
@@ -139,132 +140,6 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         """
         return getattr(self.nnsight_model, "_model", self.nnsight_model)
 
-    @takes_alias
-    @classmethod
-    def from_cache_name(cls, name: Path | str):
-        if isinstance(name, str):
-            name = Path(name)
-            fp = Path.home() / "workspace" / "cached_sae_acts" / name
-            if fp.exists():
-                name = fp
-            elif not name.exists():
-                raise FileNotFoundError(f"Could not find cached acts at {name} or {fp}")
-
-        saved = SavedActs[cls.get_inputs_type()].from_path(name)
-        assert saved.cfg.model_path is not None
-        inst = cls.from_model_path(
-            path=saved.cfg.model_path, averaged_weights=saved.cfg.averaged_model_weights
-        )
-        inst.saved_acts = saved
-        return inst
-
-    @takes_alias
-    @classmethod
-    def from_model_path(cls, path: Path, averaged_weights: bool = False):
-        path = path if isinstance(path, Path) else Path(path)
-        arch = Architecture.load(
-            path, load_weights=True, averaged_weights=averaged_weights
-        )
-        inst = cls(
-            architecture=arch, model_path=path, averaged_model_weights=averaged_weights
-        )
-
-        return inst
-
-    def __attrs_post_init__(self):
-        if self.saved_acts is not None:
-            if self.saved_acts.data_filter is not self.filter:
-                raise ValueError("Filter mismatch between Evaluation and storage")
-        else:
-            assert self.filter is None
-
-    def _metadata_for_doc_indices(
-        self, doc_indices: Tensor | None, metadata: dict[str, Tensor] | None = None
-    ) -> dict[str, Tensor]:
-        meta: dict[str, Tensor] = {} if metadata is None else dict(metadata)
-        if doc_indices is None:
-            return meta
-        if not self.cache_cfg.metadatas_from_src_column_names:
-            return meta
-        idx = doc_indices.detach().cpu()
-        for name in self.cache_cfg.metadatas_from_src_column_names:
-            m = self._root_metadatas[name][idx]
-            if isinstance(m, Tensor):
-                meta[name] = m.to(self.cuda)
-        return meta
-
-    def _build_model_batch(
-        self,
-        tokens_or_batch,
-        doc_indices: Tensor | None = None,
-        metadata: dict[str, Tensor] | None = None,
-    ):
-        meta = self._metadata_for_doc_indices(doc_indices, metadata)
-
-        def unwrap_tokens(tokens):
-            if isinstance(tokens, FilteredTensor):
-                return tokens.value
-            if isinstance(tokens, DictBatch):
-                return tokens.__class__.construct_with_other_data(
-                    {
-                        k: (v.value if isinstance(v, FilteredTensor) else v)
-                        for k, v in tokens.items()
-                    },
-                    tokens._get_other_dict(),
-                )
-            return tokens
-
-        return self.model_adapter.make_batch(unwrap_tokens(tokens_or_batch), meta)
-
-    def _apply_filter(self, filter_obj: NamedFilter | Tensor) -> "Evaluation":
-        if isinstance(filter_obj, Tensor):
-            filter_obj = NamedFilter(filter=filter_obj, filter_name=None)
-        if self.filter is not None:
-            raise ValueError(
-                "Filter already set, create filtered from the root Evaluation"
-            )
-        return Evaluation(
-            model_path=self.model_path,
-            architecture=self.architecture,
-            saved_acts=self.saved_acts.filtered(filter_obj),
-            filter=filter_obj,
-            root=self,
-            tokenizer=self.tokenizer,
-            model_adapter=self.model_adapter,
-        )
-
-    def open_filtered(self, filter_name: str) -> "Evaluation":
-        return self._apply_filter(self.filters[filter_name])
-
-    def metadata_builder(
-        self,
-        dtype: torch.dtype,
-        device: str | torch.device,
-        item_size: list[int] | tuple[int, ...] = (),
-    ) -> "MetadataBuilder":
-        return MetadataBuilder(
-            self.saved_acts.chunks,
-            dtype=dtype,
-            device=device,
-            shape=[self.cache_cfg.num_docs, *item_size],
-        )
-
-    def filtered_builder(
-        self,
-        dtype: torch.dtype,
-        device: str | torch.device,
-        item_size: list[int] | None = None,
-    ) -> "FilteredBuilder":
-        if item_size is None:
-            item_size = []
-        return FilteredBuilder(
-            self.saved_acts.chunks,
-            dtype=dtype,
-            device=device,
-            shape=[self.cache_cfg.num_docs, *item_size],
-            filter=self.filter,
-        )
-
     @property
     def path(self) -> Path:
         if self.saved_acts is None:
@@ -317,7 +192,9 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         return self.saved_acts.cfg
 
     @property
-    def features(self) -> "Features | None":
+    def features(self) -> "Features":
+        assert self.saved_acts is not None
+        assert self.saved_acts.features is not None
         return self.saved_acts.features
 
     @property
@@ -335,6 +212,65 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     @property
     def d_vocab(self) -> int:
         return self.tokenizer.vocab_size
+
+    @takes_alias
+    @classmethod
+    def from_cache_name(cls, name: Path | str):
+        if isinstance(name, str):
+            name = Path(name)
+            fp = Path.home() / "workspace" / "cached_sae_acts" / name
+            if fp.exists():
+                name = fp
+            elif not name.exists():
+                raise FileNotFoundError(f"Could not find cached acts at {name} or {fp}")
+
+        saved = SavedActs[cls.get_inputs_type()].from_path(name)
+        assert saved.cfg.model_path is not None
+        inst = cls.from_model_path(
+            path=saved.cfg.model_path, averaged_weights=saved.cfg.averaged_model_weights
+        )
+        inst.saved_acts = saved
+        return inst
+
+    @takes_alias
+    @classmethod
+    def from_model_path(cls, path: Path, averaged_weights: bool = False):
+        path = path if isinstance(path, Path) else Path(path)
+        arch = Architecture.load(
+            path, load_weights=True, averaged_weights=averaged_weights
+        )
+        inst = cls(
+            architecture=arch, model_path=path, averaged_model_weights=averaged_weights
+        )
+
+        return inst
+
+    def __attrs_post_init__(self):
+        if self.saved_acts is not None:
+            if self.saved_acts.data_filter is not self.filter:
+                raise ValueError("Filter mismatch between Evaluation and storage")
+        else:
+            assert self.filter is None
+
+    def _apply_filter(self, filter_obj: NamedFilter | Tensor) -> "Evaluation":
+        if isinstance(filter_obj, Tensor):
+            filter_obj = NamedFilter(filter=filter_obj, filter_name=None)
+        if self.filter is not None:
+            raise ValueError(
+                "Filter already set, create filtered from the root Evaluation"
+            )
+        return Evaluation(
+            model_path=self.model_path,
+            architecture=self.architecture,
+            saved_acts=self.saved_acts.filtered(filter_obj),
+            filter=filter_obj,
+            root=self,
+            tokenizer=self.tokenizer,
+            model_adapter=self.model_adapter,
+        )
+
+    def open_filtered(self, filter_name: str) -> "Evaluation":
+        return self._apply_filter(self.filters[filter_name])
 
     def store_acts(self, caching_cfg: CachingConfig, displace_existing: bool = False):
         if caching_cfg.model_path is None:
@@ -371,88 +307,82 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             self.metadatas[name] = builder.value
             self.metadatas.set_str_translator(name, builder.unique_labels)
 
+    def _metadata_for_doc_indices(
+        self, doc_indices: Tensor | None, metadata: dict[str, Tensor] | None = None
+    ) -> dict[str, Tensor]:
+        meta: dict[str, Tensor] = {} if metadata is None else dict(metadata)
+        if doc_indices is None:
+            return meta
+        if not self.cache_cfg.metadatas_from_src_column_names:
+            return meta
+        idx = doc_indices.detach().cpu()
+        for name in self.cache_cfg.metadatas_from_src_column_names:
+            m = self._root_metadatas[name][idx]
+            if isinstance(m, Tensor):
+                meta[name] = m.to(self.cuda)
+        return meta
+
+    def _build_model_batch(
+        self,
+        tokens_or_batch,
+        doc_indices: Tensor | None = None,
+        metadata: dict[str, Tensor] | None = None,
+    ):
+        meta = self._metadata_for_doc_indices(doc_indices, metadata)
+        # TODO this makes very little sense. slop.
+
+        def unwrap_tokens(tokens):
+            if isinstance(tokens, FilteredTensor):
+                return tokens.value
+            if isinstance(tokens, DictBatch):
+                return tokens.__class__.construct_with_other_data(
+                    {
+                        k: (v.value if isinstance(v, FilteredTensor) else v)
+                        for k, v in tokens.items()  # eg this makes no sense
+                    },
+                    tokens._get_other_dict(),
+                )
+            return tokens
+
+        return self.model_adapter.make_batch(unwrap_tokens(tokens_or_batch), meta)
+
+    def metadata_builder(
+        self,
+        dtype: torch.dtype,
+        device: str | torch.device,
+        item_size: list[int] | tuple[int, ...] = (),
+    ) -> "MetadataBuilder":
+        return MetadataBuilder(
+            self.saved_acts.chunks,
+            dtype=dtype,
+            device=device,
+            shape=[self.cache_cfg.num_docs, *item_size],
+        )
+
+    def filtered_builder(
+        self,
+        dtype: torch.dtype,
+        device: str | torch.device,
+        item_size: list[int] | None = None,
+    ) -> "FilteredBuilder":
+        if item_size is None:
+            item_size = []
+        return FilteredBuilder(
+            self.saved_acts.chunks,
+            dtype=dtype,
+            device=device,
+            shape=[self.cache_cfg.num_docs, *item_size],
+            filter=self.filter,
+        )
+
     def get_features(
         self, feature_ids: list[int] | Tensor
     ) -> list[FilteredTensor]:  ###
         return [self.features[fid] for fid in feature_ids]
 
-    def get_feature(self, feature_id: int) -> FilteredTensor:  ###
-        return self.features[feature_id]
-
-    def filter_docs(
-        self,
-        docs_filter: Tensor,
-        only_return_selected: bool = False,
-        seq_level: bool = False,
-    ) -> FilteredTensor | Tensor:
-        ###
-        if not only_return_selected:
-            if seq_level:
-                mask = torch.zeros(
-                    self.cache_cfg.num_docs,
-                    self.sae_cfg.train_cfg.data_cfg.seq_len,
-                    dtype=torch.bool,
-                )
-
-            else:
-                mask = torch.zeros(self.cache_cfg.num_docs, dtype=torch.bool)
-        values = []
-        for chunk in self.saved_acts.chunks:
-            tokens = chunk.tokens.to(docs_filter.device)
-            filt_docs = tokens.mask_by_other(
-                docs_filter, return_ft=True, presliced=False
-            )
-            values.append(filt_docs.value)
-            if not only_return_selected:
-                filt_docs.filter.slice(mask)[:] = filt_docs.filter.mask
-        values = torch.cat(values, dim=0)
-        if only_return_selected:
-            return values
-        return FilteredTensor.from_value_and_mask(value=values, mask_obj=mask)
-
-    def filter_acts(
-        self, docs_filter: Tensor, only_return_selected: bool = False
-    ) -> FilteredTensor | Tensor:
-        ###
-        if not only_return_selected:
-            mask = torch.zeros(self.cache_cfg.num_docs, dtype=torch.bool)
-        values = []
-        for chunk in self.saved_acts.chunks:
-            acts = chunk.acts.to(docs_filter.device)
-            filt = acts.filter.slice(docs_filter)
-            if not filt.any():
-                continue
-            filt_docs = acts.mask_by_other(filt, return_ft=True, presliced=True)
-            values.append(filt_docs.value)
-            if not only_return_selected:
-                filt_docs.filter.slice(mask)[:] = filt_docs.filter.mask
-        values = torch.cat(values, dim=0)
-        if only_return_selected:
-            return values
-        return FilteredTensor.from_value_and_mask(value=values, mask_obj=mask)
-
-    # def coactivations(self, doc_agg=None):
-    #     sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-    #     coact_counts = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-    #     fa_sq_sum = torch.zeros(self.d_dict).to(self.cuda)
-    #     for chunk in tqdm.tqdm(
-    #         self.saved_acts.chunks, total=len(self.saved_acts.chunks)
-    #     ):
-    #         acts = chunk.acts.value.to(self.cuda).to_dense()
-    #         assert acts.ndim == 3
-    #         feature_activity = self.sequelize(
-    #             acts, doc_agg=doc_agg
-    #         )  # feat, (doc [seq])
-    #         feature_bin = (feature_activity > 0).float()
-    #         fa_sq_sum += feature_activity.pow(2).sum(-1)
-    #         sims += feature_activity @ feature_activity.transpose(-2, -1)
-    #         coact_counts += feature_bin @ feature_bin.transpose(-2, -1)
-    #     norms = fa_sq_sum.sqrt()
-    #     sims /= norms.unsqueeze(0)
-    #     sims /= norms.unsqueeze(1)
-    #     prod = sims.diag()[~sims.diag().isnan()].prod()
-    #     assert prod < 1.001 and prod > 0.999
-    #     return coact_counts, sims
+    ###--------------------------------------------------------
+    ### Labeling
+    ###--------------------------------------------------------
 
     def get_feature_label(self, feature_id: int | str) -> str | None:
         return self.feature_labels.get(str(int(feature_id)))
@@ -466,8 +396,8 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def set_family_label(self, family: FamilyRef, label: str):
         self.family_labels[str((int(family.level), int(family.family_id)))] = label
 
-    def get_feature_model(self, feat_id: int | str) -> Feature:
-        return Feature(
+    def get_feature_model(self, feat_id: int | str) -> LabeledFeature:
+        return LabeledFeature(
             feature_id=int(feat_id),
             label=self.get_feature_label(feat_id),
         )
@@ -542,163 +472,26 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         if docs_agg == "mean":
             results /= self.num_docs
 
-    @property
-    def token_occurrence_count(self) -> Tensor:
-        return self.cached_call.count_token_occurrence()
+    def get_feature(self, feature: int | FilteredTensor) -> Feature:
+        if isinstance(feature, int):
+            return Feature.make(src_eval=self, feature_id=feature)
+        elif isinstance(feature, FilteredTensor):
+            return Feature.make(src_eval=self, feature=feature)
+        else:
+            raise ValueError(f"Invalid feature type: {type(feature)}")
 
-    def top_activating_examples(
-        self, feature_id: int, p: float | None = None, k: int | None = None
-    ) -> FilteredTensor:
-        feature = self.features[feature_id]
-        top = self._get_top_activating(feature.value, p=p, k=k)
-        return feature.to_filtered_like_self(top)
+    def get_feature_legacy_(self, feature_id: int) -> FilteredTensor:  ###
+        return self.features[feature_id]
 
-    @staticmethod
-    def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:
-        if (p is None) == (k is None):
-            raise ValueError("Exactly one of p and k must be set")
-        if p is not None and not (0 < p <= 1):
-            raise ValueError("p must be in (0, 1]")
-        if k is None:
-            k = int(quantity * p)
-        if k <= 0:
-            raise ValueError("k must be positive")
-        return min(k, quantity)
-
-    @staticmethod
-    def _get_top_activating(
-        feature: Tensor, p: float | None = None, k: int | None = None
-    ) -> Tensor:
-        k = Evaluation._pk_to_k(p, k, feature.shape[0])
-        values = feature.values()
-        if k >= values.shape[0]:
-            k = values.shape[0]
-        topk = values.topk(k)
-
-        return torch.sparse_coo_tensor(
-            feature.indices()[:, topk.indices],
-            topk.values,
-            feature.shape,
-        )
-
-    def seq_agg_feat(
-        self,
-        feature_id: int | None = None,
-        feature: FilteredTensor | None = None,
-        agg: str = "max",
-        docs_filter: bool = True,
-    ) -> FilteredTensor:
-        assert agg in ("max", "sum"), "Only max implemented currently"
-        if (feature_id is None) == (feature is None):
-            raise ValueError("Exactly one of feat_id and feature must be set")
-        if feature is None:
-            feature = self.features[feature_id]
-        if docs_filter:
-            feature = feature.filter_inactive_docs()
-        if agg == "max":
-            return feature.to_filtered_like_self(
-                feature.value.to_dense().max(dim=1).values, ndim=1
-            )
-        elif agg == "sum":
-            return feature.to_filtered_like_self(
-                feature.value.to_dense().sum(dim=1), ndim=1
-            )
-
-    def top_activations_and_metadatas(
+    def chill_top_activations_and_metadatas(
         self,
         feature: int | FilteredTensor,
         p: float | None = None,
         k: int | None = None,
-        metadata_keys: list[str] | None = None,
-        return_str_docs: bool = False,
         return_acts_sparse: bool = False,
-        return_doc_indices: bool = True,
-        str_metadatas: bool = False,
-    ):
-        if metadata_keys is None:
-            metadata_keys = []
-        if isinstance(feature, int):
-            feature = self.features[feature]
-        doc_acts = self.seq_agg_feat(feature=feature)
-        k = Evaluation._pk_to_k(p, k, doc_acts.value.shape[0])
-        topk = doc_acts.value.topk(k, sorted=True)
-        top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
-        doc_indices = top_outer_indices[0]
-        acts = feature.index_select(doc_indices, dim=0)
-        assert (acts.to_dense() == feature.to_dense()[top_outer_indices]).all()
-        if return_acts_sparse:
-            acts = acts.to_sparse_coo()
-        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
-        metadatas = {
-            key: self._root_metadatas[key][doc_indices.cpu()] for key in metadata_keys
-        }
-        if str_metadatas:
-            metadatas = self._root_metadatas.translate(metadatas)
-        if return_doc_indices:
-            return docs, acts, metadatas, doc_indices
-        return docs, acts, metadatas
-
-    def batched_top_activations_and_metadatas(
-        self,
-        features: list[int | FilteredTensor],
-        p: float | None = None,
-        k: int | None = None,
-        metadata_keys: list[str] | None = None,
-        return_str_docs: bool = False,
-        return_acts_sparse: bool = False,
-        return_doc_indices: bool = True,
-        str_metadatas: bool = False,
-    ):
-        if metadata_keys is None:
-            metadata_keys = []
-        return [
-            self.top_activations_and_metadatas(
-                feature,
-                p,
-                k,
-                metadata_keys,
-                return_str_docs,
-                return_acts_sparse,
-                return_doc_indices,
-                str_metadatas,
-            )
-            for feature in features
-        ]
-
-    def get_docs_acts_metadatas(
-        self,
-        doc_indices: Tensor,
-        features: list[FilteredTensor],
-        metadata_keys: list[str],
-        return_str_docs: bool,
-        str_metadatas: bool,
-    ):
-        acts = [f.index_select(doc_indices, dim=0) for f in features]
-        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
-
-        docs, metadatas = self.get_docs_and_metadatas(
-            doc_indices,
-            metadata_keys=metadata_keys,
-            return_str_docs=return_str_docs,
-            return_str_metadatas=str_metadatas,
-        )
-
-        return docs, acts, metadatas
-
-    def get_docs_and_metadatas(
-        self,
-        doc_indices: Tensor,
-        metadata_keys: list[str],
-        return_str_docs: bool,
-        return_str_metadatas: bool,
-    ):
-        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
-        metadatas = {
-            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
-        }
-        if return_str_metadatas:
-            metadatas = self._root_metadatas.translate(metadatas)
-        return docs, metadatas
+    ) -> TopActivations:
+        f = self.get_feature(feature=feature)
+        return f.top_activations(p=p, k=k)
 
     def _metadata_unique_labels_and_counts_tensor(self, key: str) -> Tensor:
         meta = self._root_metadatas[key]
@@ -725,6 +518,13 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def num_active_docs_for_feature(self, feature_id: int) -> int:
         return self.cached_call._feature_num_active_docs()[feature_id].item()
 
+    def _feature_num_active_tokens(self) -> Tensor:
+        activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
+        for chunk in self.saved_acts.chunks:
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            activity += (acts > 0).sum(dim=1).sum(dim=0)
+        return activity
+
     @property
     def seq_activation_counts(self) -> Tensor:
         return self.cached_call._feature_num_active_tokens().cpu()
@@ -733,21 +533,6 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def seq_activation_probs(self) -> Tensor:
         return self.seq_activation_counts / (self.num_docs * self.seq_len)
 
-    @property
-    def doc_activation_counts(self) -> Tensor:
-        return self.cached_call._feature_num_active_docs().cpu()
-
-    @property
-    def doc_activation_probs(self) -> Tensor:
-        return self.doc_activation_counts / self.num_docs
-
-    # @property
-    # def mean_feature_activations(self)
-
-    # def _feature_mean_activations(self):
-
-    # def feature_activation_proportion_thresholds(self, p):
-
     def _feature_num_active_docs(self) -> Tensor:
         activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
@@ -755,12 +540,13 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             activity += (acts > 0).any(dim=1).sum(dim=0)
         return activity
 
-    def _feature_num_active_tokens(self) -> Tensor:
-        activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
-        for chunk in self.saved_acts.chunks:
-            acts = chunk.acts.value.to(self.cuda).to_dense()
-            activity += (acts > 0).sum(dim=1).sum(dim=0)
-        return activity
+    @property
+    def doc_activation_counts(self) -> Tensor:
+        return self.cached_call._feature_num_active_docs().cpu()
+
+    @property
+    def doc_activation_probs(self) -> Tensor:
+        return self.doc_activation_counts / self.num_docs
 
     def get_metadata_intersection_filter_key(
         self, values: dict[str, str | list[str] | int | list[int]]
@@ -793,6 +579,54 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
                 mdmask |= meta == value
             filter_tensor &= mdmask
         return filter_tensor
+
+    def top_activations_and_metadatas(
+        self,
+        feature: int | FilteredTensor,
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+        if metadata_keys is None:
+            metadata_keys = []
+        top_acts = self.chill_top_activations_and_metadatas(
+            feature=feature,
+            p=p,
+            k=k,
+            return_acts_sparse=return_acts_sparse,
+        )
+        return self._legacy_top_activations_and_metadatas_getter(
+            top_acts=top_acts,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_doc_indices=return_doc_indices,
+            str_metadatas=str_metadatas,
+        )
+
+    def _legacy_top_activations_and_metadatas_getter(
+        self,
+        top_acts: TopActivations,
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        return_doc_indices: bool,
+        str_metadatas: bool,
+    ):
+        acts = top_acts.acts
+        docs = top_acts.doc_selection.doc_strs if return_str_docs else top_acts.docs
+        metadatas = top_acts.doc_selection.metadata[metadata_keys]
+        if str_metadatas:
+            metadatas = metadatas.str_metadatas
+        else:
+            metadatas = metadatas.metadatas
+
+        if return_doc_indices:
+            doc_indices = top_acts.doc_selection.doc_indices
+            return docs, acts, metadatas, doc_indices
+        return docs, acts, metadatas
 
 
 @define
