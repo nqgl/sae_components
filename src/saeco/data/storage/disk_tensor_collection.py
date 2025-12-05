@@ -30,7 +30,8 @@ class MixedCache[DiskTensorType: DiskTensor[Any]]:
         self.weak_cache[name] = value
         if not value.finalized:
             self.strong_cache[name] = value
-            value.remove_on_finalize.add((name, self))
+            assert name not in value.remove_on_finalize
+            value.remove_on_finalize[name] = self
 
     def __contains__(self, name: str) -> bool:
         return name in self.weak_cache or name in self.strong_cache
@@ -38,10 +39,10 @@ class MixedCache[DiskTensorType: DiskTensor[Any]]:
     def keys(self) -> list[str]:
         return sorted(set(self.weak_cache.keys()) | set(self.strong_cache.keys()))
 
-    def _remove_finalized_disktensor(self, key: str, dt: DiskTensor):
-        assert dt.finalized
+    def _remove_finalized_disktensor(self, key: str, disk_tensor: DiskTensor):
+        assert disk_tensor.finalized
         d = self.strong_cache.pop(key)
-        assert d is dt
+        assert d is disk_tensor
 
 
 @define

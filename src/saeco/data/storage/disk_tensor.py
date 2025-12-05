@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from functools import cached_property
 from pathlib import Path
 from typing import Any, Protocol, cast
-from weakref import WeakSet
+from weakref import WeakValueDictionary
 
 import torch
 from attrs import define, field
@@ -74,8 +74,8 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
     path: Path
     metadata: MetadataT
     finalized: bool = False
-    remove_on_finalize: WeakSet[tuple[str, RemovableOnFinalize]] = field(
-        factory=WeakSet
+    remove_on_finalize: WeakValueDictionary[str, RemovableOnFinalize] = field(
+        factory=WeakValueDictionary
     )
 
     @takes_alias
@@ -216,8 +216,11 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
 
         self.metadata_path.write_text(self.metadata.model_dump_json())
         del self.tensor
-        while len(self.remove_on_finalize) > 0:
-            key, container = self.remove_on_finalize.pop()
+        keys = list(self.remove_on_finalize.keys())
+        for key in keys:
+            container = self.remove_on_finalize.pop(key, None)
+            if container is None:
+                continue
             container._remove_finalized_disktensor(key, self)
 
 
