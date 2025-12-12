@@ -594,8 +594,30 @@ class DictBatch(dict):
     def shape(self) -> "DictBatchShape":
         return DictBatchShape(batch_size=self.batch_size, shapes=self.shapes)
 
+    def updated_with(self, **kwargs: Tensor) -> Self:
+        return self.construct_with_other_data(
+            {**self, **kwargs}, self._get_other_dict()
+        )
 
-from attrs import define
+    @classmethod
+    def cast_convert(
+        cls,
+        batch: "DictBatch",
+        **kwargs,
+    ) -> Self:
+        extra_data = {
+            k: v
+            for k, v in kwargs.items()
+            if k in cls.TENSOR_DATA_FIELDS + cls.OPTIONAL_TENSOR_FIELDS
+        }
+        extra_other_data = {
+            k: v for k, v in kwargs.items() if k in cls.OTHER_DATA_FIELDS
+        }
+        if isinstance(batch, cls) and type(batch) is cls:
+            return batch
+        return cls.construct_with_other_data(
+            {**batch, **extra_data}, {**batch._get_other_dict(), **extra_other_data}
+        )
 
 
 @define
