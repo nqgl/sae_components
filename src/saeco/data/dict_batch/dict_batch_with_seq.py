@@ -14,7 +14,7 @@ def expand_to(a: torch.Tensor, b: torch.Tensor):
 
 
 class DictBatchWithSeq(DictBatch):
-    non_seq_tensors: ClassVar[tuple[str, ...] | None] = None
+    non_seq_tensors: ClassVar[tuple[str, ...]] = ()
 
     def _get_non_seq_tensors(
         self, non_seq_tensors: list[str] | tuple[str, ...] | None = None
