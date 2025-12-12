@@ -14,6 +14,7 @@ from typing import (
     ClassVar,
     Literal,
     Self,
+    cast,
     dataclass_transform,
     get_origin,
     get_type_hints,
@@ -21,9 +22,43 @@ from typing import (
 )
 
 import torch
+from attrs import define
 from torch import Tensor
 
 from saeco.misc.utils import assert_cast
+
+
+def batch_size_targeter(batch_size: int):
+    spares = []
+    nspare = 0
+
+    def yield_batches_and_return_spares[T: DictBatch](
+        batch: T,
+    ) -> Generator[T, None, T]:
+        j = 0
+        for i in range(0, batch.batch_size // batch_size * batch_size, batch_size):
+            yield batch[i : i + batch_size]
+            j += 1
+        spare = batch[batch.batch_size // batch_size * batch_size :]
+        return spare
+
+    def transformed_gen[T: DictBatch](
+        batch_gen: Iterable[T],
+    ) -> Generator[T]:
+        nonlocal spares, nspare
+        for batch in batch_gen:
+            spare = yield from yield_batches_and_return_spares(batch)
+
+            if spare.batch_size > 0:
+                spares.append(spare)
+                nspare += spare.batch_size
+                if nspare >= batch_size:
+                    consolidated = batch.cat_list(spares, dim=0)
+                    spare = yield from yield_batches_and_return_spares(consolidated)
+                    spares = [spare]
+                    nspare = spare.batch_size
+
+    return transformed_gen
 
 
 # --------------------------------------------------------------------------- #
@@ -53,6 +88,15 @@ class NiceConvertedIter[DictBatch_T: "DictBatch"]:
     def as_dataset(self) -> "NiceIterDataset[DictBatch_T]":
         return NiceIterDataset(self)
 
+    def as_dataloader(
+        self, batch_size: int, num_workers: int = 4
+    ) -> torch.utils.data.DataLoader[DictBatch_T]:
+        return torch.utils.data.DataLoader(
+            (self >> batch_size_targeter(batch_size)).as_dataset(),
+            batch_size=None,
+            num_workers=num_workers,
+        )
+
 
 class NiceIterDataset[DictBatch_T: "DictBatch"](torch.utils.data.IterableDataset):
     def __init__(self, iterable: Iterator[DictBatch_T]):
@@ -78,6 +122,22 @@ _PROTECTED = {
     "fromkeys",
     "popitem",
 }
+
+
+@define
+class _Default[T]:
+    value: T | None = None
+    func: Callable[[int], T] | None = None
+
+    def render(self, batch_size: int) -> T | None:
+        assert self.value is None or self.func is None
+        if self.func is not None:
+            return self.func(batch_size)
+        return self.value
+
+
+def dictbatch_field[T: Tensor = Tensor](*, factory: Callable[[int], T]) -> T:
+    return cast(T, _Default(func=factory))
 
 
 class DictBatch(dict):
@@ -107,13 +167,13 @@ class DictBatch(dict):
     # ------------------------------- metadata --------------------------------
     OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
     TENSOR_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
-    FIELD_DEFAULTS: ClassVar[dict[str, Any]] = {}
+    FIELD_DEFAULTS: ClassVar[dict[str, _Default]] = {}
     OPTIONAL_TENSOR_FIELDS: ClassVar[tuple[str, ...]] = ()
 
     # ------------------------------- ctor ------------------------------------
     def __init__(
         self,
-        data: dict[str, Tensor] | None = None,
+        data: dict[str, Tensor | None] | None = None,
         /,
         **kwargs: Any,
     ):
@@ -140,7 +200,6 @@ class DictBatch(dict):
             )
         ):
             data = kwargs.pop("data")
-        kwargs = {**self.FIELD_DEFAULTS, **kwargs}
 
         for k, v in kwargs.items():
             if k in self.OTHER_DATA_FIELDS:
@@ -154,11 +213,22 @@ class DictBatch(dict):
                     "Provide tensors either via the data mapping OR as "
                     "keyword arguments, but not both."
                 )
-            self._check_contents(data)
-            super().__init__(data)
-        else:
-            self._check_contents(tensor_kwargs)
-            super().__init__(tensor_kwargs)
+            tensor_kwargs = data
+        tensor_kwargs = {**self.FIELD_DEFAULTS, **tensor_kwargs}
+        batch_sizes = [
+            v.shape[0] for v in tensor_kwargs.values() if isinstance(v, Tensor)
+        ]
+        batch_size = batch_sizes[0]
+        if not all(size == batch_size for size in batch_sizes):
+            raise ValueError(
+                f"All tensors must have the same batch size, got {batch_sizes}"
+            )
+        tensor_kwargs = {
+            k: v if not isinstance(v, _Default) else v.render(batch_size)
+            for k, v in tensor_kwargs.items()
+        }
+        self._check_contents(tensor_kwargs)
+        super().__init__(tensor_kwargs)
 
         # Check that all required TENSOR_DATA_FIELDS are present
         for field in self.TENSOR_DATA_FIELDS:
@@ -215,11 +285,16 @@ class DictBatch(dict):
                     f"Key {k!r} collides with protected dict method/attr name"
                 )
             if not isinstance(v, Tensor):
-                if k in cls.OPTIONAL_TENSOR_FIELDS:
+                if k in cls.OPTIONAL_TENSOR_FIELDS or k not in cls.TENSOR_DATA_FIELDS:
                     if v is None:
                         continue
-                    raise TypeError(f"Value for {k!r} is not a torch.Tensor or None")
-                raise TypeError(f"Value for {k!r} is not a torch.Tensor")
+                    raise TypeError(
+                        f"Value for {k!r} is not a torch.Tensor or None"
+                        f"\n in class {cls}"
+                    )
+                raise TypeError(
+                    f"Value for {k!r} is not a torch.Tensor {type(v)}\n in class {cls}"
+                )
 
     # ------------------------------ dunder -----------------------------------
 
@@ -261,10 +336,11 @@ class DictBatch(dict):
     def __getitem__(self, key):  # type: ignore[override]
         if isinstance(key, str):
             return super().__getitem__(key)
-        # fancy/regular indexing -> new batch
-        return self.__class__.construct_with_other_data(
-            {k: v[key] for k, v in self.items()}, self._get_other_dict()
-        )
+
+        def index_tensor(t: Tensor) -> Tensor:
+            return t[key]
+
+        return self.apply_func(index_tensor)
 
     def __setitem__(self, key: Any, value: Tensor) -> None:
         if key in self.TENSOR_DATA_FIELDS and not isinstance(value, Tensor):
@@ -273,41 +349,50 @@ class DictBatch(dict):
 
     # --------------------------- basic utilities -----------------------------
     @property
+    def present_values(self) -> list[Tensor]:
+        return [v for v in self.values() if v is not None]
+
+    @property
     def batch_size(self) -> int:
-        size = next(iter(self.values())).shape[0]
-        for v in self.values():
+        size = next(iter(self.present_values)).shape[0]
+        for v in self.present_values:
             assert v.shape[0] == size
         return size
 
     # ------- device helpers (borrowed from DictBatch) -------
     def to(self, *targets, **kwargs):
-        return self.__class__.construct_with_other_data(
-            {k: v.to(*targets, **kwargs) for k, v in self.items()},
-            self._get_other_dict(),
-        )
+        def moveto(t: Tensor) -> Tensor:
+            return t.to(*targets, **kwargs)
+
+        return self.apply_func(moveto)
 
     def cuda(self, *args, **kwargs):
         return self.to("cuda", *args, **kwargs)
 
     # -------------------- cloning / contiguity -------------------------------
     def clone(self) -> Self:
-        return self.__class__.construct_with_other_data(
-            {k: v.clone() for k, v in self.items()}, self._get_other_dict()
-        )
+        return self.apply_func(torch.clone)
 
     def contiguous(self) -> Self:
-        return self.__class__.construct_with_other_data(
-            {k: v.contiguous() for k, v in self.items()}, self._get_other_dict()
-        )
+        def make_contiguous(t: Tensor) -> Tensor:
+            return t.contiguous()
+
+        return self.apply_func(make_contiguous)
 
     # ----------------------- cat / stack helpers -----------------------------
     @classmethod
     def _validate_keysets(cls, batches: list[Self]):
         keys0 = batches[0].keys()
         if not all((b.keys()) == keys0 for b in batches):
+            all_keys = [set(b.keys()) for b in batches]
+            min_keys = set.intersection(*all_keys)
+            max_keys = set.union(*all_keys)
+
             batch_keys = "\n\t".join(f"{i}: {b.keys()}" for i, b in enumerate(batches))
             raise ValueError(
                 f"All batches must have identical tensor keys. Got: {batch_keys}"
+                f"\nPresent in all batches: {min_keys}"
+                f"\nkeys missing from some batches: {max_keys - min_keys}"
             )
 
     @classmethod
@@ -346,12 +431,12 @@ class DictBatch(dict):
 
     @classmethod
     def construct_with_other_data(
-        cls, data: dict[str, Tensor], other: dict[str, Any] | None = None
+        cls, data: dict[str, Tensor | None], other: dict[str, Any] | None = None
     ) -> Self:
         other = other or {}
         return cls(data, **other)
 
-    def _construct_with_copied_other_data(self, data: dict[str, Tensor]) -> Self:
+    def _construct_with_copied_other_data(self, data: dict[str, Tensor | None]) -> Self:
         return self.construct_with_other_data(data, self._get_other_dict())
 
     # -- simple rule: enjoy equal extras or keep first; can customise in subclass
@@ -378,7 +463,7 @@ class DictBatch(dict):
         return f"{self.__class__.__name__}({dict(self)}, {extra})"
 
     @staticmethod
-    @dataclass_transform(kw_only_default=True)
+    @dataclass_transform(kw_only_default=True, field_specifiers=(dictbatch_field,))
     def auto_other_fields[T: DictBatch](cls: type[T]) -> type[T]:
         """
         Enhanced decorator that automatically populates OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS from annotations.
@@ -445,14 +530,19 @@ class DictBatch(dict):
             elif hint == Tensor | None:
                 optional_tensor_field_names.append(name)
                 # tensor_field_names.append(name)?
-            elif issubclass(Tensor, hint):
-                raise ValueError(
-                    f"Field {name} can be a tensor but failed to get unpacked"
-                )
+            # elif issubclass(Tensor, hint):
+            #     raise ValueError(
+            #         f"Field {name} can be a tensor but failed to get unpacked"
+            #     )
             else:
                 other_field_names.append(name)
             if maybe_has_default:
-                assert isinstance(default_value, hint)
+                # assert isinstance(default_value, origin or hint), (
+                #     default_value,
+                #     origin,
+                #     hint,
+                # )
+
                 default_values[name] = default_value
 
         # Get existing fields from parent classes
@@ -492,10 +582,10 @@ class DictBatch(dict):
     def float(self):
         return self.to(torch.float32)
 
-    def items(self) -> ItemsView[str, Tensor]:
+    def items(self) -> ItemsView[str, Tensor | None]:
         return super().items()
 
-    def values(self) -> ValuesView[Tensor]:
+    def values(self) -> ValuesView[Tensor | None]:
         return super().values()
 
     def keys(self) -> KeysView[str]:
@@ -508,7 +598,7 @@ class DictBatch(dict):
 
     def apply_func(self, func: Callable[[Tensor], Tensor]) -> Self:
         return self._construct_with_copied_other_data(
-            {k: func(v) for k, v in self.items()}
+            {k: func(v) if v is not None else None for k, v in self.items()}
         )
 
     def reshape(self, *shape: int) -> Self:
@@ -730,9 +820,12 @@ if __name__ == "__main__":
             f"Error: {e}"
         )  # Error: Missing required tensor field 'labels' from TENSOR_DATA_FIELDS
 
+    def ones_maker(batch_size: int):
+        return torch.ones(batch_size, 128, dtype=torch.long)
+
     @DictBatch.auto_other_fields
     class WithOptionalTensor(DictBatch):
-        a: Tensor
+        a: Tensor = dictbatch_field(factory=ones_maker)
         b: Tensor | None
         c: Tensor | None = None
 
@@ -745,6 +838,12 @@ if __name__ == "__main__":
     batch = WithOptionalTensor(
         a=torch.ones(4, 128, dtype=torch.long),
         b=torch.ones(4, 128, dtype=torch.long),
+    )
+    batch.updated_with(a=torch.ones(4, 128, dtype=torch.long))
+
+    batch = WithOptionalTensor(
+        b=torch.ones(4, 128, dtype=torch.long),
+        c=torch.ones(4, 128, dtype=torch.long),
     )
     print(batch)
     batch = WithOptionalTensor(
