@@ -303,31 +303,17 @@ class DictPiler:
                                 f"Warning, deleting item from piler cache failed: {e}"
                             )
 
-    @overload
     def sized_generator(
         self,
-        yield_dicts: Literal[False] = False,
-        id=None,
-        nw=None,
-    ) -> tuple[Callable[[int], tuple[DictBatch, int]], int]: ...
-
-    @overload
-    def sized_generator(
-        self,
-        yield_dicts: Literal[True],
-        id=None,
-        nw=None,
-    ) -> tuple[Callable[[int], tuple[dict[str, torch.Tensor] | None, int]], int]: ...
-
-    def sized_generator(
-        self,
-        yield_dicts: bool = False,
-        id=None,
-        nw=None,
+        id: int | None = None,
+        nw: int | None = None,
         return_last_batch: bool = False,
-    ):
-        if not (id == nw == None or id is not None and nw is not None):
-            raise ValueError("id and nw must be either both None or both not None")
+    ) -> tuple[Callable[[int], tuple[DictBatch, int]], int]:
+        if not (id is None) == (nw is None):
+            raise ValueError(
+                "id and nw must be either both None or both not None"
+                f"\n got id: {id} and nw: {nw}"
+            )
         id = id or 0
         nw = nw or 1
 
@@ -367,11 +353,7 @@ class DictPiler:
                     num_returned += len(pile) - i
                     assert num_returned == num_samples_total
                     return pile[i:].clone(), 0
-            res = (
-                pile[i : i + batch_size].clone().data
-                if yield_dicts
-                else pile[i : i + batch_size].clone()
-            )
+            res = pile[i : i + batch_size].clone()
             i += batch_size
             num_returned += batch_size
             return res, num_samples_total - num_returned
