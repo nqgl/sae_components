@@ -363,7 +363,9 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
     def get_hash(self) -> str:
         from hashlib import sha256
 
-        return sha256(self.model_dump_json().encode()).hexdigest()
+        return sha256(
+            self.model_dump_json(exclude_computed_fields=True).encode()
+        ).hexdigest()
 
     def from_optuna_trial(self, trial):
         import optuna
