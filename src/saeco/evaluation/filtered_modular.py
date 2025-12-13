@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import cached_property
-from typing import Self, overload
+from typing import Literal, Self, overload
 
 import torch
 from attrs import define, field
@@ -632,6 +632,12 @@ class FilteredTensorBase[F: FilterBase](ABC):
 # ============================================================================
 
 
+def apply_func[T: Tensor | DictBatch](func: Callable[[Tensor], Tensor], target: T) -> T:
+    if isinstance(target, DictBatch):
+        return target.apply_func(func)
+    return func(target)
+
+
 @define
 class SlicedTensor(FilteredTensorBase[Slicing]):
     """A tensor/DictBatch viewed through a Slicing filter."""
@@ -947,7 +953,12 @@ class FilteredTensor:
             mask: Optional mask to apply (after slicing)
             presliced: If True, value already has slicing applied
         """
-        virtual_shape = _get_shape(value)
+        outer_shape = None
+        if not presliced:
+            outer_shape = _get_shape(value)
+        elif isinstance(filter_obj, FilterProxy):
+            outer_shape = filter_obj.shape
+
         if filter_obj is not None:
             assert mask is None
             if isinstance(filter_obj, NamedFilter):
@@ -955,9 +966,10 @@ class FilteredTensor:
             elif isinstance(filter_obj, FilterProxy):
                 slices = filter_obj.slices
                 if filter_obj.shape is not None:
-                    if len(filter_obj.shape) >= len(virtual_shape):
-                        assert filter_obj.shape[: len(virtual_shape)] == virtual_shape
-                        virtual_shape = filter_obj.shape
+                    assert outer_shape is not None
+                    if len(filter_obj.shape) >= len(outer_shape):
+                        assert filter_obj.shape[: len(outer_shape)] == outer_shape
+                        outer_shape = filter_obj.shape
                 while slices and (slices[-1] is None or slices[-1] == slice(None)):
                     slices = slices[:-1]
                 if slicing is not None:
@@ -980,7 +992,7 @@ class FilteredTensor:
             ndim_sliced = len(slicing)
             slicing = Slicing(
                 slices=slicing,
-                virtual_shape=virtual_shape[:ndim_sliced],
+                virtual_shape=outer_shape[:ndim_sliced],
             )
 
         # Apply slicing if needed
@@ -1058,6 +1070,24 @@ class FilteredTensor:
         return self.value.index_select(dim, inner_index)
 
     # ---- Mask operations ----
+
+    @overload
+    def mask_by_other(
+        self,
+        other: Mask | Tensor | Self,
+        return_ft: Literal[True],
+        presliced: bool,
+        value_like: bool = False,
+    ) -> "Self": ...
+
+    @overload
+    def mask_by_other(
+        self,
+        other: Mask | Tensor | Self,
+        return_ft: Literal[False] = False,
+        presliced: bool = False,
+        value_like: bool = False,
+    ) -> Tensor | DictBatch: ...
 
     def mask_by_other(
         self,
@@ -1171,7 +1201,7 @@ class FilteredTensor:
 
     def to_filtered_like_self(
         self,
-        t: Tensor,
+        t: Tensor | DictBatch,
         presliced: bool = True,
         premasked: bool = True,
         ndim: int | None = None,
@@ -1343,6 +1373,13 @@ class FilteredTensor:
             )
         ids, mask = self.internalize_indices(key)
         return self.value[ids.unbind()]
+
+    def apply_to_inner(
+        self, func: Callable[[Tensor], Tensor], cut_to_ndim: int | None = None
+    ) -> Self:
+        return self.to_filtered_like_self(
+            apply_func(func, self.value), ndim=cut_to_ndim
+        )
 
 
 # ============================================================================
