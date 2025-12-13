@@ -438,7 +438,7 @@ class DictBatch(dict):
         present = batches[0].present_keys()
         return cls.construct_with_other_data(
             {
-                k: torch.cat([b[k] for b in batches] if k in present else None, dim=dim)
+                k: torch.cat([b[k] for b in batches], dim=dim) if k in present else None
                 for k in batches[0].keys()
             },
             cls._merge_other_data(batches),
@@ -785,7 +785,7 @@ class DictBatch(dict):
         ) = func
         if pass_none:
             maybe_returns_none_func = SkippedCalc._skip_missing(
-                func, pass_none_through=False
+                func, pass_none_through=True
             )
         elif skip_none:
             f = cast(
@@ -795,7 +795,7 @@ class DictBatch(dict):
 
             maybe_returns_none_func = SkippedCalc._skip_missing(
                 f,
-                pass_none_through=True,
+                pass_none_through=False,
             )
         else:
             maybe_returns_none_func = cast(
