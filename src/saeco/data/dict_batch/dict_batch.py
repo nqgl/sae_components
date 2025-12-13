@@ -124,6 +124,44 @@ _PROTECTED = {
 }
 
 
+class SkippedCalc:
+    @overload
+    @staticmethod
+    def _skip_missing[R](
+        func: Callable[[str, Tensor], R], pass_none_through: Literal[True]
+    ) -> "Callable[[str, Tensor | None], R | None]": ...
+    @overload
+    @staticmethod
+    def _skip_missing[R](
+        func: Callable[[str, Tensor], R], pass_none_through: Literal[False] = False
+    ) -> "Callable[[str, Tensor | None], R | SkippedCalc]": ...
+
+    @staticmethod
+    def _skip_missing[R](
+        func: Callable[[str, Tensor], R], pass_none_through: bool = False
+    ) -> "Callable[[str, Tensor | None], R | SkippedCalc | None]":
+        def skipfunc(k: str, v: Tensor | None) -> R | SkippedCalc | None:
+            if v is None:
+                if pass_none_through:
+                    return None
+                return _SKIPPED_CALC
+            return func(k, v)
+
+        return skipfunc
+
+    @staticmethod
+    def _over_values[T: (Tensor, Tensor | None), R](
+        func: Callable[[T], R],
+    ) -> "Callable[[str, T], R]":
+        def kvfunc(k: str, v: T) -> R:
+            return func(v)
+
+        return kvfunc
+
+
+_SKIPPED_CALC = SkippedCalc()
+
+
 @define
 class _Default[T]:
     value: T | None = None
@@ -348,16 +386,8 @@ class DictBatch(dict):
         super().__setitem__(key, value)
 
     # --------------------------- basic utilities -----------------------------
-    @property
     def present_values(self) -> list[Tensor]:
         return [v for v in self.values() if v is not None]
-
-    @property
-    def batch_size(self) -> int:
-        size = next(iter(self.present_values)).shape[0]
-        for v in self.present_values:
-            assert v.shape[0] == size
-        return size
 
     # ------- device helpers (borrowed from DictBatch) -------
     def to(self, *targets, **kwargs):
@@ -381,14 +411,21 @@ class DictBatch(dict):
 
     # ----------------------- cat / stack helpers -----------------------------
     @classmethod
-    def _validate_keysets(cls, batches: list[Self]):
-        keys0 = batches[0].keys()
-        if not all((b.keys()) == keys0 for b in batches):
-            all_keys = [set(b.keys()) for b in batches]
+    def _validate_keysets(cls, batches: list[Self], present_only: bool = False):
+        def getkeys(b: Self):
+            if present_only:
+                return b.present_keys()
+            return set(b.keys())
+
+        keys0 = getkeys(batches[0])
+        if not all(getkeys(b) == keys0 for b in batches):
+            all_keys = [getkeys(b) for b in batches]
             min_keys = set.intersection(*all_keys)
             max_keys = set.union(*all_keys)
 
-            batch_keys = "\n\t".join(f"{i}: {b.keys()}" for i, b in enumerate(batches))
+            batch_keys = "\n\t".join(
+                f"{i}: {getkeys(b)}" for i, b in enumerate(batches)
+            )
             raise ValueError(
                 f"All batches must have identical tensor keys. Got: {batch_keys}"
                 f"\nPresent in all batches: {min_keys}"
@@ -397,18 +434,25 @@ class DictBatch(dict):
 
     @classmethod
     def cat_list(cls, batches: list[Self], dim: int = 0) -> Self:
-        cls._validate_keysets(batches)
+        cls._validate_keysets(batches, present_only=True)
+        present = batches[0].present_keys()
         return cls.construct_with_other_data(
-            {k: torch.cat([b[k] for b in batches], dim=dim) for k in batches[0].keys()},
+            {
+                k: torch.cat([b[k] for b in batches] if k in present else None, dim=dim)
+                for k in batches[0].keys()
+            },
             cls._merge_other_data(batches),
         )
 
     @classmethod
     def stack_list(cls, batches: list[Self], dim: int = 0) -> Self:
-        cls._validate_keysets(batches)
+        cls._validate_keysets(batches, present_only=True)
+        present = batches[0].present_keys()
         return cls.construct_with_other_data(
             {
                 k: torch.stack([b[k] for b in batches], dim=dim)
+                if k in present
+                else None
                 for k in batches[0].keys()
             },
             cls._merge_other_data(batches),
@@ -452,10 +496,14 @@ class DictBatch(dict):
 
     # --------------------------- len -----------------------------------------
     def __len__(self):
-        l = len(next(iter(self.values())))
-        for v in self.values():
-            assert len(v) == l
-        return l
+        return self.batch_size
+
+    @property
+    def batch_size(self) -> int:
+        size = next(iter(self.present_values())).shape[0]
+        for v in self.present_values():
+            assert v.shape[0] == size
+        return size
 
     # ------------------------- representation --------------------------------
     def __repr__(self):  # pragma: no cover
@@ -591,15 +639,180 @@ class DictBatch(dict):
     def keys(self) -> KeysView[str]:
         return super().keys()
 
-    def gather(self, dim: int, indices: Tensor) -> Self:
-        return self.construct_with_other_data(
-            {k: v.gather(dim, indices) for k, v in self.items()}, self._get_other_dict()
+    def present_keys(self) -> set[str]:
+        return self._apply(
+            lambda k, v: k, skip_none=True, return_set=True, takes_key=True
         )
 
+    def gather(self, dim: int, indices: Tensor) -> Self:
+        def gather(t: Tensor) -> Tensor:
+            return t.gather(dim, indices)
+
+        return self.apply_func(gather)
+
     def apply_func(self, func: Callable[[Tensor], Tensor]) -> Self:
-        return self._construct_with_copied_other_data(
-            {k: func(v) if v is not None else None for k, v in self.items()}
-        )
+        return self._construct_with_copied_other_data(self._apply(func, pass_none=True))
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[str, Tensor], T | SkippedCalc],
+        *,
+        takes_key: Literal[True],
+        pass_none: Literal[True],
+        return_set: Literal[True],
+    ) -> set[T | None]: ...
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[str, Tensor], T | SkippedCalc],
+        *,
+        takes_key: Literal[True],
+        skip_none: Literal[True],
+        return_set: Literal[True],
+    ) -> set[T]: ...
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[str, Tensor | None], T | SkippedCalc],
+        *,
+        takes_key: Literal[True],
+        return_set: Literal[True],
+    ) -> set[T]: ...
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[Tensor], T | SkippedCalc],
+        *,
+        pass_none: Literal[True],
+        return_set: Literal[True],
+    ) -> set[T | None]: ...
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[Tensor], T | SkippedCalc],
+        *,
+        skip_none: Literal[True],
+        return_set: Literal[True],
+    ) -> set[T]: ...
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[Tensor | None], T | SkippedCalc],
+        *,
+        return_set: Literal[True],
+    ) -> set[T]: ...
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[str, Tensor], T | SkippedCalc],
+        *,
+        takes_key: Literal[True],
+        pass_none: Literal[True],
+    ) -> dict[str, T | None]: ...
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[str, Tensor], T | SkippedCalc],
+        *,
+        takes_key: Literal[True],
+        skip_none: Literal[True],
+    ) -> dict[str, T]: ...
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[str, Tensor | None], T | SkippedCalc],
+        *,
+        takes_key: Literal[True],
+    ) -> dict[str, T]: ...
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[Tensor], T | SkippedCalc],
+        *,
+        pass_none: Literal[True],
+    ) -> dict[str, T | None]: ...
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[Tensor], T | SkippedCalc],
+        *,
+        skip_none: Literal[True],
+    ) -> dict[str, T]: ...
+
+    @overload
+    def _apply[T](
+        self,
+        func: Callable[[Tensor | None], T | SkippedCalc],
+    ) -> dict[str, T]: ...
+
+    def _apply[T](
+        self,
+        func: Callable[[str, Tensor | None], T | SkippedCalc]
+        | Callable[[Tensor | None], T | SkippedCalc]
+        | Callable[[str, Tensor], T | SkippedCalc]
+        | Callable[[Tensor], T | SkippedCalc],
+        *,
+        pass_none: bool = False,
+        skip_none: bool = False,
+        takes_key: bool = False,
+        return_set: bool = False,
+    ) -> dict[str, T | None] | dict[str, T] | set[T] | set[T | None]:
+        if not takes_key:
+            func = SkippedCalc._over_values(
+                cast(
+                    Callable[[Tensor | None], T | SkippedCalc]
+                    | Callable[[Tensor], T | SkippedCalc],
+                    func,
+                )
+            )
+        else:
+            func = cast(
+                Callable[[str, Tensor | None], T | SkippedCalc]
+                | Callable[[str, Tensor], T | SkippedCalc],
+                func,
+            )
+        assert not (pass_none and skip_none)
+        maybe_returns_none_func: (
+            Callable[[str, Tensor | None], T | SkippedCalc | None]
+            | Callable[[str, Tensor], T | SkippedCalc | None]
+        ) = func
+        if pass_none:
+            maybe_returns_none_func = SkippedCalc._skip_missing(
+                func, pass_none_through=False
+            )
+        elif skip_none:
+            f = cast(
+                Callable[[str, Tensor], T | SkippedCalc],
+                func,
+            )
+
+            maybe_returns_none_func = SkippedCalc._skip_missing(
+                f,
+                pass_none_through=True,
+            )
+        else:
+            maybe_returns_none_func = cast(
+                (Callable[[str, Tensor | None], T | SkippedCalc | None]), func
+            )
+        if return_set:
+            return {
+                result
+                for k, v in self.items()
+                if not isinstance(result := maybe_returns_none_func(k, v), SkippedCalc)
+            }
+
+        return {
+            k: result
+            for k, v in self.items()
+            if not isinstance(result := maybe_returns_none_func(k, v), SkippedCalc)
+        }
 
     def reshape(self, *shape: int) -> Self:
         return self.apply_func(lambda x: x.reshape(*shape))
@@ -643,13 +856,19 @@ class DictBatch(dict):
         dim: int = 0,
     ) -> list[Self]:
         assert dim == 0
-        splitself = {k: v.split(split_size, dim=dim) for k, v in self.items()}
-        l0 = splitself[next(iter(self.keys()))]
+        splitself = self._apply(lambda x: x.split(split_size, dim=dim), skip_none=True)
+        # splitself = {k: v.split(split_size, dim=dim) for k, v in self.items()}
+        l0 = next(iter(splitself.values()))
         assert all(len(v) == len(l0) for v in splitself.values())
 
         return [
-            self.construct_with_other_data(
-                {**{k: v[i] for k, v in splitself.items()}}, self._get_other_dict()
+            self._construct_with_copied_other_data(
+                {
+                    **{
+                        k: splitself[k][i] if k in splitself else None
+                        for k in self.keys()
+                    }
+                },
             )
             for i in range(len(l0))
         ]
@@ -657,28 +876,32 @@ class DictBatch(dict):
     def einops_rearrange(self, pattern: str, **kwargs):
         import einops
 
-        return self.construct_with_other_data(
-            {k: einops.rearrange(v, pattern, **kwargs) for k, v in self.items()},
-            self._get_other_dict(),
-        )
+        def rearrange(t: Tensor) -> Tensor:
+            return einops.rearrange(t, pattern, **kwargs)
+
+        return self.apply_func(rearrange)
+
+    def get_unanimous_result[T](self, func: Callable[[Tensor], T]) -> T:
+        results = self._apply(func, return_set=True, skip_none=True)
+        if len(results) != 1:
+            raise ValueError(f"Expected 1 result, got {len(results)}")
+        return results.pop()
 
     @property
     def device(self) -> torch.device:
-        dev = next(iter(self.values())).device
-        assert all(v.device == dev for v in self.values())
-        return dev
+        return self.get_unanimous_result(lambda x: x.device)
 
     @property
     def is_sparse(self) -> bool:
-        return any(v.is_sparse for v in self.values())
+        return any(v.is_sparse for v in self.present_values())
 
     @property
     def is_coalesced(self) -> bool:
-        return all((not v.is_sparse) or v.is_coalesced() for v in self.values())
+        return all((not v.is_sparse) or v.is_coalesced() for v in self.present_values())
 
     @property
     def shapes(self) -> dict[str, tuple[int, ...]]:
-        return {k: v.shape for k, v in self.items()}
+        return self._apply(lambda x: x.shape, skip_none=True)
 
     @property
     def shape(self) -> "DictBatchShape":
