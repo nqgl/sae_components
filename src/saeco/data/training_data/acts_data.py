@@ -67,14 +67,28 @@ class ActsDataCreator:
         rearrange=True,
         skip_exclude=False,
         force_not_skip_padding=False,
-        batched_kwargs={},
     ) -> DictBatch:
         # assert notisinstance(inputs, torch.Tensor)
         assert self.model is not None
         tx_inputs = self.cfg.model_cfg.model_load_cfg.input_data_transform(
             input_data=inputs
         )
+        return self._to_acts_unprocessed_inputs(
+            tx_inputs=tx_inputs,
+            llm_batch_size=llm_batch_size,
+            rearrange=rearrange,
+            skip_exclude=skip_exclude,
+            force_not_skip_padding=force_not_skip_padding,
+        )
 
+    def _to_acts_unprocessed_inputs(
+        self,
+        tx_inputs: DictBatch | torch.Tensor,
+        llm_batch_size,
+        rearrange=True,
+        skip_exclude=False,
+        force_not_skip_padding=False,
+    ) -> DictBatch:
         acts_dict = {site: [] for site in self.cfg.model_cfg.acts_cfg.sites}
         with self.cfg.model_cfg.autocast_context():
             if isinstance(tx_inputs, torch.Tensor):
@@ -85,27 +99,20 @@ class ActsDataCreator:
                 trng = tqdm.trange(0, batch_size, llm_batch_size, leave=False)
                 trng.set_description(f"Tracing {batch_size}")
                 for i in trng:
-                    batch_kwargs = {
-                        k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
-                    }
+                    # batch_kwargs = {
+                    #     k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
+                    # }
                     model = self.model
                     d = {}
-                    if isinstance(tx_inputs, torch.Tensor):
-                        args = [tx_inputs[i : i + llm_batch_size]]
-                        kwargs = dict(
-                            **self.cfg.model_cfg.model_kwargs,
-                            **batch_kwargs,
+                    args, kwargs = (
+                        self.cfg.model_cfg.model_load_cfg.unpack_model_inputs(
+                            tx_inputs[i : i + llm_batch_size],
+                            extra_kwargs=self.cfg.model_cfg.model_kwargs,
                         )
-                    else:
-                        batch = tx_inputs[i : i + llm_batch_size]
-                        args = [
-                            batch  # TODO change to more explicit. repack vs pos vs kwarg
-                            # batch.pop(k) for k in self.cfg.model_cfg.positional_args
-                        ]
-                        kwargs = dict(
-                            **self.cfg.model_cfg.model_kwargs,
-                            **batch_kwargs,
-                        )
+                    )
+                    assert len(args) > 0, (
+                        "nnsight needs there to be a nonzero number of args"
+                    )
                     with model.trace(*args, **kwargs):
                         for site in self.cfg.model_cfg.acts_cfg.sites:
                             acts_module = getsite(model, site)
@@ -165,6 +172,51 @@ class ActsDataCreator:
         #     if not mask.all():
         #         print(f"removing {(~mask).sum()} activations from pad token locations")
         #         acts = acts[mask]
+        return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
+
+    def _to_acts_single(
+        self,
+        tx_inputs: DictBatch | torch.Tensor,
+        rearrange=True,
+        skip_exclude=False,
+        force_not_skip_padding=False,
+    ) -> DictBatch:
+        d = {}
+        with self.cfg.model_cfg.autocast_context():
+            with torch.inference_mode():  # is this ok with nnsight?
+                model = self.model
+                args, kwargs = self.cfg.model_cfg.model_load_cfg.unpack_model_inputs(
+                    tx_inputs,
+                    extra_kwargs=self.cfg.model_cfg.model_kwargs,
+                )
+                with model.trace(*args, **kwargs):
+                    for site in self.cfg.model_cfg.acts_cfg.sites:
+                        acts_module = getsite(model, site)
+                        acts = acts_module.save()
+                        d[site] = acts
+
+        acts = DictBatch(data=d)
+
+        if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
+            acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
+        flatten_pattern = "batch seq ... -> (batch seq) ..."
+
+        acts = acts[:, : self.cfg.seq_len]
+        if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
+            acts = acts[:, 1:]
+            # toks_re = toks_re[:, 1:]
+        mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
+            tx_inputs, self.cfg.seq_len
+        )
+
+        if not rearrange:
+            assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
+            return acts
+        acts = acts.einops_rearrange(flatten_pattern)
+        if mask is not None:
+            mask = einops.rearrange(mask, flatten_pattern)
+            acts = acts[mask]
+
         return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
 
     def acts_generator_from_tokens_generator(self, inputs_generator, llm_batch_size):

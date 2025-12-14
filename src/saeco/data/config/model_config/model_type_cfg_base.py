@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from functools import cached_property
-from typing import Protocol
+from typing import Any, Protocol
 
 import torch
 import torch.nn as nn
@@ -13,9 +13,7 @@ from saeco.sweeps import SweepableConfig
 class TokenizerProto(Protocol): ...
 
 
-class ModelLoadingConfigBase[
-    ModelT: nn.Module = nn.Module,
-](SweepableConfig):
+class ModelLoadingConfigBase[ModelT: nn.Module = nn.Module](SweepableConfig):
     @property
     def name(self) -> str:  # type: ignore
         raise NotImplementedError
@@ -46,6 +44,11 @@ class ModelLoadingConfigBase[
         self, input_data: torch.Tensor | DictBatch, seq_len: int
     ) -> torch.Tensor | None:
         return None
+
+    def unpack_model_inputs(
+        self, input_data: torch.Tensor | DictBatch, extra_kwargs: dict[str, Any]
+    ) -> tuple[list[Any], dict[str, Any]]:
+        raise NotImplementedError("unpack_model_inputs not implemented")
 
 
 # @runtime_checkable
