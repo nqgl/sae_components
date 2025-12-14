@@ -5,6 +5,7 @@ from collections.abc import (
     Iterable,
     Iterator,
     KeysView,
+    Mapping,
     ValuesView,
 )
 from functools import cached_property
@@ -16,6 +17,7 @@ from typing import (
     Self,
     cast,
     dataclass_transform,
+    get_args,
     get_origin,
     get_type_hints,
     overload,
@@ -178,6 +180,43 @@ def dictbatch_field[T: Tensor = Tensor](*, factory: Callable[[int], T]) -> T:
     return cast(T, _Default(func=factory))
 
 
+_NONE_TYPE = type(None)
+
+
+def _hint_allows_none(hint: Any) -> bool:
+    if hint is _NONE_TYPE:
+        return True
+    return _NONE_TYPE in get_args(hint)
+
+
+def _is_tensor_field_hint(hint: Any) -> bool:
+    if hint is Tensor or hint == "Tensor" or hint == "torch.Tensor":
+        return True
+
+    if hasattr(hint, "array_type"):
+        try:
+            return issubclass(hint.array_type, Tensor)
+        except TypeError:
+            return False
+
+    origin = get_origin(hint)
+    if origin is not None:
+        try:
+            if isinstance(origin, type) and issubclass(origin, Tensor):
+                return True
+        except TypeError:
+            pass
+
+    args = get_args(hint)
+    if args:
+        non_none_args = [a for a in args if a is not _NONE_TYPE]
+        return bool(non_none_args) and all(
+            _is_tensor_field_hint(a) for a in non_none_args
+        )
+
+    return False
+
+
 class DictBatch(dict):
     """
     A batch **is** a dict[str, torch.Tensor] *and* may carry extra attributes
@@ -185,9 +224,9 @@ class DictBatch(dict):
 
     Examples
     --------
-    >>> class LMCombinedBatch(CombinedBatch):
-    ...     OTHER_DATA_FIELDS = ("prompt", "doc_id")
-    ...     TENSOR_DATA_FIELDS = ("input_ids", "attention_mask")
+    >>> class LMCombinedBatch(DictBatch):
+    ...     OTHER_DATA_FIELDS = {"prompt": str, "doc_id": int}
+    ...     TENSOR_DATA_FIELDS = {"input_ids": Tensor, "attention_mask": Tensor}
     ...
     >>> b = LMCombinedBatch(
     ...         {"input_ids": torch.ones(4, 128, dtype=torch.long),
@@ -203,10 +242,10 @@ class DictBatch(dict):
     """
 
     # ------------------------------- metadata --------------------------------
-    OTHER_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
-    TENSOR_DATA_FIELDS: ClassVar[tuple[str, ...]] = ()
-    FIELD_DEFAULTS: ClassVar[dict[str, _Default]] = {}
-    OPTIONAL_TENSOR_FIELDS: ClassVar[tuple[str, ...]] = ()
+    OTHER_DATA_FIELDS: ClassVar[dict[str, Any]] = {}
+    TENSOR_DATA_FIELDS: ClassVar[dict[str, Any]] = {}
+    FIELD_DEFAULTS: ClassVar[dict[str, Tensor | None | _Default]] = {}
+    OTHER_FIELD_DEFAULTS: ClassVar[dict[str, Any]] = {}
 
     # ------------------------------- ctor ------------------------------------
     def __init__(
@@ -227,23 +266,23 @@ class DictBatch(dict):
         """
         # Split kwargs into "extra" and "tensor" parts
         extra: dict[str, Any] = {}
-        tensor_kwargs: dict[str, Tensor] = {}
+        tensor_kwargs: dict[str, Tensor | None] = {}
         if (
             "data" in kwargs
             and data is None
             and isinstance(kwargs["data"], dict)
             and all(
-                isinstance(k, str) and isinstance(v, Tensor)
+                isinstance(k, str) and (isinstance(v, Tensor) or v is None)
                 for k, v in kwargs["data"].items()
             )
         ):
-            data = kwargs.pop("data")
+            data = kwargs.pop("data")  # type: ignore[assignment]
 
         for k, v in kwargs.items():
             if k in self.OTHER_DATA_FIELDS:
                 extra[k] = v
             else:
-                tensor_kwargs[k] = v
+                tensor_kwargs[k] = v  # type: ignore[assignment]
 
         if data is not None:
             if tensor_kwargs:  # pragma: no cover
@@ -268,32 +307,30 @@ class DictBatch(dict):
         self._check_contents(tensor_kwargs)
         super().__init__(tensor_kwargs)
 
-        # Check that all required TENSOR_DATA_FIELDS are present
-        for field in self.TENSOR_DATA_FIELDS:
+        # Check that all declared tensor fields are present and match optionality.
+        for field, hint in self.TENSOR_DATA_FIELDS.items():
             if field not in self:
                 raise ValueError(
                     f"Missing required tensor field '{field}' from TENSOR_DATA_FIELDS"
                 )
-            if not isinstance(self[field], Tensor):
+            v = self[field]
+            if v is None and not _hint_allows_none(hint):
                 raise TypeError(
                     f"Field '{field}' from TENSOR_DATA_FIELDS must be a torch.Tensor, "
-                    f"got {type(self[field])}"
+                    "got None"
                 )
-        for field in self.OPTIONAL_TENSOR_FIELDS:
-            if field not in self:
-                raise ValueError(
-                    f"Missing required tensor field '{field}' from OPTIONAL_TENSOR_FIELDS"
-                )
-            if not isinstance(self[field], Tensor | None):
+            if v is not None and not isinstance(v, Tensor):
                 raise TypeError(
-                    f"Field '{field}' from OPTIONAL_TENSOR_FIELDS must be a torch.Tensor, "
-                    f"got {type(self[field])}"
+                    f"Field '{field}' from TENSOR_DATA_FIELDS must be a torch.Tensor, "
+                    f"got {type(v)}"
                 )
 
         # attach extras as attributes
         for k in self.OTHER_DATA_FIELDS:
             if k in extra:
                 setattr(self, k, extra[k])
+            elif k in self.OTHER_FIELD_DEFAULTS:
+                setattr(self, k, self.OTHER_FIELD_DEFAULTS[k])
             else:
                 # allow missing values, but keep attr for copy compat.
                 setattr(self, k, None)
@@ -307,14 +344,15 @@ class DictBatch(dict):
     #         return self.__dict__["data"]
 
     #     warn(
-    #         "DictBatch.data was used to access self, this backwards compatibility feature will be deprecated",
+    #         "DictBatch.data was used to access self, this backwards compatibility "
+    #         "feature will be deprecated",
     #         DeprecationWarning,
     #         stacklevel=2,
     #     )
     #     return self  # just for backwards compatibility
 
     @classmethod
-    def _check_contents(cls, d: dict[str, Tensor]):
+    def _check_contents(cls, d: dict[str, Tensor | None]):
         for k, v in d.items():
             if not isinstance(k, str):
                 raise TypeError(f"Key {k!r} is not str")
@@ -322,42 +360,50 @@ class DictBatch(dict):
                 raise KeyError(
                     f"Key {k!r} collides with protected dict method/attr name"
                 )
-            if not isinstance(v, Tensor):
-                if k in cls.OPTIONAL_TENSOR_FIELDS or k not in cls.TENSOR_DATA_FIELDS:
-                    if v is None:
-                        continue
+            if v is None:
+                if k in cls.TENSOR_DATA_FIELDS and not _hint_allows_none(
+                    cls.TENSOR_DATA_FIELDS[k]
+                ):
                     raise TypeError(
-                        f"Value for {k!r} is not a torch.Tensor or None"
-                        f"\n in class {cls}"
+                        f"Value for required tensor field {k!r} cannot be None\n"
+                        f"in class {cls}"
                     )
+                continue
+            if not isinstance(v, Tensor):
                 raise TypeError(
-                    f"Value for {k!r} is not a torch.Tensor {type(v)}\n in class {cls}"
+                    f"Value for {k!r} is not a torch.Tensor or None ({type(v)})\n"
+                    f"in class {cls}"
                 )
 
     # ------------------------------ dunder -----------------------------------
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name in self.TENSOR_DATA_FIELDS:
-            assert isinstance(value, Tensor)
             self[name] = value
         else:
             super().__setattr__(name, value)
 
+    def __getattribute__(self, name: str) -> Any:
+        """Allow accessing TENSOR_DATA_FIELDS as attributes."""
+        if name in object.__getattribute__(self, "TENSOR_DATA_FIELDS"):
+            return self[name]
+        return super().__getattribute__(name)
+
     def __getattr__(self, name: str) -> Any:
         """Allow accessing TENSOR_DATA_FIELDS as attributes."""
-        if name in self.TENSOR_DATA_FIELDS + self.OPTIONAL_TENSOR_FIELDS:
+        if name in self.TENSOR_DATA_FIELDS:
             try:
                 return self[name]
             except KeyError:
                 raise AttributeError(
                     f"'{self.__class__.__name__}' object has no attribute '{name}'"
-                )
+                ) from None
         raise AttributeError(
             f"'{self.__class__.__name__}' object has no attribute '{name}'"
         )
 
     @overload
-    def __getitem__(self, key: str) -> Tensor: ...
+    def __getitem__(self, key: str) -> Tensor | None: ...
     @overload
     def __getitem__(
         self,
@@ -380,9 +426,15 @@ class DictBatch(dict):
 
         return self.apply_func(index_tensor)
 
-    def __setitem__(self, key: Any, value: Tensor) -> None:
-        if key in self.TENSOR_DATA_FIELDS and not isinstance(value, Tensor):
-            raise ValueError(f"Cannot set item {key} of type {type(key)}")
+    def __setitem__(self, key: Any, value: Tensor | None) -> None:
+        if isinstance(key, str) and key in self.TENSOR_DATA_FIELDS:
+            hint = self.TENSOR_DATA_FIELDS[key]
+            if value is None and not _hint_allows_none(hint):
+                raise TypeError(f"Cannot set required tensor field {key!r} to None")
+            if value is not None and not isinstance(value, Tensor):
+                raise TypeError(
+                    f"Cannot set tensor field {key!r} to value of type {type(value)}"
+                )
         super().__setitem__(key, value)
 
     # --------------------------- basic utilities -----------------------------
@@ -434,6 +486,7 @@ class DictBatch(dict):
 
     @classmethod
     def cat_list(cls, batches: list[Self], dim: int = 0) -> Self:
+        cls._validate_keysets(batches)
         cls._validate_keysets(batches, present_only=True)
         present = batches[0].present_keys()
         return cls.construct_with_other_data(
@@ -447,6 +500,7 @@ class DictBatch(dict):
     @classmethod
     def stack_list(cls, batches: list[Self], dim: int = 0) -> Self:
         cls._validate_keysets(batches, present_only=True)
+        cls._validate_keysets(batches)
         present = batches[0].present_keys()
         return cls.construct_with_other_data(
             {
@@ -514,12 +568,14 @@ class DictBatch(dict):
     @dataclass_transform(kw_only_default=True, field_specifiers=(dictbatch_field,))
     def auto_other_fields[T: DictBatch](cls: type[T]) -> type[T]:
         """
-        Enhanced decorator that automatically populates OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS from annotations.
+        Enhanced decorator that automatically populates OTHER_DATA_FIELDS and
+        TENSOR_DATA_FIELDS from annotations.
 
         Features:
         - Handles forward references properly
         - Excludes ClassVar, property, and cached_property fields
-        - Preserves manually defined OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS if you want to add extras
+        - Preserves manually defined OTHER_DATA_FIELDS and TENSOR_DATA_FIELDS if you
+          want to add extras
         - Works with complex type annotations
         - Automatically detects Tensor-annotated fields for TENSOR_DATA_FIELDS
         """
@@ -533,16 +589,13 @@ class DictBatch(dict):
             # Fallback to raw annotations if get_type_hints fails
             hints = getattr(cls, "__annotations__", {})
 
-        # Extract field names, separating tensor and other fields
-        other_field_names = []
-        tensor_field_names = []
-        optional_tensor_field_names = []
-        default_values = {}
+        tensor_field_hints: dict[str, Any] = {}
+        other_field_hints: dict[str, Any] = {}
+        tensor_defaults: dict[str, Any] = {}
+        other_defaults: dict[str, Any] = {}
 
         for name, hint in hints.items():
             # Skip if it's a method/property in the class
-            is_tensor_field = False
-            is_optional = False
             maybe_has_default = False
             default_value = None
 
@@ -564,66 +617,81 @@ class DictBatch(dict):
             if name.startswith("_"):
                 continue
 
-            # Check if it's a Tensor type
-            if hint is Tensor or (origin is not None and issubclass(origin, Tensor)):
-                tensor_field_names.append(name)
-            elif hint == "Tensor" or hint == "torch.Tensor":  # String annotations
-                tensor_field_names.append(name)
-            elif hasattr(hint, "array_type") and issubclass(hint.array_type, Tensor):
-                # this is a jaxtyping annotated field (or something similar imitating that interface)
-                # this doesn't make use of any of the nice features that jaxtyping provides,
-                # so TODO add those features.
-
-                tensor_field_names.append(name)
-            elif hint == Tensor | None:
-                optional_tensor_field_names.append(name)
-                # tensor_field_names.append(name)?
-            # elif issubclass(Tensor, hint):
-            #     raise ValueError(
-            #         f"Field {name} can be a tensor but failed to get unpacked"
-            #     )
+            if _is_tensor_field_hint(hint):
+                tensor_field_hints[name] = hint
+                if maybe_has_default:
+                    tensor_defaults[name] = default_value
             else:
-                other_field_names.append(name)
-            if maybe_has_default:
-                # assert isinstance(default_value, origin or hint), (
-                #     default_value,
-                #     origin,
-                #     hint,
-                # )
+                other_field_hints[name] = hint
+                if maybe_has_default:
+                    other_defaults[name] = default_value
 
-                default_values[name] = default_value
+        def normalize_field_map(
+            v: object | None, *, default_type: object
+        ) -> dict[str, Any]:
+            if v is None:
+                return {}
+            if isinstance(v, Mapping):
+                return dict(v)
+            if isinstance(v, (tuple, list, set)):
+                return {assert_cast(str, k): default_type for k in v}
+            raise TypeError(f"Unsupported field spec: {type(v)}")
 
-        # Get existing fields from parent classes
-        all_other_fields = set(other_field_names)
-        all_tensor_fields = set(tensor_field_names)
-        all_optional_tensor_fields = set(optional_tensor_field_names)
-        all_field_defaults = {}
-        for base in cls.__mro__[1:]:  # Skip the class itself
-            if hasattr(base, "OTHER_DATA_FIELDS"):
-                base_fields = set(base.OTHER_DATA_FIELDS)
-                all_other_fields |= base_fields
-            if hasattr(base, "TENSOR_DATA_FIELDS"):
-                base_fields = set(base.TENSOR_DATA_FIELDS)
-                all_tensor_fields |= base_fields
-            if hasattr(base, "OPTIONAL_TENSOR_FIELDS"):
-                base_fields = set(base.OPTIONAL_TENSOR_FIELDS)
-                all_optional_tensor_fields |= base_fields
-            if hasattr(base, "FIELD_DEFAULTS"):
-                base_defaults = base.FIELD_DEFAULTS
-                all_field_defaults.update(base_defaults)
-        if hasattr(cls, "OTHER_DATA_FIELDS"):
-            all_other_fields |= set(cls.OTHER_DATA_FIELDS)
+        merged_other: dict[str, Any] = {}
+        merged_tensor: dict[str, Any] = {}
+        merged_tensor_defaults: dict[str, Any] = {}
+        merged_other_defaults: dict[str, Any] = {}
 
-        if hasattr(cls, "TENSOR_DATA_FIELDS"):
-            all_tensor_fields |= set(cls.TENSOR_DATA_FIELDS)
-        if hasattr(cls, "OPTIONAL_TENSOR_FIELDS"):
-            all_optional_tensor_fields |= set(cls.OPTIONAL_TENSOR_FIELDS)
-        if hasattr(cls, "FIELD_DEFAULTS"):
-            all_field_defaults.update(cls.FIELD_DEFAULTS)
-        cls.OTHER_DATA_FIELDS = tuple(all_other_fields)
-        cls.TENSOR_DATA_FIELDS = tuple(all_tensor_fields)
-        cls.OPTIONAL_TENSOR_FIELDS = tuple(all_optional_tensor_fields)
-        cls.FIELD_DEFAULTS = {**all_field_defaults, **default_values}
+        # Merge base classes first (so subclass annotations override).
+        for base in reversed(cls.__mro__[1:]):  # Skip the class itself
+            merged_other.update(
+                normalize_field_map(
+                    getattr(base, "OTHER_DATA_FIELDS", None), default_type=Any
+                )
+            )
+            merged_tensor.update(
+                normalize_field_map(
+                    getattr(base, "TENSOR_DATA_FIELDS", None), default_type=Tensor
+                )
+            )
+
+            merged_tensor_defaults.update(getattr(base, "FIELD_DEFAULTS", {}) or {})
+            merged_other_defaults.update(
+                getattr(base, "OTHER_FIELD_DEFAULTS", {}) or {}
+            )
+
+            # Backwards-compat: older subclasses may still declare
+            # OPTIONAL_TENSOR_FIELDS.
+            for field in getattr(base, "OPTIONAL_TENSOR_FIELDS", ()):
+                merged_tensor[field] = Tensor | None
+
+        # Preserve any manual additions on the class.
+        merged_other.update(
+            normalize_field_map(
+                getattr(cls, "OTHER_DATA_FIELDS", None), default_type=Any
+            )
+        )
+        merged_tensor.update(
+            normalize_field_map(
+                getattr(cls, "TENSOR_DATA_FIELDS", None), default_type=Tensor
+            )
+        )
+        merged_tensor_defaults.update(getattr(cls, "FIELD_DEFAULTS", {}) or {})
+        merged_other_defaults.update(getattr(cls, "OTHER_FIELD_DEFAULTS", {}) or {})
+
+        for field in getattr(cls, "OPTIONAL_TENSOR_FIELDS", ()):
+            merged_tensor[field] = Tensor | None
+
+        # Apply current class annotations (overrides base/manual types).
+        merged_other.update(other_field_hints)
+        merged_tensor.update(tensor_field_hints)
+        merged_tensor_defaults.update(tensor_defaults)
+        merged_other_defaults.update(other_defaults)
+
+        cls.OTHER_DATA_FIELDS = merged_other
+        cls.TENSOR_DATA_FIELDS = merged_tensor
+        cls.FIELD_DEFAULTS = merged_tensor_defaults
+        cls.OTHER_FIELD_DEFAULTS = merged_other_defaults
 
         return cls
 
@@ -918,11 +986,7 @@ class DictBatch(dict):
         batch: "DictBatch",
         **kwargs,
     ) -> Self:
-        extra_data = {
-            k: v
-            for k, v in kwargs.items()
-            if k in cls.TENSOR_DATA_FIELDS + cls.OPTIONAL_TENSOR_FIELDS
-        }
+        extra_data = {k: v for k, v in kwargs.items() if k in cls.TENSOR_DATA_FIELDS}
         extra_other_data = {
             k: v for k, v in kwargs.items() if k in cls.OTHER_DATA_FIELDS
         }
@@ -1004,8 +1068,12 @@ if __name__ == "__main__":
         doc_id: int
 
     # This will automatically set:
-    # TENSOR_DATA_FIELDS = ("input_ids", "attention_mask", "labels")
-    # OTHER_DATA_FIELDS = ("prompt", "doc_id")
+    # TENSOR_DATA_FIELDS = {
+    #     "input_ids": Tensor,
+    #     "attention_mask": Tensor,
+    #     "labels": Tensor,
+    # }
+    # OTHER_DATA_FIELDS = {"prompt": str, "doc_id": int}
 
     # Create a batch
     batch = MyBatch(
