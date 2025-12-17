@@ -9,7 +9,8 @@ from collections.abc import (
     ValuesView,
 )
 from functools import cached_property
-from types import EllipsisType
+from pathlib import Path
+from types import EllipsisType, UnionType
 from typing import (
     Any,
     ClassVar,
@@ -25,9 +26,10 @@ from typing import (
 
 import torch
 from attrs import define
+from paramsight.type_utils import get_args_robust, get_origin_robust
 from torch import Tensor
 
-from saeco.misc.utils import assert_cast
+from saeco.misc.utils import assert_cast, chill_issubclass
 
 
 def batch_size_targeter(batch_size: int):
@@ -125,6 +127,53 @@ _PROTECTED = {
     "popitem",
 }
 
+type _DTDataT = "dict[str, _DTDataT ] |  Tensor | DictBatch | None"
+
+
+def _flatten(
+    d: "Mapping[str, _DTDataT] | DictBatch",
+) -> Mapping[str, Tensor | None]:
+    """
+    Flatten a nested dictionary or DictBatch into a flat dictionary of
+    str -> (Tensor | None)
+    """
+    already_flat = {k: v for k, v in d.items() if not isinstance(v, dict)}
+    flattened = {
+        f"{k}.{k1}": v1
+        for k, v in d.items()
+        if isinstance(v, dict)
+        for k1, v1 in _flatten(v).items()
+    }
+    return {**already_flat, **flattened}
+
+
+def _unflatten_once_strict[T](d: dict[str, T]) -> dict[str, dict[str, T]]:
+    """
+    transforms dictionary whose keys have a "." key-path-separator in the key
+    to nested dictionaries with the prefix as a key tot he
+    creates one layer of nesting for
+
+    takes a dictionary of str -> T
+    and transforms keys of the form {"k0.k1...": v1, "k0.k2...": v2}
+    into {"k0": {"k1...": v1, "k2...": v2}}
+    """
+    for k in d.keys():
+        if "." not in k:
+            raise ValueError(f"Key {k} does not have a '.' separator")
+        if "." in (k[0], k[-1]):
+            raise ValueError(f"Key {k} has a '.' separator at the beginning or end")
+        if ".." in k:
+            raise ValueError(f"Key {k} has a '..' sequence")
+
+    d_out = {}
+    for k, v in d.items():
+        k0, *k_ = k.split(".")
+        k_rest = ".".join(k_)
+        if k0 not in d_out:
+            d_out[k0] = {}
+        d_out[k0][k_rest] = v
+    return d_out
+
 
 class SkippedCalc:
     @overload
@@ -184,12 +233,14 @@ _NONE_TYPE = type(None)
 
 
 def _hint_allows_none(hint: Any) -> bool:
+    if hint is Any:
+        return True
     if hint is _NONE_TYPE:
         return True
     return _NONE_TYPE in get_args(hint)
 
 
-def _is_tensor_field_hint(hint: Any) -> bool:
+def _hint_allows_tensor(hint: Any) -> bool:
     if hint is Tensor or hint == "Tensor" or hint == "torch.Tensor":
         return True
 
@@ -209,17 +260,105 @@ def _is_tensor_field_hint(hint: Any) -> bool:
 
     args = get_args(hint)
     if args:
-        non_none_args = [a for a in args if a is not _NONE_TYPE]
-        return bool(non_none_args) and all(
-            _is_tensor_field_hint(a) for a in non_none_args
-        )
+        return any(_hint_allows_tensor(a) for a in args if a is not _NONE_TYPE)
 
     return False
 
 
+def _hint_allows_dictbatch(hint: Any) -> bool:
+    if hint is Any:
+        raise ValueError("Any is not a valid hint for a DictBatch")
+    if hint in {"DictBatch", "saeco.data.dict_batch.dict_batch.DictBatch"}:
+        return True
+
+    if isinstance(hint, type):
+        try:
+            return issubclass(hint, DictBatch)
+        except (NameError, TypeError):
+            return False
+    origin = get_origin(hint)
+    if origin and isinstance(origin, type) and issubclass(origin, DictBatch):
+        return True
+    args = get_args(hint)
+    if args:
+        return any(_hint_allows_dictbatch(a) for a in args if a is not _NONE_TYPE)
+
+    return False
+
+
+def _get_dictbatch_constructor_type(hint) -> type["DictBatch"]:
+    if chill_issubclass(hint, DictBatch):
+        return hint
+    origin = get_origin_robust(hint)
+    if origin is UnionType:
+        args = get_args_robust(hint)
+        (a,) = [a for a in args if a is not None]
+        assert issubclass(a, DictBatch)
+        return a
+    raise ValueError(f"Invalid hint: {hint!r}")
+
+
+def _is_tensor_field_hint(hint: Any) -> bool:
+    if _hint_allows_tensor(hint) or _hint_allows_dictbatch(hint):
+        args = get_args(hint)
+        if args:
+            non_none_args = [a for a in args if a is not _NONE_TYPE]
+            return bool(non_none_args) and all(
+                _is_tensor_field_hint(a) for a in non_none_args
+            )
+        return True
+
+    return False
+
+
+def _validate_tensor_field_value(field: str, hint: Any, value: Any) -> None:
+    if value is None:
+        if not _hint_allows_none(hint):
+            raise TypeError(f"Field {field!r} cannot be None (hint: {hint!r})")
+        return
+
+    if isinstance(value, Tensor):
+        if hint is not Any and not _hint_allows_tensor(hint):
+            raise TypeError(
+                f"Field {field!r} expects a DictBatch-like value (hint: {hint!r}), "
+                "got Tensor"
+            )
+        return
+
+    if isinstance(value, DictBatch):
+        if hint is not Any and not _hint_allows_dictbatch(hint):
+            raise TypeError(
+                f"Field {field!r} expects a Tensor-like value (hint: {hint!r}), "
+                f"got {type(value)}"
+            )
+
+        args = get_args(hint)
+        if isinstance(hint, type):
+            allowed = (hint,)
+        elif args:
+            allowed = tuple(
+                a for a in args if isinstance(a, type) and issubclass(a, DictBatch)
+            )
+        else:
+            allowed = ()
+
+        if allowed and not any(isinstance(value, a) for a in allowed):
+            raise TypeError(f"Field {field!r} expects {allowed}, got {type(value)}")
+        return
+
+    raise TypeError(
+        f"Field {field!r} must be a torch.Tensor, a DictBatch, or None; "
+        f"got {type(value)}"
+    )
+
+
+type TensorFieldTypes = Tensor | DictBatch | None
+
+
 class DictBatch(dict):
     """
-    A batch **is** a dict[str, torch.Tensor] *and* may carry extra attributes
+    A batch **is** a dict[str, torch.Tensor | DictBatch] *and* may carry extra
+    attributes
     declared by subclasses via `OTHER_DATA_FIELDS` and `TENSOR_DATA_FIELDS`.
 
     Examples
@@ -250,7 +389,7 @@ class DictBatch(dict):
     # ------------------------------- ctor ------------------------------------
     def __init__(
         self,
-        data: dict[str, Tensor | None] | None = None,
+        data: dict[str, "Tensor | None | DictBatch"] | None = None,
         /,
         **kwargs: Any,
     ):
@@ -258,8 +397,8 @@ class DictBatch(dict):
         Parameters
         ----------
         data
-            Mapping `str -> Tensor to initialise the dict body. If omitted,
-            tensor kwargs are used instead.
+            Mapping `str -> (Tensor | DictBatch)` to initialise the dict body.
+            If omitted, tensor kwargs are used instead.
         **kwargs
             *Either* tensor entries (for the dict) *or* values for
             `OTHER_DATA_FIELDS.
@@ -272,7 +411,8 @@ class DictBatch(dict):
             and data is None
             and isinstance(kwargs["data"], dict)
             and all(
-                isinstance(k, str) and (isinstance(v, Tensor) or v is None)
+                isinstance(k, str)
+                and (isinstance(v, Tensor) or isinstance(v, DictBatch) or v is None)
                 for k, v in kwargs["data"].items()
             )
         ):
@@ -292,9 +432,18 @@ class DictBatch(dict):
                 )
             tensor_kwargs = data
         tensor_kwargs = {**self.FIELD_DEFAULTS, **tensor_kwargs}
-        batch_sizes = [
-            v.shape[0] for v in tensor_kwargs.values() if isinstance(v, Tensor)
-        ]
+        batch_sizes: list[int] = []
+        for v in tensor_kwargs.values():
+            if isinstance(v, Tensor):
+                batch_sizes.append(v.shape[0])
+            elif isinstance(v, DictBatch):
+                batch_sizes.append(v.batch_size)
+
+        if not batch_sizes:
+            raise ValueError(
+                "Cannot infer batch size: no tensors (or nested DictBatches) provided."
+            )
+
         batch_size = batch_sizes[0]
         if not all(size == batch_size for size in batch_sizes):
             raise ValueError(
@@ -304,6 +453,22 @@ class DictBatch(dict):
             k: v if not isinstance(v, _Default) else v.render(batch_size)
             for k, v in tensor_kwargs.items()
         }
+        post_sizes: list[int] = []
+        for v in tensor_kwargs.values():
+            if isinstance(v, Tensor):
+                post_sizes.append(v.shape[0])
+            elif isinstance(v, DictBatch):
+                post_sizes.append(v.batch_size)
+            elif v is None:
+                continue
+            else:  # pragma: no cover
+                raise TypeError(
+                    f"Unexpected value type in batch: {type(v)} for value {v!r}"
+                )
+        if post_sizes and not all(size == batch_size for size in post_sizes):
+            raise ValueError(
+                f"All tensors must have the same batch size, got {post_sizes}"
+            )
         self._check_contents(tensor_kwargs)
         super().__init__(tensor_kwargs)
 
@@ -313,17 +478,7 @@ class DictBatch(dict):
                 raise ValueError(
                     f"Missing required tensor field '{field}' from TENSOR_DATA_FIELDS"
                 )
-            v = self[field]
-            if v is None and not _hint_allows_none(hint):
-                raise TypeError(
-                    f"Field '{field}' from TENSOR_DATA_FIELDS must be a torch.Tensor, "
-                    "got None"
-                )
-            if v is not None and not isinstance(v, Tensor):
-                raise TypeError(
-                    f"Field '{field}' from TENSOR_DATA_FIELDS must be a torch.Tensor, "
-                    f"got {type(v)}"
-                )
+            _validate_tensor_field_value(field, hint, self[field])
 
         # attach extras as attributes
         for k in self.OTHER_DATA_FIELDS:
@@ -352,7 +507,7 @@ class DictBatch(dict):
     #     return self  # just for backwards compatibility
 
     @classmethod
-    def _check_contents(cls, d: dict[str, Tensor | None]):
+    def _check_contents(cls, d: dict[str, Any]):
         for k, v in d.items():
             if not isinstance(k, str):
                 raise TypeError(f"Key {k!r} is not str")
@@ -360,20 +515,19 @@ class DictBatch(dict):
                 raise KeyError(
                     f"Key {k!r} collides with protected dict method/attr name"
                 )
-            if v is None:
-                if k in cls.TENSOR_DATA_FIELDS and not _hint_allows_none(
-                    cls.TENSOR_DATA_FIELDS[k]
-                ):
-                    raise TypeError(
-                        f"Value for required tensor field {k!r} cannot be None\n"
-                        f"in class {cls}"
-                    )
+            if k in cls.TENSOR_DATA_FIELDS:
+                _validate_tensor_field_value(k, cls.TENSOR_DATA_FIELDS[k], v)
                 continue
-            if not isinstance(v, Tensor):
-                raise TypeError(
-                    f"Value for {k!r} is not a torch.Tensor or None ({type(v)})\n"
-                    f"in class {cls}"
-                )
+
+            if v is None:
+                continue
+            if isinstance(v, Tensor) or isinstance(v, DictBatch):
+                continue
+            raise TypeError(
+                f"Value for {k!r} is not a torch.Tensor, DictBatch, or None "
+                f"({type(v)})\n"
+                f"in class {cls}"
+            )
 
     # ------------------------------ dunder -----------------------------------
 
@@ -403,7 +557,7 @@ class DictBatch(dict):
         )
 
     @overload
-    def __getitem__(self, key: str) -> Tensor | None: ...
+    def __getitem__(self, key: str) -> Any: ...
     @overload
     def __getitem__(
         self,
@@ -426,20 +580,26 @@ class DictBatch(dict):
 
         return self.apply_func(index_tensor)
 
-    def __setitem__(self, key: Any, value: Tensor | None) -> None:
+    def __setitem__(self, key: Any, value: Any) -> None:
         if isinstance(key, str) and key in self.TENSOR_DATA_FIELDS:
-            hint = self.TENSOR_DATA_FIELDS[key]
-            if value is None and not _hint_allows_none(hint):
-                raise TypeError(f"Cannot set required tensor field {key!r} to None")
-            if value is not None and not isinstance(value, Tensor):
-                raise TypeError(
-                    f"Cannot set tensor field {key!r} to value of type {type(value)}"
-                )
+            _validate_tensor_field_value(key, self.TENSOR_DATA_FIELDS[key], value)
         super().__setitem__(key, value)
 
     # --------------------------- basic utilities -----------------------------
+    def iter_tensors(self) -> Iterator[Tensor]:
+        for v in self.values():
+            if v is None:
+                continue
+            if isinstance(v, Tensor):
+                yield v
+                continue
+            if isinstance(v, DictBatch):
+                yield from v.iter_tensors()
+                continue
+            raise TypeError(f"Unexpected value type in DictBatch: {type(v)}")
+
     def present_values(self) -> list[Tensor]:
-        return [v for v in self.values() if v is not None]
+        return list(self.iter_tensors())
 
     # ------- device helpers (borrowed from DictBatch) -------
     def to(self, *targets, **kwargs):
@@ -484,33 +644,100 @@ class DictBatch(dict):
                 f"\nkeys missing from some batches: {max_keys - min_keys}"
             )
 
+        # Recursively validate any nested DictBatch values for the selected keys.
+        for key in keys0:
+            values = [b[key] for b in batches]
+            non_none_values = [v for v in values if v is not None]
+
+            if not any(isinstance(v, DictBatch) for v in non_none_values):
+                continue
+
+            if not all(isinstance(v, DictBatch) for v in non_none_values):
+                raise TypeError(
+                    f"Key {key!r} mixes DictBatch and non-DictBatch values: "
+                    f"{[type(v) for v in non_none_values]}"
+                )
+
+            if len(non_none_values) != len(values):
+                # Optional nested batch missing in some inputs; handled by
+                # present_only validation.
+                continue
+
+            child0 = cast(DictBatch, non_none_values[0])
+            child_type = type(child0)
+            if not all(type(v) is child_type for v in non_none_values):
+                raise TypeError(
+                    f"Key {key!r} has inconsistent nested batch types: "
+                    f"{[type(v) for v in non_none_values]}"
+                )
+
+            child_type._validate_keysets(
+                cast(list[DictBatch], non_none_values), present_only=present_only
+            )
+
     @classmethod
     def cat_list(cls, batches: list[Self], dim: int = 0) -> Self:
         cls._validate_keysets(batches)
         cls._validate_keysets(batches, present_only=True)
         present = batches[0].present_keys()
-        return cls.construct_with_other_data(
-            {
-                k: torch.cat([b[k] for b in batches], dim=dim) if k in present else None
-                for k in batches[0].keys()
-            },
-            cls._merge_other_data(batches),
-        )
+        out: dict[str, Any] = {}
+        for k in batches[0].keys():
+            if k not in present:
+                out[k] = None
+                continue
+
+            values = [b[k] for b in batches]
+            v0 = values[0]
+            if isinstance(v0, Tensor):
+                out[k] = torch.cat(cast(list[Tensor], values), dim=dim)
+                continue
+            if isinstance(v0, DictBatch):
+                child_type = type(v0)
+                if not all(
+                    isinstance(v, DictBatch) and type(v) is child_type for v in values
+                ):
+                    raise TypeError(
+                        f"Key {k!r} has inconsistent nested batch types: "
+                        f"{[type(v) for v in values]}"
+                    )
+                out[k] = child_type.cat_list(cast(list[DictBatch], values), dim=dim)
+                continue
+
+            raise TypeError(f"Unexpected value type for key {k!r}: {type(v0)}")
+
+        return cls.construct_with_other_data(out, cls._merge_other_data(batches))
 
     @classmethod
     def stack_list(cls, batches: list[Self], dim: int = 0) -> Self:
         cls._validate_keysets(batches, present_only=True)
         cls._validate_keysets(batches)
         present = batches[0].present_keys()
-        return cls.construct_with_other_data(
-            {
-                k: torch.stack([b[k] for b in batches], dim=dim)
-                if k in present
-                else None
-                for k in batches[0].keys()
-            },
-            cls._merge_other_data(batches),
-        )
+        out: dict[str, Any] = {}
+        for k in batches[0].keys():
+            if k not in present:
+                out[k] = None
+                continue
+
+            values = [b[k] for b in batches]
+            v0 = values[0]
+            if isinstance(v0, Tensor):
+                out[k] = torch.stack(cast(list[Tensor], values), dim=dim)
+                continue
+            if isinstance(v0, DictBatch):
+                child_type = type(v0)
+                if not all(
+                    isinstance(v, DictBatch) and type(v) is child_type for v in values
+                ):
+                    raise TypeError(
+                        f"Key {k!r} has inconsistent nested batch types: "
+                        f"{[type(v) for v in values]}"
+                    )
+                out[k] = child_type.stack_list(cast(list[DictBatch], values), dim=dim)
+                continue
+
+            raise TypeError(f"Unexpected value type for key {k!r}: {type(v0)}")
+
+        return cls.construct_with_other_data(out, cls._merge_other_data(batches))
 
     # ---------------------- iterable conversion ------------------------------
     @classmethod
@@ -529,23 +756,32 @@ class DictBatch(dict):
 
     @classmethod
     def construct_with_other_data(
-        cls, data: dict[str, Tensor | None], other: dict[str, Any] | None = None
+        cls, data: dict[str, Any], other: dict[str, Any] | None = None
     ) -> Self:
         other = other or {}
         return cls(data, **other)
 
-    def _construct_with_copied_other_data(self, data: dict[str, Tensor | None]) -> Self:
-        return self.construct_with_other_data(data, self._get_other_dict())
+    def _construct_with_copied_other_data(self, data: dict[str, Any]) -> Self:
+        return self.cast_convert(data, **self._get_other_dict())
 
     # -- simple rule: enjoy equal extras or keep first; can customise in subclass
     @classmethod
-    def _merge_other_data(cls, batches: list[Self]) -> dict[str, Any]:
+    def _merge_other_data(
+        cls, batches: list[Self], strict: bool = True
+    ) -> dict[str, Any]:
         """Default strategy: require identical extras across all batches."""
         merged: dict[str, Any] = {}
         for field in cls.OTHER_DATA_FIELDS:
             values = [getattr(b, field) for b in batches]
             # If all equal → keep; else None (or override in subclass).
-            merged[field] = values[0] if all(v == values[0] for v in values) else None
+            if all(v == values[0] for v in values):
+                merged[field] = values[0]
+            else:
+                if strict:
+                    raise ValueError(
+                        f"Other data field {field} has inconsistent values: {values}"
+                    )
+                merged[field] = None
         return merged
 
     # --------------------------- len -----------------------------------------
@@ -582,12 +818,12 @@ class DictBatch(dict):
         # Get type hints with forward reference resolution
         if not issubclass(cls, DictBatch):
             raise ValueError(f"Class {cls.__name__} is not a subclass of DictBatch")
-        try:
-            # This handles forward references better
-            hints = get_type_hints(cls, include_extras=True)
-        except Exception:
-            # Fallback to raw annotations if get_type_hints fails
-            hints = getattr(cls, "__annotations__", {})
+        # try:
+        # This handles forward references better
+        hints = get_type_hints(cls, include_extras=False)
+        # except Exception:
+        #     # Fallback to raw annotations if get_type_hints fails
+        #     hints = getattr(cls, "__annotations__", {})
 
         tensor_field_hints: dict[str, Any] = {}
         other_field_hints: dict[str, Any] = {}
@@ -595,10 +831,10 @@ class DictBatch(dict):
         other_defaults: dict[str, Any] = {}
 
         for name, hint in hints.items():
-            # Skip if it's a method/property in the class
             maybe_has_default = False
             default_value = None
 
+            # Skip if it's a method/property in the class
             if hasattr(cls, name):
                 attr = getattr(cls, name)
                 if isinstance(attr, (property, cached_property)):
@@ -698,19 +934,17 @@ class DictBatch(dict):
     def float(self):
         return self.to(torch.float32)
 
-    def items(self) -> ItemsView[str, Tensor | None]:
+    def items(self) -> ItemsView[str, TensorFieldTypes]:
         return super().items()
 
-    def values(self) -> ValuesView[Tensor | None]:
+    def values(self) -> ValuesView[TensorFieldTypes]:
         return super().values()
 
     def keys(self) -> KeysView[str]:
         return super().keys()
 
     def present_keys(self) -> set[str]:
-        return self._apply(
-            lambda k, v: k, skip_none=True, return_set=True, takes_key=True
-        )
+        return {k for k, v in self.items() if v is not None}
 
     def gather(self, dim: int, indices: Tensor) -> Self:
         def gather(t: Tensor) -> Tensor:
@@ -730,6 +964,7 @@ class DictBatch(dict):
         pass_none: Literal[True],
         return_set: Literal[True],
     ) -> set[T | None]: ...
+
     @overload
     def _apply[T](
         self,
@@ -757,6 +992,7 @@ class DictBatch(dict):
         pass_none: Literal[True],
         return_set: Literal[True],
     ) -> set[T | None]: ...
+
     @overload
     def _apply[T](
         self,
@@ -782,6 +1018,7 @@ class DictBatch(dict):
         takes_key: Literal[True],
         pass_none: Literal[True],
     ) -> dict[str, T | None]: ...
+
     @overload
     def _apply[T](
         self,
@@ -806,6 +1043,7 @@ class DictBatch(dict):
         *,
         pass_none: Literal[True],
     ) -> dict[str, T | None]: ...
+
     @overload
     def _apply[T](
         self,
@@ -872,15 +1110,44 @@ class DictBatch(dict):
         if return_set:
             return {
                 result
-                for k, v in self.items()
+                for k, v in self.items_flat(yield_none=True)
                 if not isinstance(result := maybe_returns_none_func(k, v), SkippedCalc)
             }
 
         return {
             k: result
-            for k, v in self.items()
+            for k, v in self.items_flat(yield_none=True)
             if not isinstance(result := maybe_returns_none_func(k, v), SkippedCalc)
         }
+
+    @overload
+    def items_flat(self) -> Iterator[tuple[str, Tensor]]: ...
+    @overload
+    def items_flat(
+        self, yield_none: Literal[False]
+    ) -> Iterator[tuple[str, Tensor]]: ...
+    @overload
+    def items_flat(
+        self, yield_none: Literal[True]
+    ) -> Iterator[tuple[str, Tensor | None]]: ...
+    @overload
+    def items_flat(
+        self, yield_none: bool = False
+    ) -> Iterator[tuple[str, Tensor]] | Iterator[tuple[str, Tensor | None]]: ...
+
+    def items_flat(
+        self, yield_none: bool = False
+    ) -> Iterator[tuple[str, Tensor]] | Iterator[tuple[str, Tensor | None]]:
+        for k, v in self.items():
+            if isinstance(v, Tensor):
+                yield k, v
+            elif isinstance(v, DictBatch):
+                for dk, dv in v.items_flat():
+                    yield f"{k}.{dk}", dv
+            elif v is not None:
+                raise TypeError(f"Unexpected value type in DictBatch: {type(v)}")
+            elif yield_none:
+                yield k, v
 
     def reshape(self, *shape: int) -> Self:
         return self.apply_func(lambda x: x.reshape(*shape))
@@ -912,7 +1179,7 @@ class DictBatch(dict):
         if isinstance(exclude, list):
             exclude = set(exclude)
         if include is None:
-            include = set(self.keys()) - exclude
+            include = set(self.keys()) - (exclude or set())
 
         split = self.set_split(include)
         split.a = split.a[mask]
@@ -924,22 +1191,25 @@ class DictBatch(dict):
         dim: int = 0,
     ) -> list[Self]:
         assert dim == 0
-        splitself = self._apply(lambda x: x.split(split_size, dim=dim), skip_none=True)
-        # splitself = {k: v.split(split_size, dim=dim) for k, v in self.items()}
-        l0 = next(iter(splitself.values()))
-        assert all(len(v) == len(l0) for v in splitself.values())
+        if isinstance(split_size, int):
+            sizes = [split_size] * (self.batch_size // split_size)
+            rem = self.batch_size % split_size
+            if rem:
+                sizes.append(rem)
+        else:
+            sizes = list(split_size)
+            if sum(sizes) != self.batch_size:
+                raise ValueError(
+                    f"Split sizes must sum to batch size ({self.batch_size}), "
+                    f"got {sizes}"
+                )
 
-        return [
-            self._construct_with_copied_other_data(
-                {
-                    **{
-                        k: splitself[k][i] if k in splitself else None
-                        for k in self.keys()
-                    }
-                },
-            )
-            for i in range(len(l0))
-        ]
+        out: list[Self] = []
+        start = 0
+        for size in sizes:
+            out.append(self[start : start + size])
+            start += size
+        return out
 
     def einops_rearrange(self, pattern: str, **kwargs):
         import einops
@@ -950,7 +1220,7 @@ class DictBatch(dict):
         return self.apply_func(rearrange)
 
     def get_unanimous_result[T](self, func: Callable[[Tensor], T]) -> T:
-        results = self._apply(func, return_set=True, skip_none=True)
+        results = {func(t) for t in self.iter_tensors()}
         if len(results) != 1:
             raise ValueError(f"Expected 1 result, got {len(results)}")
         return results.pop()
@@ -969,32 +1239,151 @@ class DictBatch(dict):
 
     @property
     def shapes(self) -> dict[str, tuple[int, ...]]:
-        return self._apply(lambda x: x.shape, skip_none=True)
+        shapes: dict[str, tuple[int, ...]] = {}
+
+        def add(prefix: str, v: Any):
+            if v is None:
+                return
+            if isinstance(v, Tensor):
+                shapes[prefix] = tuple(v.shape)
+                return
+            if isinstance(v, DictBatch):
+                for k, shape in v.shapes.items():
+                    shapes[f"{prefix}.{k}"] = shape
+                return
+            raise TypeError(f"Unexpected value type in DictBatch: {type(v)}")
+
+        for k, v in self.items():
+            add(k, v)
+
+        return shapes
 
     @property
     def shape(self) -> "DictBatchShape":
         return DictBatchShape(batch_size=self.batch_size, shapes=self.shapes)
 
-    def updated_with(self, **kwargs: Tensor) -> Self:
+    def updated_with(self, **kwargs: Any) -> Self:
         return self.construct_with_other_data(
             {**self, **kwargs}, self._get_other_dict()
         )
 
     @classmethod
+    def class_nested_dictbatch_fields(cls) -> dict[str, type["DictBatch"]]:
+        db_fields = {
+            k for k, v in cls.TENSOR_DATA_FIELDS.items() if _hint_allows_dictbatch(v)
+        }
+        tensor_fields = {
+            k for k, v in cls.TENSOR_DATA_FIELDS.items() if _hint_allows_tensor(v)
+        }
+        assert len(db_fields & tensor_fields) == 0
+        return {
+            k: _get_dictbatch_constructor_type(v)
+            for k, v in cls.TENSOR_DATA_FIELDS.items()
+            if k in db_fields
+        }
+
+    @classmethod
     def cast_convert(
         cls,
-        batch: "DictBatch",
+        batch: "DictBatch | Mapping[str, Tensor | DictBatch | None]",
         **kwargs,
     ) -> Self:
-        extra_data = {k: v for k, v in kwargs.items() if k in cls.TENSOR_DATA_FIELDS}
-        extra_other_data = {
-            k: v for k, v in kwargs.items() if k in cls.OTHER_DATA_FIELDS
-        }
-        if isinstance(batch, cls) and type(batch) is cls:
+        if isinstance(batch, cls) and type(batch) is cls and not kwargs:
             return batch
-        return cls.construct_with_other_data(
-            {**batch, **extra_data}, {**batch._get_other_dict(), **extra_other_data}
+
+        def data_pred(k: str, v: Any) -> bool:
+            return (
+                isinstance(v, Tensor | DictBatch)
+                or k.split(".")[0] in cls.TENSOR_DATA_FIELDS
+            )
+
+        def other_pred(k: str, v: Any) -> bool:
+            return k.split(".")[0] in cls.OTHER_DATA_FIELDS
+
+        should_be_empty = {
+            k: v for k, v in kwargs.items() if data_pred(k, v) and other_pred(k, v)
+        }
+        assert should_be_empty == {}
+
+        extra_other_data = {k: v for k, v in kwargs.items() if other_pred(k, v)}
+        flat_other = {k: v for k, v in extra_other_data.items() if "." not in k}
+        flattened_nested_other = {k: v for k, v in extra_other_data.items() if "." in k}
+
+        extra_data = {k: v for k, v in kwargs.items() if data_pred(k, v)}
+
+        batch_data = {**_flatten(batch), **extra_data}
+        flat_data = {k: v for k, v in batch_data.items() if "." not in k}
+        flattened_nested_data = {k: v for k, v in batch_data.items() if "." in k}
+        dictbatch_fields = cls.class_nested_dictbatch_fields()
+        nested_data: dict[str, dict[str, TensorFieldTypes] | DictBatch] = (
+            _unflatten_once_strict(flattened_nested_data)
         )
+        nested_other: dict[str, dict[str, Any]] = _unflatten_once_strict(
+            flattened_nested_other
+        )
+        for k in nested_data.keys():
+            if k not in nested_other:
+                nested_other[k] = {}
+        nested_cast_data: dict[str, DictBatch] = {
+            k: (
+                dictbatch_fields[k] if k in dictbatch_fields else DictBatch
+            ).cast_convert(v, **nested_other[k])
+            for k, v in nested_data.items()
+        }
+
+        assert (
+            len(
+                set(kwargs.keys())
+                - set(cls.TENSOR_DATA_FIELDS.keys())
+                - set(cls.OTHER_DATA_FIELDS.keys())
+            )
+            == 0
+        ), f"""Unexpected keys in kwargs: 
+            {
+            set(kwargs.keys())
+            - set(cls.TENSOR_DATA_FIELDS.keys())
+            - set(cls.OTHER_DATA_FIELDS.keys())
+        }"""
+        if isinstance(batch, DictBatch):
+            other_data = {**batch._get_other_dict(), **flat_other}
+        else:
+            other_data = flat_other
+        assert not (nested_cast_data.keys() & flat_data.keys()), (
+            "Nested and flat data keys must be disjoint:"
+            f"{nested_cast_data.keys() & flat_data.keys()} overlapped"
+        )
+        return cls.construct_with_other_data(
+            {**nested_cast_data, **flat_data}, other_data
+        )
+
+    @overload
+    def to_flat_dict(
+        self, include_none: Literal[False] = False
+    ) -> dict[str, Tensor]: ...
+    @overload
+    def to_flat_dict(self, include_none: Literal[True]) -> dict[str, Tensor | None]: ...
+    @overload
+    def to_flat_dict(
+        self, include_none: bool = False
+    ) -> dict[str, Tensor] | dict[str, Tensor | None]: ...
+    def to_flat_dict(
+        self, include_none: bool = False
+    ) -> dict[str, Tensor] | dict[str, Tensor | None]:
+        return dict(self.items_flat(yield_none=include_none))
+
+    def save_as_safetensors(self, path: Path):
+        from safetensors.torch import save_file
+
+        if self._get_other_dict():
+            raise ValueError("Cannot save DictBatch with other data as safetensors")
+
+        save_file(self.to_flat_dict(), path)
+
+    @classmethod
+    def load_from_safetensors(cls, path: Path) -> Self:
+        from safetensors.torch import load_file
+
+        return cls.cast_convert(load_file(path))
 
 
 @define
@@ -1141,14 +1530,113 @@ if __name__ == "__main__":
         a=torch.ones(4, 128, dtype=torch.long),
         b=None,
     )
-    # should error:
-    batch = WithOptionalTensor(
-        a=torch.ones(4, 128, dtype=torch.long),
-        # b=None,
-    )
+    # # should error:
+    # batch = WithOptionalTensor(
+    #     a=torch.ones(4, 128, dtype=torch.long),
+    #     # b=None,
+    # )
 
-    # should error:
-    batch = WithOptionalTensor(
-        a=None,
-        b=None,
+    # # should error:
+    # batch = WithOptionalTensor(
+    #     a=None,
+    #     b=None,
+    # )
+
+    @DictBatch.auto_other_fields
+    class WithOptionalTensorNest(DictBatch):
+        n: WithOptionalTensor
+        a: Tensor = dictbatch_field(factory=ones_maker)
+
+    nested = WithOptionalTensorNest(
+        n=WithOptionalTensor(
+            a=torch.ones(4, 128, dtype=torch.long),
+            b=torch.ones(4, 128, dtype=torch.long),
+            c=torch.ones(4, 128, dtype=torch.long),
+        ),
+        a=torch.ones(4, 128, dtype=torch.long),
     )
+    print(nested)
+    print(nested.batch_size)
+
+    # =========================================================================
+    # Example 2: Nested DictBatch support
+    # =========================================================================
+    print("\n" + "=" * 60)
+    print("Nested DictBatch Example")
+    print("=" * 60)
+
+    # Define an inner batch type
+    @DictBatch.auto_other_fields
+    class InnerBatch(DictBatch):
+        hidden: Tensor
+        activations: Tensor | None = None
+
+    # Define an outer batch type that contains the inner batch
+    @DictBatch.auto_other_fields
+    class OuterBatch(DictBatch):
+        tokens: Tensor
+        inner: InnerBatch
+        optional_inner: InnerBatch | None = None
+        label: str
+
+    # Create nested batches
+    inner1 = InnerBatch(
+        hidden=torch.randn(4, 64),
+        activations=torch.randn(4, 32),
+    )
+    print(f"Inner batch size: {inner1.batch_size}")
+
+    outer = OuterBatch(
+        tokens=torch.randint(0, 1000, (4, 16)),
+        inner=inner1,
+        label="test",
+    )
+    print(f"Outer batch size: {outer.batch_size}")
+    print(f"Outer TENSOR_DATA_FIELDS: {outer.TENSOR_DATA_FIELDS}")
+
+    # Access nested batch
+    print(f"outer.inner.hidden.shape: {outer.inner.hidden.shape}")
+    print(f"outer['inner'].hidden.shape: {outer['inner'].hidden.shape}")
+
+    # Indexing propagates to nested batches
+    indexed = outer[:2]
+    print("\nAfter indexing [:2]:")
+    print(f"  indexed.batch_size: {indexed.batch_size}")
+    print(f"  indexed.tokens.shape: {indexed.tokens.shape}")
+    print(f"  indexed.inner.hidden.shape: {indexed.inner.hidden.shape}")
+
+    # .to() propagates to nested batches
+    if torch.cuda.is_available():
+        outer_cuda = outer.cuda()
+        print("\nAfter .cuda():")
+        print(f"  outer_cuda.tokens.device: {outer_cuda.tokens.device}")
+        print(f"  outer_cuda.inner.hidden.device: {outer_cuda.inner.hidden.device}")
+
+    # cat_list works with nested batches
+    outer2 = OuterBatch(
+        tokens=torch.randint(0, 1000, (4, 16)),
+        inner=InnerBatch(
+            hidden=torch.randn(4, 64),
+            activations=torch.randn(4, 32),
+        ),
+        label="test",
+    )
+    a = outer.to_flat_dict(include_none=True)
+    b = _flatten(outer)
+    a.keys() ^ b.keys()
+    concatenated = OuterBatch.cat_list([outer, outer2], dim=0)
+    print("\nAfter cat_list:")
+    print(f"  concatenated.batch_size: {concatenated.batch_size}")
+    print(f"  concatenated.tokens.shape: {concatenated.tokens.shape}")
+    print(f"  concatenated.inner.hidden.shape: {concatenated.inner.hidden.shape}")
+
+    # clone() propagates to nested batches
+    cloned = outer.clone()
+    print("\nAfter clone():")
+    print(f"  cloned.inner is outer.inner: {cloned.inner is outer.inner}")
+    print(
+        f"  cloned.inner.hidden is outer.inner.hidden: {cloned.inner.hidden is outer.inner.hidden}"
+    )
+    cloned.items()
+
+    print("\nNested DictBatch tests passed!")
