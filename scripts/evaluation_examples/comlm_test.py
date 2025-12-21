@@ -1,12 +1,13 @@
 # %%
+import torch
+from comlm.datasource.training_batch import NoisedBatch
 from load_comlm import root_eval
 
 # %%
 from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.evaluation.evaluation import Evaluation
-from comlm.datasource.training_batch import NoisedBatch
-import torch
+
 # %%
 
 root: Evaluation[NoisedBatch] = root_eval
@@ -19,13 +20,13 @@ arch = model_cfg.model_load_cfg.pretrained_arch
 comlm_cfg = arch.run_cfg
 # %%
 
-arch.metadata_tokenizer
+arch.data.metadata_tokenizer
 # %%
 root.features[0].value.device
 # %%
 root.features[1].indices()
 # %%
-metadata_tokenizer = arch.metadata_tokenizer
+metadata_tokenizer = arch.data.metadata_tokenizer
 for key in comlm_cfg.arch_cfg.metadata_embedding_config.selected_metadata:
     tokenizer = metadata_tokenizer.tokenizers[key]
 
@@ -49,7 +50,7 @@ root.saved_acts.get_inputs_type()
 #
 # Initialize metadata if necessary
 #
-metadata_keys = comlm_cfg.arch_cfg.metadata_embedding_config.selected_metadata
+metadata_keys = list(metadata_tokenizer.tokenizers.keys())
 has_metadata = [key in root.metadatas for key in metadata_keys]
 if not all(has_metadata):
     assert not any(has_metadata), "Some metadata keys are already present"
@@ -68,10 +69,20 @@ if not all(has_metadata):
             key, {"<<PAD>>": 0, "<<UNK>>": 1, **tokenizer.tokens}
         )
 # %%
-root.top_activations_and_metadatas(
+acts = root.chill_top_activations_and_metadatas(
     7,
     k=4,
-    metadata_keys=metadata_keys,
+    # metadata_keys=metadata_keys,
 )
 
+
+# %%
+acts.doc_selection.metadata[metadata_keys[0]]
+# %%
+root.top_activations_metadata_enrichments(feature=7, metadata_keys=metadata_keys, p=0.1)
+# %%
+ac = root.activation_cosims(out_device="cpu", blocks_per_dim=2)
+
+# %%
+root.d_dict**2 / 1e9
 # %%

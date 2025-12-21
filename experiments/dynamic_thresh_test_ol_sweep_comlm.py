@@ -1,4 +1,4 @@
-from comlm.utils import ComposerModelName
+from comlm.storage import ComposerModelName
 
 from saeco.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshConfig,
@@ -39,9 +39,7 @@ data_cfg = DataConfig[ComlmModelConfig](
             filter_pad=False,
             excl_first=False,
             d_data=512,
-            sites=[
-                "model.layers.8.output.0"
-            ],  # .0 unpacks the tuple of (output, kv cache)
+            sites=["layers.6.output.0"],  # .0 unpacks the tuple of (output, kv cache)
             storage_dtype_str="float32",
             autocast_dtype_str=None,
         ),

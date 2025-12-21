@@ -1,9 +1,9 @@
-from saeco.architectures.test_clt import (
+from saeco.data.data_config_definitions import gpt_2_block
+
+from saeco.architectures.matry_clt.test_clt import (
     CrossLayerTranscoder,
     CrossLayerTranscoderConfig,
 )
-from saeco.data.data_config_definitions import gpt_2_block
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,

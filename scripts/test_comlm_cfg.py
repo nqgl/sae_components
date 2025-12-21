@@ -1,4 +1,4 @@
-from comlm.utils import (
+from comlm.storage import (
     ComposerModelName,
 )
 
@@ -26,9 +26,7 @@ data_cfg = DataConfig[ComlmModelConfig](
             filter_pad=False,
             excl_first=False,
             d_data=512,
-            sites=[
-                "model.layers.8.output.0"
-            ],  # .0 unpacks the tuple of (output, kv cache)
+            sites=["layers.6.output.0"],  # .0 unpacks the tuple of (output, kv cache)
             storage_dtype_str="float32",
             autocast_dtype_str=None,
         ),
@@ -46,4 +44,7 @@ data_cfg = DataConfig[ComlmModelConfig](
 v = DataConfig.model_validate_json(data_cfg.model_dump_json())
 assert v == data_cfg
 if __name__ == "__main__":
+    from saeco.mlog import mlog
+
+    mlog.init(project="markov-bio/evaluator")
     data_cfg.store_split(data_cfg.trainsplit)
