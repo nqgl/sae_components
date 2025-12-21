@@ -4,6 +4,9 @@ import torch
 import torch.nn as nn
 from attrs import define
 
+from saeco.components.features.optim_reset import (
+    OptimResetValuesConfig as OptimResetValuesConfig,
+)
 from saeco.components.resampling.resampler import Resampler, ResamplerConfig
 from saeco.core import Cache
 
@@ -57,8 +60,6 @@ class ResampleType(IntEnum):
     enc_in = 0
     error = 1
     model_in = 2
-
-
 
 
 class AnthResamplerConfig(ResamplerConfig):

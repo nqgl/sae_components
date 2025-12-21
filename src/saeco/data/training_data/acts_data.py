@@ -68,7 +68,6 @@ class ActsDataCreator:
         skip_exclude=False,
         force_not_skip_padding=False,
     ) -> DictBatch:
-        # assert notisinstance(inputs, torch.Tensor)
         assert self.model is not None
         tx_inputs = self.cfg.model_cfg.model_load_cfg.input_data_transform(
             input_data=inputs

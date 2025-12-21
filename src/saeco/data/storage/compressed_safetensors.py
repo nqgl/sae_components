@@ -4,6 +4,7 @@ from pathlib import Path
 
 import torch
 import zstd
+from safetensors import safe_open
 from safetensors.torch import load, save
 
 
@@ -48,6 +49,19 @@ def load_file_compressed(
     file = Path(filename)
     b = compression.decompress(file.read_bytes())
     return {k: v.to(device) for k, v in load(b).items()}
+
+
+def load_file_with_metadata(
+    filename: str | os.PathLike,
+    device: torch.device | str = "cpu",
+):
+    result = {}
+
+    with safe_open(filename, framework="pt", device=device) as f:
+        for k in f.offset_keys():
+            result[k] = f.get_tensor(k)
+        metadata = f.metadata()
+    return result, metadata
 
 
 def main():
