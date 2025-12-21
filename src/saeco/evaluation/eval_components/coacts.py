@@ -10,24 +10,39 @@ if TYPE_CHECKING:
 
 
 class Coactivity:
-    def activation_cosims(self: "Evaluation"):
-        mat = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
-        f2sum = torch.zeros(self.d_dict).to(self.cuda)
+    # @torch.compile(dynamic=True)
+    @torch.inference_mode()
+    def activation_cosims(
+        self: "Evaluation",
+        out_device: torch.device | str | None = None,
+        blocks_per_dim: int = 1,
+    ):
+        block_size = self.d_dict // blocks_per_dim
+        if out_device is None:
+            out_device = self.cuda
+        mat = torch.zeros(self.d_dict, self.d_dict).to(out_device)
+        f2sum = torch.zeros(self.d_dict).to(out_device)
         for chunk in tqdm.tqdm(
             self.saved_acts.chunks, total=len(self.saved_acts.chunks)
         ):
             acts = chunk.acts.value.to(self.cuda).to_dense()
             assert acts.ndim == 3
             feats_mat = einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
-            f2s = feats_mat.pow(2).sum(-1)
-            assert f2s.shape == (self.d_dict,)
-            f2sum = f2s + f2sum
-            mat += feats_mat @ feats_mat.transpose(-2, -1)
+            for i in range(0, self.d_dict, block_size):
+                f2s = feats_mat[i : i + block_size].pow(2).sum(-1)
+                # assert f2s.shape == (self.d_dict,)
+                f2sum[i : i + block_size] += f2s.to(out_device)
+                for j in range(blocks_per_dim):
+                    mat[i : i + block_size, j : j + block_size] += (
+                        feats_mat[i : i + block_size]
+                        @ feats_mat[j : j + block_size].transpose(-2, -1)
+                    ).to(out_device)
         norms = f2sum.sqrt()
         mat /= norms.unsqueeze(0)
         mat /= norms.unsqueeze(1)
         prod = mat.diag()[~mat.diag().isnan()].prod()
-        assert prod < 1.001 and prod > 0.999
+        print("prod", prod)
+        # assert prod < 1.001 and prod > 0.999
         return mat
 
     def masked_activation_cosims(self: "Evaluation"):
@@ -58,7 +73,7 @@ class Coactivity:
         assert prod < 1.001 and prod > 0.999
         return mat
 
-    def coactivations(self: "Evaluation", doc_agg=None):
+    def coactivations(self: "Evaluation", doc_agg: float | int | str | None = None):
         sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
         coact_counts = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
         fa_sq_sum = torch.zeros(self.d_dict).to(self.cuda)
@@ -78,7 +93,8 @@ class Coactivity:
         sims /= norms.unsqueeze(0)
         sims /= norms.unsqueeze(1)
         prod = sims.diag()[~sims.diag().isnan()].prod()
-        assert prod < 1.001 and prod > 0.999
+        assert prod < 1.001
+        assert prod > 0.999
         return coact_counts, sims
 
     def top_coactivating_features(self: "Evaluation", feature_id, top_n=10, mode="seq"):

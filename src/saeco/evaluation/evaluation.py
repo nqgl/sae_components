@@ -23,7 +23,7 @@ from saeco.evaluation.model_interface import (
     LanguageModelEvalAdapter,
     ModelEvalAdapter,
 )
-from saeco.evaluation.return_objects import Feature, TopActivations
+from saeco.evaluation.return_objects import Feature, MetadataLabelCounts, TopActivations
 from saeco.evaluation.storage.MetadataBuilder import FilteredBuilder, MetadataBuilder
 from saeco.trainer import RunConfig
 
@@ -493,14 +493,17 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         f = self.get_feature(feature=feature)
         return f.top_activations(p=p, k=k)
 
-    def _metadata_unique_labels_and_counts_tensor(self, key: str) -> Tensor:
+    def _metadata_unique_labels_and_counts_tensor(
+        self, key: str
+    ) -> MetadataLabelCounts:
         meta = self._root_metadatas[key]
+        assert isinstance(meta, Tensor)
         if self.filter is not None:
             meta = meta[self.filter.filter]
         assert meta.ndim == 1
         assert meta.dtype == torch.long
         labels, counts = meta.unique(return_counts=True)
-        return torch.stack([labels, counts], dim=0)
+        return MetadataLabelCounts(key=key, labels=labels, counts=counts)
 
     def count_token_occurrence(self) -> Tensor:
         counts = torch.zeros(self.d_vocab, dtype=torch.long).to(self.cuda)
@@ -617,7 +620,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     ):
         acts = top_acts.acts
         docs = top_acts.doc_selection.doc_strs if return_str_docs else top_acts.docs
-        metadatas = top_acts.doc_selection.metadata[metadata_keys]
+        metadatas = top_acts.doc_selection.metadata[list(metadata_keys)]
         if str_metadatas:
             metadatas = metadatas.str_metadatas
         else:

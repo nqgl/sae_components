@@ -55,6 +55,7 @@ class ActsCacher:
                 batch_size=caching_config.docs_per_chunk,
                 columns=caching_config.metadatas_from_src_column_names,
             )
+            assert False, "need to add input data transform or refactor this pipeline"
         else:
             assert (
                 architecture.run_cfg.train_cfg.data_cfg.override_dictpiler_path_str
@@ -68,7 +69,9 @@ class ActsCacher:
                     batch_size=caching_config.docs_per_chunk
                 ):
                     yield (
-                        tokens,
+                        architecture.run_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.input_data_transform(
+                            tokens
+                        ),
                         {
                             col: tokens[col]
                             for col in caching_config.metadatas_from_src_column_names
@@ -148,11 +151,12 @@ class ActsCacher:
                 assert self.feature_tensors is not None
                 if not self.cfg.eager_sparse_generation:
                     print("Storing feature tensors")
+                    assert chunk.dense_acts is not None
                     for i, feat_acts in enumerate(chunk.dense_acts.split(1, dim=2)):
                         self.feature_tensors[i].append(feat_acts.squeeze(-1))
                 else:
                     print("Storing feature tensors")
-
+                    assert chunk.sparse_acts is not None
                     ff_sparse_acts = chunk.sparse_acts.transpose(0, 2).transpose(1, 2)
                     for i in range(self.d_dict):
                         self.feature_tensors[i].append(ff_sparse_acts[i])
@@ -164,7 +168,6 @@ class ActsCacher:
         if self.cfg.deferred_blocked_store_feats_block_size:
             assert self.feature_tensors is not None
             B = self.cfg.deferred_blocked_store_feats_block_size
-            K = 1
             features_batch_size = (
                 self.d_dict // self.cfg.deferred_blocked_store_feats_block_size
             )
@@ -273,7 +276,7 @@ class ActsCacher:
 
     @torch.inference_mode()
     def get_llm_acts(self, tokens: Int[Tensor, "doc seq"] | DictBatch) -> DictBatch:
-        return self.acts_data.to_acts(
+        return self.acts_data._to_acts_unprocessed_inputs(
             tokens,
             llm_batch_size=self.cfg.llm_batch_size
             or self.cfg.documents_per_micro_batch,

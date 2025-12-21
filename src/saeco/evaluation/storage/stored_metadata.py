@@ -78,12 +78,10 @@ class Metadatas(CollectionWithCachingConfig):
         disk_tensor.set_str_translator(d)
 
     def translate(self, d: dict[str, Tensor]) -> dict[str, list[str] | Tensor]:
-        print(d)
         o = {
             k: m.strlist(v) if (m := self.get(k)).info.tostr is not None else v
             for k, v in d.items()
         }
-        print("done")
         return o
 
 

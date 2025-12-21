@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 
 import torch
 import tqdm
+from torch import Tensor
 
 from saeco.evaluation.fastapi_models.families_draft import (
     Family,
@@ -131,6 +132,33 @@ class FamilyOps:
                 feature_value = mb.value
                 self.artifacts[artifact_name] = feature_value.value
 
+    def batched_top_activations_and_metadatas(
+        self: "Evaluation",
+        features: list[int | FilteredTensor],
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+        if metadata_keys is None:
+            metadata_keys = []
+        return [
+            self.top_activations_and_metadatas(
+                feature,
+                p,
+                k,
+                metadata_keys,
+                return_str_docs,
+                return_acts_sparse,
+                return_doc_indices,
+                str_metadatas,
+            )
+            for feature in features
+        ]
+
     def batched_top_activations_and_metadatas_for_family(
         self: "Evaluation",
         families: list[Family],
@@ -157,6 +185,80 @@ class FamilyOps:
             return_doc_indices=return_doc_indices,
             str_metadatas=str_metadatas,
         )
+
+    @staticmethod
+    def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:
+        if (p is None) == (k is None):
+            raise ValueError("Exactly one of p and k must be set")
+        if p is not None and not (0 < p <= 1):
+            raise ValueError("p must be in (0, 1]")
+        if k is None:
+            k = int(quantity * p)
+        if k <= 0:
+            raise ValueError("k must be positive")
+        return min(k, quantity)
+
+    def get_docs_and_metadatas(
+        self: "Evaluation",
+        doc_indices: Tensor,
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        return_str_metadatas: bool,
+    ):
+        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+        metadatas = {
+            key: self._root_metadatas[key][doc_indices] for key in metadata_keys
+        }
+        if return_str_metadatas:
+            metadatas = self._root_metadatas.translate(metadatas)
+        return docs, metadatas
+        return docs, metadatas
+
+    def get_docs_acts_metadatas(
+        self: "Evaluation",
+        doc_indices: Tensor,
+        features: list[FilteredTensor],
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        str_metadatas: bool,
+    ):
+        acts = [f.index_select(doc_indices, dim=0) for f in features]
+        docs = self.docstrs[doc_indices] if return_str_docs else self.docs[doc_indices]
+
+        docs, metadatas = self.get_docs_and_metadatas(
+            doc_indices,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_str_metadatas=str_metadatas,
+        )
+
+        return docs, acts, metadatas
+
+    def seq_agg_feat(
+        self: "Evaluation",
+        feature_id: int | None = None,
+        feature: FilteredTensor | None = None,
+        agg: str = "max",
+        docs_filter: bool = True,
+    ) -> FilteredTensor:
+        if (feature_id is None) == (feature is None):
+            raise ValueError("Exactly one of feat_id and feature must be set")
+        if feature is None:
+            assert feature_id is not None
+            feature = self.features[feature_id]
+        assert isinstance(feature, FilteredTensor)
+        if docs_filter:
+            feature = feature.filter_inactive_docs()
+        if agg == "max":
+            return feature.to_filtered_like_self(
+                feature.value.to_dense().max(dim=1).values, ndim=1
+            )
+        elif agg == "sum":
+            return feature.to_filtered_like_self(
+                feature.value.to_dense().sum(dim=1), ndim=1
+            )
+        else:
+            raise ValueError(f"Invalid aggregation: {agg}")
 
     def top_overlapped_feature_family_documents(
         self: "Evaluation",

@@ -3,6 +3,7 @@ from pathlib import Path
 import torch
 from attrs import define
 from jaxtyping import Int
+from paramsight import get_resolved_typevars_for_base, takes_alias
 from torch import Tensor
 
 from saeco.data.dict_batch.dict_batch import DictBatch
@@ -11,7 +12,6 @@ from ..features import Features
 from ..named_filter import NamedFilter
 from .chunk import Chunk
 from .saved_acts_config import CachingConfig
-from paramsight import takes_alias, get_resolved_typevars_for_base
 
 
 @define
@@ -122,8 +122,11 @@ class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
 
     def docsel(self, doc_ids: Int[Tensor, "sdoc"], dense=True) -> InputsT:
         assert doc_ids.ndim == 1
-        sdi = doc_ids.argsort(descending=False)
-        doc_ids = doc_ids[sdi]
+        sdi2 = doc_ids.argsort(descending=False)
+        doc_ids2 = doc_ids[sdi2]
+        doc_ids, sdi = doc_ids.sort(descending=False)
+        assert (sdi2 == sdi).all()
+        assert (doc_ids2 == doc_ids).all()
         if self.ft:
             cdoc_idx = doc_ids
         else:

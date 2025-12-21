@@ -7,6 +7,8 @@ from attrs import define, field
 from torch import Tensor
 
 from saeco.data.dict_batch.dict_batch import DictBatch
+from saeco.evaluation.eval_components.enrichment import score_enrichment
+from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 
 if TYPE_CHECKING:
     from saeco.evaluation.evaluation import Evaluation
@@ -118,6 +120,7 @@ class Feature(EvalRefData):
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
         doc_indices = top_outer_indices[0]
         return TopActivations(
+            src_eval=self.src_eval,
             feature=self,
             doc_selection=SelectedDocs(
                 doc_indices=doc_indices,
@@ -218,8 +221,36 @@ class SelectedDocs:
         return self.src_eval.docstrs[self.doc_indices]
 
 
+from saeco.data import DictBatch
+
+
+@DictBatch.auto_other_fields
+class MetadataEnrichmentResult(DictBatch):
+    name: str
+    labels: torch.Tensor
+    counts: torch.Tensor
+    proportions: torch.Tensor
+    normalized_counts: torch.Tensor
+    scores: torch.Tensor
+
+    def remove_zero_counts(self):
+        return self[self.counts > 0]
+
+    def sort(self, sort_by: EnrichmentSortBy = EnrichmentSortBy.counts):
+        match sort_by:
+            case EnrichmentSortBy.counts:
+                i = self.counts.argsort(descending=True)
+            case EnrichmentSortBy.normalized_count:
+                i = self.normalized_counts.argsort(descending=True)
+            case EnrichmentSortBy.score:
+                i = self.scores.argsort(descending=True)
+            case _:
+                raise ValueError(f"Unknown sort_by {sort_by}")
+        return self[i]
+
+
 @define
-class TopActivations:
+class TopActivations(EvalRefData):
     feature: Feature
     doc_selection: SelectedDocs
     # info about k?
@@ -232,6 +263,7 @@ class TopActivations:
         doc_indices: Tensor,
     ) -> Self:
         return cls(
+            src_eval=src_eval,
             feature=Feature(
                 src_eval=src_eval,
                 spec=feature,
@@ -253,3 +285,113 @@ class TopActivations:
     @property
     def doc_strs(self) -> list[str] | str | list[list[str]]:
         return self.doc_selection.doc_strs
+
+    def top_activations_metadata_enrichments(
+        self,
+        *,
+        metadata_keys: list[str],
+    ):
+        # docs = self.docs
+        # acts = self.acts
+        metadatas = self.doc_selection.metadata[list(metadata_keys)].metadatas
+        doc_ids = self.doc_selection.doc_indices
+        r = {}
+        num_docs = doc_ids.shape[0]
+        for mdname, md in metadatas.items():
+            assert md.ndim == 1
+            metadata_counts = (
+                self.src_eval.cached_call._metadata_unique_labels_and_counts_tensor(
+                    mdname
+                )
+            )
+            labels, mdcat_counts = torch.cat(
+                [md, metadata_counts.labels]
+                # adds one of each of all labels to it so
+                # it has all metadatas and is consistently indexed with the full counts
+            ).unique(return_counts=True)
+            assert isinstance(labels, Tensor)
+            assert isinstance(mdcat_counts, Tensor)
+            counts = mdcat_counts - 1  # remove the 1 of each labels added
+            assert (labels == metadata_counts.labels).all()
+            assert counts.shape == labels.shape == metadata_counts.counts.shape
+
+            proportions = counts / metadata_counts.counts
+            scores = score_enrichment(
+                counts=counts,
+                sel_denom=num_docs,
+                total_counts=metadata_counts.counts,
+                total_denom=self.src_eval.num_docs,
+            )
+            r[mdname] = MetadataEnrichmentResult(
+                name=mdname,
+                labels=labels,
+                counts=counts,
+                proportions=proportions,
+                normalized_counts=proportions
+                * self.src_eval.num_docs
+                / doc_ids.shape[0],
+                scores=scores,
+            )
+        return r
+
+    # def top_activations_token_enrichments(
+    #     self: "Evaluation",
+    #     *,
+    #     feature: int | FilteredTensor,
+    #     p: float = None,
+    #     k: int = None,
+    #     mode: TokenEnrichmentMode = "doc",
+    #     sort_by: EnrichmentSortBy = "count",
+    # ):
+    #     docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
+    #         feature=feature, p=p, k=k, metadata_keys=[]
+    #     )
+    #     docs = docs.to(self.cuda)
+    #     if mode == TokenEnrichmentMode.doc:
+    #         seltoks = docs
+    #     elif mode == TokenEnrichmentMode.max:
+    #         max_pos = acts.argmax(dim=1)
+    #         max_top = docs[torch.arange(max_pos.shape[0]), max_pos]
+    #         seltoks = max_top
+    #     elif mode == TokenEnrichmentMode.active:
+    #         active_top = docs[acts > 0]
+    #         seltoks = active_top
+    #     elif mode == TokenEnrichmentMode.top:
+    #         top_threshold = docs[
+    #             acts > acts.max(dim=-1).values.min(dim=0).values.item()
+    #         ]
+    #         seltoks = top_threshold
+    #     else:
+    #         raise ValueError(f"Unknown mode {mode}")
+    #     tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
+    #     normalized_counts = (counts / seltoks.numel()) / (
+    #         self.token_occurrence_count.to(self.cuda)[tokens]
+    #         / (self.num_docs * self.seq_len)
+    #     )
+    #     scores = score_enrichment(
+    #         counts=counts,
+    #         sel_denom=seltoks.numel(),
+    #         total_counts=self.token_occurrence_count.to(self.cuda)[tokens],
+    #         total_denom=self.num_docs * self.seq_len,
+    #     )
+    #     if sort_by == EnrichmentSortBy.counts:
+    #         i = counts.argsort(descending=True)
+    #     elif sort_by == EnrichmentSortBy.normalized_count:
+    #         i = normalized_counts.argsort(descending=True)
+    #     elif sort_by == EnrichmentSortBy.score:
+    #         i = scores.argsort(descending=True)
+    #     else:
+    #         raise ValueError(f"Unknown sort_by {sort_by}")
+    #     tokens = tokens[i]
+    #     counts = counts[i]
+    #     normalized_counts = normalized_counts[i]
+    #     scores = scores[i]
+
+    #     return tokens, counts, normalized_counts, scores
+
+
+@DictBatch.auto_other_fields
+class MetadataLabelCounts(DictBatch):
+    key: str
+    labels: torch.Tensor
+    counts: torch.Tensor

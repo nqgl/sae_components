@@ -13,7 +13,7 @@ from saeco.evaluation.fastapi_models.families_draft import (
     ScoredFamilyRef,
     ScoredFeature,
 )
-from saeco.evaluation.fastapi_models.Feature import Feature
+from saeco.evaluation.fastapi_models.Feature import LabeledFeature
 
 if TYPE_CHECKING:
     from ..evaluation import Evaluation
@@ -215,7 +215,7 @@ class FamilyGenerator:
                         subfamilies=[],
                         subfeatures=[
                             ScoredFeature(
-                                feature=Feature(
+                                feature=LabeledFeature(
                                     feature_id=int(feat_id),
                                     label=self.get_feature_label(feat_id),
                                 ),
@@ -312,7 +312,7 @@ class FamilyGenerator:
                         subfamilies=[],
                         subfeatures=[
                             ScoredFeature(
-                                feature=Feature(
+                                feature=LabeledFeature(
                                     feature_id=int(feat_id),
                                     label=self.get_feature_label(feat_id),
                                 ),

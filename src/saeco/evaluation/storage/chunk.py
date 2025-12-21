@@ -78,8 +78,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         assert loaded_input_data is not None
         assert not self.tokens_path.exists()
         if isinstance(loaded_input_data, DictBatch):
-            tensors = {k: v.contiguous() for k, v in loaded_input_data.items()}
-            save_file(tensors, self.tokens_path)
+            loaded_input_data.save_as_safetensors(self.tokens_path)
         else:
             assert isinstance(loaded_input_data, torch.Tensor)
             save_file({"tokens": loaded_input_data.contiguous()}, self.tokens_path)
@@ -151,16 +150,14 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
     def read_tokens_raw(self) -> InputsT:
         if self.loaded_input_data is not None:
             return self.loaded_input_data
+        if issubclass(self.input_data_cls, DictBatch):
+            return self.input_data_cls.load_from_safetensors(self.tokens_path)
         loaded = load_file(self.tokens_path)
-        if set(loaded.keys()) == {"tokens"}:
-            assert self.input_data_cls == torch.Tensor
-            tokens = loaded["tokens"]
-            assert isinstance(tokens, self.input_data_cls)
-            return tokens
-        assert issubclass(self.input_data_cls, DictBatch), (
-            f"Expected DictBatch, got {self.input_data_cls}"
-        )
-        return self.input_data_cls(loaded)
+        assert set(loaded.keys()) == {"tokens"}
+        assert self.input_data_cls == torch.Tensor
+        tokens = loaded["tokens"]
+        assert isinstance(tokens, self.input_data_cls)
+        return tokens
 
     def read_sparse(self):
         return self._to_filtered(self.read_sparse_raw())
@@ -206,7 +203,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
                     break
                 yield chunk
                 i += 1
-            except Exception as e:
+            except Exception:
                 break
 
     @takes_alias

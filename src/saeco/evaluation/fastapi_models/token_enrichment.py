@@ -3,6 +3,8 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 
+from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
+
 from .filtered_query import FilterableQuery
 
 
@@ -20,18 +22,12 @@ class TokenEnrichmentMode(str, Enum):
     top = "top"
 
 
-class TokenEnrichmentSortBy(str, Enum):
-    counts = "count"
-    normalized_count = "normalized_count"
-    score = "score"
-
-
 class TokenEnrichmentRequest(FilterableQuery):
     feature: int
     p: float | None = None
     k: int | None = None
     mode: TokenEnrichmentMode
-    sort_by: TokenEnrichmentSortBy = TokenEnrichmentSortBy.counts
+    sort_by: EnrichmentSortBy = EnrichmentSortBy.counts
     num_top_tokens: int | None = 100
 
 

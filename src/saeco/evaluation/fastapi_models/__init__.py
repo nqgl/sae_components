@@ -3,7 +3,8 @@ from .co_activation import (
     CoActivationRequest,
     CoActivationResponse,
 )
-from .Feature import Feature
+from .EnrichmentSortBy import EnrichmentSortBy
+from .Feature import LabeledFeature
 from .feature_active_docs_count import (
     FeatureActiveDocsRequest,
     FeatureActiveDocsResponse,
@@ -14,7 +15,6 @@ from .metadata_enrichment import (
     MetadataEnrichmentLabelResult,
     MetadataEnrichmentRequest,
     MetadataEnrichmentResponse,
-    MetadataEnrichmentSortBy,
 )
 from .token_enrichment import (
     GeneInfo,
@@ -22,7 +22,6 @@ from .token_enrichment import (
     TokenEnrichmentRequest,
     TokenEnrichmentResponse,
     TokenEnrichmentResponseItem,
-    TokenEnrichmentSortBy,
 )
 from .top_active import (
     TopActivatingExamplesQuery,
