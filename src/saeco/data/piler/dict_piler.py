@@ -151,8 +151,12 @@ class DictPiler:
         return path / "dictpiler_metadata.json"
 
     def distribute(
-        self, tensors: dict[str, torch.Tensor], indexer: torch.Tensor | None = None
+        self,
+        tensors: dict[str, torch.Tensor] | DictBatch,
+        indexer: torch.Tensor | None = None,
     ):
+        if isinstance(tensors, DictBatch):
+            tensors = tensors.to_flat_dict()
         if indexer is None:
             i = torch.randint(
                 0,
@@ -426,6 +430,24 @@ class DictPilerSampleIndexer:
 
     def __getitem__(self, index: int | slice) -> DictBatch:
         return self.piler._index_by_sample(index)
+
+
+def create_dict_piler_spec_from_dict_batch(
+    batch: DictBatch,
+    path: Path,
+    num_piles: int,
+    compress: bool = False,
+) -> DictPiler:
+    dtypes = {k: v.dtype for k, v in batch.items_flat()}
+    shapes = {k: v.shape[1:] for k, v in batch.items_flat()}
+
+    return DictPiler.create(
+        path=path,
+        dtypes=dtypes,
+        fixed_shapes=shapes,
+        num_piles=num_piles,
+        compress=compress,
+    )
 
 
 def main():
