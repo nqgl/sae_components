@@ -79,10 +79,6 @@ class ArchRef[T: SweepableConfig](BaseModel):
         arch = ArchClassRef.model_validate(d["class_ref"]).get_arch_class()
 
         if xcls is not None and arch in xcls.mro():
-            print("using xcls")
-            print(f"xcls: {xcls}")
-            print(f"arch: {arch}")
-            print(f"xcls.mro(): {xcls.mro()}")
             arch = xcls
 
         config_class = arch.get_config_class()
@@ -97,10 +93,6 @@ class ArchRef[T: SweepableConfig](BaseModel):
             if issubclass(xcls, arch_cls):
                 arch_cls = xcls
             if arch_cls in xcls.mro():
-                print("using xcls")
-                print(f"xcls: {xcls}")
-                print(f"arch_cls: {arch_cls}")
-                print(f"xcls.mro(): {xcls.mro()}")
                 arch_cls = xcls
         return arch_cls(self.config, state_dict=state_dict, device=device)
 
