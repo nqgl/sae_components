@@ -188,7 +188,7 @@ def gemma_2_2b_openwebtext_bf16(layer=17):
 
 
 def gpt_2(block_postfix):
-    return DataConfig(
+    return DataConfig[HuggingFaceModelConfig](
         dataset="alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2",
         model_cfg=ModelConfig(
             model_load_cfg=HuggingFaceModelConfig(

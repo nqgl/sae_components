@@ -3,10 +3,12 @@ from typing import Any, cast
 
 import torch
 from comlm.architecture import TransformerArchitecture
+from comlm.datasource import FinalizedStorageBatch
 from comlm.datasource.training_batch import NoisedBatch
-from comlm.exprank import XRArch
+from comlm.exprank import XRArch, XRNoisedBatch
+from comlm.exprank.xr_composer_model import XRComposerMaskedLM
 from comlm.exprank.xr_transformer import XRTransformer
-from comlm.utils import ModelCheckpointIdentifier
+from comlm.storage import ModelCheckpointIdentifier
 from nnsight import NNsight
 from paramsight import get_resolved_typevars_for_base, takes_alias
 
@@ -14,7 +16,7 @@ from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfi
 from saeco.data.dict_batch.dict_batch import DictBatch
 
 
-class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
+class ComlmModelConfig[ArchT: XRArch[Any, Any, XRComposerMaskedLM] = XRArch](
     ModelLoadingConfigBase[XRTransformer]
 ):
     chk_ident: ModelCheckpointIdentifier
@@ -57,7 +59,8 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
     ):
         self.pretrained_arch.composer_model.compile_model = False
         self.pretrained_arch.composer_model.eval()
-        return self.pretrained_arch.composer_model
+
+        return self.pretrained_arch.model.to(device=device, dtype=load_as_dtype)
 
     def nnsight_wrap(self, model) -> NNsight:
         return NNsight(model)
@@ -81,14 +84,24 @@ class ComlmModelConfig[ArchT: TransformerArchitecture[Any, Any, Any] = XRArch](
         #         if rmname in key:
         #             del model_dict[key]
 
-    def input_data_transform(self, input_data: DictBatch) -> DictBatch:
-        return NoisedBatch.construct_with_other_data(input_data).cuda()
+    def input_data_transform(self, input_data: FinalizedStorageBatch) -> XRNoisedBatch:
+        return self.pretrained_arch.data.training_microbatch_transform(input_data)
 
     def create_acts_mask(
         self, input_data: DictBatch, seq_len: int
     ) -> torch.Tensor | None:
         assert isinstance(input_data, NoisedBatch)
         return input_data.loss_mask[:, :seq_len]
+
+    def unpack_model_inputs(
+        self, input_data: XRNoisedBatch, extra_kwargs: dict[str, Any]
+    ) -> tuple[list[Any], dict[str, Any]]:
+        assert isinstance(input_data, XRNoisedBatch)
+        assert not extra_kwargs
+        kwargs = self.pretrained_arch.composer_model.prepare_forward_batch(
+            input_data.cuda()
+        )
+        return [kwargs.pop("tokens")], kwargs
 
     # def get_acts_mask(self, )
 

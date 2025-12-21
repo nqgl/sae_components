@@ -18,10 +18,10 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = HuggingFaceModelConf
 ):
     model_load_cfg: ModelLoadT
     acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
-    model_kwargs: dict = Field(default_factory=dict)
     _device: str = "cuda"
     # no_processing: bool = False
     torch_dtype_str: str | None = None
+    model_kwargs: dict = Field(default_factory=dict)
     positional_args: list[str] = Field(default_factory=list)
 
     @property
@@ -36,16 +36,14 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = HuggingFaceModelConf
 
     def model_post_init(self, __context) -> None:
         assert not any(
-            [
-                v in self.model_kwargs
-                for v in [
-                    "trace",
-                    "invoker_args",
-                    "backend",
-                    "remote",
-                    "blocking",
-                    "scan",
-                ]
+            v in self.model_kwargs
+            for v in [
+                "trace",
+                "invoker_args",
+                "backend",
+                "remote",
+                "blocking",
+                "scan",
             ]
         ), "config's kwargs clash with nnsight::trace kwargs"
 
