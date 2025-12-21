@@ -29,6 +29,7 @@ from attrs import define
 from paramsight.type_utils import get_args_robust, get_origin_robust
 from torch import Tensor
 
+from saeco.data.storage.compressed_safetensors import load_file_with_metadata
 from saeco.misc.utils import assert_cast, chill_issubclass
 
 
@@ -149,29 +150,37 @@ def _flatten(
 
 def _unflatten_once_strict[T](d: dict[str, T]) -> dict[str, dict[str, T]]:
     """
-    transforms dictionary whose keys have a "." key-path-separator in the key
-    to nested dictionaries with the prefix as a key tot he
-    creates one layer of nesting for
+        transforms dictionary whose keys have a "." key-path-separator in the key
+        to nested dictionaries with the prefix as a key tot he
+        creates one layer of nesting for
 
-    takes a dictionary of str -> T
-    and transforms keys of the form {"k0.k1...": v1, "k0.k2...": v2}
-    into {"k0": {"k1...": v1, "k2...": v2}}
+        takes a dictionary of str -> T
+        and transforms keys of the form {"k0.k1...": v1, "k0.k2...": v2}
+    Q    into {"k0": {"k1...": v1, "k2...": v2}}
     """
-    for k in d.keys():
-        if "." not in k:
-            raise ValueError(f"Key {k} does not have a '.' separator")
-        if "." in (k[0], k[-1]):
-            raise ValueError(f"Key {k} has a '.' separator at the beginning or end")
-        if ".." in k:
-            raise ValueError(f"Key {k} has a '..' sequence")
-
     d_out = {}
+    items = []
     for k, v in d.items():
+        if "." not in k or "." in (k[0], k[-1]) or ".." in k:
+            d_out[k] = v
+        else:
+            items.append((k, v))
+
+        # if "." not in k:
+        #     raise ValueError(f"Key {k} does not have a '.' separator")
+        # if "." in (k[0], k[-1]):
+        #     raise ValueError(f"Key {k} has a '.' separator at the beginning or end")
+        # if ".." in k:
+        #     raise ValueError(f"Key {k} has a '..' sequence")
+
+    for k, v in items:
         k0, *k_ = k.split(".")
         k_rest = ".".join(k_)
+        assert len(k_rest) > 0
         if k0 not in d_out:
             d_out[k0] = {}
         d_out[k0][k_rest] = v
+    assert "" not in d_out
     return d_out
 
 
@@ -537,11 +546,11 @@ class DictBatch(dict):
         else:
             super().__setattr__(name, value)
 
-    def __getattribute__(self, name: str) -> Any:
-        """Allow accessing TENSOR_DATA_FIELDS as attributes."""
-        if name in object.__getattribute__(self, "TENSOR_DATA_FIELDS"):
-            return self[name]
-        return super().__getattribute__(name)
+    # def __getattribute__(self, name: str) -> Any:
+    #     """Allow accessing TENSOR_DATA_FIELDS as attributes."""
+    #     if name != "__class__" and name in self.__class__.TENSOR_DATA_FIELDS:
+    #         return self[name]
+    #     return super().__getattribute__(name)
 
     def __getattr__(self, name: str) -> Any:
         """Allow accessing TENSOR_DATA_FIELDS as attributes."""
@@ -798,7 +807,14 @@ class DictBatch(dict):
     # ------------------------- representation --------------------------------
     def __repr__(self):  # pragma: no cover
         extra = ", ".join(f"{f}={getattr(self, f)!r}" for f in self.OTHER_DATA_FIELDS)
-        return f"{self.__class__.__name__}({dict(self)}, {extra})"
+        # return f"{self.__class__.__name__}({dict(self)}, {extra})"
+
+        """show shapes and types, not values"""
+        reprs = {
+            k: repr(v.shape) if isinstance(v, Tensor) else repr(v)
+            for k, v in self.items()
+        }
+        return f"{self.__class__.__name__}({reprs}, {extra})"
 
     @staticmethod
     @dataclass_transform(kw_only_default=True, field_specifiers=(dictbatch_field,))
@@ -1294,8 +1310,14 @@ class DictBatch(dict):
         def data_pred(k: str, v: Any) -> bool:
             return (
                 isinstance(v, Tensor | DictBatch)
+                or k in cls.TENSOR_DATA_FIELDS
                 or k.split(".")[0] in cls.TENSOR_DATA_FIELDS
             )
+
+        nested_fields = cls.class_nested_dictbatch_fields()
+
+        def nested_data_pred(k: str, v: Any) -> bool:
+            return k.split(".")[0] in nested_fields
 
         def other_pred(k: str, v: Any) -> bool:
             return k.split(".")[0] in cls.OTHER_DATA_FIELDS
@@ -1306,14 +1328,20 @@ class DictBatch(dict):
         assert should_be_empty == {}
 
         extra_other_data = {k: v for k, v in kwargs.items() if other_pred(k, v)}
-        flat_other = {k: v for k, v in extra_other_data.items() if "." not in k}
-        flattened_nested_other = {k: v for k, v in extra_other_data.items() if "." in k}
+        flat_other = {
+            k: v for k, v in extra_other_data.items() if not nested_data_pred(k, v)
+        }
+        flattened_nested_other = {
+            k: v for k, v in extra_other_data.items() if nested_data_pred(k, v)
+        }
 
         extra_data = {k: v for k, v in kwargs.items() if data_pred(k, v)}
 
         batch_data = {**_flatten(batch), **extra_data}
-        flat_data = {k: v for k, v in batch_data.items() if "." not in k}
-        flattened_nested_data = {k: v for k, v in batch_data.items() if "." in k}
+        flat_data = {k: v for k, v in batch_data.items() if not nested_data_pred(k, v)}
+        flattened_nested_data = {
+            k: v for k, v in batch_data.items() if nested_data_pred(k, v)
+        }
         dictbatch_fields = cls.class_nested_dictbatch_fields()
         nested_data: dict[str, dict[str, TensorFieldTypes] | DictBatch] = (
             _unflatten_once_strict(flattened_nested_data)
@@ -1374,16 +1402,26 @@ class DictBatch(dict):
     def save_as_safetensors(self, path: Path):
         from safetensors.torch import save_file
 
-        if self._get_other_dict():
-            raise ValueError("Cannot save DictBatch with other data as safetensors")
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-        save_file(self.to_flat_dict(), path)
+        other_data = self._get_other_dict()
+
+        if not all(isinstance(v, str) for v in other_data.values()):
+            raise ValueError(
+                "Cannot save DictBatch with non-string other data as safetensors"
+            )
+
+        save_file(self.to_flat_dict(), path, metadata=other_data)
 
     @classmethod
     def load_from_safetensors(cls, path: Path) -> Self:
-        from safetensors.torch import load_file
+        data, metadata = load_file_with_metadata(path)
+        metadata = metadata or {}
 
-        return cls.cast_convert(load_file(path))
+        return cls.cast_convert(
+            data,
+            **metadata,
+        )
 
 
 @define
