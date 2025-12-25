@@ -23,7 +23,12 @@ from saeco.evaluation.model_interface import (
     LanguageModelEvalAdapter,
     ModelEvalAdapter,
 )
-from saeco.evaluation.return_objects import Feature, MetadataLabelCounts, TopActivations
+from saeco.evaluation.return_objects import (
+    AggregationType,
+    Feature,
+    MetadataLabelCounts,
+    TopActivations,
+)
 from saeco.evaluation.storage.MetadataBuilder import FilteredBuilder, MetadataBuilder
 from saeco.trainer import RunConfig
 
@@ -630,6 +635,59 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             doc_indices = top_acts.doc_selection.doc_indices
             return docs, acts, metadatas, doc_indices
         return docs, acts, metadatas
+
+    def parallel_top_activations(
+        self,
+        features: list[int | FilteredTensor],
+        p: float | None = None,
+        k: int | None = None,
+        agg: AggregationType = AggregationType.MAX,
+    ) -> list[TopActivations]:
+        """
+        Get TopActivations for multiple features efficiently in parallel.
+
+        This is the recommended method for fetching top activations
+        for multiple features at once. It uses batched GPU operations
+        for efficient parallel processing.
+
+        Args:
+            features: List of feature IDs or FilteredTensor objects
+            p: Proportion of top activations (alternative to k)
+            k: Number of top activations
+            agg: Aggregation type (default: MAX)
+
+        Returns:
+            List of TopActivations objects
+
+        Example:
+            >>> top_acts = eval.parallel_top_activations([0, 1, 2, 3], k=10)
+            >>> for ta in top_acts:
+            ...     print(ta.docs, ta.acts)
+        """
+        if not features:
+            return []
+
+        feature_objs = Feature.make_batch(src_eval=self, features=features)
+        return Feature.batched_top_activations(
+            features=feature_objs,
+            agg=agg,
+            p=p,
+            k=k,
+        )
+
+    def get_features_batch(
+        self, features: list[int | FilteredTensor]
+    ) -> list[Feature]:
+        """
+        Get Feature objects for multiple features efficiently.
+
+        Args:
+            features: List of feature IDs or FilteredTensor objects
+
+        Returns:
+            List of Feature objects
+        """
+        return Feature.make_batch(src_eval=self, features=features)
 
 
 @define

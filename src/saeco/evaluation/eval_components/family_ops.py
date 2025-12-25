@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import torch
@@ -8,6 +9,7 @@ from saeco.evaluation.fastapi_models.families_draft import (
     Family,
 )
 from saeco.evaluation.filtered import FilteredTensor
+from saeco.evaluation.return_objects import Feature
 
 if TYPE_CHECKING:
     from ..evaluation import Evaluation
@@ -142,22 +144,78 @@ class FamilyOps:
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
+        parallel: bool = True,
+        max_workers: int | None = None,
     ):
+        """
+        Get top activations and metadatas for multiple features.
+
+        When parallel=True (default), this uses efficient parallel processing
+        to fetch top activations for all features concurrently.
+
+        Args:
+            features: List of feature IDs or FilteredTensor objects
+            p: Proportion of top activations (alternative to k)
+            k: Number of top activations
+            metadata_keys: List of metadata keys to fetch
+            return_str_docs: Whether to return string documents
+            return_acts_sparse: Whether to return sparse activations
+            return_doc_indices: Whether to return document indices
+            str_metadatas: Whether to return string metadatas
+            parallel: Whether to use parallel processing (default: True)
+            max_workers: Maximum number of worker threads for parallel mode
+
+        Returns:
+            List of tuples (docs, acts, metadatas, [doc_indices])
+        """
         if metadata_keys is None:
             metadata_keys = []
-        return [
-            self.top_activations_and_metadatas(
-                feature,
-                p,
-                k,
-                metadata_keys,
-                return_str_docs,
-                return_acts_sparse,
-                return_doc_indices,
-                str_metadatas,
+
+        if not features:
+            return []
+
+        if not parallel:
+            # Sequential fallback
+            return [
+                self.top_activations_and_metadatas(
+                    feature,
+                    p,
+                    k,
+                    metadata_keys,
+                    return_str_docs,
+                    return_acts_sparse,
+                    return_doc_indices,
+                    str_metadatas,
+                )
+                for feature in features
+            ]
+
+        # Parallel processing: batch compute TopActivations first
+        feature_objs = Feature.make_batch(src_eval=self, features=features)
+        top_activations_list = Feature.batched_top_activations(
+            features=feature_objs,
+            p=p,
+            k=k,
+        )
+
+        # Then extract legacy format from each TopActivations
+        # Use thread pool for concurrent metadata fetching (I/O bound)
+        def process_single(top_acts):
+            return self._legacy_top_activations_and_metadatas_getter(
+                top_acts=top_acts,
+                metadata_keys=metadata_keys,
+                return_str_docs=return_str_docs,
+                return_doc_indices=return_doc_indices,
+                str_metadatas=str_metadatas,
             )
-            for feature in features
-        ]
+
+        if len(top_activations_list) > 1 and max_workers != 1:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                results = list(executor.map(process_single, top_activations_list))
+        else:
+            results = [process_single(ta) for ta in top_activations_list]
+
+        return results
 
     def batched_top_activations_and_metadatas_for_family(
         self: "Evaluation",
@@ -170,7 +228,30 @@ class FamilyOps:
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
+        parallel: bool = True,
+        max_workers: int | None = None,
     ):
+        """
+        Get top activations and metadatas for multiple families.
+
+        When parallel=True (default), uses efficient parallel processing.
+
+        Args:
+            families: List of Family objects
+            aggregation_method: Method for aggregating family features ("sum", etc.)
+            p: Proportion of top activations (alternative to k)
+            k: Number of top activations
+            metadata_keys: List of metadata keys to fetch
+            return_str_docs: Whether to return string documents
+            return_acts_sparse: Whether to return sparse activations
+            return_doc_indices: Whether to return document indices
+            str_metadatas: Whether to return string metadatas
+            parallel: Whether to use parallel processing (default: True)
+            max_workers: Maximum number of worker threads for parallel mode
+
+        Returns:
+            List of tuples (docs, acts, metadatas, [doc_indices])
+        """
         if metadata_keys is None:
             metadata_keys = []
         return self.batched_top_activations_and_metadatas(
@@ -184,6 +265,38 @@ class FamilyOps:
             return_acts_sparse=return_acts_sparse,
             return_doc_indices=return_doc_indices,
             str_metadatas=str_metadatas,
+            parallel=parallel,
+            max_workers=max_workers,
+        )
+
+    def batched_chill_top_activations(
+        self: "Evaluation",
+        features: list[int | FilteredTensor],
+        p: float | None = None,
+        k: int | None = None,
+    ) -> list:
+        """
+        Get TopActivations objects for multiple features efficiently.
+
+        This is the "chill" version that returns TopActivations objects
+        directly without the legacy tuple format.
+
+        Args:
+            features: List of feature IDs or FilteredTensor objects
+            p: Proportion of top activations (alternative to k)
+            k: Number of top activations
+
+        Returns:
+            List of TopActivations objects
+        """
+        if not features:
+            return []
+
+        feature_objs = Feature.make_batch(src_eval=self, features=features)
+        return Feature.batched_top_activations(
+            features=feature_objs,
+            p=p,
+            k=k,
         )
 
     @staticmethod

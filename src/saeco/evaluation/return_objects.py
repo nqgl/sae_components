@@ -85,6 +85,31 @@ class Feature(EvalRefData):
 
         return cls(src_eval=src_eval, spec=FeatureSpec(feature_id=feature_id))
 
+    @classmethod
+    def make_batch(
+        cls,
+        src_eval: "Evaluation",
+        features: list[int | "FilteredTensor"],
+    ) -> list[Self]:
+        """
+        Create multiple Feature objects efficiently.
+
+        Args:
+            src_eval: The Evaluation object
+            features: List of feature IDs or FilteredTensor objects
+
+        Returns:
+            List of Feature objects
+        """
+        return [
+            cls.make(
+                src_eval=src_eval,
+                feature_id=f if isinstance(f, int) else None,
+                feature=f if isinstance(f, FilteredTensor) else None,
+            )
+            for f in features
+        ]
+
     def aggregate(self, agg: AggregationType):
         match agg:
             case AggregationType.MEAN:
@@ -127,6 +152,59 @@ class Feature(EvalRefData):
                 src_eval=self.src_eval,
             ),
         )
+
+    @staticmethod
+    def batched_top_activations(
+        features: list["Feature"],
+        agg: AggregationType = AggregationType.MAX,
+        *,
+        p: float | None = None,
+        k: int | None = None,
+    ) -> list["TopActivations"]:
+        """
+        Compute top activations for multiple features efficiently.
+
+        This method processes multiple features together, enabling
+        more efficient GPU utilization when fetching top activations
+        for many features.
+
+        Args:
+            features: List of Feature objects to process
+            agg: Aggregation type (MAX, MEAN, SUM, COUNT)
+            p: Proportion of top activations (alternative to k)
+            k: Number of top activations
+
+        Returns:
+            List of TopActivations objects
+        """
+        if not features:
+            return []
+
+        # All features should have the same src_eval
+        src_eval = features[0].src_eval
+
+        # Step 1: Aggregate all features (GPU-bound operations)
+        doc_acts_list = [f.aggregate(agg) for f in features]
+
+        # Step 2: Compute topk for each feature
+        results = []
+        for feature, doc_acts in zip(features, doc_acts_list):
+            actual_k = _pk_to_k(p, k, doc_acts.value.shape[0])
+            topk = doc_acts.value.topk(actual_k, sorted=True)
+            top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
+            doc_indices = top_outer_indices[0]
+
+            top_act = TopActivations(
+                src_eval=src_eval,
+                feature=feature,
+                doc_selection=SelectedDocs(
+                    doc_indices=doc_indices,
+                    src_eval=src_eval,
+                ),
+            )
+            results.append(top_act)
+
+        return results
 
     # @cached_property
     # def id(self) -> int:
