@@ -1,24 +1,21 @@
 from types import GenericAlias, UnionType
 from typing import (
-    Annotated,
     Any,
     ClassVar,
-    get_args,
-    get_origin,
-    TYPE_CHECKING,
+    Self,
     TypeVar,
     Union,
+    dataclass_transform,
+    get_args,
+    get_origin,
 )
 
 import pydantic._internal._model_construction as mc
+from paramsight.generic_restored_basemodel.generic_basemodel import GenericBaseModel
 from pydantic import (
     BaseModel,
-    BeforeValidator,
-    create_model,
-    dataclasses,
     ValidationError,
 )
-from typing_extensions import dataclass_transform
 
 from saeco.sweeps.sweepable_config.has_sweep import (
     CouldHaveSweep,
@@ -28,7 +25,6 @@ from saeco.sweeps.sweepable_config.has_sweep import (
     set_collection,
     to_items,
 )
-
 from saeco.sweeps.sweepable_config.sweep_expressions import Op, SweepVar, Val
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
@@ -107,9 +103,9 @@ def Sweepable(t, name=None):
         s_t = t
     if t is ClassVar:
         return t
-    assert not isinstance(
-        t, Swept
-    ), "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
+    assert not isinstance(t, Swept), (
+        "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
+    )
 
     # return Annotated[
     #     Union[Swept[t], s_t], BeforeValidator(SweptValidatorConverter(t, name=name))
@@ -280,7 +276,7 @@ def fix_paramize(d):
     }
 
 
-class SweepableConfig(BaseModel, metaclass=SweepableMeta):
+class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
     _ignore_this: int = 0  # needs field due to being a dataclass
 
     def is_concrete(self):
@@ -307,7 +303,7 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
             d["sweep_vars"] = {"parameters": sv_dict}
         return d
 
-    def from_selective_sweep(self, sweep: dict[str, Any]):
+    def from_selective_sweep(self, sweep: dict[str, Any]) -> Self:
         sweep = sweep.copy()
         print("sweep", sweep)
         self_copy = self.model_copy(deep=True)  # I think this is no longer needed
@@ -356,13 +352,20 @@ class SweepableConfig(BaseModel, metaclass=SweepableMeta):
     def random_sweep_configuration(self):
         return self.from_selective_sweep(self.random_sweep_inst_dict())
 
+    def select_instance_by_index(self, index: int):
+        return self.from_selective_sweep(
+            self.to_swept_nodes().select_instance_by_index(index)
+        )
+
     def to_swept_nodes(self):
         return SweptNode.from_sweepable(self)
 
     def get_hash(self) -> str:
         from hashlib import sha256
 
-        return sha256(self.model_dump_json().encode()).hexdigest()
+        return sha256(
+            self.model_dump_json(exclude_computed_fields=True).encode()
+        ).hexdigest()
 
     def from_optuna_trial(self, trial):
         import optuna

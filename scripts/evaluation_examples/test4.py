@@ -1,6 +1,4 @@
-import sys
 
-import torch
 from load import root_eval
 
 f = root_eval.average_aggregated_patching_effect_on_dataset(

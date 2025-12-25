@@ -1,7 +1,6 @@
-import torch
-import torch.nn as nn
-from typing import Protocol, runtime_checkable, Union
-from .features_param import FeaturesParam, FeatureParamType
+from typing import Protocol, Union, runtime_checkable
+
+from .features_param import FeatureParamType, FeaturesParam
 
 
 class ParamMetadata:

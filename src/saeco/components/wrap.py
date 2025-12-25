@@ -1,8 +1,8 @@
 from abc import ABCMeta
+from typing import Any
 
 import torch
 import torch.nn as nn
-from typing import Any
 
 import saeco.core as cl
 
@@ -53,7 +53,7 @@ class WrapsModule(cl.Module):
 
 def main():
     import saeco.core as cl
-    from saeco.core.basic_ops import Add, Mul, Neg, Sub
+    from saeco.core.basic_ops import Add, Mul, Sub
 
     seq = cl.Seq(
         Add(nn.Parameter(torch.tensor(1.0))),

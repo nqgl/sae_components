@@ -1,16 +1,13 @@
-from saeco.core.cache import Cache
-
+from abc import ABC, ABCMeta, abstractmethod
+from collections.abc import Callable
+from contextlib import contextmanager
+from typing import Any
 
 import torch
 
+from saeco.core.cache import Cache
 
-from abc import ABC, abstractmethod, ABCMeta
-
-
-from typing import Callable, List, Any
-from contextlib import contextmanager
-
-c2t = Callable[..., torch.Tensor | List[torch.Tensor]]
+c2t = Callable[..., torch.Tensor | list[torch.Tensor]]
 
 
 class Module(torch.nn.Module, ABC):

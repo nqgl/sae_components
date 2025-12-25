@@ -1,19 +1,19 @@
+from collections.abc import Iterable
 from contextlib import contextmanager
 from functools import cached_property
-from typing import Iterable
 
 import torch
 import torch.utils
 import tqdm
-
 from schedulefree import AdamWScheduleFree
 from torch.amp.grad_scaler import GradScaler
 
 from saeco.core import Cache
-from saeco.data.tokens_data import TokensData
+from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.misc.paths import SAVED_MODELS_DIR
 from saeco.mlog import mlog
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
+
 from .call_training_hooks import (
     do_post_backward,
     do_post_forward,
@@ -22,7 +22,6 @@ from .call_training_hooks import (
 )
 from .l0targeter import TARGETER_TYPES
 from .OptimConfig import get_optim_cls
-from .recons import get_recons_loss
 from .run_config import RunConfig
 from .train_cache import TrainCache
 from .train_config import TrainConfig
@@ -47,7 +46,7 @@ class Trainer:
         self.save_callback = save_callback
         self.t = 1
         self.log_t_offset = 0
-        self.log_freq = 10
+        self.log_freq = 1
 
         assert optim is None
         if optim is not None:
@@ -104,8 +103,8 @@ class Trainer:
 
     @cached_property
     def llm_val_tokens(self):
-        return TokensData(
-            self.cfg.data_cfg, self.subject_model, split=self.cfg.data_cfg.testsplit
+        return self.cfg.data_cfg.tokens_data(
+            split=self.cfg.data_cfg.testsplit
         ).get_tokens()
 
     def get_l0_target(self):
@@ -162,18 +161,24 @@ class Trainer:
     @contextmanager
     def evaluate(self):
         self.trainable.eval()
+        if self.cfg.use_schedulefree:
+            assert isinstance(self.optim, AdamWScheduleFree)
+            self.optim.eval()
         if self.cfg.use_averaged_model:
             self.averaged_model.eval()
         try:
             yield
         finally:
             self.trainable.train()
+            if self.cfg.use_schedulefree:
+                assert isinstance(self.optim, AdamWScheduleFree)
+                self.optim.train()
+
             if self.cfg.use_averaged_model:
                 self.averaged_model.train()
 
     def proc_cache_after_forward(self, cache: Cache):
         if self.cfg.l0_targeting_enabled and self.cfg.l0_target is not None:
-
             if not self.cfg.schedule.dynamic_adjust(self.t):
                 return
             step = self.l0_targeter(l0=cache.L0, t=self.t)
@@ -185,12 +190,13 @@ class Trainer:
                 )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def make_cache(self):
+    def make_cache(self, eval_mode: bool = False):
         cache = TrainCache()
         cache._watch(self.trainable.get_losses_and_metrics_names())
         cache.trainer = ...
         cache.trainer = self
-        cache.trainstep = self.t
+        if not eval_mode:
+            cache.trainstep = self.t
         return cache
 
     def train(
@@ -199,6 +205,7 @@ class Trainer:
         try:
             self._train(buffer=buffer, num_steps=num_steps)
         finally:
+            print("training complete, entering final")
             if self.cfg.save_on_complete:
                 try:
                     self.save()
@@ -210,6 +217,9 @@ class Trainer:
             buffer = self.cfg.get_databuffer()
         if not self.trainable.normalizer.primed:
             self.trainable.normalizer.prime_normalizer(buffer)
+        if self.cfg.use_schedulefree:
+            self.optim.train()
+        self.trainable.train()
         self.post_step()
 
         if num_steps is not None:
@@ -222,13 +232,15 @@ class Trainer:
                     n += 1
                     yield next(old_buffer)
                     if n >= num_steps:
+                        print("hit end in train buf()")
                         break
 
             buffer = buf()
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
+            x: SAETrainBatch
             input, target = x.input, x.target
-            print(input.shape)
-            print(target.shape)
+            # print(input.shape)
+            # print(target.shape)
             if not self.cfg.use_autocast:
                 input = input.float()  # TODO maybe cast other direction instead
                 target = target.float()  # TODO maybe cast other direction instead
@@ -238,21 +250,22 @@ class Trainer:
                 and self.t > self.cfg.schedule.run_length - 1000
                 and self.t % 5 == 0
             ):
-                self.trainable.eval()
-                self.eval_step(input, y=target)
-                self.trainable.train()
+                with self.evaluate():
+                    self.eval_step(input, y=target)
 
             cache = self.make_cache()
             self.trainstep(input, cache, y=target)
             self.full_log(cache)
             self.t += 1
+            if self.cfg.early_stopping_bounds.should_stop(cache, t=self.t):
+                print("early stopping")
+                break
             cache.destruct()
             if self.cfg.use_averaged_model:
                 self.averaged_model.update_parameters(self.trainable)
             if self.t % self.cfg.intermittent_metric_freq == 0:
-                self.trainable.eval()
-                self.do_intermittent_metrics()
-                self.trainable.train()
+                with self.evaluate():
+                    self.do_intermittent_metrics()
             if (
                 self.cfg.checkpoint_period is not None
                 and self.t % self.cfg.checkpoint_period == 0
@@ -264,6 +277,7 @@ class Trainer:
                 )
                 self.post_step()
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
+                print("hit end in train()")
                 break
 
     @contextmanager
@@ -317,7 +331,7 @@ class Trainer:
             model = self.averaged_model.module
         else:
             model = self.trainable
-        cache = self.make_cache()
+        cache = self.make_cache(eval_mode=True)
         with torch.no_grad():
             with self.cast():
                 loss = model.loss(x, cache=cache, y=y, coeffs=self.coeffs())
@@ -328,7 +342,6 @@ class Trainer:
         self.log_recons()
 
     def log_recons(self, num_batches=20):
-
         for eval_name, fn in self.recons_eval_fns.items():
             self.log(
                 {
@@ -376,7 +389,9 @@ class Trainer:
 
     def save(self):
         save_dir = SAVED_MODELS_DIR
+        print("get run name")
         name = mlog.get_run_name()
+        print("done")
         sweep_name, run_name = name.split(":")
         savename = save_dir / sweep_name / run_name / str(self.t)
 

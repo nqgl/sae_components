@@ -1,10 +1,11 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from saeco.components.penalties import Penalty
 from saeco.components.jumprelu.kernels_fns import rect
-from typing import Any
+from saeco.components.penalties import Penalty
 
 # import saeco.core as cl
 
@@ -13,7 +14,6 @@ class H_z_minus_thresh_fn(torch.autograd.Function):
     @staticmethod
     @custom_fwd
     def forward(ctx, z, thresh, kernel, eps):
-
         thresh = thresh.relu()
         gate = (z > thresh) & (z > 0)
         ctx.z = z
@@ -41,7 +41,6 @@ def modified_H(n):
         @staticmethod
         @custom_fwd
         def forward(ctx, z, thresh, kernel, eps):
-
             thresh = thresh.relu()
             gate = (z > thresh) & (z > 0)
             ctx.save_for_backward(z, thresh)
@@ -110,7 +109,6 @@ class JumpReLU_fn(torch.autograd.Function):
 
     @staticmethod
     def jvp(ctx: Any, grad_in_z, grad_in_thresh, *etc: Any) -> Any:
-
         return torch.where(ctx.gate, grad_in_z, 0)
 
 

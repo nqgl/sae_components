@@ -1,19 +1,15 @@
-from typing import Any, Callable
-import torch
+from collections.abc import Callable
+from typing import Any
+
 import torch.nn as nn
-from abc import ABC, abstractmethod
+
 from saeco.components.type_acc_methods import (
     PostBackwardHook,
-    typeacc_method,
-    PreForwardHook,
     PostForwardHook,
     PostStepHook,
+    PreForwardHook,
+    typeacc_method,
 )
-from saeco.components.sae_cache import SAECache
-from torch import Tensor
-from jaxtyping import Float
-
-import saeco.core as cl
 
 
 def find_and_call_attr_on_modules(module: nn.Module, attr: str, *args, **kwargs):

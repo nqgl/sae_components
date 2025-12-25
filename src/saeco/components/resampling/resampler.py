@@ -1,22 +1,24 @@
-from typing import Optional
+from abc import ABC, abstractmethod
+from typing import Self
 
 import torch
 import torch.nn as nn
-from typing_extensions import Self
+from pydantic import Field
 
 from saeco.components.features import Resamplable
 from saeco.components.features.features_param import (
     FeaturesParam,
     get_resampled_params,
-    HasFeatures,
 )
 from saeco.components.features.optim_reset import (
-    OptimResetValues,
     OptimResetValuesConfig,
 )
 from saeco.components.resampling.freq_tracker.freq_tracker import (
     get_active_freq_trackers,
 )
+from saeco.misc import lazycall
+from saeco.sweeps import SweepableConfig
+
 from .freq_tracker import FreqTracker
 
 
@@ -31,12 +33,20 @@ def find_matching_submodules(module: nn.Module, matchfn):
     return matches
 
 
-from abc import ABC
+class ResampleableModule(ABC):
+    @abstractmethod
+    def resample(
+        self,
+        *,
+        indices: torch.Tensor,
+        new_directions: torch.Tensor,
+        bias_reset_value: float,
+        optim: torch.optim.Optimizer,
+    ) -> None: ...
 
-from pydantic import Field
 
-from saeco.misc import lazycall
-from saeco.sweeps import SweepableConfig
+def get_resampleable_modules(model: nn.Module) -> set[FeaturesParam]:
+    return find_matching_submodules(model, lambda m: isinstance(m, ResampleableModule))
 
 
 class ResamplerConfig(SweepableConfig):
@@ -45,11 +55,11 @@ class ResamplerConfig(SweepableConfig):
     )
     bias_reset_value: float = 0
     dead_threshold: float = 3e-6
-    freq_balance: Optional[int | float] = None
+    freq_balance: int | float | None = None
     freq_balance_strat: str = "sep"
-    expected_biases: Optional[int] = 1
-    expected_decs: Optional[int] = 1
-    expected_encs: Optional[int] = 1
+    expected_biases: int | None = 1
+    expected_decs: int | None = 1
+    expected_encs: int | None = 1
 
 
 class Resampler(ABC):
@@ -91,8 +101,10 @@ class Resampler(ABC):
         assert self.cfg.expected_decs is None or self.cfg.expected_decs == len(
             self.decs
         )
+
         for r in self.encs + self.decs + self.biases + self.other_types:
-            r.set_cfg(self.cfg)
+            if isinstance(r, FeaturesParam):
+                r.set_cfg(self.cfg)
             r.resample(
                 indices=i,
                 new_directions=d,
@@ -127,6 +139,7 @@ class Resampler(ABC):
             else:
                 other_types.append(param)
 
+        other_types.extend(list(get_resampleable_modules(self.model)))
         if self._encs is None:
             self._encs = encs
         if self._decs is None:
@@ -185,7 +198,6 @@ class Resampler(ABC):
         indices,
         target_l0,
     ):
-
         original_beta = self.freq_tracker.beta
         self.freq_tracker.beta = 0.9
         for bias in self.biases:

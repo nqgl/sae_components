@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 
-from .Feature import Feature
-
+from .Feature import LabeledFeature
 from .filtered_query import FilterableQuery
 
 
@@ -30,7 +29,7 @@ class ScoredFamilyRef(BaseModel):
 
 
 class ScoredFeature(BaseModel):
-    feature: Feature
+    feature: LabeledFeature
     score: float
 
 

@@ -1,3 +1,4 @@
+from .features import EncoderBias, Resamplable, ResampledWeight
 from .features_param import (
     FeaturesParam,
     HasFeatures,
@@ -5,4 +6,3 @@ from .features_param import (
     get_resampled_params,
 )
 from .linear_type import LinDecoder, LinEncoder
-from .features import Resamplable, EncoderBias, ResampledWeight

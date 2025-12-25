@@ -1,9 +1,7 @@
-from pydantic import BaseModel
-
-
-from typing import Any, Dict, Generic, Literal, Set, TypeVar
+from typing import Any, Literal, TypeVar
 
 import pydantic._internal._model_construction as mc
+from pydantic import BaseModel
 
 T = TypeVar("T")
 
@@ -29,10 +27,13 @@ class SweptCheckerMeta(mc.ModelMetaclass):
         return False
 
 
-class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
+class Swept[T](BaseModel, metaclass=SweptCheckerMeta):
     values: list[T]
 
-    def __init__(self, *values, **kwargs):
+    def __init__(self, *values: T, **kwargs):
+        """
+        Enables the Swept(a,b,c) syntax for initializing Swept fields.
+        """
         if values:
             if "values" in kwargs:
                 raise Exception("two sources of values in Swept initialization!")
@@ -40,20 +41,21 @@ class Swept(BaseModel, Generic[T], metaclass=SweptCheckerMeta):
         return super().__init__(**kwargs)
 
     @property
-    def generic_type(self):
+    def generic_type(self) -> type[T] | None:
         args = self.__pydantic_generic_metadata__["args"]
         if len(args) == 0:
             return None
         if len(args) > 1:
             raise Exception("Swept can only have one generic type")
+        assert len(args) == 1
         return args[0]
 
     def model_dump(
         self,
         *,
         mode: str = "python",
-        include: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
-        exclude: Set[int] | Set[str] | Dict[int, Any] | Dict[str, Any] | None = None,
+        include: set[int] | set[str] | dict[int, Any] | dict[str, Any] | None = None,
+        exclude: set[int] | set[str] | dict[int, Any] | dict[str, Any] | None = None,
         context: dict[str, Any] | None = None,
         by_alias: bool = False,
         exclude_unset: bool = False,

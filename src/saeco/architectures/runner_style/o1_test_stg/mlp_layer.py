@@ -1,9 +1,8 @@
-import saeco.components.features.features as ft
-from saeco.architectures.sweep_tg.other_lin import OtherLinear
-from saeco.core import Seq
-
-
 import torch.nn as nn
+from saeco.architectures.sweep_tg.other_lin import OtherLinear
+
+import saeco.components.features.features as ft
+from saeco.core import Seq
 
 
 def mlp_layer(

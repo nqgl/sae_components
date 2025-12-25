@@ -1,7 +1,5 @@
-from pathlib import Path
-
 import torch
-from attr import define, field
+from attrs import define, field
 from torch import Tensor
 
 

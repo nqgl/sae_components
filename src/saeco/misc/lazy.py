@@ -1,5 +1,4 @@
 import functools
-from typing_extensions import deprecated
 
 DEBUGGING = False
 DEBUG_INDENT = 0
@@ -50,7 +49,6 @@ def debug_enter(self, field, current):
 
 def defer_to_and_set(_field):
     def wrapper(fn):
-
         @functools.wraps(fn)
         def inner(self):
             if isinstance(_field, str):

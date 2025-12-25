@@ -1,6 +1,7 @@
 import einops
-from saeco.components.threshgate import RandSoftThreshGate
+
 import saeco.core as cl
+from saeco.components.threshgate import RandSoftThreshGate
 
 
 class GotActsInterrupt(Exception):
@@ -54,7 +55,7 @@ class ActsGateSubstitutor(CacheProcessor):
     def __init__(
         self, model, ll_acts_key, bf, hl_acts_key="prev_acts", threshgate=None
     ):
-        super().__init__(model),
+        (super().__init__(model),)
         self.ll_acts_key = ll_acts_key
         self.hl_acts_key = hl_acts_key
         self.bf = bf

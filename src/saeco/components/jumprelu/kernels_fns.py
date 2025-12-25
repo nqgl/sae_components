@@ -1,5 +1,6 @@
-import torch
 from typing import Protocol
+
+import torch
 
 
 def rect(x: torch.Tensor) -> torch.Tensor:

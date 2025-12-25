@@ -1,7 +1,5 @@
-import sys
 
 import pandas as pd
-
 import torch
 from load import root_eval
 
@@ -99,7 +97,6 @@ if __name__ == "__main__":
     dfd = logit_effects_df(feat_id)
 
     if True:
-
         feat_id = 42
         logit_effects(feat_id, random_subset_n=100)
         input("Press Enter to continue...")

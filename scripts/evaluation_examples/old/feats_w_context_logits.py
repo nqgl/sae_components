@@ -1,29 +1,14 @@
 # %%
-from functools import wraps
-from pathlib import Path
 
 import nnsight
-import saeco.core as cl
 import torch
-
-from jaxtyping import Float, Int
 
 # from transformers import GPT2LMHeadModel
 # ec = Evaluation.from_cache_name("dyn_thresh")
 from load import root_eval
-from pydantic import BaseModel
-
-from rich.highlighter import Highlighter
-
-from saeco.architectures.anth_update import anth_update_model, cfg
-from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.storage.chunk import Chunk
-from saeco.misc.nnsite import getsite, setsite, tlsite_to_nnsite
-from saeco.trainer import Trainable
-from saeco.trainer.runner import TrainingRunner
-from saeco.trainer.train_cache import TrainCache
 from torch import Tensor
+
+from saeco.misc.nnsite import getsite, setsite, tlsite_to_nnsite
 
 # ec = Evaluation.from_model_name("sae sweeps/dyn_thresh/50001")
 # ec.store_acts(
@@ -37,10 +22,8 @@ from torch import Tensor
 # %%
 nnsight_model = nnsight.LanguageModel("openai-community/gpt2", device_map="cuda")
 
-import einops
 
 # %%
-import tqdm
 
 
 tl_name = "blocks.6.hook_resid_pre"
@@ -140,7 +123,6 @@ def patch_hook(acts):
 
 
 with nnsight_model.trace("The Eieffel Tower is in the city of") as tracer:
-
     patched_sae = root_eval.sae_with_patch(patch_hook, for_nnsight=False)
 
     lm_acts = getsite(nnsight_model, nn_name)
@@ -188,7 +170,6 @@ def fwad_hook(acts):
 patched_sae = root_eval.sae_with_patch(fwad_hook)
 with fwAD.dual_level():
     with nnsight_model.trace(root_eval.saved_acts.tokens[0:5]) as tracer:
-
         lm_acts = getsite(nnsight_model, nn_name)
         orig_lm_acts = lm_acts.save()
         acts_re = patched_sae(orig_lm_acts).save()

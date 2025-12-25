@@ -1,8 +1,9 @@
-from saeco.sweeps.sweepable_config.Swept import Swept
-
+from collections.abc import Iterable
+from typing import Any, TypeAlias
 
 from pydantic import BaseModel
-from typing import Any, Iterable, TypeAlias
+
+from saeco.sweeps.sweepable_config.Swept import Swept
 
 CouldHaveSweep: TypeAlias = BaseModel | dict | list
 

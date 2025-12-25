@@ -1,7 +1,8 @@
 import fastapi
 import uvicorn
+
 from saeco.evaluation import Evaluation
-from saeco.evaluation.api import create_app
+from saeco.evaluation.api_components.api import create_app
 
 STORAGE_NAME = "mid_store"
 root = Evaluation.from_cache_name(STORAGE_NAME)

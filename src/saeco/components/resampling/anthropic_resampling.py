@@ -4,6 +4,9 @@ import torch
 import torch.nn as nn
 from attrs import define
 
+from saeco.components.features.optim_reset import (
+    OptimResetValuesConfig as OptimResetValuesConfig,
+)
 from saeco.components.resampling.resampler import Resampler, ResamplerConfig
 from saeco.core import Cache
 
@@ -52,20 +55,11 @@ def get_param_parent_module(param, model: nn.Module):
 
 from enum import IntEnum
 
-from saeco.sweeps import SweepableConfig
-
 
 class ResampleType(IntEnum):
-
     enc_in = 0
     error = 1
     model_in = 2
-
-
-from saeco.components.features.optim_reset import (
-    OptimResetValues,
-    OptimResetValuesConfig,
-)
 
 
 class AnthResamplerConfig(ResamplerConfig):
@@ -75,6 +69,8 @@ class AnthResamplerConfig(ResamplerConfig):
 
 
 class AnthResampler(Resampler):
+    cfg: AnthResamplerConfig
+
     @torch.no_grad()
     def get_reset_feature_directions(self, num_directions, data_source, model):
         # gotta make sure to treat the normalization correctly!

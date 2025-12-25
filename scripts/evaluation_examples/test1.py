@@ -1,4 +1,3 @@
-import torch
 from load import root_eval
 
 feat = 43

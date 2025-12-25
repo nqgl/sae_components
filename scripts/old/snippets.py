@@ -1,5 +1,4 @@
 def f(self):
-
     len([p for p in self.model.parameters()])
     self.model
     len(self.optim.param_groups)

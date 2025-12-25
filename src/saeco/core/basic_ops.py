@@ -1,11 +1,10 @@
+import torch.nn as nn
+
 from saeco.core.collections.parallel import (
     AddParallel,
     MulParallel,
     Parallel,
 )
-
-
-import torch.nn as nn
 
 
 class Identity(nn.Module):
@@ -80,4 +79,3 @@ class MatMul(Parallel):
         self.reduce(lambda input, weight: input @ weight)
 
 
-from typing import Protocol, TypeVar

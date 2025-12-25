@@ -1,30 +1,23 @@
+import torch
+import torch.nn as nn
+from pydantic import Field
+
 import saeco.components as co
 import saeco.components.features.features as ft
 import saeco.core as cl
-import torch
-
-import torch.nn as nn
-from pydantic import Field
 from saeco.components import (
     EMAFreqTracker,
-    FreqTracker,
-    L1Penalty,
     L2Loss,
     LinearDecayL1Penalty,
     SparsityPenaltyLoss,
 )
-
-from saeco.components.hooks.clipgrad import ClipGrad
 from saeco.components.losses.losses import TruncatedL2Loss
 from saeco.components.metrics.metrics import PreActMetrics
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.core import Seq
 from saeco.initializer import Initializer
-
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
-
 
 # torch.backends.cudnn.benchmark = True
 
@@ -231,4 +224,4 @@ def run(cfg):
 if __name__ == "__main__":
     do_sweep(True, "rand")
 else:
-    from .config import cfg, PROJECT
+    pass

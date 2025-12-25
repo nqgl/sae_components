@@ -1,13 +1,14 @@
-from saeco.components.features.optim_reset import (
-    FeatureParamType,
-    OptimResetValues,
-)
-
+from collections.abc import Mapping
+from typing import Protocol, TypeAlias, overload, runtime_checkable
 
 import torch
 import torch.nn as nn
 from torch import Tensor
-from typing import Mapping, Optional, Protocol, TypeAlias, overload, runtime_checkable
+
+from saeco.components.features.optim_reset import (
+    FeatureParamType,
+    OptimResetValues,
+)
 
 IndexType = int | list[int]
 
@@ -17,7 +18,7 @@ class OptimFieldFeatures:
         self,
         optim: torch.optim.Optimizer,
         fp: "FeaturesParam",
-        field: Optional[str] = None,
+        field: str | None = None,
         index=None,
     ):
         self.optim = optim
@@ -77,7 +78,7 @@ class FeaturesParam:
         self,
         param: nn.Parameter,
         feature_index,
-        feature_parameter_type: Optional[FeatureParamType] = None,
+        feature_parameter_type: FeatureParamType | None = None,
         resampled=True,
         reset_optim_on_resample=True,
     ):
@@ -86,7 +87,7 @@ class FeaturesParam:
         self.feature_index = feature_index
         self.field_handlers = None
         self.resampled = resampled
-        self.type: Optional[FeatureParamType] = (
+        self.type: FeatureParamType | None = (
             feature_parameter_type and FeatureParamType(feature_parameter_type)
         )
         self.resampler_cfg = None
@@ -116,6 +117,8 @@ class FeaturesParam:
     def set_cfg(self, cfg):
         if self.resampler_cfg is cfg:
             return
+        if self.resampler_cfg is not None:
+            raise ValueError("Cannot set cfg twice")
         self.field_handlers = OptimResetValues(cfg.optim_reset_cfg)
         self.resampler_cfg = cfg
 
@@ -219,9 +222,9 @@ class FeaturesParam:
             if self.get_optim(optim).state[field] == {}:
                 continue
             field_state = optim_state[field]
-            assert (
-                field_state[:].shape == self.features.shape
-            ), f"{field}: {field_state[:].shape} != {self.features.shape}"
+            assert field_state[:].shape == self.features.shape, (
+                f"{field}: {field_state[:].shape} != {self.features.shape}"
+            )
 
             optim_state[field, indices] = self.field_handlers.get_value(
                 field=field,
@@ -283,8 +286,8 @@ def get_resampled_params(model: nn.Module):
 #     @property
 #     def features_grad(self) -> Optional[Tensor]: ...
 
-from typing import overload
 from functools import cached_property
+from typing import overload
 
 
 @runtime_checkable
@@ -300,7 +303,6 @@ class HasFeaturesCachedProperty(Protocol):
 
 @runtime_checkable
 class HasFeaturesProperty(Protocol):
-
     @property
     def features(self) -> dict[str, FeaturesParam]: ...
 

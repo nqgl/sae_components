@@ -1,7 +1,8 @@
 # %%
-from saeco import core as cl
 import torch
 import torch.nn as nn
+
+from saeco import core as cl
 
 model = nn.Sequential(
     nn.Linear(10, 10),

@@ -1,11 +1,11 @@
 from .normalizer import (
-    Normalizer,
-    L2Normalizer,
+    Aggregation,
     ConstL2Normalizer,
-    Normalized,
     GeneralizedNormalizer,
     GNConfig,
-    Aggregation,
+    L2Normalizer,
+    Normalized,
+    Normalizer,
 )
 
 NORMALIZERS_LIST = [L2Normalizer, ConstL2Normalizer]

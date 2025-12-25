@@ -1,12 +1,9 @@
 # %%
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Optional, overload
-
-from pydantic import Field
+from typing import Optional
 
 from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
-
 
 AmbiguousTypes = [Optional[int | float], int | float]
 # Run length
@@ -19,16 +16,16 @@ def assert_wrapped(fn):
 
     @wraps(fn)
     def wrapper(self, *args, **kwargs):
-        assert getattr(
-            self.__class__, "_IS_WRAPPED", False
-        ), "Cannot call methods on the raw schedule. Access the wrapped object via .step_scheduler instead."
+        assert getattr(self.__class__, "_IS_WRAPPED", False), (
+            "Cannot call methods on the raw schedule. Access the wrapped object via .step_scheduler instead."
+        )
         return fn(self, *args, **kwargs)
 
     return wrapper
 
 
 class RunSchedulingConfig(SweepableConfig):
-    run_length: Optional[int] = 50_000
+    run_length: int | None = 50_000
 
     resample_period: int = 12_500
     resample_delay: int | RunFloat = 0
@@ -96,9 +93,9 @@ class RunSchedulingConfig(SweepableConfig):
         # or a fraction of some period, default run length
         # signified by type -- ints are steps, floats are proportions
         # this converts proportions to steps and leaves steps as is
-        assert isinstance(
-            n, int
-        ), "some assumptions failed and this actually can't be removed. if i dont hit this, method is indeed obsolete"
+        assert isinstance(n, int), (
+            "some assumptions failed and this actually can't be removed. if i dont hit this, method is indeed obsolete"
+        )
         assert 0 <= n
         if isinstance(n, int):
             return n

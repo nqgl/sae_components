@@ -1,29 +1,15 @@
-import os
 
-import sys
-from typing import TYPE_CHECKING
 
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.data.data_config_definitions import (
-    gemma_2_2b_openwebtext,
-    gemma_2_2b_openwebtext_bf16,
-    gemma_2_2b_openwebtext_fp32,
-    gemma_2_2b_openwebtext_test,
-    gemma_2_2b_openwebtext_test_fp16,
-    gemma_2_2b_openwebtext_test_fp32,
+from saeco.data.config.data_config_definitions import (
     gpt_2_block,
 )
-from saeco.data.generation_config import DataGenerationProcessConfig
-from saeco.data.split_config import SplitConfig
 from saeco.initializer import InitConfig
-from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Val, Var
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
+from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar, Val
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig

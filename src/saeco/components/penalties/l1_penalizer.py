@@ -1,7 +1,8 @@
-from .penalty import Penalty
-from torch import Tensor
 import torch
 import torch.nn as nn
+from torch import Tensor
+
+from .penalty import Penalty
 
 
 class L1Penalty(Penalty):

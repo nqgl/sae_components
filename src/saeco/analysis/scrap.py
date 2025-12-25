@@ -38,10 +38,8 @@ def add_final_nats_lost(run):
 
 
 # %%
-import pandas as pd
-from wandb.apis.public import Run, Sweep, Runs
 import numpy as np
-import tqdm
+import pandas as pd
 
 allruns = [runs1, runs2, runs3]
 runs_df = pd.DataFrame(
@@ -94,7 +92,6 @@ def add_means(row):
 
 # %%
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 runs_df["recons_score"]
 
@@ -253,7 +250,6 @@ def scatter_with_categorical_legend(
     ax.title.set_text(pretitle + title + posttitle)
 
     # plt.show()
-    import seaborn as sns
 
     ax.set_xlabel(xname)
     ax.set_ylabel(yname)

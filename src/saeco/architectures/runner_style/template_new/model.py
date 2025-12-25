@@ -1,42 +1,31 @@
-import torch
 
 import torch.nn as nn
+from saeco.components.model import Architecture
 
 import saeco.components as co
 import saeco.components.features.features as ft
-from saeco.components.model import Architecture
-import saeco.core as cl
-
-from saeco.initializer import Initializer
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
-
-from saeco.components.hooks.clipgrad import ClipGrad
-from saeco.core import Seq
-
-from saeco.misc import useif
-from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
-from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
-
-from saeco.trainer.run_config import RunConfig
-from .model import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
+from saeco.core import Seq
+from saeco.data import DataConfig, ModelConfig
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
+from saeco.initializer import InitConfig, Initializer
+from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
+from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
-from saeco.initializer import InitConfig
-
-from saeco.sweeps import do_sweep
+from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner
+from saeco.trainer.train_config import TrainConfig
+
+from .model import Config
 
 
 class Config(SweepableConfig):

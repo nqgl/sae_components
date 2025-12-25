@@ -1,25 +1,25 @@
-from saeco.data.data_config_definitions import (
-    gpt_2_block,
-)
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.trainer.run_config import RunConfig
-from saeco.components.resampling.anthropic_resampling import (
-    AnthResamplerConfig,
-    OptimResetValuesConfig,
-)
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
-from saeco.initializer import InitConfig
+from saeco.data.data_config_definitions import gpt_2_block
 
 from saeco.architectures.dynamic_thresh_prolu.model_zipf import (
     DynamicZipfThreshConfig,
     DynamicZipfThreshSAE,
     ThreshConfig,
 )
+from saeco.components.resampling.anthropic_resampling import (
+    AnthResamplerConfig,
+    OptimResetValuesConfig,
+)
+from saeco.data.config.data_config_definitions import (
+    gpt_2_block,
+)
+from saeco.initializer import InitConfig
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 
 cfg = RunConfig[DynamicZipfThreshConfig](
     train_cfg=TrainConfig(
-        data_cfg=gpt_2_block(),
+        data_cfg=gpt_2_block(7),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
             resample_period=10_000,
@@ -41,7 +41,7 @@ cfg = RunConfig[DynamicZipfThreshConfig](
             "L2_loss": 1,
         },
         #
-        intermittent_metric_freq=1000,
+        intermittent_metric_freq=50,
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
@@ -61,6 +61,9 @@ cfg = RunConfig[DynamicZipfThreshConfig](
 
 arch = DynamicZipfThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
+sweep_manager.rand_run_no_agent(project="nqgl/default-project")
+
+
 sweep_manager.initialize_sweep()
 sweep_manager.rand_run_no_agent()
 # sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)

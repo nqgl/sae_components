@@ -1,6 +1,4 @@
-from pydantic import BaseModel, Field
-
-from .families_draft import FamilyRef
+from pydantic import BaseModel
 
 from .filtered_query import FilterableQuery
 

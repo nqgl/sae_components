@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Iterable, Iterator, Protocol
+from collections.abc import Iterator
 
 import torch
 import torch.nn as nn
@@ -7,8 +7,7 @@ from jaxtyping import Float
 from torch import Tensor
 
 import saeco.core as cl
-
-from saeco.data.sae_train_batch import SAETrainBatch
+from saeco.data.training_data.sae_train_batch import SAETrainBatch
 
 
 class Normalizer(cl.Module, ABC):
@@ -237,10 +236,6 @@ from enum import IntEnum
 #     primed: bool
 #     running: bool
 #     batch: bool
-
-
-from jaxtyping import Float
-
 from saeco.sweeps import SweepableConfig
 
 
@@ -486,7 +481,6 @@ class GeneralizedNormalizer(Normalizer):
 
 class StaticInvertibleGeneralizedNormalizer(GeneralizedNormalizer):
     def __init__(self, init, cfg: GNConfig, eps=1e-7):
-
         static_aggs = (
             Aggregation.DONTUSE,
             Aggregation.PRIMED,
@@ -498,18 +492,18 @@ class StaticInvertibleGeneralizedNormalizer(GeneralizedNormalizer):
             SAggregation.DONTUSE,
             SAggregation.PRIMED,
         )
-        assert (
-            cfg.mu_e in static_aggs
-        ), f"{cfg.mu_e} is not a static aggregation but is being used with a static-invertible normalizer"
-        assert (
-            cfg.std_e in static_aggs
-        ), f"{cfg.std_e} is not a static aggregation but is being used with a static-invertible normalizer"
-        assert (
-            cfg.mu_s in static_saggs
-        ), f"{cfg.mu_s} is not a static aggregation but is being used with a static-invertible normalizer"
-        assert (
-            cfg.std_s in static_saggs
-        ), f"{cfg.std_s} is not a static aggregation but is being used with a static-invertible normalizer"
+        assert cfg.mu_e in static_aggs, (
+            f"{cfg.mu_e} is not a static aggregation but is being used with a static-invertible normalizer"
+        )
+        assert cfg.std_e in static_aggs, (
+            f"{cfg.std_e} is not a static aggregation but is being used with a static-invertible normalizer"
+        )
+        assert cfg.mu_s in static_saggs, (
+            f"{cfg.mu_s} is not a static aggregation but is being used with a static-invertible normalizer"
+        )
+        assert cfg.std_s in static_saggs, (
+            f"{cfg.std_s} is not a static aggregation but is being used with a static-invertible normalizer"
+        )
 
         super().__init__(init, cfg, eps)
 

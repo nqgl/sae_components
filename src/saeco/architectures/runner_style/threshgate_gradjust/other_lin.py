@@ -1,10 +1,8 @@
+import torch
 from torch.optim.optimizer import Optimizer as Optimizer
+
 import saeco.components.features as ft
 from saeco.misc import lazycall
-
-
-import torch.nn as nn
-import torch
 
 
 class RandResampledFP(ft.FeaturesParam):
@@ -26,9 +24,9 @@ class RandResampledFP(ft.FeaturesParam):
             if self.get_optim(optim).state[field] == {}:
                 continue
             field_state = optim_state[field]
-            assert (
-                field_state[:].shape == self.features.shape
-            ), f"{field}: {field_state[:].shape} != {self.features.shape}"
+            assert field_state[:].shape == self.features.shape, (
+                f"{field}: {field_state[:].shape} != {self.features.shape}"
+            )
 
             optim_state[field, indices] = self.field_handlers.get_value(
                 field=field,

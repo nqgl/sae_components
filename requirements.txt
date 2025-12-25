@@ -11,5 +11,5 @@ jaxtyping
 datasets
 transformers
 neptune
-neptune-scale
 zstd
+paramsight @ git+https://github.com/nqgl/paramsight.git

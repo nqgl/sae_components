@@ -6,10 +6,9 @@
 #     def reset(self): ...
 
 
-from saeco.core.module import Module
-
-
 from abc import abstractmethod
+
+from saeco.core.module import Module
 
 
 class PassThroughModule(Module):

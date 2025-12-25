@@ -1,17 +1,16 @@
 import asyncio
+from collections.abc import Sequence
+from functools import cached_property
 from pathlib import Path
-from typing import Sequence
 
 import torch
 import tqdm
-from attrs import define, field
+from attrs import define
 from pydantic import BaseModel
 
 from saeco.data.storage.compressed_safetensors import CompressionType
-
+from saeco.data.storage.disk_tensor_collection import DiskTensorCollection
 from saeco.data.storage.growing_disk_tensor import GrowingDiskTensor
-
-from . import DiskTensor, DiskTensorCollection, GrowingDiskTensor
 
 
 class GrowingDiskTensorCollectionMetadata(BaseModel):
@@ -38,34 +37,23 @@ class GrowingDiskTensorCollectionMetadata(BaseModel):
         return cls.model_validate_json(metadata_path.read_text())
 
 
-from attrs import Factory
-
-
-def _metadata_default(
-    self: "GrowingDiskTensorCollection",
-) -> GrowingDiskTensorCollectionMetadata:
-    return GrowingDiskTensorCollectionMetadata.load_from_dir(
-        self.storage_dir, assert_exists=False
-    )
-
-
 @define
 class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
-    metadata: GrowingDiskTensorCollectionMetadata = field(
-        default=Factory(_metadata_default, takes_self=True)
-    )
-    cache: dict[str, GrowingDiskTensor] = field(factory=dict)
-    skip_cache: bool = False
+    @cached_property
+    def metadata(self) -> GrowingDiskTensorCollectionMetadata:
+        return GrowingDiskTensorCollectionMetadata.load_from_dir(
+            self.storage_dir, assert_exists=False
+        )
 
-    def get(self, name: str | int) -> GrowingDiskTensor:
-        if isinstance(name, int):
-            name = str(name)
-        assert isinstance(name, str)
-        if self.skip_cache:
-            return super().get(name)
-        if name not in self.cache:
-            self.cache[name] = super().get(name)
-        return self.cache[name]
+    # def get(self, name: str | int) -> GrowingDiskTensor:
+    #     if isinstance(name, int):
+    #         name = str(name)
+    #     assert isinstance(name, str)
+    #     if self.skip_cache:
+    #         return super().get(name)
+    #     if name not in self.cache:
+    #         self.cache[name] = super().get(name)
+    #     return self.cache[name]
 
     @property
     def finalized(self) -> bool:
@@ -83,15 +71,10 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
     ) -> GrowingDiskTensor:
         if self.finalized:
             raise ValueError("Collection is finalized, cannot create new tensors")
-        name = self.check_name_create(name)
-        self.cache[name] = super().create(name, dtype, shape, compression=compression)
-        return self.cache[name]
-
-    def keys(self):
-        return sorted(list(set(self.cache.keys()) | set(super().keys())))
+        return super().create(name, dtype, shape, compression=compression)
 
     def shuffle_then_finalize(self, perms: dict[str, torch.Tensor] | None = None):
-        if any([(f := self.get(name)).finalized for name in self.keys()]):
+        if any((f := self.get(name)).finalized for name in self.keys()):
             raise ValueError(
                 f"Cannot shuffle finalized tensors: tensor {f} is finalized"
             )

@@ -1,25 +1,20 @@
-from saeco.data.data_config_definitions import (
-    gpt_2_block,
-)
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.sweeps.sweepable_config.sweep_expressions import (
-    SweepVar,
-    Var,
-)
-from saeco.trainer.run_config import RunConfig
+from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.sweeps.sweepable_config.sweep_expressions import Val
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
+from saeco.data.config.data_config_definitions import (
+    gpt_2_block,
+)
 from saeco.initializer import InitConfig
-
-from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
-import saeco.core as cl
-
+from saeco.sweeps.sweepable_config.sweep_expressions import (
+    SweepVar,
+    Val,
+)
+from saeco.sweeps.sweepable_config.Swept import Swept
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 
 batch_size_mult_var = SweepVar(1, 2, 3, name="batch_size_mult")
 cfg = RunConfig[VanillaConfig](

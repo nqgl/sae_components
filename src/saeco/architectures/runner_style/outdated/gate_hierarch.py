@@ -1,25 +1,23 @@
-import torch.nn as nn
 
-from saeco.initializer import Initializer
+import torch.nn as nn
+from pydantic import Field
+
+import saeco.components as co
+import saeco.components.features.features as ft
+import saeco.core as cl
 from saeco.components import (
-    L1Penalty,
     EMAFreqTracker,
+    L1Penalty,
     L2Loss,
     SparsityPenaltyLoss,
 )
-
-from typing import Optional
-from saeco.core.reused_forward import ReuseForward
-from saeco.core import Seq
-import saeco.components.features.features as ft
-
-import saeco.components as co
-from saeco.components.gated import HGated, Gated, ClassicGated
-from saeco.misc import useif
-import saeco.core as cl
+from saeco.components.gated import ClassicGated, Gated, HGated
 from saeco.components.penalties.l1_penalizer import L0TargetingL1Penalty
+from saeco.core import Seq
+from saeco.core.reused_forward import ReuseForward
+from saeco.initializer import Initializer
+from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from pydantic import Field
 
 # def hierarchical_l1scale(
 #     init: Initializer,
@@ -127,9 +125,9 @@ class HGatesConfig(SweepableConfig):
     BF: int
     untied: bool
     classic: bool
-    l1_scale_base: Optional[float]
+    l1_scale_base: float | None
     penalize_inside_gate: bool
-    target_hierarchical_l0_ratio: Optional[float]
+    target_hierarchical_l0_ratio: float | None
     relu_gate_encoders: bool = True
 
 

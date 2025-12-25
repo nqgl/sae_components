@@ -1,4 +1,6 @@
-from typing import Any, Iterable, TYPE_CHECKING
+from collections.abc import Iterable
+from types import UnionType
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
@@ -27,7 +29,7 @@ def common_type(objs: list["SweepExpression"]):
     return t
 
 
-def shared_type(it: Iterable[Any]):
+def shared_type[T](it: Iterable[T]) -> type[T] | UnionType:
     l = list(it)
     t = type(l[0])
     for v in l[1:]:

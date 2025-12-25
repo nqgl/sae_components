@@ -1,27 +1,15 @@
-import torch.nn as nn
-
-import saeco.components as co
-import saeco.components.features.features as ft
-from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
-from saeco.core import Seq
-from saeco.core.reused_forward import ReuseForward
-
-from saeco.initializer import Initializer
-from saeco.initializer.initializer_config import InitConfig
-from saeco.misc import useif
-from saeco.sweeps import SweepableConfig
-from saeco.trainer.run_config import RunConfig
-from saeco.trainer.schedule_cfg import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
 
 
+from saeco.architectures.vanilla.vanilla_model import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.data.data_config_definitions import gpt_2_block
-from saeco.architectures.vanilla.vanilla_model import VanillaSAE, VanillaConfig
+from saeco.data.config.data_config_definitions import gpt_2_block
+from saeco.initializer.initializer_config import InitConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.schedule_cfg import RunSchedulingConfig
+from saeco.trainer.train_config import TrainConfig
 
 PROJECT = "sae sweeps"
 train_cfg = TrainConfig(

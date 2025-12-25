@@ -1,20 +1,16 @@
-from saeco.data.data_config_definitions import (
-    gpt_2_block,
-    gemma_2_2b_openwebtext_fp32,
-    gemma_2_2b_openwebtext_bf16,
-)
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.trainer.run_config import RunConfig
+from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
+from saeco.data.config.data_config_definitions import (
+    gpt_2_block,
+)
 from saeco.initializer import InitConfig
-
-from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
-
+from saeco.sweeps.sweepable_config.Swept import Swept
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 
 cfg = RunConfig[VanillaConfig](
     train_cfg=TrainConfig(

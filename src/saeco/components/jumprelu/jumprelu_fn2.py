@@ -13,7 +13,6 @@ def modified_H2(n):
         @staticmethod
         @custom_fwd
         def forward(ctx, z, thresh, kernel, eps):
-
             thresh = thresh.relu()
             gate = (z > thresh) & (z > 0)
             ctx.save_for_backward(z, thresh)
@@ -73,7 +72,7 @@ def jumprelu_modified2(n):
             kernel = ctx.kernel
             b = z.shape[0]
             adjustment = shrinkgrad_adjustment(
-                torch.where(((z < thresh)) & (z > 0), z, 0),
+                torch.where((z < thresh) & (z > 0), z, 0),
                 leniency=leniency,
                 dd=dd,
                 b=b,
@@ -90,7 +89,7 @@ def jumprelu_modified2(n):
                 z_grad = (
                     torch.where(z > 0, grad_output, 0)
                     + shrinkgrad_adjustment(
-                        torch.where(((z < thresh)) & (z > thresh / 2), z, 0),
+                        torch.where((z < thresh) & (z > thresh / 2), z, 0),
                         leniency=leniency,
                         dd=dd,
                         b=b,
@@ -109,7 +108,7 @@ def jumprelu_modified2(n):
                 * (
                     grad_output
                     + shrinkgrad_adjustment(
-                        torch.where(((z < thresh)) & (z > 0), thresh, 0),
+                        torch.where((z < thresh) & (z > 0), thresh, 0),
                         leniency=leniency,
                         dd=dd,
                         b=b,

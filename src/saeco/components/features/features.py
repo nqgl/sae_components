@@ -1,22 +1,21 @@
-from typing import Optional, Protocol, runtime_checkable
-from typing_extensions import Self
+from typing import Protocol, Self, runtime_checkable
+from warnings import deprecated
+
 import torch
 import torch.nn as nn
-from torch import Tensor
-from saeco.components.type_acc_methods import (
-    post_backward_hook,
-    PostBackwardHook,
-    post_step_hook,
-)
-from typing_extensions import deprecated
+
 import saeco.core as cl
 from saeco.components.features.features_param import FeaturesParam, HasFeatures
+from saeco.components.type_acc_methods import (
+    post_backward_hook,
+    post_step_hook,
+)
 from saeco.components.wrap import WrapsModule
 
 
 @runtime_checkable  # TODO
 class Resamplable(Protocol):
-    def resample(self, *, indices, new_directions, bias_reset_value): ...
+    def resample(self, *, indices, new_directions, bias_reset_value, optim): ...
 
 
 # @runtime_checkable
@@ -156,9 +155,9 @@ class OrthogonalizeFeatureGrads(WrapsModule):
             return
         assert (
             grad_orth / (grad_orth.norm(dim=-1, keepdim=True) + 1e-6) * dec_normed
-        ).sum(
-            -1
-        ).abs().mean() < 1e-4, f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        ).sum(-1).abs().mean() < 1e-4, (
+            f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        )
         fp.grad[:] = grad_orth
 
 
@@ -255,9 +254,9 @@ class OrthogonalizeFeatureGradsMixin:
             return
         assert (
             grad_orth / (grad_orth.norm(dim=-1, keepdim=True) + 1e-6) * dec_normed
-        ).sum(
-            -1
-        ).abs().mean() < 1e-4, f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        ).sum(-1).abs().mean() < 1e-4, (
+            f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+        )
         fp.grad[:] = grad_orth
         return 1
 

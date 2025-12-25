@@ -13,12 +13,11 @@ from saeco.evaluation.fastapi_models.families_draft import (
     ScoredFamilyRef,
     ScoredFeature,
 )
-from saeco.evaluation.fastapi_models.Feature import Feature
+from saeco.evaluation.fastapi_models.Feature import LabeledFeature
 
 if TYPE_CHECKING:
     from ..evaluation import Evaluation
-from attrs import define, field
-
+from attrs import define
 from torch import Tensor
 
 INFOC_VERSION = 4
@@ -128,14 +127,13 @@ def bid_on_dists(dists):
 
 
 class FamilyGenerator:
-
     @torch.no_grad()
     def _get_feature_family_treesz(
         self: "Evaluation",
         doc_agg=None,
         threshold=None,
         n=3,
-        use_D=False,
+        use_d=False,
         freq_bounds=None,
     ):
         return torch.stack(
@@ -143,7 +141,7 @@ class FamilyGenerator:
                 doc_agg=doc_agg,
                 threshold=threshold,
                 n=n,
-                use_D=use_D,
+                use_d=use_d,
             )[0]
         )
 
@@ -152,13 +150,13 @@ class FamilyGenerator:
         self: "Evaluation",
         doc_agg=None,
         threshold=None,
-        use_D=False,
+        use_d=False,
         freq_bounds=None,
     ):
         levels, trees = self.generate_feature_families4(
             doc_agg=doc_agg,
             threshold=threshold,
-            use_D=use_D,
+            use_d=use_d,
         )
         feature_to_family_maps = [{} for _ in levels]
         family_to_feature_maps = [{} for _ in levels]
@@ -173,8 +171,6 @@ class FamilyGenerator:
                 if fam not in fam2f:
                     fam2f[fam] = []
                 fam2f[fam].append(i)
-        # for i in range(self.d_dict):
-        #     for j in range(1,3):
 
         for l in range(len(levels)):
             for f, feats in family_to_feature_maps[l].items():
@@ -203,10 +199,7 @@ class FamilyGenerator:
     def _get_feature_families_unlabeled(
         self: "Evaluation", **kwargs
     ) -> GetFamiliesResponse:
-        from ..mst import Families, FamilyTreeNode
-
         # TODO .cached_call
-        # levels = self._get_feature_family_treesz(**kwargs)
         levels, trees = self.generate_feature_families4(**kwargs)
         l = [i.indices for i in levels]
         levels = []
@@ -222,7 +215,7 @@ class FamilyGenerator:
                         subfamilies=[],
                         subfeatures=[
                             ScoredFeature(
-                                feature=Feature(
+                                feature=LabeledFeature(
                                     feature_id=int(feat_id),
                                     label=self.get_feature_label(feat_id),
                                 ),
@@ -296,7 +289,6 @@ class FamilyGenerator:
         from ..mst import Families, FamilyTreeNode
 
         # TODO .cached_call
-        # levels = self._get_feature_family_treesz(**kwargs)
         levels, trees = self.generate_feature_families4(**kwargs)
         levels = trees
         # levels.shape
@@ -320,7 +312,7 @@ class FamilyGenerator:
                         subfamilies=[],
                         subfeatures=[
                             ScoredFeature(
-                                feature=Feature(
+                                feature=LabeledFeature(
                                     feature_id=int(feat_id),
                                     label=self.get_feature_label(feat_id),
                                 ),
@@ -391,33 +383,7 @@ class FamilyGenerator:
         for level in ffs.levels:
             for family in level.families.values():
                 family.label = self.get_family_label(family)
-        ###
-        # feature_level = FamilyLevel(
-        #     level=3,
-        #     families={
-        #         i: Family(
-        #             level=3,
-        #             family_id=i,
-        #             label=None,
-        #             subfamilies=[],
-        #             subfeatures=[],
-        #         )
-        #         for i in range(self.d_dict)
-        #         if i < 1000
-        #     },
-        # )
-        # ffs.levels.append(feature_level)
-        # for family in ffs.levels[2].families.values():
-        #     family.subfamilies.extend(get_
-        #         [
-        #             ScoredFamilyRef(
-        #                 family=FamilyRef(level=3, family_id=feat.feature.feature_id),
-        #                 score=feat.score,
-        #             )
-        #             for feat in family.subfeatures
-        #         ]
-        #     )
-        # ###
+
         return ffs
 
     def generate_feature_families1(
@@ -425,11 +391,10 @@ class FamilyGenerator:
         doc_agg=None,
         threshold=0.1,
         n=3,
-        use_D=False,
+        use_d=False,
         freq_bounds=None,
     ):
-        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
-        if use_D:
+        if use_d:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
         else:
             unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
@@ -458,9 +423,8 @@ class FamilyGenerator:
             bound = (feat_probs >= fmin) & (feat_probs <= fmax)
             C[~bound] = 0
             C[:, ~bound] = 0
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import mst
 
         levels = []
         feat_counts = feat_counts.to(self.cuda)
@@ -479,10 +443,9 @@ class FamilyGenerator:
         return levels
 
     def get_C(
-        self: "Evaluation", doc_agg, use_D=False, threshold=None, freq_bounds=None
+        self: "Evaluation", doc_agg, use_d=False, threshold=None, freq_bounds=None
     ):
-        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
-        if use_D:
+        if use_d:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
         else:
             unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
@@ -518,16 +481,17 @@ class FamilyGenerator:
         doc_agg=None,
         threshold=0.1,
         n=3,
-        use_D=False,
+        use_d=False,
         freq_bounds=None,
-        min_family_sizes=[20, 12, 7],
+        min_family_sizes: list[int] | None = None,
     ):
+        if min_family_sizes is None:
+            min_family_sizes = [20, 12, 7]
         C = self.get_C(
-            doc_agg=doc_agg, use_D=use_D, threshold=threshold, freq_bounds=freq_bounds
+            doc_agg=doc_agg, use_d=use_d, threshold=threshold, freq_bounds=freq_bounds
         )
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import Families, mst
 
         levels = []
         families = []
@@ -567,7 +531,6 @@ class FamilyGenerator:
         feat_counts = (
             self.doc_activation_counts if doc_agg else self.seq_activation_counts
         )
-        # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
 
         def denan(x):
             return torch.where(x.isnan() | x.isinf(), torch.zeros_like(x), x)
@@ -666,9 +629,8 @@ class FamilyGenerator:
 
         # C[C.isnan()] = 0
         C[C < threshold] = 0
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import my_mst
 
         levels = []
         feat_counts = feat_counts.to(self.cuda)
@@ -711,12 +673,13 @@ class FamilyGenerator:
         doc_agg=None,
         threshold=0.1,
         n=3,
-        use_D=False,
+        use_d=False,
         freq_bounds=None,
-        min_family_sizes=[20, 12, 7],
+        min_family_sizes: list[int] | None = None,
     ):
-        # C_unnormalized, D = self.coactivations(doc_agg=doc_agg)
-        if use_D:
+        if min_family_sizes is None:
+            min_family_sizes = [20, 12, 7]
+        if use_d:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
         else:
             unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
@@ -745,9 +708,8 @@ class FamilyGenerator:
             bound = (feat_probs >= fmin) & (feat_probs <= fmax)
             C[~bound] = 0
             C[:, ~bound] = 0
-        import scipy.sparse as ssp
 
-        from ..mst import Families, FamilyTreeNode, mst, my_mst
+        from ..mst import Families, mst
 
         levels = []
         families = []
@@ -760,8 +722,6 @@ class FamilyGenerator:
             for f in kept:
                 roots[f.feature_id] = 1
 
-            # tree = self.artifacts["tree_1234"]
-            # roots = self.artifacts["roots_1234"]
             dists = distances(tree.cuda(), roots.cuda())
             c = connectedness(tree.cuda() * 0.99, roots.cuda())
             c.shape
@@ -827,10 +787,15 @@ class FamilyGenerator:
         doc_agg=None,
         threshold=0.0,
         n=3,
-        use_D=False,
-        min_family_sizes=[20, 6, 3],
-        max_num_families=[2**5, 2**8, 2**11],
+        use_d=False,
+        min_family_sizes: list[int] | None = None,
+        max_num_families: list[int] | None = None,
     ):
+        if min_family_sizes is None:
+            min_family_sizes = [20, 6, 3]
+        if max_num_families is None:
+            max_num_families = [2**5, 2**8, 2**11]
+
         cconn = lambda CC, tree, roots: connectedness(
             tree.to(self.cuda), roots.to(self.cuda)
         ).to(CC.device)
@@ -850,22 +815,26 @@ class FamilyGenerator:
             doc_agg=doc_agg,
             threshold=threshold,
             n=n,
-            use_D=use_D,
+            use_d=use_d,
             min_family_sizes=min_family_sizes,
             max_num_families=max_num_families,
         )
 
     @cache_version(INFOC_VERSION)
     @torch.no_grad()
-    def get_infoC(self: "Evaluation", doc_agg=None, threshold=None, use_D=False):
+    def get_infoC(
+        self: "Evaluation",
+        doc_agg=None,
+        threshold=None,
+        use_d=False,
+    ):
         unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
-        if use_D:
+        if use_d:
             unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
         unnormalized[unnormalized.isnan()] = 0
         feat_counts = (
             self.doc_activation_counts if doc_agg else self.seq_activation_counts
         ).cpu()
-        # feat_probs = self.doc_activation_probs if doc_agg else self.seq_activation_probs
 
         def denan(x):
             return torch.where(x.isnan() | x.isinf(), torch.zeros_like(x), x)
@@ -875,99 +844,99 @@ class FamilyGenerator:
                 torch.eye(x.shape[0], device=x.device, dtype=torch.bool), 0, x
             )
 
-        def isprob(P):
-            assert (P >= 0).all() and (P <= 1).all()
-            return P
+        def isprob(p):
+            assert (p >= 0).all() and (p <= 1).all()
+            return p
 
-        def probmat(P):
-            return isprob(zdiag(denan(P)))
+        def probmat(p):
+            return isprob(zdiag(denan(p)))
 
-        def ent(P):
-            P = isprob(denan(P))
+        def ent(p):
+            p = isprob(denan(p))
             return torch.where(
-                (P > 0) & (P < 1),
-                -P * torch.log(P + 1e-6) - (1 - P) * torch.log(1 - P + 1e-6),
+                (p > 0) & (p < 1),
+                -p * torch.log(p + 1e-6) - (1 - p) * torch.log(1 - p + 1e-6),
                 0,
             )
 
-        def nicemat(M):
-            return zdiag(denan(M))
+        def nicemat(m):
+            return zdiag(denan(m))
 
-        def nent(Q, R):
-            Q, R = nicemat(Q), nicemat(R)
-            P = nicemat(Q / R)
-            isprob(P)
+        def nent(q, r):
+            q, r = nicemat(q), nicemat(r)
+            p = nicemat(q / r)
+            isprob(p)
             return torch.where(
-                (P > 0) & (P < 1),
-                -Q * torch.log(P) - (R - Q) * torch.log(1 - P),
+                (p > 0) & (p < 1),
+                -q * torch.log(p) - (r - q) * torch.log(1 - p),
                 0,
             )
 
-        N = self.num_docs if doc_agg else self.seq_len * self.num_docs
-        A = feat_counts.unsqueeze(1).expand(-1, feat_counts.shape[0])
-        B = feat_counts.unsqueeze(0).expand(feat_counts.shape[0], -1)
-        V = unnormalized
+        num_docs = self.num_docs if doc_agg else self.seq_len * self.num_docs
+        a_mat = feat_counts.unsqueeze(1).expand(-1, feat_counts.shape[0])
+        b_mat = feat_counts.unsqueeze(0).expand(feat_counts.shape[0], -1)
+        v_mat = unnormalized
 
-        P_A = probmat(A / N)
-        P_B = probmat(B / N)
-        # P_AB = probmat(V / N)
-        P_B_given_A = probmat((V + P_B * P_A) / (A + 1))  # +
-        # P_B_given_not_A = probmat((B - V + (1 - P_B) * (1 - P_A)) / (N - A + 1))
-        # C = P_A * torch.log()
-        # info = A * ent(P_B_given_A) + (N - A) * ent(P_B_given_not_A)
-        # info = P_A * nent(V, A) + (1 - P_A) * nent((B - V), (N - A)) - nent(B, N)
-        # info = (c := ent(P_B)) - (
-        #     (a := P_A * ent(P_B_given_A)) + (b := (1 - P_A) * ent(P_B_given_not_A))
+        p_a = probmat(a_mat / num_docs)
+        p_b = probmat(b_mat / num_docs)
+        # p_ab = probmat(v_mat / num_docs)
+        p_b_given_a = probmat((v_mat + p_b * p_a) / (a_mat + 1))  # +
+        # p_b_given_not_a = probmat((b_mat - v_mat + (1 - p_b) * (1 - p_a)) / (num_docs - a_mat + 1))
+        # c_mat = p_a * torch.log()
+        # info = a_mat * ent(p_b_given_a) + (num_docs - a_mat) * ent(p_b_given_not_a)
+        # info = p_a * nent(v_mat, a_mat) + (1 - p_a) * nent((b_mat - v_mat), (num_docs - a_mat)) - nent(b_mat, num_docs)
+        # info = (c_val := ent(p_b)) - (
+        #     (a_val := p_a * ent(p_b_given_a)) + (b_val := (1 - p_a) * ent(p_b_given_not_a))
         # )
-        # info = torch.where((P_B_given_A > P_B), info + 1e-6, 0)
-        # (info[P_B_given_A > P_B]).sum()
-        # (P_B_given_A > P_B).sum() / (P_B_given_A < P_B).sum()
-        # r = P_A * torch.log(P_B_given_A / P_B)
-        # r = torch.log(P_B_given_A / P_B)
-        r = ent(P_B) - ent(P_B_given_A)
+        # info = torch.where((p_b_given_a > p_b), info + 1e-6, 0)
+        # (info[p_b_given_a > p_b]).sum()
+        # (p_b_given_a > p_b).sum() / (p_b_given_a < p_b).sum()
+        # r = p_a * torch.log(p_b_given_a / p_b)
+        # r = torch.log(p_b_given_a / p_b)
+        r = ent(p_b) - ent(p_b_given_a)
 
-        # t = (1 - P_A) * torch.log(P_B_given_not_A / P_B)
-        # other = P_A * torch.log(P_B_given_A / P_B) + (1 - P_A) * torch.log(
-        #     P_B_given_not_A / P_B
+        # t = (1 - p_a) * torch.log(p_b_given_not_a / p_b)
+        # other = p_a * torch.log(p_b_given_a / p_b) + (1 - p_a) * torch.log(
+        #     p_b_given_not_a / p_b
         # )
 
         r = denan(r)
         # t = denan(t)
-        # r[P_B_given_A > P_B].sum()
-        # r[P_B_given_A < P_B].sum()
-        # t[P_B_given_A > P_B].sum()
-        # t[P_B_given_A < P_B].sum()
+        # r[p_b_given_a > p_b].sum()
+        # r[p_b_given_a < p_b].sum()
+        # t[p_b_given_a > p_b].sum()
+        # t[p_b_given_a < p_b].sum()
         info = r
 
-        # a.max(dim=0, keepdim=True)
-        # b.max(dim=0, keepdim=True)
-        # c.max(dim=0, keepdim=True)
-        # a.max(dim=1, keepdim=True)
-        # b.max(dim=1, keepdim=True)
-        # c.max(dim=1, keepdim=True)
-        # P_B.max()
-        # v = B.to(torch.float64) / N
+        # a_mat.max(dim=0, keepdim=True)
+        # b_mat.max(dim=0, keepdim=True)
+        # c_mat.max(dim=0, keepdim=True)
+        # a_mat.max(dim=1, keepdim=True)
+        # b_mat.max(dim=1, keepdim=True)
+        # c_mat.max(dim=1, keepdim=True)
+        # p_b.max()
+        # v = b_mat.to(torch.float64) / num_docs
         # v.max()
 
-        info = torch.where((V > 0) & (info > 0), info, 0)
+        info = torch.where((v_mat > 0) & (info > 0), info, 0)
 
         info = zdiag(denan(info))
         assert (info >= 0).all()
         # learned =
-        # C = info.clone()
-        C = info
-        threshold = threshold if threshold is not None else C[C > 0].median()
-        # C = unnormalized / (().cpu().unsqueeze(-1) + 1e-6)
+        # c_mat = info.clone()
+        c_mat = info
+        threshold = threshold if threshold is not None else c_mat[c_mat > 0].median()
+        # c_mat = unnormalized / (().cpu().unsqueeze(-1) + 1e-6)
 
-        C.max(dim=0, keepdim=True)
-        C.max(dim=1, keepdim=True)
+        c_mat.max(dim=0, keepdim=True)
+        c_mat.max(dim=1, keepdim=True)
 
-        # C[C.isnan()] = 0
-        C[C < threshold] = 0
-        return C
+        # c_mat[c_mat.isnan()] = 0
+        c_mat[c_mat < threshold] = 0
+        return c_mat
 
 
-from typing import Callable
+from collections.abc import Callable
 
 
 @define
@@ -999,14 +968,17 @@ class FamilyGen:
         doc_agg=None,
         threshold=0.0,
         n=3,
-        use_D=False,
-        min_family_sizes=[20, 10, 7, 5, 3],
-        max_num_families=[2**2, 2**5, 2**8],
+        use_d=False,
+        min_family_sizes: list[int] | None = None,
+        max_num_families: list[int] | None = None,
     ):
-        C = self.getC(doc_agg=doc_agg, use_D=use_D, threshold=threshold)
-        from ..mst import mst
+        if min_family_sizes is None:
+            min_family_sizes = [20, 10, 7, 5, 3]
+        if max_num_families is None:
+            max_num_families = [2**2, 2**5, 2**8]
 
-        # self.fam_fn = lambda x: x.max(dim=0)
+        C = self.getC(doc_agg=doc_agg, use_d=use_d, threshold=threshold)
+        from ..mst import mst
 
         levels = []
         roots_l = []

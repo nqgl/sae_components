@@ -1,5 +1,5 @@
-from torch.optim import Adam, RAdam, NAdam, RMSprop, SGD, Rprop, ASGD
 from schedulefree import AdamWScheduleFree
+from torch.optim import ASGD, SGD, Adam, Adamax, AdamW, NAdam, RAdam, RMSprop, Rprop
 
 
 def get_optim_cls(opt: str):
@@ -11,6 +11,9 @@ def get_optim_cls(opt: str):
         "SGD": SGD,
         "Rprop": Rprop,
         "ASGD": ASGD,
+        "AdamW": AdamW,
         "ScheduleFree": AdamWScheduleFree,
         "ScheduleFreeAsNormal": AdamWScheduleFree,
+        "AmsgradW": lambda *a, **k: AdamW(*a, **k, amsgrad=True),
+        "Adamax": Adamax,
     }[opt]

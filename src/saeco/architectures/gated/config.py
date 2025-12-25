@@ -1,24 +1,16 @@
-from saeco.data.data_config_definitions import (
-    gpt_2_block,
-    gemma_2_2b_openwebtext_test,
-    gemma_2_2b_openwebtext,
-    gemma_2_2b_openwebtext_test_fp16,
-    gemma_2_2b_openwebtext_test_fp32,
-    gemma_2_2b_openwebtext_fp32,
-    gemma_2_2b_openwebtext_bf16,
-)
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.trainer.run_config import RunConfig
-from saeco.architectures.new_arch_style.arch import GatedConfig, Gated
+from saeco.architectures.new_arch_style.arch import Gated, GatedConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
+from saeco.data.config.data_config_definitions import (
+    gemma_2_2b_openwebtext_bf16,
+)
+from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import InitConfig
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 
 PROJECT = "sae sweeps"
 
@@ -68,9 +60,9 @@ print()
 cfg.is_concrete()
 d = cfg.random_sweep_configuration()
 g.instantiate(d.model_dump())
+import einops
 import nnsight
 import torch
-import einops
 
 g.trainer.train()
 

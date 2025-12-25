@@ -1,33 +1,26 @@
-import abc
+from collections import defaultdict
 from collections.abc import Callable
 from functools import cached_property
-from collections import defaultdict
 from typing import (
-    Any,
     TYPE_CHECKING,
+    Any,
     Literal,
     Protocol,
-    TypeVar,
-    Generic,
+    Self,
     overload,
     runtime_checkable,
 )
-import types
-from typing_extensions import Self, deprecated, override
+from warnings import deprecated
 
 if TYPE_CHECKING:
-    from .architecture import Architecture
+    pass
 
-_T = TypeVar("_T")
+# _T = TypeVar("_T")
 _fields_dict: dict[type, dict[type["arch_prop[Any]"], list[str]]] = defaultdict(
     dict
 )  # (cls -> (field_categ_name -> field_name/names))
 _missing_name: set["arch_prop[Any]"] = set()
 if TYPE_CHECKING:
-    from saeco.sweeps import SweepableConfig
-
-    _C = TypeVar("_C", bound=SweepableConfig)
-
     from saeco.components.losses import Loss
 
 
@@ -85,14 +78,12 @@ class SetupComplete(Protocol):
     _setup_complete: Literal[True] = True
 
 
-class arch_prop(
-    cached_property[_T],
-    # Generic[_T],
-):  # generic_T?
-    # COLLECTED_FIELD_NAME = ...
+class arch_prop[T](
+    cached_property,
+):
     COLLECTED_FIELD_SINGULAR = False
 
-    def __init__(self, func: Callable[[Any], _T]) -> None:
+    def __init__(self, func: Callable[[Any], T]) -> None:
         super().__init__(func)
         _missing_name.add(self)
 
@@ -100,9 +91,9 @@ class arch_prop(
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
 
     @overload
-    def __get__(self, instance: object, owner: type[Any] | None = None) -> _T: ...
+    def __get__(self, instance: object, owner: type[Any] | None = None) -> T: ...
 
-    def __get__(self, instance: object | None, owner: Any | None = None) -> _T | Self:
+    def __get__(self, instance: object | None, owner: Any | None = None) -> T | Self:
         if instance is not None:
             assert isinstance(instance, Instantiable) and isinstance(
                 instance, SetupComplete
@@ -143,23 +134,23 @@ class arch_prop(
 
     @overload
     @classmethod
-    def get_from_fields(cls: NonSingular, inst: object) -> dict[str, _T]: ...
+    def get_from_fields(cls: type[NonSingular], inst: object) -> dict[str, T]: ...
     @overload
     @classmethod
-    def get_from_fields(cls: Singular, inst: object) -> _T: ...
+    def get_from_fields(cls: type[Singular], inst: object) -> T: ...
 
     @classmethod
-    def get_from_fields(cls, inst: object) -> dict[str, _T] | _T:
+    def get_from_fields(cls, inst: object) -> dict[str, T] | T:
         fields = cls.get_fields(inst.__class__)
         assert not cls.COLLECTED_FIELD_SINGULAR
         return {f: getattr(inst, f) for f in fields}
 
 
-class arch_prop_singular(arch_prop[_T]):
+class arch_prop_singular[T](arch_prop[T]):
     COLLECTED_FIELD_SINGULAR = True
 
     @classmethod
-    def get_from_fields(cls, inst: object) -> _T:
+    def get_from_fields(cls, inst: object) -> T:
         fields = cls.get_fields(inst.__class__)
         assert cls.COLLECTED_FIELD_SINGULAR
         assert len(fields) == 1
@@ -168,18 +159,15 @@ class arch_prop_singular(arch_prop[_T]):
 
 import torch.nn as nn
 
-Loss_T = TypeVar("Loss_T", bound=nn.Module)
+# Loss_T = TypeVar("Loss_T", bound=nn.Module)
 
-Metric_T = TypeVar("Metric_T", bound=nn.Module)
 # from .architecture import SAE
-
-SAE_T = TypeVar("SAE_T", bound=nn.Module)
 # from saeco.components.metrics.metrics import Metric
 
-AuxModel_T = TypeVar("AuxModel_T", bound=nn.Module)
+# AuxModel_T = TypeVar("AuxModel_T", bound=nn.Module)
 
 
-class loss_prop(arch_prop[Loss_T]):
+class loss_prop[Loss_T: nn.Module](arch_prop[Loss_T]):
     @overload
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
 
@@ -192,7 +180,7 @@ class loss_prop(arch_prop[Loss_T]):
         return super().__get__(instance, owner)
 
 
-class metric_prop(arch_prop[Metric_T]):
+class metric_prop[Metric_T: nn.Module](arch_prop[Metric_T]):
     @overload
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
 
@@ -205,7 +193,7 @@ class metric_prop(arch_prop[Metric_T]):
         return super().__get__(instance, owner)
 
 
-class _model_prop_base(arch_prop[_T]):
+class _model_prop_base[T](arch_prop[T]):
     """
     Base class for model_prop and aux_model_prop.
     Adds on top of arch_prop: methods for attaching losses and metrics to a model.
@@ -236,7 +224,7 @@ class _model_prop_base(arch_prop[_T]):
     #     return metric_prop(_metric)
 
 
-class model_prop(arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):
+class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):
     COLLECTED_FIELD_SINGULAR = True
 
     @overload
@@ -253,7 +241,7 @@ class model_prop(arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):
     loss = loss_prop
 
 
-class aux_model_prop(_model_prop_base[AuxModel_T]):
+class aux_model_prop[AuxModel_T: nn.Module](_model_prop_base[AuxModel_T]):
     COLLECTED_FIELD_SINGULAR = False
 
     @overload

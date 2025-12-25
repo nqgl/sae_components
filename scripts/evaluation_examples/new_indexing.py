@@ -2,7 +2,6 @@ import nqgl.mlutils.profiling.time_gpu as tg
 import torch
 from load import root_eval
 
-
 # ec.filter_docs()
 
 

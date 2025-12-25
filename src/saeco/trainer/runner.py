@@ -1,18 +1,15 @@
 from functools import cached_property
 from pathlib import Path
+from warnings import deprecated
 
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.initializer import Initializer
-from saeco.initializer.initializer_config import InitConfig
-from saeco.misc.lazy import defer_to_and_set
-from saeco.trainer.normalizers import ConstL2Normalizer, GeneralizedNormalizer
+from saeco.trainer.normalizers import GeneralizedNormalizer
+
 from .run_config import RunConfig
 from .saved_model_source_info import ModelReloadInfo
-from .train_config import TrainConfig
 from .trainable import Trainable
-
 from .trainer import Trainer
-from typing_extensions import deprecated
 
 
 @deprecated("Deprecated as part of migration to Architecture")

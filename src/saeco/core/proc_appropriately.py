@@ -1,8 +1,9 @@
+import torch
+import torch.nn as nn
+
 from saeco.core.cache import Cache
 from saeco.core.module import Module
 from saeco.misc.exception_location_hint import locate_cache_exception
-import torch
-import torch.nn as nn
 
 
 # TODO unify/merge this and cache.__call__

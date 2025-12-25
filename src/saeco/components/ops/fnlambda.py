@@ -1,5 +1,6 @@
-import saeco.core as cl
 import torch.nn as nn
+
+import saeco.core as cl
 
 
 class Lambda(cl.Module):

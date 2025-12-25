@@ -1,5 +1,7 @@
-import torch.nn as nn
 from abc import ABC, abstractmethod
+
+import torch.nn as nn
+
 from saeco.components.sae_cache import SAECache
 
 

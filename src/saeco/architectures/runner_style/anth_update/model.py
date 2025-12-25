@@ -1,20 +1,13 @@
-import saeco.components as co
-import saeco.components.features.features as ft
-import saeco.core as cl
-import torch
-
 import torch.nn as nn
-from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
 
+import saeco.components as co
+from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.components.hooks.clipgrad import ClipGrad
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.core import Seq
-
 from saeco.initializer import Initializer
-
 from saeco.misc import useif
-from saeco.sweeps import do_sweep, SweepableConfig
-from saeco.trainer.runner import TrainingRunner
+from saeco.sweeps import SweepableConfig
 
 
 class AnthUpdateConfig(SweepableConfig):

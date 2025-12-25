@@ -12,7 +12,6 @@ def ddupdate():
 
 
 def ddmenuprop(optfn):
-
     # def wrap(optfn):
     # val = options[0]
 

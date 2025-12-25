@@ -5,11 +5,8 @@ import os
 from functools import cached_property
 from pathlib import Path
 
-from typing import Any, List, TypeVar, Union
-
 import torch
 import tqdm
-
 from attrs import define
 from pydantic import BaseModel
 
@@ -17,8 +14,8 @@ from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.growing_disk_tensor_collection import (
     GrowingDiskTensorCollection,
 )
-
 from saeco.misc import str_to_dtype
+from saeco.misc.utils import assert_cast
 
 
 class PilerMetadata(BaseModel):
@@ -26,15 +23,6 @@ class PilerMetadata(BaseModel):
     fixed_shape: list[int]
     compression: CompressionType = CompressionType.NONE
     num_piles: int
-
-
-T = TypeVar("T")
-
-
-def assert_cast(tp: type[T], value: Any) -> T:
-    if not isinstance(value, tp):
-        raise TypeError(f"Expected {tp.__name__}, got {type(value).__name__}")
-    return value
 
 
 @define
@@ -47,7 +35,7 @@ class Piler:
     @classmethod
     def create(
         cls,
-        path: Union[str, Path],
+        path: str | Path,
         dtype: torch.dtype | str,
         fixed_shape: list[int],
         num_piles: int,
@@ -77,7 +65,9 @@ class Piler:
         )
 
         for i in range(num_piles):
-            piles.create(i, dtype, [0] + list(fixed_shape), compression)
+            piles.create(
+                i, dtype=dtype, shape=[0] + list(fixed_shape), compression=compression
+            )
 
         piler = Piler(
             metadata=metadata,
@@ -91,7 +81,7 @@ class Piler:
         return piler
 
     @classmethod
-    def open(cls, path: str | Path, skip_cache: bool = False):
+    def open(cls, path: str | Path):
         if isinstance(path, str):
             path = Path(path)
         metadata_path = cls.get_metadata_path(path)
@@ -104,10 +94,12 @@ class Piler:
         gdtc = GrowingDiskTensorCollection(
             path,
             stored_tensors_subdirectory_name="piles",
-            skip_cache=skip_cache,
         )
 
-        assert len(gdtc) == metadata.num_piles
+        if len(gdtc) != metadata.num_piles:
+            raise ValueError(
+                f"expected {metadata.num_piles} piles, got {len(gdtc)} for {path}"
+            )
 
         piler = Piler(metadata, path, readonly=True, piles=gdtc)
 
@@ -122,7 +114,7 @@ class Piler:
         return str_to_dtype(self.metadata.dtype)
 
     @classmethod
-    def get_metadata_path(cls, path: Union[str, Path]):
+    def get_metadata_path(cls, path: str | Path):
         if isinstance(path, str):
             path = Path(path)
         return path / "piler_metadata.json"
@@ -198,7 +190,7 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
         self.piles.shuffle_then_finalize(perms=perms)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i) -> torch.Tensor:
         if isinstance(i, int):
             piles = [self.piles[i]]
         elif isinstance(i, list):
@@ -208,6 +200,7 @@ class Piler:
         else:
             piles = self.piles[i]
         if isinstance(piles, list) and len(piles) == 1:
+            assert isinstance(piles[0], torch.Tensor)
             return piles[0]
         return torch.cat(piles)  # type: ignore
 
@@ -232,7 +225,6 @@ class Piler:
 
 
 def main():
-
     testdata = Path("testdata")
 
     # remove contents of testdata

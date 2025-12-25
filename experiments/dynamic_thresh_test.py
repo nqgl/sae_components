@@ -1,19 +1,18 @@
-from saeco.data.data_config_definitions import gpt_2_block, gemma_2_2b_openwebtext_bf16
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.trainer.run_config import RunConfig
-from saeco.components.resampling.anthropic_resampling import (
-    AnthResamplerConfig,
-    OptimResetValuesConfig,
-)
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
-from saeco.initializer import InitConfig
+from saeco.data.data_config_definitions import gemma_2_2b_openwebtext_bf16
 
 from saeco.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshConfig,
     DynamicThreshSAE,
     ThreshConfig,
 )
+from saeco.components.resampling.anthropic_resampling import (
+    AnthResamplerConfig,
+    OptimResetValuesConfig,
+)
+from saeco.initializer import InitConfig
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 
 cfg = RunConfig[DynamicThreshConfig](
     train_cfg=TrainConfig(
@@ -62,8 +61,8 @@ cfg = RunConfig[DynamicThreshConfig](
 
 arch = DynamicThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
-sweep_manager.rand_run_no_agent()
+sweep_manager.rand_run_no_agent(project="nqgl/default-project")
 
-sweep_manager.initialize_sweep()
+# sweep_manager.initialize_sweep()
 
-sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)
+# sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)

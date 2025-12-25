@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+from torch.amp import custom_bwd, custom_fwd
+
 from saeco.components.penalties.l0targeter import L0Targeting
 from saeco.sweeps import SweepableConfig
-from torch.amp import custom_bwd, custom_fwd
 
 
 def shrinkgrad_adjustment(errors, leniency, dd, b):
@@ -42,7 +43,6 @@ def GT2(grad_window=sig_grad_window):
         @staticmethod
         @custom_bwd
         def backward(ctx: torch.Any, grad_output):
-
             gate_pre, mag, gate = ctx.saved_tensors
             gate_post = ctx.gate_post
             leniency = ctx.leniency
@@ -187,7 +187,6 @@ class BinaryEncoder(cl.Module):
             and cache._ancestor.has.trainstep
             and cache._ancestor.trainstep <= 5000
         ):
-
             self.targeting.value = cache._ancestor.trainstep / 5000
         mag = self.mag.unsqueeze(0).expand(x.shape[0], -1)
         out = gate(

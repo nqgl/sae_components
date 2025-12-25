@@ -1,24 +1,22 @@
 # %%
 import asyncio
-import os
-
-from typing import Any
 from functools import cached_property
+from typing import Any
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import polars as pl
-import seaborn as sns
 import wandb
 import wandb.apis
 import wandb.apis.public as wapublic
 import wandb.data_types
 import wandb.util
-from saeco.analysis.run_history import RunHistories
 
 # from wandb.data_types
 # from wandb.wandb_run import Run
-from wandb.apis.public import Run, Runs, Sweep
+from wandb.apis.public import Run, Sweep
+
+from saeco.analysis.run_history import RunHistories
 
 r: Run
 histories = RunHistories()
@@ -126,7 +124,6 @@ class SweepKeys:
 
     def __getitem__(self, i):
         if isinstance(i, int):
-
             assert 0 <= i < self.space
             n = 1
             return SetKeys(
@@ -567,7 +564,6 @@ class SweepAnalysis:
         self.df["med"] = self.df[self.target.key].apply(lambda x: x.median())
 
     def add_graph_labels(self):
-
         ccd = {}
 
         def clash_check(key, value, s):

@@ -1,27 +1,19 @@
-from functools import cached_property
-from saeco.core.reused_forward import ReuseForward
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
-from saeco.core import Seq
+import torch.nn as nn
 
-from saeco.misc import useif
+import saeco.components.features.features as ft
+from saeco.architecture import (
+    SAE,
+    Architecture,
+    loss_prop,
+    model_prop,
+)
 from saeco.components import (
-    L1Penalty,
-    EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
-import saeco.components.features.features as ft
-import torch.nn as nn
-import saeco.core as cl
-import saeco.components as co
-
-from saeco.architecture import (
-    loss_prop,
-    model_prop,
-    aux_model_prop,
-    Architecture,
-    SAE,
-)
+from saeco.core import Seq
+from saeco.misc import useif
+from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
 class VanillaConfig(SweepableConfig):

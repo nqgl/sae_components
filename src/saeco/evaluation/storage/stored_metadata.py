@@ -1,4 +1,3 @@
-import glob
 from pathlib import Path
 
 import torch
@@ -6,14 +5,11 @@ from attrs import define, field
 from pydantic import BaseModel
 from torch import Tensor
 
-from saeco.evaluation.saved_acts_config import CachingConfig
-
-from ...data.storage.disk_tensor_collection import DiskTensorCollection
-
-from ..named_filter import NamedFilter
+from saeco.evaluation.storage.saved_acts_config import CachingConfig
 
 from ...data.storage.disk_tensor import DiskTensor
-from ...data.storage.growing_disk_tensor import GrowingDiskTensor
+from ...data.storage.disk_tensor_collection import DiskTensorCollection
+from ..named_filter import NamedFilter
 
 
 @define(kw_only=True)
@@ -77,17 +73,15 @@ class Metadatas(CollectionWithCachingConfig):
         disk_tensor.tensor[:] = value
         disk_tensor.finalize()
 
-    def set_str_translator(self, name, d):
+    def set_str_translator(self, name: str, d: dict[str, int]):
         disk_tensor = self.get(name)
         disk_tensor.set_str_translator(d)
 
     def translate(self, d: dict[str, Tensor]) -> dict[str, list[str] | Tensor]:
-        print(d)
         o = {
             k: m.strlist(v) if (m := self.get(k)).info.tostr is not None else v
             for k, v in d.items()
         }
-        print("done")
         return o
 
 
@@ -143,8 +137,9 @@ class MetadataTensorInfo(BaseModel):  # TODO
     def save(self, path: Path):
         path.with_suffix(".metadatainfo").write_text(self.model_dump_json())
 
-    def populate(self, d):
-        assert self.tostr is None and self.fromstr is None
+    def populate(self, d: dict[str, int]):
+        assert self.tostr is None
+        assert self.fromstr is None
         self.fromstr = d
         self.tostr = {v: k for k, v in d.items()}
 
@@ -169,7 +164,8 @@ class Metadata(DiskTensor):
         tensor = tensor if tensor is not None else self.tensor
         return [self.info.tostr[i] for i in tensor.tolist()]
 
-    def set_str_translator(self, d):
+    def set_str_translator(self, d: dict[str, int]):
+        assert self.info is not None
         self.info.populate(d)
         self.info.save(self.path)
 

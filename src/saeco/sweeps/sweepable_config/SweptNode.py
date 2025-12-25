@@ -1,5 +1,5 @@
 import random
-from typing import Any, TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -71,9 +71,9 @@ class SweptNode(BaseModel):
             self._swept_combinations_count_vars_only()
             * self._swept_combinations_count_excluding_vars()
         )
-        assert 0 < v and isinstance(
-            v, int
-        ), "swept_combinations_count should be positive"
+        assert 0 < v and isinstance(v, int), (
+            f"swept_combinations_count should be positive. Got {self._swept_combinations_count_vars_only()} * {self._swept_combinations_count_excluding_vars()} = {v}"
+        )
         return v
 
     def _swept_combinations_count_children_count(self):
@@ -161,7 +161,9 @@ class SweptNode(BaseModel):
 
     def select_instance_by_index(self, i, sweep_vars=None) -> dict[str, Any]:
         if not 0 <= i < self.swept_combinations_count_including_vars():
-            raise IndexError("i should be less than the number of combinations")
+            raise IndexError(
+                f"i should be less than the number of children combinations. Got i={i} with {self.swept_combinations_count_including_vars()} combos. At {self.location}"
+            )
         if sweep_vars is None:
             i_vars = i // self._swept_combinations_count_excluding_vars()
             i_children = i % self._swept_combinations_count_excluding_vars()
@@ -182,9 +184,9 @@ class SweptNode(BaseModel):
             assert k not in d
             d[k] = v.values[i % len(v.values)]
             i //= len(v.values)
-        assert (
-            i < self._swept_combinations_count_children_count()
-        ), "i should be less than the number of children combinations"
+        assert i < self._swept_combinations_count_children_count(), (
+            f"i should be less than the number of children combinations. Got i={i} with {self._swept_combinations_count_children_count()} combos. At {self.location}"
+        )
         for k, v in self.consistent_sort(self.children).items():
             assert k not in d
             d[k] = v.select_instance_by_index(
@@ -226,10 +228,8 @@ class SweptNode(BaseModel):
 
 
 def main():
-    from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
     from saeco.sweeps.sweepable_config import (
         SweepableConfig,
-        SweepExpression,
         SweepVar,
         Swept,
     )

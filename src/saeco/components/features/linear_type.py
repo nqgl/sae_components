@@ -1,13 +1,10 @@
-from typing import Optional, TypedDict
-
-import torch.nn as nn
-from torch import Tensor
 
 from functools import cached_property
-from abc import abstractmethod
-from saeco.components.features.features_param import FeaturesParam
-from typing_extensions import Self
+from typing import Self
 
+import torch.nn as nn
+
+from saeco.components.features.features_param import FeaturesParam
 
 # class LinWeights(WrapsModule):
 #     wrapped: nn.Linear
@@ -138,7 +135,7 @@ from typing_extensions import Self
 class LinWeightsMixin:
     self: nn.Linear
     weight: nn.Parameter
-    bias: Optional[nn.Parameter]
+    bias: nn.Parameter | None
 
     @property
     def features(self) -> dict[str, FeaturesParam]: ...
@@ -155,6 +152,7 @@ class LinWeightsMixin:
 class LinDecoderMixin(LinWeightsMixin):
     @cached_property
     def features(self) -> dict[str, FeaturesParam]:
+        # bias is excluded for decoder because it cannot be indexed by feature
         return {
             "weight": FeaturesParam(
                 self.weight,
@@ -183,9 +181,9 @@ class LinEncoderMixin(LinWeightsMixin):
         return d
 
 
-class LinEncoder(LinWeightsMixin, nn.Linear):
+class LinEncoder(LinEncoderMixin, nn.Linear):
     pass
 
 
-class LinDecoder(LinWeightsMixin, nn.Linear):
+class LinDecoder(LinDecoderMixin, nn.Linear):
     pass

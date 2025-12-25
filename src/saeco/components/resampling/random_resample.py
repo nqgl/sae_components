@@ -1,5 +1,6 @@
-from .resampler import Resampler
 import torch
+
+from .resampler import Resampler
 
 
 class RandomResampler(Resampler):

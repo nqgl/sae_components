@@ -1,7 +1,3 @@
-from typing import Any, Union
-from saeco.core.cache import Cache
-from saeco.core.collections.collection import Collection
-from saeco.core.proc_appropriately import proc_appropriately
 from saeco.core.collections.propagator import Propagator
 
 

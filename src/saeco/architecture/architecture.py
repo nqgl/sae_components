@@ -1,17 +1,22 @@
-import inspect
 import typing
 from abc import abstractmethod
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Generic, Literal, overload, TypeVar
+from types import get_original_bases
+from typing import Any, Literal, overload
 
 import torch
+from paramsight import get_resolved_typevars_for_base, takes_alias
 from torch import nn
-
-from typing_extensions import get_original_bases
 
 import saeco.components as co
 import saeco.core as cl
+from saeco.architecture.arch_prop import (
+    aux_model_prop,
+    loss_prop,
+    metric_prop,
+    model_prop,
+)
 from saeco.architecture.arch_reload_info import ArchStoragePaths
 from saeco.components.losses import Loss
 from saeco.components.metrics.metrics import ActMetrics, PreActMetrics
@@ -23,13 +28,8 @@ from saeco.sweeps import SweepableConfig
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
 from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 from saeco.trainer.run_config import RunConfig
-
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
-from .arch_prop import aux_model_prop, loss_prop, metric_prop, model_prop
-
-
-ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
 
 
 class SAE(cl.Seq):
@@ -145,27 +145,14 @@ class SAE(cl.Seq):
 # ARCH_CLASS_REF_PATH_EXT = ".arch_ref"
 
 
-class Architecture(Generic[ArchConfigType]):
-    """
-    multiple ways to set up an architecture
-
-    also for encoder in particular, it can either be defined by:
-    - encoder_pre + nonlinearity
-    - encode
-
-    """
-
-    # normalizer: StaticInvertibleGeneralizedNormalizer
-    # primary_model: SAE | None = field(default=None)
-    # aux_models: list[SAE] | None = field(default=None)
-
+class Architecture[ArchConfigT: SweepableConfig]:
     def __init__(
         self,
-        run_cfg: RunConfig[ArchConfigType],
+        run_cfg: "RunConfig[ArchConfigT]",
         state_dict: dict[str, Any] | None = None,
         device: torch.device | str = "cuda",
     ):
-        self.run_cfg: RunConfig[ArchConfigType] = run_cfg
+        self.run_cfg: RunConfig[ArchConfigT] = run_cfg
         self.state_dict: dict[str, Any] | None = state_dict
         self._instantiated: bool = False
         self._setup_complete: bool = False
@@ -173,13 +160,14 @@ class Architecture(Generic[ArchConfigType]):
         self.device: torch.device | str = device
 
     @property
-    def cfg(self) -> ArchConfigType:
+    def cfg(self) -> ArchConfigT:
         return self.run_cfg.arch_cfg
 
     def instantiate(self, inst_cfg: dict[str, Any] | None = None):
         if inst_cfg:
             self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
-        assert self.cfg.is_concrete() and self.run_cfg.is_concrete()
+        assert self.cfg.is_concrete()
+        assert self.run_cfg.is_concrete()
         self._instantiated = True
         self._setup()
 
@@ -248,25 +236,6 @@ class Architecture(Generic[ArchConfigType]):
         resampler.assign_model(self._core_model)
         return resampler
 
-    # def __attrs_post_init__(self):
-    #     if self.__class__ == Architecture:
-    #         raise Exception(
-    #             "Architecture class should be subclassed before instantiation"
-    #         )
-
-    # def encode_pre(self, x, cache: cl.Cache, **kwargs): ...
-
-    # def encode(self, x, *, cache: cl.Cache, **kwargs):
-    #     return cache(self).encoder(x)  # TODO normalization
-
-    # def decode(self, x, *, cache: cl.Cache, **kwargs):
-    #     return cache(self).decoder(x)  # TODO normalization
-
-    # def forward(self, x, *, cache: cl.Cache, **kwargs):
-    #     x = cache(self).encode(x)
-    #     x = cache(self).decode(x)
-    #     return x
-
     @cached_property
     def init(self) -> Initializer:
         return Initializer(
@@ -301,6 +270,7 @@ class Architecture(Generic[ArchConfigType]):
         )
         return trainer
 
+    @takes_alias
     @classmethod
     def get_arch_config_class(cls):
         if cls is Architecture:
@@ -313,6 +283,7 @@ class Architecture(Generic[ArchConfigType]):
         assert len(p) == 1
         return p[0]
 
+    @takes_alias
     @classmethod
     def get_config_class(cls):
         return RunConfig[cls.get_arch_config_class()]
@@ -333,7 +304,7 @@ class Architecture(Generic[ArchConfigType]):
                 f"file already existed at {path}, wrote to {path.path.name}_1"
             )
 
-        from .arch_reload_info import ArchClassRef, ArchRef
+        from .arch_reload_info import ArchRef
 
         arch_ref = ArchRef.from_arch(self)
 
@@ -410,22 +381,25 @@ class Architecture(Generic[ArchConfigType]):
         }
 
 
-# ArchConfigType = TypeVar("ArchConfigType", bound=SweepableConfig)
-class BaseRunConfig(SweepableConfig, Generic[ArchConfigType]):
-    arch_cfg: ArchConfigType
+class BaseRunConfig[ArchConfigT: SweepableConfig](SweepableConfig):
+    arch_cfg: ArchConfigT
 
 
-class ArchitectureBase(Generic[ArchConfigType]):
+class WithConfig[ArchConfigT: SweepableConfig]:
+    cfg: ArchConfigT
+
+
+class ArchitectureBase[ArchConfigT: SweepableConfig]:
     """ """
 
     def __init__(
         self,
-        run_cfg: BaseRunConfig[ArchConfigType],
+        run_cfg: BaseRunConfig[ArchConfigT],
         state_dict: dict[str, Any] | None = None,
         device: torch.device | str = "cuda",
     ):
         assert state_dict is None
-        self.run_cfg: BaseRunConfig[ArchConfigType] = run_cfg
+        self.run_cfg: BaseRunConfig[ArchConfigT] = run_cfg
         # self.state_dict: dict[str, Any] | None = state_dict
         self._instantiated: bool = False
         self._setup_complete: bool = False
@@ -433,7 +407,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
         # self.device: torch.device | str = device
 
     @property
-    def cfg(self) -> ArchConfigType:
+    def cfg(self) -> ArchConfigT:
         return self.run_cfg.arch_cfg
 
     def instantiate(self, inst_cfg: dict[str, Any] | None = None):
@@ -483,22 +457,20 @@ class ArchitectureBase(Generic[ArchConfigType]):
     @abstractmethod
     def setup(self): ...
 
+    @takes_alias
     @classmethod
-    def get_arch_config_class(cls):
+    def get_arch_config_class(cls) -> type[ArchConfigT]:
         if cls is ArchitectureBase:
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-        bases = get_original_bases(cls)
-        assert len(bases) == 1
-        p = typing.get_args(bases[0])
-        assert len(p) == 1
-        return p[0]
+        return get_resolved_typevars_for_base(cls, ArchitectureBase)[0]
 
     @classmethod
     @abstractmethod
-    def get_config_class(cls):
-        return RunConfig[cls.get_arch_config_class()]
+    def get_config_class(cls) -> type[BaseRunConfig[ArchConfigT]]: ...
+
+    # return BaseRunConfig[cls.get_arch_config_class()]
 
     def save_to_path(
         self,
@@ -520,7 +492,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
                 f"file already existed at {path}, wrote to {path.path.name}_1"
             )
 
-        from .arch_reload_info import ArchClassRef, ArchRef
+        from .arch_reload_info import ArchRef
 
         arch_ref = ArchRef.from_arch(self)
 
@@ -543,7 +515,7 @@ class ArchitectureBase(Generic[ArchConfigType]):
         averaged_weights: bool | None = False,
     ) -> "ArchitectureBase":
         return ArchStoragePaths.from_path(path).load_arch(
-            load_weights=load_weights, averaged_weights=averaged_weights
+            load_weights=load_weights, averaged_weights=averaged_weights, xcls=cls
         )
 
     @abstractmethod
@@ -553,3 +525,48 @@ class ArchitectureBase(Generic[ArchConfigType]):
         from saeco.sweeps.newsweeper import SweepManager
 
         return SweepManager(self, ezpod_group=ezpod_group)
+
+    def save_sweepref_and_get_py_commands(
+        self,
+        project: str,
+        gpus_per_run: int,
+        clivars: str = 'TORCH_LOGS="graph_breaks,recompiles"  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True ',
+        pre_commands: str = "",
+        pyname: str | None = None,
+    ) -> list[str]:
+        sm = self.get_sweep_manager()
+        sm.initialize_sweep(project=project)
+
+        commands = (
+            sm.get_worker_run_commands_for_manual_sweep(suffix="--distributed-skip-log")
+            if gpus_per_run > 1
+            else sm.get_worker_run_commands_for_manual_sweep()
+        )
+        return to_py_cmd(
+            commands,
+            pyname=pyname
+            or ("python3" if gpus_per_run == 1 else f"composer -n {gpus_per_run}"),
+            challenge_file=None,
+            prefix_vars=pre_commands + clivars,
+        )
+
+
+def to_py_cmd(  # Semi temporary code duplication of something that also exists in ezpod
+    cmd: str | list[str],
+    pyname: str,
+    challenge_file: str | None = None,
+    prefix_vars: str | None = None,
+):
+    if isinstance(cmd, list):
+        return [
+            to_py_cmd(
+                c, pyname=pyname, challenge_file=challenge_file, prefix_vars=prefix_vars
+            )
+            for c in cmd
+        ]
+    cmd = f"{pyname} {cmd}"
+    if prefix_vars:
+        cmd = f"{prefix_vars} {cmd}"
+    if challenge_file:
+        cmd = f"{pyname} {challenge_file}; {cmd}"
+    return cmd

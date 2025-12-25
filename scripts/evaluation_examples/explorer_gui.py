@@ -1,42 +1,24 @@
 # %%
-from functools import wraps
-from pathlib import Path
 
-import circuitsvis
 
-import circuitsvis.tokens
 import nnsight
-import saeco.core as cl
 import torch
-
-from jaxtyping import Float, Int
 from load import root_eval
 from nicegui import ui
-from pydantic import BaseModel
-
-from rich.highlighter import Highlighter
+from torch import Tensor
 
 from saeco.analysis.uiitem import UIE
-from saeco.architectures.anth_update import anth_update_model, cfg
 from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.saved_acts_config import CachingConfig
-from saeco.evaluation.storage.chunk import Chunk
-from saeco.misc.nnsite import getsite, setsite, tlsite_to_nnsite
-from saeco.trainer import Trainable
-from saeco.trainer.runner import TrainingRunner
-from saeco.trainer.train_cache import TrainCache
-from torch import Tensor
+from saeco.misc.nnsite import tlsite_to_nnsite
 
 # from transformers import GPT2LMHeadModel
 # %%
 nnsight_model = nnsight.LanguageModel("openai-community/gpt2", device_map="cuda")
 
-import einops
 
 # %%
 
 # %%
-import tqdm
 
 from metadata_test import filtered_eval
 
@@ -53,8 +35,7 @@ def active(document, position):
 
 
 active(4, 5)
-from attr import define, field
-
+from attrs import define
 from rich.console import Console
 
 console = Console()
@@ -115,7 +96,7 @@ class Explorer:
         max_activity = feature_activity.max()
 
         content = list(enumerate(zip(tokstrs, feature_activity)))
-        style_normal = f"border: 1px solid #f0f0f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
+        style_normal = "border: 1px solid #f0f0f0; border-radius: 8px; padding: 1px; margin: 1px; margin-top: -10px"
         # e.style("gap: 0.1rem")
         with e:
             for j in range(0, len(content), 8):
@@ -215,7 +196,6 @@ class Explorer:
         self.view_top(tangent)
 
     def show_patch(self):
-
         def patch(acts):
             with torch.no_grad():
                 acts[:, self.pos, self.feat] *= 0.99
@@ -254,7 +234,6 @@ class Explorer:
         for i in range(self.pos):
             attrib = to_feat_attrib[i, self.pos, self.feat]
             if torch.any(attrib != 0):
-
                 print(tokstrs[i], attrib)
             else:
                 print(tokstrs[i])

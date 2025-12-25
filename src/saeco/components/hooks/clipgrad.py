@@ -1,8 +1,7 @@
-from saeco.components.wrap import WrapsModule
-from saeco.components.type_acc_methods import post_backward_hook
-
-
 import torch.nn as nn
+
+from saeco.components.type_acc_methods import post_backward_hook
+from saeco.components.wrap import WrapsModule
 
 
 class ClipGrad(WrapsModule):

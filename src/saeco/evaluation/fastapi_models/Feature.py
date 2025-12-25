@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
 
-class Feature(BaseModel):
+class LabeledFeature(BaseModel):
     feature_id: int
     label: str | None = None

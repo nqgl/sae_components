@@ -1,19 +1,20 @@
 import functools
 import inspect
+from typing import TYPE_CHECKING, Any
 
-import shelve
-from pathlib import Path
-from typing import Any
-
-from attrs import define, field
 from pydantic import BaseModel
 from torch import Tensor
 
+from saeco.data.dict_batch.dict_batch import DictBatch
+
 from .filtered import FilteredTensor
+
+if TYPE_CHECKING:
+    from saeco.evaluation.evaluation import Evaluation
 
 
 class CachedCalls:
-    def __init__(self, raw):
+    def __init__(self, raw: "Evaluation"):
         self.raw = raw
         assert not hasattr(self.raw, "raw")
 
@@ -34,15 +35,23 @@ class CachedCalls:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             stringified_call = f"{name}({args}, {kwargs})".replace(".", "-")
-
-            if inspect.signature(func).return_annotation is not None and issubclass(
-                inspect.signature(func).return_annotation, BaseModel
-            ):
+            return_type = inspect.signature(func).return_annotation
+            if return_type is not None and issubclass(return_type, BaseModel):
                 if self.raw.bmstore.has(func, args, kwargs):
                     return self.raw.bmstore.get(func, args, kwargs)
                 value = func(*args, **kwargs)
                 self.raw.bmstore.set(func, args, kwargs, value)
                 return value
+            if return_type is not None and issubclass(return_type, DictBatch):
+                assert self.raw.artifacts.path is not None
+                path = self.raw.artifacts.path / "dict_batches" / stringified_call
+                if path.exists():
+                    return return_type.load_from_safetensors(path)
+                value = func(*args, **kwargs)
+                assert isinstance(value, return_type)
+                value.save_as_safetensors(path)
+                return value
+
             if hasattr(func, "_version"):
                 stringified_call += f"__v{func._version}"
 
