@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import einops
@@ -11,6 +12,50 @@ if TYPE_CHECKING:
 
 class Coactivity:
     # @torch.compile(dynamic=True)
+    def coacts(
+        self: "Evaluation",
+        S: Callable[[Tensor], tuple[Tensor, Tensor]],
+        reduce_prod: Callable[[Tensor, Tensor], Tensor],
+        out_device: torch.device | str | None = None,
+        f_chunk_i: int | None = None,
+        f_chunk_j: int | None = None,
+    ):
+        if out_device is None:
+            out_device = self.cuda
+        if f_chunk_i is None:
+            f_chunk_i = self.d_dict
+        if f_chunk_j is None:
+            f_chunk_j = self.d_dict
+
+        mat = torch.zeros(self.d_dict, self.d_dict).to(out_device)
+        f2sum = torch.zeros(self.d_dict).to(out_device)
+        for chunk in tqdm.tqdm(
+            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
+        ):
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            assert acts.ndim == 3
+            # einops.rearrange(acts, "doc seq feat -> feat seq doc")
+            s0, s1 = S(acts)
+            # feat_indexed_S0 = S0.transpose(0, -1)  # doc seq feat -> feat seq doc
+            # feat_indexed_S1 = S1.transpose(0, -1)  # doc seq feat -> feat seq doc
+            for i in range(0, self.d_dict, f_chunk_i):
+                act0s = s0.transpose(0, -1)[i : i + f_chunk_i].transpose(
+                    0, -1
+                )  # feat seq doc -> doc seq feat
+                for j in range(0, self.d_dict, f_chunk_j):
+                    acts1s = s1.transpose(0, -1)[j : j + f_chunk_j].transpose(
+                        0, -1
+                    )  # feat seq doc -> doc seq feat
+                    res = reduce_prod(act0s, acts1s)
+                    assert res.shape == (
+                        min(f_chunk_i, self.d_dict - i),
+                        min(f_chunk_j, self.d_dict - j),
+                    )
+                    mat[i : i + f_chunk_i, j : j + f_chunk_j] += res
+                    f2sum += ...  # func that does this too prob
+
+        return mat
+
     @torch.inference_mode()
     def activation_cosims(
         self: "Evaluation",

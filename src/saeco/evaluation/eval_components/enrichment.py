@@ -55,50 +55,23 @@ class Enrichment:
         str_label: bool = False,
         sort_by: EnrichmentSortBy = EnrichmentSortBy.counts,
     ):
-        docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
+        top_acts = self.chill_top_activations_and_metadatas(
             feature=feature,
             p=p,
             k=k,
-            metadata_keys=metadata_keys,
-            return_doc_indices=True,
         )
-        r = {}
-        num_docs = doc_ids.shape[0]
-        for mdname, md in metadatas.items():
-            assert md.ndim == 1
-            full_lc = self.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
-            labels, mdcat_counts = torch.cat([md, full_lc.labels]).unique(
-                return_counts=True  # adds one of each of all labels to it so that it has all metadatas and is consistently indexed with the full counts
+        enrichments = top_acts.top_activations_metadata_enrichments(
+            metadata_keys=metadata_keys,
+        )
+        results = {}
+        for mdname, enrichment in enrichments.items():
+            enrichment = enrichment.remove_zero_counts().sort(sort_by=sort_by)
+            labels = (
+                self._root_metadatas.get(mdname).strlist(enrichment.labels)
+                if str_label
+                else enrichment.labels.tolist()
             )
-            counts = mdcat_counts - 1
-            assert (labels == full_lc.labels).all()
-            assert counts.shape == labels.shape == full_lc.counts.shape
-            proportions = counts / full_lc.counts
-            scores = score_enrichment(
-                counts=counts,
-                sel_denom=num_docs,
-                total_counts=full_lc.counts,
-                total_denom=self.num_docs,
-            )
-            scores = scores[counts > 0]
-            labels = labels[counts > 0]
-            proportions = proportions[counts > 0]
-            counts = counts[counts > 0]
-            normalized_counts = proportions * self.num_docs / doc_ids.shape[0]
-            if sort_by == EnrichmentSortBy.counts:
-                i = counts.argsort(descending=True)
-            elif sort_by == EnrichmentSortBy.normalized_count:
-                i = normalized_counts.argsort(descending=True)
-            elif sort_by == EnrichmentSortBy.score:
-                i = scores.argsort(descending=True)
-            else:
-                raise ValueError(f"Unknown sort_by {sort_by}")
-            labels = labels[i]
-            counts = counts[i]
-            proportions = proportions[i]
-            normalized_counts = normalized_counts[i]
-            scores = scores[i]
-            r[mdname] = [
+            results[mdname] = [
                 MetadataEnrichmentLabelResult(
                     label=label,
                     count=count,
@@ -108,18 +81,14 @@ class Enrichment:
                     # **(dict(act_sum=acts[md == label].sum()) if return_act_sum else {}),
                 )
                 for label, count, proportion, normalized_count, score in zip(
-                    (
-                        self.metadatas.get(mdname).strlist(labels)
-                        if str_label
-                        else labels.tolist()
-                    ),
-                    counts.tolist(),
-                    proportions.tolist(),
-                    normalized_counts.tolist(),
-                    scores.tolist(),
+                    labels,
+                    enrichment.counts.tolist(),
+                    enrichment.proportions.tolist(),
+                    enrichment.normalized_counts.tolist(),
+                    enrichment.scores.tolist(),
                 )
             ]
-        return MetadataEnrichmentResponse(results=r)
+        return MetadataEnrichmentResponse(results=results)
 
     def top_activations_token_enrichments(
         self: "Evaluation",
