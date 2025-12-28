@@ -521,6 +521,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def num_active_docs_for_feature(self, feature_id: int) -> int:
         return self.cached_call._feature_num_active_docs()[feature_id].item()
 
+    @torch.inference_mode()
     def _feature_num_active_tokens(self) -> Tensor:
         activity = torch.zeros(self.d_dict, dtype=torch.long).to(self.cuda)
         for chunk in self.saved_acts.chunks:
@@ -546,6 +547,13 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     @property
     def doc_activation_counts(self) -> Tensor:
         return self.cached_call._feature_num_active_docs().cpu()
+
+    def _feature_activity_sum(self) -> Tensor:
+        activity = torch.zeros(self.d_dict, dtype=torch.float).to(self.cuda)
+        for chunk in self.saved_acts.chunks:
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            activity += acts.sum(dim=1).sum(dim=0)
+        return activity
 
     @property
     def doc_activation_probs(self) -> Tensor:
