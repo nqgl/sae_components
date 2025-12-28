@@ -10,12 +10,18 @@ if TYPE_CHECKING:
     from ..evaluation import Evaluation
 
 
+def f2sum_fn_default(acts: Tensor) -> Tensor:
+    return acts.sum(-2).pow(2).sum(0)
+
+
 class Coactivity:
     # @torch.compile(dynamic=True)
+    @torch.inference_mode()
     def coacts(
         self: "Evaluation",
         S: Callable[[Tensor], tuple[Tensor, Tensor]],
         reduce_prod: Callable[[Tensor, Tensor], Tensor],
+        f2sum_fn: Callable[[Tensor], Tensor] = f2sum_fn_default,
         out_device: torch.device | str | None = None,
         f_chunk_i: int | None = None,
         f_chunk_j: int | None = None,
@@ -39,22 +45,123 @@ class Coactivity:
             # feat_indexed_S0 = S0.transpose(0, -1)  # doc seq feat -> feat seq doc
             # feat_indexed_S1 = S1.transpose(0, -1)  # doc seq feat -> feat seq doc
             for i in range(0, self.d_dict, f_chunk_i):
-                act0s = s0.transpose(0, -1)[i : i + f_chunk_i].transpose(
-                    0, -1
-                )  # feat seq doc -> doc seq feat
+                act0s = s0[..., i : i + f_chunk_i]  # feat seq doc -> doc seq feat
+                f2sum[i : i + f_chunk_i] += f2sum_fn(acts[..., i : i + f_chunk_i]).to(
+                    out_device
+                )
+
                 for j in range(0, self.d_dict, f_chunk_j):
-                    acts1s = s1.transpose(0, -1)[j : j + f_chunk_j].transpose(
-                        0, -1
-                    )  # feat seq doc -> doc seq feat
+                    acts1s = s1[..., j : j + f_chunk_j]
                     res = reduce_prod(act0s, acts1s)
                     assert res.shape == (
                         min(f_chunk_i, self.d_dict - i),
                         min(f_chunk_j, self.d_dict - j),
                     )
-                    mat[i : i + f_chunk_i, j : j + f_chunk_j] += res
-                    f2sum += ...  # func that does this too prob
+                    mat[i : i + f_chunk_i, j : j + f_chunk_j] += res.to(out_device)
+                    # f2sum += ...  # func that does this too prob
 
         return mat
+
+    @torch.inference_mode()
+    def coacts2(
+        self: "Evaluation",
+        S0: Callable[[Tensor], Tensor],
+        S1: Callable[[Tensor], Tensor],
+        reduce_prod: Callable[[Tensor, Tensor], Tensor],
+        f2sum_fn: Callable[[Tensor], Tensor] = f2sum_fn_default,
+        out_device: torch.device | str | None = None,
+        f_chunk_i: int | None = None,
+        f_chunk_j: int | None = None,
+    ):
+        if out_device is None:
+            out_device = self.cuda
+        if f_chunk_i is None:
+            f_chunk_i = self.d_dict
+        if f_chunk_j is None:
+            f_chunk_j = self.d_dict
+
+        mat = torch.zeros(self.d_dict, self.d_dict).to(out_device)
+        f2sum = torch.zeros(self.d_dict).to(out_device)
+        for chunk in tqdm.tqdm(
+            self.saved_acts.chunks, total=len(self.saved_acts.chunks)
+        ):
+            acts = chunk.acts.value.to(self.cuda).to_dense()
+            assert acts.ndim == 3
+            # einops.rearrange(acts, "doc seq feat -> feat seq doc")
+            # feat_indexed_S0 = S0.transpose(0, -1)  # doc seq feat -> feat seq doc
+            # feat_indexed_S1 = S1.transpose(0, -1)  # doc seq feat -> feat seq doc
+            for i in range(0, self.d_dict, f_chunk_i):
+                s0 = S0(acts[..., i : i + f_chunk_i])
+                act0s = s0  # feat seq doc -> doc seq feat
+                f2sum[i : i + f_chunk_i] += f2sum_fn(acts[..., i : i + f_chunk_i]).to(
+                    out_device
+                )
+
+                for j in range(0, self.d_dict, f_chunk_j):
+                    s1 = S1(acts[..., j : j + f_chunk_j])
+                    acts1s = s1
+                    res = reduce_prod(act0s, acts1s)
+                    assert res.shape == (
+                        min(f_chunk_i, self.d_dict - i),
+                        min(f_chunk_j, self.d_dict - j),
+                    )
+                    mat[i : i + f_chunk_i, j : j + f_chunk_j] += res.to(out_device)
+                    # f2sum += ...  # func that does this too prob
+
+        return mat
+
+    def causal_coacts(
+        self: "Evaluation",
+        # include_diagonal: bool = False,
+        acts_pre_mod_func: Callable[[Tensor], Tensor] = lambda acts: acts,
+        out_device: torch.device | str | None = None,
+        f_chunk_i: int | None = None,
+        f_chunk_j: int | None = None,
+    ):
+        @torch.compile(dynamic=True)
+        def S1(acts: Tensor) -> Tensor:
+            postfix = acts_pre_mod_func(acts).flip(-2).cumsum(-2).flip(-2)
+            return postfix
+
+        def reduce_prod(a: Tensor, postfix: Tensor) -> Tensor:
+            return einops.einsum(a, postfix, "doc seq f1, doc seq f2 -> f1 f2")
+
+        return self.coacts2(
+            S0=acts_pre_mod_func,
+            S1=S1,
+            reduce_prod=reduce_prod,
+            out_device=out_device,
+            f_chunk_i=f_chunk_i,
+            f_chunk_j=f_chunk_j,
+        )
+
+    def act_coacts2(
+        self: "Evaluation",
+        out_device: torch.device | str | None = None,
+        f_chunk_i: int | None = None,
+        f_chunk_j: int | None = None,
+    ):
+        def agg(acts: Tensor) -> Tensor:
+            return acts.sum(-2)
+
+        def f2sum_fn(acts: Tensor) -> Tensor:
+            return agg(acts).pow(2).sum(0)
+
+        def S(acts: Tensor) -> tuple[Tensor, Tensor]:
+            agg_acts = agg(acts)
+            return agg_acts, agg_acts
+
+        def reduce_prod(a: Tensor, b: Tensor) -> Tensor:
+            return einops.einsum(a, b, "doc f1, doc f2 -> f1 f2")
+
+        return self.coacts(
+            S=S,
+            reduce_prod=reduce_prod,
+            f2sum_fn=f2sum_fn,
+            out_device=out_device,
+            f_chunk_i=f_chunk_i,
+            f_chunk_j=f_chunk_j,
+        )
 
     @torch.inference_mode()
     def activation_cosims(

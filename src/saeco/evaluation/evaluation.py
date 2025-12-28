@@ -111,7 +111,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             return self
         return self._root  # TODO return self._root.root?
 
-    @property
+    @cached_property
     def cuda(self):
         return (
             torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")

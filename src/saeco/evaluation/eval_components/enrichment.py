@@ -24,9 +24,9 @@ def score_enrichment(
     total_denom: int | float,
     counts: torch.Tensor,
     sel_denom: torch.Tensor | float | int,
-    smoothing=1,
+    smoothing=10,
     r=0.5,
-    base_smoothing=1,
+    base_smoothing=10,
     r_base=0.5,
 ):
     assert total_counts.ndim == counts.ndim == 1

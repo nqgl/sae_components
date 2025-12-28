@@ -290,7 +290,7 @@ class TopActivations(EvalRefData):
         self,
         *,
         metadata_keys: list[str],
-    ):
+    ) -> dict[str, MetadataEnrichmentResult]:
         # docs = self.docs
         # acts = self.acts
         metadatas = self.doc_selection.metadata[list(metadata_keys)].metadatas

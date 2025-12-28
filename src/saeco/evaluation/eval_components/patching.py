@@ -544,6 +544,35 @@ class Patching:
             lm_acts.stop()
         return sae_acts, sae_preacts
 
+    def get_acts_and_outputs_with_intervention(
+        self: "Evaluation",
+        tokens,
+        write_in_site,
+        intervention_fn,
+        doc_indices=None,
+        metadata=None,
+    ):  # TODO wip
+        batch = self._build_model_batch(
+            tokens, doc_indices=doc_indices, metadata=metadata
+        )
+        with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
+            setsite(
+                self.nnsight_model,
+                write_in_site,
+                nnsight.apply(
+                    intervention_fn, getsite(self.nnsight_model, write_in_site)
+                ),
+            )
+
+            lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
+            actsx2 = self.sae_with_patch(
+                lambda x: x, return_sae_acts=True, return_sae_preacts=True
+            )(lm_acts)
+            sae_acts = actsx2[1].save()
+            sae_preacts = actsx2[2].save()
+            lm_acts.stop()
+        return sae_acts, sae_preacts
+
     @torch.no_grad()
     def ff_multi_feature(
         self: "Evaluation",
