@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Iterator
 
 import torch
@@ -9,144 +11,168 @@ from saeco.evaluation.storage.chunk import Chunk
 
 
 class MetadataBuilder:
-    def __init__(self, chunks, dtype, device, shape):
-        self.it = iter(chunks)
-        self.chunks = chunks
+    """
+    Build a full-dataset metadata tensor incrementally from chunks.
+
+    Usage pattern:
+        mb = eval.metadata_builder(dtype=torch.long, device="cpu")
+        for chunk in mb:
+            mb << chunk.tokens.value["my_metadata"]
+        metadata = mb.value
+    """
+
+    def __init__(self, chunks: list[Chunk], dtype: torch.dtype, device, shape):
+        self._chunks = chunks
+        self._it = iter(chunks)
         self._value = torch.zeros(*shape, dtype=dtype, device=device)
-        self.done = False
-        self.chunks_done = [False] * len(chunks)
-        self.i = 0
-        self.unique_labels = {}  # for strings only
+
+        self._done = False
+        self._chunks_done = [False] * len(chunks)
+        self._cursor = 0
+
+        # Used only when ingesting strings -> ids
+        self.unique_labels: dict[str, int] = {}
 
     @property
-    def value(self):
+    def value(self) -> Tensor:
         self.finish()
         return self._value
 
-    def finish(self):
-        assert all(self.chunks_done)
-        self.done = True
+    def finish(self) -> None:
+        if self._done:
+            return
+        if not all(self._chunks_done):
+            missing = [i for i, ok in enumerate(self._chunks_done) if not ok]
+            raise RuntimeError(f"MetadataBuilder not finished; missing chunks: {missing}")
+        self._done = True
 
     def __iter__(self) -> Iterator[Chunk]:
         return self
 
     def __next__(self) -> Chunk:
-        return next(self.it)
+        return next(self._it)
 
-    def __lshift__(self, v):
-        return self._recv(self.chunks[self.i], v)
+    def __lshift__(self, v: FilteredTensor | Tensor) -> None:
+        return self._recv(self._chunks[self._cursor], v)
 
-    def _recv(self, chunk: Chunk, value: FilteredTensor | Tensor):
-        assert isinstance(chunk, Chunk)
-        assert isinstance(value, FilteredTensor | Tensor)
-        assert not self.done
-        assert not self.chunks_done[chunk.idx]
+    def _recv(self, chunk: Chunk, value: FilteredTensor | Tensor) -> None:
+        if self._done:
+            raise RuntimeError("Cannot write into a finished MetadataBuilder")
+        if self._chunks_done[chunk.idx]:
+            raise RuntimeError(f"Chunk {chunk.idx} already written")
+
         if isinstance(value, Tensor):
             value = chunk._to_filtered(value)
+
+        # FilteredTensor writes into the full target.
         value.filter.writeat(target=self._value, value=value.value)
-        self.chunks_done[chunk.idx] = True
-        self.i += 1
+        self._chunks_done[chunk.idx] = True
+        self._cursor += 1
 
-    def takestrl(self, v):
-        assert isinstance(v, list) and self._value.dtype == torch.long
-        o = [self.getlabel(s) for s in v]
-        t = torch.tensor(o, dtype=torch.long, device=self._value.device)
-        self << t
+    def takestrl(self, v: list[str]) -> None:
+        if self._value.dtype != torch.long:
+            raise TypeError("takestrl requires a long dtype target")
+        ids = torch.tensor([self.getlabel(s) for s in v], dtype=torch.long, device=self._value.device)
+        self << ids
 
-    def getlabel(self, s: str):
-        assert isinstance(s, str)
+    def getlabel(self, s: str) -> int:
         if s in self.unique_labels:
             return self.unique_labels[s]
-        self.unique_labels[s] = len(self.unique_labels)
-        return self.unique_labels[s]
+        new_id = len(self.unique_labels)
+        self.unique_labels[s] = new_id
+        return new_id
 
-    class mbsetter:
-        def __init__(self, mb, chunk):
-            self.mb: MetadataBuilder = mb
-            self.chunk: Chunk = chunk
+    class _Setter:
+        def __init__(self, mb: "MetadataBuilder", chunk: Chunk):
+            self._mb = mb
+            self._chunk = chunk
 
-        def __lshift__(self, v):
-            return self.mb._recv(self.chunk, v)
+        def __lshift__(self, v: FilteredTensor | Tensor) -> None:
+            self._mb._recv(self._chunk, v)
 
-    def __getitem__(self, chunk):
-        return MetadataBuilder.mbsetter(self, chunk)
+    def __getitem__(self, chunk: Chunk) -> "_Setter":
+        return MetadataBuilder._Setter(self, chunk)
 
-    def __setitem__(self, chunk, value):
-        return self._recv(chunk, value)
+    def __setitem__(self, chunk: Chunk, value: FilteredTensor | Tensor) -> None:
+        self._recv(chunk, value)
 
 
 class FilteredBuilder:
+    """
+    Like MetadataBuilder, but returns a FilteredTensor at the end by applying `NamedFilter`.
+
+    This is intended for building metadata on filtered evaluations.
+    """
+
     def __init__(
         self,
         chunks: list[Chunk],
-        dtype,
+        dtype: torch.dtype,
         device,
-        shape: tuple[int],
+        shape: tuple[int, ...],
         filter: NamedFilter,
     ):
-        self.it = iter(chunks)
-        self.chunks = chunks
-        self.done = False
-        self.chunks_done = [False] * len(chunks)
-        self.i = 0
-        self.unique_labels = {}  # for strings only
-        self.filter = filter
-        assert filter is None or shape[0] == filter.filter.shape[0]
+        if filter is None:
+            raise ValueError("FilteredBuilder requires a NamedFilter (got None)")
+
+        if shape[0] != filter.filter.shape[0]:
+            raise ValueError("FilteredBuilder shape[0] must match filter length")
+
+        self._chunks = chunks
+        self._it = iter(chunks)
+        self._done = False
+        self._chunks_done = [False] * len(chunks)
+        self._cursor = 0
+
+        self._filter = filter
         self._value = torch.zeros(*shape, dtype=dtype, device=device)
+        self.unique_labels: dict[str, int] = {}
 
     @property
     def value(self) -> FilteredTensor:
         self.finish()
-        return self._value
+        # Wrap final tensor with filter
+        return FilteredTensor.from_unmasked_value(self._value, filter_obj=self._filter, presliced=False)
 
-    def finish(self):
-        assert all(self.chunks_done)
-        self.done = True
-        self._value = FilteredTensor.from_unmasked_value(self._value, self.filter)
+    def finish(self) -> None:
+        if self._done:
+            return
+        if not all(self._chunks_done):
+            missing = [i for i, ok in enumerate(self._chunks_done) if not ok]
+            raise RuntimeError(f"FilteredBuilder not finished; missing chunks: {missing}")
+        self._done = True
 
     def __iter__(self) -> Iterator[Chunk]:
         return self
 
     def __next__(self) -> Chunk:
-        return next(self.it)
+        return next(self._it)
 
-    def __lshift__(self, v):
-        return self._recv(self.chunks[self.i], v)
+    def __lshift__(self, v: FilteredTensor | Tensor) -> None:
+        return self._recv(self._chunks[self._cursor], v)
 
-    def _recv(self, chunk: Chunk, value: FilteredTensor | Tensor):
-        assert isinstance(chunk, Chunk)
-        assert isinstance(value, FilteredTensor | Tensor)
-        assert not self.done
-        assert not self.chunks_done[chunk.idx]
+    def _recv(self, chunk: Chunk, value: FilteredTensor | Tensor) -> None:
+        if self._done:
+            raise RuntimeError("Cannot write into a finished FilteredBuilder")
+        if self._chunks_done[chunk.idx]:
+            raise RuntimeError(f"Chunk {chunk.idx} already written")
+
         if isinstance(value, Tensor):
             value = chunk._to_filtered(value)
+
         value.filter.writeat(target=self._value, value=value.value)
-        self.chunks_done[chunk.idx] = True
-        self.i += 1
+        self._chunks_done[chunk.idx] = True
+        self._cursor += 1
 
-    def takestrl(self, v):
-        assert isinstance(v, list) and self._value.dtype == torch.long
-        o = [self.getlabel(s) for s in v]
-        t = torch.tensor(o, dtype=torch.long, device=self._value.device)
-        self << t
+    def takestrl(self, v: list[str]) -> None:
+        if self._value.dtype != torch.long:
+            raise TypeError("takestrl requires a long dtype target")
+        ids = torch.tensor([self.getlabel(s) for s in v], dtype=torch.long, device=self._value.device)
+        self << ids
 
-    def getlabel(self, s: str):
-        assert isinstance(s, str)
+    def getlabel(self, s: str) -> int:
         if s in self.unique_labels:
             return self.unique_labels[s]
-        self.unique_labels[s] = len(self.unique_labels)
-        return self.unique_labels[s]
-
-    class mbsetter:
-        def __init__(self, mb, chunk):
-            self.mb: MetadataBuilder = mb
-            self.chunk: Chunk = chunk
-
-        def __lshift__(self, v):
-            return self.mb._recv(self.chunk, v)
-
-    def __getitem__(self, chunk):
-        return MetadataBuilder.mbsetter(self, chunk)
-
-    def __setitem__(self, chunk, value):
-        return self._recv(chunk, value)
+        new_id = len(self.unique_labels)
+        self.unique_labels[s] = new_id
+        return new_id

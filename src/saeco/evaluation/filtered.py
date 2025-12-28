@@ -1,1157 +1,925 @@
-from collections.abc import Sequence
-from typing import Any
+from __future__ import annotations
+
+import math
+from collections.abc import Callable, Sequence
+from functools import cached_property
+from typing import Literal, Self, overload
 
 import torch
-from attrs import Converter
+from attrs import define, field
 from torch import Tensor
 
-DEVICE_DEFAULT = "cuda" if torch.cuda.is_available() else "cpu"
+from saeco.data.dict_batch import DictBatch
+
+from .named_filter import NamedFilter
+
+type Indexable = Tensor | DictBatch
+type Slices = tuple[slice | int | None, ...]
 
 
-def assert_isint(x: Any) -> int:
-    assert isinstance(x, int)
-    return x
+def _is_full_slice(s: slice) -> bool:
+    return s.start is None and s.stop is None and s.step is None
 
 
-def convert(fld):
-    def converter_wrapper(fn):
-        assert fld.converter is None
-        fld.converter = Converter(fn)
-        return fn
-
-    return converter_wrapper
-
-
-def right_expand(t: Tensor, shape: tuple[int, ...]) -> Tensor:
-    assert len(shape) >= len(t.shape)
-    assert all(
-        t.shape[i] == shape[i] or shape[i] == -1 or t.shape[i] == 1
-        for i in range(len(t.shape))
-    ), f"Shapes do not match for right-expand: {t.shape} and {shape}"
-    for _ in range(len(shape) - len(t.shape)):
-        t = t.unsqueeze(-1)
-    return t.expand(shape)
+def _normalize_slices(slices: Sequence[slice | int | None] | None) -> Slices:
+    if slices is None:
+        return ()
+    out: Slices = tuple(slices)
+    while out and (
+        out[-1] is None or (isinstance(out[-1], slice) and _is_full_slice(out[-1]))
+    ):
+        out = out[:-1]
+    return out
 
 
-def slice_shape(
-    input_shape: tuple[int, ...] | list[int], slices: Sequence[slice | int | None]
-) -> tuple[int, ...]:
+def _as_index_tuple(slices: Slices) -> tuple[slice | int, ...]:
+    # IMPORTANT: In this codebase, "None" means "no-op / full slice", NOT numpy-newaxis.
+    return tuple(slice(None) if s is None else s for s in slices)
+
+
+def _normalize_slice(s: slice, dim: int) -> tuple[int, int, int]:
+    step = 1 if s.step is None else s.step
+    if step <= 0:
+        raise ValueError(f"Only positive slice steps are supported, got step={step}")
+
+    start = 0 if s.start is None else s.start
+    stop = dim if s.stop is None else s.stop
+
+    # Handle negative indices similar to Python slicing.
+    if start < 0:
+        start += dim
+    if stop < 0:
+        stop += dim
+
+    start = max(0, min(start, dim))
+    stop = max(0, min(stop, dim))
+    return start, stop, step
+
+
+def _slice_len(dim: int, s: slice | int | None) -> int:
+    match s:
+        case None:
+            return dim
+        case int():
+            return 1
+        case slice() as sl:
+            start, stop, step = _normalize_slice(sl, dim)
+            if stop <= start:
+                return 0
+            return (stop - start + step - 1) // step
+    raise TypeError(f"Unexpected slice spec: {type(s)}")
+
+
+def _apply_slices(value: Indexable, slices: Slices) -> Indexable:
+    if not slices:
+        return value
+
+    idx = _as_index_tuple(slices)
+
+    if isinstance(value, DictBatch):
+        # DictBatch only supports slicing on batch dimension (dim 0).
+        if len(idx) > 1:
+            non_batch = [
+                s for s in idx[1:] if not (isinstance(s, slice) and _is_full_slice(s))
+            ]
+            if non_batch:
+                raise ValueError(
+                    f"DictBatch only supports dim0 slicing; got non-trivial slices beyond dim0: {idx[1:]}"
+                )
+        sl0 = idx[0] if idx else slice(None)
+        return value[sl0]
+
+    # Tensor: standard indexing, trailing dims are implicitly full slices.
+    return value[idx]
+
+
+def _sparse_row_mask(v: Tensor, mask: Tensor) -> Tensor:
     """
-    Compute the output shape after applying `slices` as indexing to a tensor
-    with shape `input_shape`.
+    Apply a 1D boolean row-mask to a sparse COO tensor.
+
+    Result is re-indexed so masked rows become [0..mask.sum()).
     """
-    if isinstance(slices, slice):
-        slices = [slices]
-    slices = tuple(slices) + (None,) * (len(input_shape) - len(slices))
-    out_shape: list[int] = []
-    for slc, shape in zip(slices, input_shape, strict=True):
-        if isinstance(slc, int):
-            # Dimension removed
-            continue
-        if slc is None:
-            out_shape.append(shape)
-            continue
-        slmin = slc.start or 0
-        slmax = min(slc.stop or shape, shape)
-        step = slc.step or 1
-        out_shape.append((slmax - slmin + step - 1) // step)
-    return tuple(out_shape + list(input_shape[len(slices) :]))
-
-
-def _calculate_ndim_filtered(
-    slices: Sequence[slice | int | None], mask: Tensor | None
-) -> int:
-    nontrivial_slicing = slices
-    while len(nontrivial_slicing) > 0 and nontrivial_slicing[-1] is None:
-        nontrivial_slicing = nontrivial_slicing[:-1]
-    n = len(nontrivial_slicing)
-    m = sum(isinstance(i, int) for i in nontrivial_slicing)
-    mask_overlap = (n - m) + (mask.ndim if mask is not None else 0)
-    return max(n, mask_overlap)
-
-
-class Filter: ...
-
-
-from saeco.evaluation.filtered_modular import Filter, FilteredTensor
-
-# @define
-# class Filter:
-#     """
-#     Describes a combination of slicing + prefix boolean masking on a
-#     virtual "large" tensor of shape `shape`.
-
-#     - First, `slices` is applied to the base tensor.
-#     - Then, `mask` (a boolean tensor) is applied to the *leading* dimensions
-#       of that sliced view.
-
-#     For `DictBatch` we only ever slice/mask along the batch dimension, so:
-#     - `len(slices) <= 1`
-#     - `mask.ndim == 1`
-#     """
-
-#     slices: Sequence[slice | int | None] = field()
-#     mask: Tensor | None = field()
-#     shape: tuple[int, ...] = field()
-
-#     @property
-#     def virtual_shape(self) -> tuple[int, ...]:
-#         if len(self.shape) < self.ndim_filtered():
-#             raise ValueError(
-#                 f"Shape {self.shape} has less dimensions than the number"
-#                 f" of virtual dimensions {self.ndim_filtered()}"
-#                 ", leaving virtual shape underspecified"
-#             )
-#         return self.shape[: self.ndim_filtered()]
-
-#     @classmethod
-#     def construct_from_full_shape(
-#         cls,
-#         slices: Sequence[slice | int | None],
-#         mask: Tensor | None,
-#         shape: tuple[int, ...],
-#     ) -> Self:
-#         num_virt = _calculate_ndim_filtered(slices, mask)
-#         # if len(shape) > num_virt:
-#         #     shape = shape[:num_virt]
-#         #     raise ValueError(
-#         #         f"Shape {shape} has more dimensions than the number"
-#         #         f" of virtual dimensions {num_virt}"
-#         #     )
-#         return cls(slices=slices, mask=mask, shape=shape[:num_virt])
-
-#     def __attrs_post_init__(self):
-#         while len(self.slices) > 0 and self.slices[-1] is None:
-#             self.slices = self.slices[:-1]
-#         sliced = slice_shape(self.virtual_shape, self.slices)
-#         # assert isinstance(self.mask, Tensor | None)
-
-#         # if not isinstance(self.mask, Tensor):
-#         #     # Treat None / device specifier as "no mask" → full True on first dim.
-#         #     device = DEVICE_DEFAULT
-#         #     if isinstance(self.mask, (str, torch.device)):
-#         #         device = self.mask
-#         #     mask = torch.ones(1, dtype=torch.bool, device=device)
-#         #     self.mask = mask.expand(sliced[0])
-#         if self.mask is not None:
-#             assert isinstance(self.mask, Tensor)
-#             if self.mask.dtype is not torch.bool:
-#                 raise TypeError("Filter.mask must be a boolean tensor")
-#             # if len(sliced) > :
-#             #     raise ValueError(
-#             #         f"Mask shape {tuple(self.mask.shape)} is not a prefix of sliced "
-#             #         f"shape {sliced}"
-#             # )
-#             if tuple(self.mask.shape) != sliced[: len(self.mask.shape)]:
-#                 raise ValueError(
-#                     f"Mask shape {tuple(self.mask.shape)} incompatible with sliced "
-#                     f"prefix {sliced[: self.mask.ndim]} for shape={self.virtual_shape} and "
-#                     f"slices={self.slices!r}"
-#                 )
-
-#     def ndim_filtered(self) -> int:
-#         nontrivial_slicing = self.slices
-#         while len(nontrivial_slicing) > 0 and nontrivial_slicing[-1] is None:
-#             nontrivial_slicing = nontrivial_slicing[:-1]
-#         n = len(nontrivial_slicing)
-#         m = sum(isinstance(i, int) for i in nontrivial_slicing)
-#         mask_overlap = (n - m) + (self.mask.ndim if self.mask is not None else 0)
-#         return max(n, mask_overlap)
-
-#     def slicing_overhang_ndim(self) -> int:
-#         nontrivial_slicing = self.slices
-#         while len(nontrivial_slicing) > 0 and nontrivial_slicing[-1] is None:
-#             nontrivial_slicing = nontrivial_slicing[:-1]
-#         index_shift_after_slicing = 0
-#         n_sliced = len(nontrivial_slicing)
-#         for slc in nontrivial_slicing:
-#             if isinstance(slc, int):
-#                 index_shift_after_slicing += 1
-#             else:
-#                 break
-#         mask_depth = self.mask.ndim if self.mask is not None else 0
-#         adj_mask_depth = mask_depth + index_shift_after_slicing
-#         return n_sliced - adj_mask_depth
-#         # m = sum(isinstance(i, int) for i in nontrivial_slicing)
-#         # mask_overlap = (n_sliced - m) + (self.mask.ndim if self.mask is not None else 0)
-#         # return max(n_sliced, mask_overlap)
-
-#     def _inner_shape(self) -> tuple[int, ...]:
-#         # TODO make this func of arg instead of static
-#         """
-#         Shape of `x[self.slicing_tuple][self.mask]` when `x.shape == self.shape`.
-#         """
-#         sliced = slice_shape(self.virtual_shape, self.slices)
-#         if self.mask is None:
-#             return sliced
-#         assert tuple(self.mask.shape) == sliced[: self.mask.ndim]
-#         return (assert_isint(self.mask.sum().item()),) + tuple(sliced[self.mask.ndim :])
-
-#     def _calculate_inner_shape(self, virtual_shape: tuple[int, ...]) -> tuple[int, ...]:
-#         # TODO make this func of arg instead of static
-#         """
-#         Shape of `x[self.slicing_tuple][self.mask]` when `x.shape == self.shape`.
-#         """
-#         sliced = slice_shape(virtual_shape, self.slices)
-#         if self.mask is None:
-#             return sliced
-#         assert tuple(self.mask.shape) == sliced[: self.mask.ndim]
-#         return (assert_isint(self.mask.sum().item()),) + tuple(sliced[self.mask.ndim :])
-
-#     def _check_shapes(
-#         self,
-#         outer_shape: tuple[int, ...],
-#         inner_shape: tuple[int, ...],
-#     ) -> None:
-#         shape = inner_shape
-#         if self.mask is not None:
-#             assert assert_isint(self.mask.sum().item()) == inner_shape[0]
-#             shape = self.mask.shape + inner_shape[1:]
-#         sliced = slice_shape(outer_shape, self.slices)
-#         assert sliced == shape
-
-#     @overload
-#     def apply(self, tensor: Tensor) -> Tensor: ...
-#     @overload
-#     def apply(self, tensor: DictBatch) -> DictBatch: ...
-
-#     def apply(self, tensor: Tensor | DictBatch) -> Tensor | DictBatch:
-#         """
-#         Apply both `slices` and `mask` to `tensor`.
-
-#         For `DictBatch` this is restricted to the batch dimension.
-#         """
-#         sliced = self.slice(tensor)
-#         return self.apply_mask(sliced)
-
-#     def intersect(self, other: "Filter") -> "Filter":
-#         raise NotImplementedError(
-#             "Intersect not implemented, need to make slice intersect"
-#         )
-
-#     @property
-#     def slicing_tuple(self) -> tuple[slice | int, ...]:
-#         return tuple(
-#             sl if sl is not None else slice(None, None, None) for sl in self.slices
-#         )
-
-#     @overload
-#     def apply_mask(self, tensor: Tensor) -> Tensor: ...
-#     @overload
-#     def apply_mask(self, tensor: DictBatch) -> DictBatch: ...
-
-#     def apply_mask(self, tensor: Tensor | DictBatch) -> Tensor | DictBatch:
-#         """
-#         Apply only the boolean mask (no slicing).
-
-#         For DictBatch we **only** support masking along the batch (0th) dim.
-#         """
-#         if self.mask is None:
-#             return tensor
-
-#         mask = self.mask
-
-#         # DictBatch branch: mask is 1D over the batch dimension
-#         if isinstance(tensor, DictBatch):
-#             if mask.ndim != 1:
-#                 raise ValueError(
-#                     f"DictBatch masking expects a 1D mask over the batch dimension, "
-#                     f"got {mask.ndim}D"
-#                 )
-#             if len(tensor) != mask.shape[0]:
-#                 raise ValueError(
-#                     f"Mask length {mask.shape[0]} does not match DictBatch batch size "
-#                     f"{len(tensor)}"
-#                 )
-#             # DictBatch.__getitem__(bool_mask) already does per-tensor masking
-#             return tensor[mask]
-
-#         # Tensor branch (unchanged)
-#         if tensor.is_sparse:
-#             if not tensor.is_coalesced():
-#                 tensor = tensor.coalesce()
-#             return index_sparse_with_bool(
-#                 tensor, self.mask
-#             ).coalesce()  # TODO for dictbatch  case
-
-#         return tensor[self.mask]
-
-#     def writeat(self, target: Tensor, value: Tensor) -> None:
-#         if self.mask is None:
-#             self.slice(target)[:] = value
-#         else:
-#             self.slice(target)[self.mask] = value
-
-#     def _slice_attr_tensor(
-#         self,
-#         attr: str,
-#         default: int | float,
-#         remove_ints: bool,
-#         device: torch.device | str,
-#     ):
-#         if remove_ints:
-#             return torch.tensor(
-#                 [
-#                     (default if sl is None else getattr(sl, attr))
-#                     for sl in self.slices
-#                     if not isinstance(sl, int)
-#                 ],
-#                 dtype=torch.long,
-#                 device=device,
-#             )
-#         return torch.tensor(
-#             [
-#                 (
-#                     default
-#                     if not isinstance(sl, slice) or (att := getattr(sl, attr)) is None
-#                     else att
-#                 )
-#                 for sl in self.slices
-#             ],
-#             dtype=torch.long,
-#             device=device,
-#         )
-
-#     def slice_starts_tensor(
-#         self, remove_ints: bool, device: torch.device | str
-#     ) -> Tensor:
-#         return self._slice_attr_tensor("start", 0, remove_ints, device)
-
-#     def slice_stops_tensor(
-#         self, remove_ints: bool, device: torch.device | str
-#     ) -> Tensor:
-#         return self._slice_attr_tensor("stop", torch.inf, remove_ints, device)
-
-#     def slice_steps_tensor(
-#         self, remove_ints: bool, device: torch.device | str
-#     ) -> Tensor:
-#         return self._slice_attr_tensor("step", 1, remove_ints, device)
-
-#     @overload
-#     def slice_indices(
-#         self, outer_indices: Tensor, return_mask: Literal[False] = False
-#     ) -> Tensor: ...
-#     @overload
-#     def slice_indices(
-#         self, outer_indices: Tensor, return_mask: Literal[True] = True
-#     ) -> tuple[Tensor, Tensor]: ...
-#     def slice_indices(
-#         self, outer_indices: Tensor, return_mask: bool = False
-#     ) -> Tensor | tuple[Tensor, Tensor]:
-#         assert all(
-#             sl.step is None or sl.step == 1
-#             for sl in self.slices
-#             if isinstance(sl, slice)
-#         )
-#         adjustment = self.slice_starts_tensor(
-#             remove_ints=False, device=outer_indices.device
-#         ).unsqueeze(-1)[: outer_indices.shape[0]]
-#         indices = outer_indices - adjustment
-#         mask = torch.ones_like(outer_indices[0], dtype=torch.bool)
-#         for i, sl in enumerate(self.slices):
-#             if isinstance(sl, int) and i < outer_indices.shape[0]:
-#                 mask &= outer_indices[i] == sl
-#         mask &= (indices >= 0).all(dim=0)
-#         mask &= (
-#             indices
-#             % self.slice_steps_tensor(
-#                 remove_ints=False, device=outer_indices.device
-#             ).unsqueeze(-1)
-#             == 0
-#         ).all(dim=0)
-#         rmdim = [isinstance(sl, int) for sl in self.slices] + [False] * (
-#             outer_indices.shape[0] - len(self.slices)
-#         )
-#         indices = torch.stack(
-#             [
-#                 index
-#                 for rm, index in zip(
-#                     rmdim[: indices.shape[0]], indices.unbind(), strict=True
-#                 )
-#                 if not rm
-#             ]
-#         )
-#         mask &= (
-#             indices
-#             < torch.tensor(
-#                 self._inner_shape()[: indices.shape[0]], device=indices.device
-#             ).unsqueeze(-1)
-#         ).all(dim=0)
-#         if return_mask:
-#             return indices, mask
-#         if not mask.all():
-#             raise ValueError("Some indices out of bounds")
-#         return indices
-
-#     def mask_indices(self, sliced_indices: Tensor) -> Tensor:
-#         if self.mask is None:
-#             return sliced_indices
-#         maskrange = torch.arange(
-#             assert_isint(self.mask.sum().item()), device=self.mask.device
-#         )
-#         n = torch.ones_like(self.mask, dtype=torch.long) * (-1)
-#         n[self.mask] = maskrange
-#         return torch.cat(
-#             [
-#                 n[sliced_indices[: len(self.mask.shape)]],
-#                 sliced_indices[len(self.mask.shape) :],
-#             ]
-#         )
-
-#     def invert_indices_slicing(self, sliced_indices: Tensor) -> Tensor:
-#         assert all(
-#             sl.step is None or sl.step == 1
-#             for sl in self.slices
-#             if isinstance(sl, slice)
-#         )
-#         adjustment = self.slice_starts_tensor(
-#             remove_ints=True, device=sliced_indices.device
-#         ).unsqueeze(-1)
-#         if adjustment.shape[0] < sliced_indices.shape[0]:
-#             adjustment = torch.cat(
-#                 [
-#                     adjustment,
-#                     torch.zeros(
-#                         sliced_indices.shape[0] - adjustment.shape[0],
-#                         1,
-#                         dtype=torch.long,
-#                         device=adjustment.device,
-#                     ),
-#                 ]
-#             )
-#         assert (
-#             adjustment
-#             == torch.tensor(
-#                 [
-#                     (0 if sl is None else (sl.start or 0))
-#                     for sl in self.padded_slices
-#                     if not isinstance(sl, int)
-#                 ],
-#                 device=sliced_indices.device,
-#                 dtype=torch.long,
-#             ).unsqueeze(-1)
-#         ).all()
-#         indices = sliced_indices + adjustment
-#         if any(isinstance(sl, int) for sl in self.slices):
-#             for i, sl in enumerate(self.slices):
-#                 if isinstance(sl, int):
-#                     indices = torch.cat(
-#                         [
-#                             indices[:i],
-#                             torch.tensor(
-#                                 [sl], dtype=torch.long, device=indices.device
-#                             ).expand(1, indices.shape[1]),
-#                             indices[i:],
-#                         ]
-#                     )
-#         return indices
-
-#     @property
-#     def padded_slices(self) -> tuple[slice | int | None, ...]:
-#         return tuple(self.slices) + (None,) * (self.ndim_filtered() - len(self.slices))
-
-#     def invert_mask(self, inner_indices: Tensor) -> Tensor:
-#         if self.mask is None:
-#             return inner_indices
-#         return torch.cat(
-#             [
-#                 self.mask.nonzero()[inner_indices[0]].transpose(-2, -1),
-#                 inner_indices[1:],
-#             ],
-#             dim=0,
-#         )
-
-#     def invert_filter(self, inner_indices):
-#         return self.invert_indices_slicing(self.invert_mask(inner_indices))
-
-#     def to(self, *args, **kwargs) -> "Filter":
-#         return Filter(
-#             slices=self.slices,
-#             mask=self.mask.to(*args, **kwargs) if self.mask is not None else None,
-#             shape=self.virtual_shape,
-#         )
-
-#     @property
-#     def dimmap_i2o(self):
-#         return [i for i, sl in enumerate(self.slices) if isinstance(sl, slice)]
-
-#     @property
-#     def dimmap_o2i(self):
-#         return {i: o for o, i in enumerate(self.dimmap_i2o)}
-
-#     def slice(self, other: Tensor | DictBatch, ndim: int | None = None):
-#         if ndim is None:
-#             return other[self.slicing_tuple]
-#         return other[self.slicing_tuple[:ndim]]
-
-#     # def reduce(self, dim):
-#     #     slices = [sl for i, sl in enumerate(self.slices) if i != dim]
-#     #     shape = self.shape[:dim] + self.shape[dim + 1 :]
-#     #     # TODO check if mask needs reduction and assert shape=1 there
-#     #     # add and-reduce and or-reduce for shape != 1
-#     #     return Filter(slices=slices, mask=self._mask, shape=shape)
-
-
-# def index_sparse_with_bool(value: Tensor, mask: Tensor):
-#     """
-#     performs value[mask] for sparse value
-#     """
-#     assert value.shape[: mask.ndim] == mask.shape
-#     new_shape = [assert_isint(mask.count_nonzero().item())] + list(
-#         value.shape[mask.ndim :]
-#     )
-#     include = mask[value.indices()[: mask.ndim].split(1)].squeeze()
-#     z = torch.zeros_like(mask, dtype=torch.long, device=value.device)
-#     z[mask] = torch.arange(
-#         assert_isint(new_shape[0]), device=value.device, dtype=torch.long
-#     )
-#     new_indices = value.indices()[:, include]
-#     new_indices = torch.cat(
-#         [z[new_indices[: mask.ndim].split(1)], new_indices[mask.ndim :]], dim=0
-#     )
-#     new_values = value.values()[include]
-#     return torch.sparse_coo_tensor(
-#         indices=new_indices, values=new_values, size=new_shape
-#     )
-
-
-# @define
-# class FilteredTensor:
-#     """
-#     Represents a virtual larger tensor via a prefix mask/filter and a value
-#     tensor (or DictBatch).
-
-#     Conceptually, for some large tensor X:
-
-#         FilteredTensor(value=filter.apply(X), filter=filter)
-
-#     so that:
-
-#         self.filter.apply(X) == self.value
-
-#     When `value` is a DictBatch, we only support filtering along the
-#     batch (0th) dimension.
-#     """
-
-#     value: Tensor | DictBatch = field(
-#         init=True,
-#         validator=validators.instance_of((Tensor, DictBatch)),
-#     )
-#     filter: Filter = field(
-#         init=True,
-#         repr=False,
-#         validator=validators.instance_of(Filter),
-#     )
-
-#     @convert(value)
-#     @staticmethod
-#     def value_converter(value: Tensor | DictBatch) -> Tensor | DictBatch:
-#         if isinstance(value, Tensor) and value.is_sparse:
-#             return value.coalesce()
-#         return value
-
-#     def __attrs_post_init__(self):
-#         if self.filter.slicing_overhang_ndim() > 0:
-#             raise ValueError(
-#                 f"Slicing overhang {self.filter.slicing_overhang_ndim()} is > 0,"
-#                 " needs to be adderessed to support (and is not viable for DictBatch)"
-#             )
-
-#         # DictBatch branch: only enforce batch-dim invariants
-#         if isinstance(self.value, DictBatch):
-#             # Only batch dim filtering is supported
-#             if len(self.filter.slices) > 1:
-#                 raise ValueError(
-#                     "For DictBatch, Filter.slices may slice at most the batch dimension"
-#                 )
-
-#             # Value is expected to be already masked: len(value) == mask.sum()
-#             if self.filter.mask is not None:
-#                 expected = assert_isint(self.filter.mask.sum().item())
-#                 if len(self.value) != expected:
-#                     raise ValueError(
-#                         "DictBatch value is expected to be already masked by Filter.mask: "
-#                         f"len(value)={len(self.value)}, mask.sum()={expected}"
-#                     )
-#             return
-
-#         inner = self.filter._inner_shape()
-#         if self.filter.mask is not None:
-#             assert self.value.shape[0] == assert_isint(self.filter.mask.sum().item()), (
-#                 f"Value shape at dimension 0 ({self.value.shape}) does not "
-#                 f"match number of mask elements ({self.filter.mask.sum()})"
-#             )
-#         assert tuple(self.value.shape)[: self.filter.ndim_filtered()] == inner, (
-#             f"Value shape {tuple(self.value.shape)} does not match "
-#             f"filter inner shape {inner}"
-#         )
-
-#     @classmethod
-#     def from_value_and_mask(
-#         cls,
-#         value: Tensor | DictBatch,
-#         mask_obj: Tensor | NamedFilter | None,
-#     ) -> "FilteredTensor":
-#         """
-#         Construct from a *value* that already corresponds to `mask_obj`,
-#         plus the mask itself.
-
-#         Tensor case:
-#             - mask_obj.shape is the prefix shape of the virtual tensor
-#             - value.shape == (mask_obj.sum(), *rest)
-#         DictBatch case:
-#             - mask_obj is 1D over the batch dimension
-#             - each field tensor has shape (mask_obj.sum(), ...)
-#         """
-#         if isinstance(mask_obj, NamedFilter):
-#             mask_obj = mask_obj.filter
-
-#         # Infer device from value
-#         if isinstance(value, Tensor):
-#             device = value.device
-#         else:
-#             try:
-#                 first = next(iter(value.values()))
-#             except StopIteration:
-#                 raise ValueError("Cannot infer device from empty DictBatch") from None
-#             device = first.device
-
-#         if mask_obj is None:
-#             # "Unmasked" → full mask on the batch dimension / first dim
-#             if isinstance(value, Tensor):
-#                 mask = torch.ones(value.shape[0], dtype=torch.bool, device=device)
-#                 slices = [None] * value.ndim
-#                 shape = tuple(value.shape)
-#             else:
-#                 batch_size = value.batch_size
-#                 mask = torch.ones(batch_size, dtype=torch.bool, device=device)
-#                 slices = [None]
-#                 shape = (batch_size,)
-#             return cls(
-#                 value=value,
-#                 filter=Filter.construct_from_full_shape(
-#                     slices=slices, mask=mask, shape=shape
-#                 ),
-#             )
-
-#         # mask provided
-#         if not isinstance(mask_obj, Tensor):
-#             raise TypeError("mask_obj must be a Tensor, NamedFilter or None")
-
-#         mask = mask_obj.to(device)
-
-#         if isinstance(value, Tensor):
-#             shape: tuple[int, ...] = tuple(mask.shape) + tuple(value.shape[1:])
-#             slices = [None] * len(shape)
-#         else:
-#             # DictBatch: only batch dim is modelled in shape
-#             if mask.ndim != 1:
-#                 raise ValueError(
-#                     "For DictBatch, from_value_and_mask expects a 1D mask over "
-#                     "the batch dimension."
-#                 )
-#             shape = tuple(mask.shape)  # e.g. (N,)
-#             slices = [None] * mask.ndim
-
-#         return cls(
-#             value=value,
-#             filter=Filter.construct_from_full_shape(
-#                 slices=slices, mask=mask, shape=shape
-#             ),
-#         )
-
-#     @classmethod
-#     def from_unmasked_value(
-#         cls,
-#         value: Tensor | DictBatch,
-#         filter_obj: Filter | NamedFilter | Tensor | None,
-#         presliced: bool = False,
-#     ) -> "FilteredTensor":
-#         """
-#         Construct from an "unmasked" value and a filter that describes how
-#         to obtain it from the virtual large tensor.
-
-#         - If `filter_obj` is a tensor, it is interpreted as a boolean mask.
-#         - If `presliced` is True, `value` is assumed to already have `slices`
-#           applied, so we only apply the mask.
-#         """
-#         if filter_obj is None:
-#             return cls.from_value_and_mask(value, None)
-
-#         if isinstance(filter_obj, NamedFilter):
-#             filter_obj = filter_obj.filter
-
-#         if isinstance(filter_obj, Tensor):
-#             mask = filter_obj
-#             if isinstance(value, Tensor):
-#                 shape: tuple[int, ...] = tuple(mask.shape) + tuple(value.shape[1:])
-#                 slices = [None] * len(shape)
-#             else:
-#                 # DictBatch: mask over batch dimension only
-#                 if mask.ndim != 1:
-#                     raise ValueError(
-#                         "When value is DictBatch, mask tensor must be 1D "
-#                         "(over the batch dimension)."
-#                     )
-#                 shape = tuple(mask.shape)
-#                 slices = (
-#                     [None] * mask.ndim
-#                 )  # TODO make sure post init checks for [1:] == [None,...] rather than len=1 (and for not [0] is int)
-#             filter_obj = Filter(slices=slices, mask=mask, shape=shape)
-
-#         if not isinstance(filter_obj, Filter):
-#             raise TypeError("filter_obj must be a Filter, Tensor, NamedFilter or None")
-
-#         if presliced:
-#             return cls(
-#                 value=filter_obj.apply_mask(value),
-#                 filter=filter_obj,
-#             )
-#         return cls(
-#             value=filter_obj.apply(value),
-#             filter=filter_obj,
-#         )
-
-#     # ------------------------------------------------------------------ #
-#     #                               Masking                              #
-#     # ------------------------------------------------------------------ #
-
-#     @overload
-#     def mask_by_other(
-#         self,
-#         other: "Filter | Tensor | FilteredTensor",
-#         return_ft: Literal[True],
-#         presliced: bool | None,
-#         value_like: bool = False,
-#     ) -> "FilteredTensor": ...
-
-#     @overload
-#     def mask_by_other(
-#         self,
-#         other: "Filter | Tensor | FilteredTensor",
-#         return_ft: Literal[False],
-#         presliced: bool | None,
-#         value_like: bool = False,
-#     ) -> Tensor | DictBatch: ...
-
-#     def mask_by_other(
-#         self,
-#         other: "Filter | Tensor | FilteredTensor",
-#         return_ft: bool = False,
-#         presliced: bool | None = None,
-#         value_like: bool = False,
-#     ) -> "Tensor | DictBatch | FilteredTensor":
-#         """
-#         Apply an additional mask `other` on top of this FilteredTensor.
-
-#         - If `other` is a Filter, we require it to describe the same
-#           virtual tensor (same `shape` and `slices`).
-#         - If `other` is a tensor mask, `presliced` controls whether that
-#           mask already matches the filter's sliced view.
-#         - If `value_like` is True, the mask is interpreted in the
-#           "value space" (shape matching self.value), otherwise in the
-#           virtual large tensor space.
-#         """
-#         if isinstance(other, FilteredTensor):
-#             other = other.filter
-
-#         mask: Tensor | None = None
-
-#         if isinstance(other, Filter):
-#             if self.filter.shape != other.shape or (
-#                 self.filter.slicing_tuple != other.slicing_tuple
-#             ):
-#                 raise ValueError(
-#                     "Filters must describe the same logical view to be combined"
-#                 )
-#             assert presliced is None
-#             mask = other.mask
-#             if mask is None:
-#                 return self
-#         elif isinstance(other, Tensor):
-#             mask = other
-#             if not presliced:
-#                 mask = self.filter.slice(mask)
-#         else:
-#             if presliced is not None:
-#                 raise ValueError(
-#                     "presliced has no effect when other is not Tensor or Filter"
-#                 )
-#             assert False
-
-#         assert mask is not None
-#         selfmask = self.filter.mask
-#         # if selfmask is None:
-#         #     raise ValueError("Self filter must have a mask to combine")
-
-#         # Map global/local mask into value space
-#         if value_like or selfmask is None:
-#             # mask already lives in the local (value) space
-#             filtered_mask = mask
-#         else:
-#             # mask is in the global space; restrict to currently-selected docs
-#             if selfmask.ndim > mask.ndim:
-#                 mask = right_expand(mask, selfmask.shape)
-#             filtered_mask = mask[selfmask]
-
-#         # Apply to value -------------------------------------------------
-#         if isinstance(self.value, DictBatch):
-#             if filtered_mask.ndim != 1:
-#                 raise ValueError(
-#                     "For DictBatch, combined mask must be 1D over the batch dim"
-#                 )
-#             new_value = self.value[filtered_mask]
-#         else:
-#             if self.value.is_sparse:
-#                 v = self.value
-#                 assert isinstance(v, Tensor)
-#                 if not v.is_coalesced():
-#                     v = v.coalesce()
-#                 new_value = index_sparse_with_bool(v, filtered_mask)
-#             else:
-#                 new_value = self.value[filtered_mask]
-#         if not return_ft:
-#             return new_value
-
-#         # Build the new global mask
-
-#         if selfmask is None:
-#             outmask = filtered_mask
-#         else:
-#             if selfmask.ndim < mask.ndim:
-#                 selfmask = right_expand(selfmask, mask.shape)
-#             if value_like:
-#                 # scatter local mask back into global positions where selfmask is True
-#                 outmask = torch.zeros_like(selfmask).masked_scatter(
-#                     selfmask, filtered_mask
-#                 )
-#             else:
-#                 outmask = selfmask & mask
-
-#         return FilteredTensor(
-#             value=new_value,
-#             filter=Filter(
-#                 slices=self.filter.slices,
-#                 mask=outmask,
-#                 shape=self.filter.shape,
-#             ),
-#         )
-
-#     def filter_inactive_docs(self) -> "FilteredTensor":
-#         if isinstance(self.value, DictBatch):
-#             assert False
-#         if self.value.is_sparse:
-#             newmask = torch.zeros(
-#                 (
-#                     assert_isint(self.filter.mask.sum().item())
-#                     if self.filter.mask is not None
-#                     else self.value.shape[0]
-#                 ),
-#                 dtype=torch.bool,
-#                 device=self.value.device,
-#             )
-#             newmask[self.value.indices()[0]] = True
-#         else:
-#             newmask = self.value > 0
-#             while newmask.ndim > 1:
-#                 newmask = newmask.any(dim=-1)
-#             assert (
-#                 self.filter.mask is None
-#                 or newmask.shape[0] == self.filter.mask.sum().item()
-#             )
-#         return self.mask_by_other(
-#             newmask, return_ft=True, presliced=True, value_like=True
-#         )
-
-#     def to_filtered_like_self(
-#         self,
-#         t: Tensor,
-#         presliced: bool = True,
-#         premasked: bool = True,
-#         ndim: int | None = None,
-#     ) -> "FilteredTensor":
-#         if premasked and not presliced:
-#             raise ValueError("Cannot be masked and not sliced")
-#         if not presliced:
-#             t = self.filter.slice(t, ndim=ndim)
-#         if not premasked:
-#             t = t[self.filter.mask]
-#         filt = self.filter
-#         if ndim is not None:
-#             filt = Filter(
-#                 slices=self.filter.slices[:ndim],
-#                 mask=self.filter.mask,
-#                 shape=self.filter.shape[:ndim],
-#             )
-#         return FilteredTensor(value=t, filter=filt)
-
-#     # ------------------------------------------------------------------ #
-#     #                  Indexing / "torch-like" helpers                   #
-#     # ------------------------------------------------------------------ #
-
-#     def __repr__(self) -> str:
-#         return f"FilteredTensor(value={self.value}, mask={self.filter})"
-
-#     ### indexing
-#     def internalize_indices(self, indices: Tensor):
-#         assert indices.ndim == 2
-#         ids, mask = self.filter.slice_indices(indices, return_mask=True)
-#         ids = ids[:, mask]
-#         ids = self.filter.mask_indices(ids)
-#         new_mask = mask.clone()
-#         new_mask[mask] = ids >= 0
-#         ids = ids[:, (ids >= 0).all(dim=0)]
-#         return ids, new_mask
-
-#     def externalize_indices(self, indices: Tensor):
-#         if indices.ndim != 2:
-#             raise ValueError("Indices must be 2D")
-#         return self.filter.invert_filter(indices)
-
-#     def index_where_valid(self, indices: Tensor):
-#         ids, mask = self.internalize_indices(indices)
-#         return self.value[ids.unbind()], mask
-
-#     def __getitem__(self, i):
-#         if isinstance(i, Tensor) and i.dtype == torch.long and i.ndim == 2:
-#             si = self.filter.slice_indices(i)
-#             indices = self.filter.mask_indices(si)
-#             if (indices == -1).any():
-#                 raise IndexError("Some indexed values are excluded by the mask")
-#             if self.is_sparse:
-#                 if i.shape[0] != 1:
-#                     raise ValueError(
-#                         "Sparse tensors can only be indexed with 1D tensors"
-#                     )
-#                 return self.value.index_select(0, indices)
-#             return self.value[indices.unbind()]
-
-#         raise NotImplementedError(
-#             "Indexing FilteredTensor is only implemented for 2D integer tensors"
-#         )
-
-#     def index_select(self, index: Tensor, dim: int):
-#         if dim != 0:
-#             raise NotImplementedError("Only dim=0 is implemented")
-#         assert index.ndim == 1
-#         index = index.unsqueeze(0)
-#         si = self.filter.slice_indices(index)
-#         inner_index = self.filter.mask_indices(si)
-#         if (inner_index == -1).any():
-#             raise IndexError("Some indexed values are excluded by the filter")
-
-#         inner_index = inner_index.squeeze(0)
-#         if isinstance(self.value, DictBatch):
-#             return self.value[inner_index]
-#         return self.value.index_select(dim, inner_index)
-
-#     def to_sparse_unfiltered(self) -> Tensor:
-#         # TODO just deprecate this? not used and doesn't make sense for dictbatched FTs
-#         """
-#         Materialise the full virtual tensor as a sparse COO tensor.
-
-#         Only defined when the underlying value is a sparse tensor.
-#         """
-#         if not self.is_sparse or isinstance(self.value, DictBatch):
-#             raise TypeError(
-#                 "to_sparse_unfiltered is only defined for sparse tensor values"
-#             )
-#         return torch.sparse_coo_tensor(
-#             indices=self.indices(),
-#             values=self.values(),
-#             size=self.shape,
-#             dtype=self.value.dtype,
-#             device=self.value.device,
-#         )
-
-#     def to_dense_unfiltered(self, default_value: int | float = 0) -> Tensor:
-#         # TODO remove?
-#         """
-#         Materialise the full virtual tensor as a dense tensor.
-
-#         Only defined when the underlying value is a tensor.
-#         """
-#         if isinstance(self.value, DictBatch):
-#             raise TypeError("to_dense_unfiltered is only defined for tensor values")
-
-#         z = torch.full(
-#             self.shape,
-#             default_value,
-#             dtype=self.value.dtype,
-#             device=self.value.device,
-#         )
-#         dense_value = self.value.to_dense() if self.is_sparse else self.value
-#         self.filter.slice(z)[self.filter.mask] = dense_value
-#         return z
-
-#     def to_sparse(self) -> "FilteredTensor":
-#         if isinstance(self.value, DictBatch):
-#             raise TypeError("to_sparse is only defined for tensor values")
-#         if self.is_sparse:
-#             return self
-#         return FilteredTensor(
-#             value=torch.sparse_coo_tensor(
-#                 indices=self.value.indices(),
-#                 values=self.value.values(),
-#                 size=self.value.shape,
-#             ),
-#             filter=self.filter,
-#         )
-
-#     def to_dense(self) -> "FilteredTensor":
-#         if isinstance(self.value, DictBatch):
-#             raise TypeError("to_dense is only defined for tensor values")
-#         if not self.is_sparse:
-#             return self
-#         return FilteredTensor(value=self.value.to_dense(), filter=self.filter)
-
-#     def indices(self) -> Tensor:
-#         if not self.is_sparse or isinstance(self.value, DictBatch):
-#             raise TypeError("indices() is only defined for sparse tensor values")
-#         return self.filter.invert_filter(self.value.indices())  # type: ignore[arg-type]
-
-#     def values(self) -> Tensor:
-#         if not self.is_sparse or isinstance(self.value, DictBatch):
-#             raise TypeError("values() is only defined for sparse tensor values")
-#         return self.value.values()  # type: ignore[call-arg]
-
-#     def nonzero(self) -> Tensor:
-#         if isinstance(self.value, DictBatch):
-#             raise TypeError("nonzero() is only defined for tensor values")
-#         return self.filter.invert_filter(
-#             self.value.nonzero().transpose(-2, -1)  # type: ignore[call-arg]
-#         )
-
-#     @property
-#     def is_sparse(self) -> bool:
-#         return isinstance(self.value, Tensor) and self.value.is_sparse
-
-#     @property
-#     def shape(self) -> tuple[int, ...]:
-#         """
-#         Shape of the virtual large tensor.
-
-#         For DictBatch this is just the shape tracked by the Filter (typically
-#         a 1‑tuple `(batch_size,)`).
-#         """
-#         if isinstance(self.value, DictBatch):
-#             return DictBatchShapes(
-#                 batch_sizes=self.filter.virtual_shape,
-#                 shapes=self.value.shapes,
-#             )
-#         return self.filter.virtual_shape + self.value.shape[1:]
-
-#     def cuda(self) -> "FilteredTensor":
-#         return self.to(torch.device("cuda"))
-
-#     def to(self, *args, **kwargs) -> "FilteredTensor":
-#         filter_kwargs = kwargs
-#         if "dtype" in kwargs:
-#             filter_kwargs = {**kwargs, "dtype": torch.bool}
-#         filter_args = args
-#         for i, arg in enumerate(args):
-#             if isinstance(arg, torch.dtype):
-#                 filter_args = filter_args[:i] + (filter_kwargs,) + filter_args[i + 1 :]
-#         return FilteredTensor(
-#             value=self.value.to(*args, **kwargs),
-#             filter=self.filter.to(*filter_args, **filter_kwargs),
-#         )
-
-# def select(self, select_fn):
-#     if self.value.is_sparse:
-#         self.value = self.value.coalesce()
-#         vmask: Tensor = select_fn(self.value.values())
-#         nv = torch.sparse_coo_tensor(
-#             indices=self.value.indices()[:, vmask],
-#             values=self.value.values()[vmask],
-#             size=[vmask.count_nonzero(), *self.value.shape[1:]],
-#         )
-#         mask = torch.zeros_like(self.filter.mask)
-#         mask[self.filter.mask] = vmask
-#         return FilteredTensor(
-#             value=nv,
-#             filter=Filter(
-#                 slices=self.filter.slices, mask=mask, shape=self.filter.shape
-#             ),
-#         )
-#     vmask = select_fn(self.value)
-#     mask = torch.zeros_like(self.filter.mask)
-#     mask[self.filter.mask] = vmask
-#     return FilteredTensor(
-#         value=self.value[vmask],
-#         filter=Filter(
-#             slices=self.filter.slices, mask=mask, shape=self.filter.shape
-#         ),
-#     )
-
-
-def checker1(shape, slice_dims, unmasked_dims=0):
-    fts = []
-    numel = torch.prod(torch.tensor(shape)).item()
-    big_arange = torch.arange(numel).reshape(shape)
-
-    def slice4(dimshape):
-        sl12a = slice(dimshape // 2, None, 2)
-        sl12b = slice(dimshape // 2 + 1, None, 2)
-        sl22a = slice(None, dimshape // 2, 2)
-        sl22b = slice(1, dimshape // 2, 2)
-        return sl12a, sl12b, sl22a, sl22b
-
-    slices = [[i] for i in slice4(shape[0])]
-    for i in range(1, slice_dims):
-        prev_slices = slices
-        slices = []
-        for sl in prev_slices:
-            for sl2 in slice4(shape[i]):
-                slices.append(sl + [sl2])
-    fts = []
-    for sl_l in slices:
-        mshape = [sh // 4 for sh in shape[:slice_dims]] + shape[slice_dims:]
-        if unmasked_dims:
-            mshape = mshape[:-unmasked_dims]
-        mask_a = torch.rand(*mshape) > 0.5
-        mask_b = ~mask_a
-        fts.append(
-            FilteredTensor.from_unmasked_value(
-                big_arange, Filter(sl_l, mask_a, shape=shape)
-            )
-        )
-        fts.append(
-            FilteredTensor.from_unmasked_value(
-                big_arange, Filter(sl_l, mask_b, shape=shape)
-            )
+    if not v.is_sparse:
+        raise TypeError("_sparse_row_mask expects a sparse COO tensor")
+
+    v = v.coalesce()
+    if mask.ndim != 1:
+        raise ValueError(f"mask must be 1D, got {mask.ndim}D")
+
+    idx = v.indices()
+    vals = v.values()
+    rows = idx[0]
+
+    mask = mask.to(device=rows.device)
+    keep = mask[rows]
+
+    # Map old row indices -> new row indices in masked space.
+    n_selected = int(mask.sum().item())
+    inv = torch.full((mask.numel(),), -1, dtype=torch.long, device=rows.device)
+    inv[mask] = torch.arange(n_selected, device=rows.device)
+
+    new_rows = inv[rows[keep]]
+    new_idx = torch.cat([new_rows.unsqueeze(0), idx[1:, keep]], dim=0)
+
+    new_size = (n_selected,) + tuple(v.shape[1:])
+    return torch.sparse_coo_tensor(new_idx, vals[keep], new_size, device=v.device, dtype=v.dtype).coalesce()
+
+
+def _device_of(x: Indexable) -> torch.device:
+    if isinstance(x, Tensor):
+        return x.device
+    # DictBatch: take first tensor device
+    for v in x.values():
+        return v.device
+    return torch.device("cpu")
+
+
+@define(slots=True)
+class Filter:
+    """
+    Filter description for FilteredTensor.
+
+    - `shape` is the *virtual* shape of filtered dimensions.
+    - `slices` maps virtual dims -> stored dims (with ints removing dims).
+    - `mask` is optional and applies on dim0 *after slicing* (sliced space).
+    """
+
+    slices: Slices = field(converter=_normalize_slices)
+    shape: tuple[int, ...] = field()
+    mask: Tensor | None = field(default=None)
+
+    def __attrs_post_init__(self) -> None:
+        if self.mask is not None:
+            if not isinstance(self.mask, Tensor) or self.mask.dtype is not torch.bool:
+                raise TypeError("Filter.mask must be a torch.bool Tensor or None")
+            if self.mask.ndim != 1:
+                raise ValueError("Filter.mask must be 1D (doc/batch mask)")
+
+    @property
+    def virtual_shape(self) -> tuple[int, ...]:
+        return tuple(self.shape)
+
+    @property
+    def filtered_ndim(self) -> int:
+        return len(self.shape)
+
+    def sliced_doc_len(self) -> int:
+        if not self.shape:
+            raise ValueError("Filter.shape must include at least the batch/doc dim")
+        sl0 = self.slices[0] if self.slices else None
+        return _slice_len(self.shape[0], sl0)
+
+    def normalized_mask_in_sliced_space(self) -> Tensor | None:
+        """
+        If mask is global-length but slices[0] selects a chunk, slice it down.
+        """
+        if self.mask is None:
+            return None
+        if not self.shape:
+            return self.mask
+
+        doc_virtual = self.shape[0]
+        sl0 = self.slices[0] if self.slices else None
+        doc_sliced = _slice_len(doc_virtual, sl0)
+
+        if self.mask.shape[0] == doc_sliced:
+            return self.mask
+        if self.mask.shape[0] == doc_virtual:
+            if sl0 is None:
+                return self.mask
+            match sl0:
+                case slice() as s:
+                    return self.mask[s]
+                case int(i):
+                    return self.mask[i : i + 1]
+                case None:
+                    return self.mask
+        raise ValueError(
+            f"Mask length mismatch: mask={self.mask.shape[0]}, "
+            f"virtual_doc={doc_virtual}, sliced_doc={doc_sliced}, slices[0]={sl0}"
         )
 
-    z = torch.zeros(shape, dtype=torch.long)
+    def to(self, *args, **kwargs) -> Self:
+        m = self.mask
+        if m is not None:
+            m = m.to(*args, **kwargs)
+        return self.__class__(slices=self.slices, mask=m, shape=self.shape)
 
-    for ft in fts:
-        assert (ft.filter.apply(z) == 0).all()
-        ft.filter.slice(z)[ft.filter.mask] = ft.value
-        assert (ft.filter.apply(z) == ft.value).all()
-    assert (z == big_arange).all()
-    print("success")
+    def writeat(self, target: Indexable, value: Indexable, *, _value_kw: Any = None) -> None:
+        """
+        Write `value` into `target` at the positions selected by (slices, mask).
+
+        Note: accepts the old keyword call style:
+            filter.writeat(target=..., value=...)
+        """
+        # Preserve compatibility with calls like writeat(target=..., value=...)
+        if _value_kw is not None:
+            value = _value_kw  # type: ignore[assignment]
+
+        idx = _as_index_tuple(self.slices)
+        m = self.normalized_mask_in_sliced_space()
+
+        if isinstance(target, DictBatch):
+            if idx and len(idx) > 1:
+                non_batch = [
+                    s for s in idx[1:] if not (isinstance(s, slice) and _is_full_slice(s))
+                ]
+                if non_batch:
+                    raise ValueError("Cannot writeat into DictBatch with non-batch slicing")
+            sl0 = idx[0] if idx else slice(None)
+            if m is None:
+                target[sl0] = value  # type: ignore[index]
+            else:
+                # Target slice then mask.
+                sub = target[sl0]
+                sub[m] = value  # type: ignore[index]
+                target[sl0] = sub  # type: ignore[index]
+            return
+
+        view = target[idx] if idx else target
+        if m is None:
+            view[...] = value  # type: ignore[index]
+        else:
+            view[m] = value  # type: ignore[index]
 
 
-# def main():
-#     for i in range(1, 4):
-#         checker1([128, 128, 128, 128], i)
+@define(slots=True)
+class FilteredTensor:
+    """
+    Tensor/DictBatch with a virtual "larger" batch/doc space, represented via:
 
-#     value = torch.arange(20)
-#     slice_mask = slice(2, 14, 2)
-#     tensor_mask = torch.tensor([True, False, True, True, False, True])
-#     mask = Filter(slices=[slice_mask], mask=tensor_mask, shape=(20,))
+      virtual tensor (shape = Filter.shape + trailing dims)
+        -> apply Filter.slices (usually chunk selection / feature index)
+        -> apply Filter.mask (doc selection)  [optional]
+        -> stored value (self.value)
 
-#     ft = FilteredTensor.from_unmasked_value(value, mask)
+    This matches how your code uses FilteredTensor:
+      - chunk doc-range slices + optional per-chunk doc mask
+      - feature tensors: fixed feature id via int slice in last dim
+      - preserve trailing dims for sparse indices externalize/internalize
+    """
 
-#     t = torch.arange(10, 30)
-#     filtered_t = ft.filter.apply(t)
-#     result = ft.value + filtered_t
+    value: Indexable
+    filter: Filter
 
-#     ft_result = ft.to_filtered_like_self(result)
+    # ---- shape helpers ----
 
-#     dense_result = ft_result.to_dense()
-#     print(dense_result)
+    @property
+    def slices(self) -> Slices:
+        return self.filter.slices
 
+    @property
+    def mask(self) -> Filter:
+        return self.filter
 
-# if __name__ == "__main__":
-#     main()
+    @property
+    def filter_mask(self) -> Tensor | None:
+        return self.filter.mask
+
+    def _compute_filtered_shape_prefix(self):
+        return self.virtual_shape
+
+    @property
+    def virtual_shape(self) -> tuple[int, ...]:
+        return self.filter.virtual_shape
+
+    @cached_property
+    def _stored_ndim(self) -> int:
+        """
+        Number of *stored* dims corresponding to filtered dims (excluding int-sliced dims).
+        Does not count trailing dims.
+        """
+        n = 0
+        for i in range(len(self.filter.shape)):
+            sl = self.slices[i] if i < len(self.slices) else None
+            if isinstance(sl, int):
+                continue
+            n += 1
+        return n
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """
+        Full conceptual shape = filter.shape + trailing dims from value.
+
+        Trailing dims are those not part of filter.shape (e.g. seq_len, d_dict for chunk tensors).
+        """
+        if isinstance(self.value, DictBatch):
+            # DictBatch has only batch dim shape semantics.
+            trailing: tuple[int, ...] = ()
+        else:
+            trailing = tuple(self.value.shape[self._stored_ndim :])
+        return tuple(self.filter.shape) + trailing
+
+    @property
+    def is_sparse(self) -> bool:
+        return isinstance(self.value, Tensor) and self.value.is_sparse
+
+    @property
+    def device(self) -> torch.device:
+        return _device_of(self.value)
+
+    @property
+    def n_selected(self) -> int:
+        """
+        Number of selected docs in the *sliced* space.
+
+        If mask exists: mask.sum()
+        else: doc length after slice[0]
+        """
+        m = self.filter.normalized_mask_in_sliced_space()
+        if m is not None:
+            return int(m.sum().item())
+        return self.filter.sliced_doc_len()
+
+    # ---- mask index maps (used for index externalization) ----
+
+    @cached_property
+    def _mask_true_positions(self) -> Tensor | None:
+        m = self.filter.normalized_mask_in_sliced_space()
+        if m is None:
+            return None
+        return m.nonzero(as_tuple=False).flatten()
+
+    @cached_property
+    def _mask_inverse_map(self) -> Tensor | None:
+        m = self.filter.normalized_mask_in_sliced_space()
+        if m is None:
+            return None
+        n_selected = int(m.sum().item())
+        inv = torch.full((m.numel(),), -1, dtype=torch.long, device=m.device)
+        inv[m] = torch.arange(n_selected, device=m.device)
+        return inv
+
+    # ---- constructors ----
+
+    @classmethod
+    def from_value_and_mask(cls, value: Indexable, mask_obj: Tensor | None) -> Self:
+        if mask_obj is None:
+            # Trivial full mask.
+            bs = value.shape[0] if isinstance(value, Tensor) else value.batch_size
+            mask_obj = torch.ones(bs, dtype=torch.bool, device=_device_of(value))
+        filt = Filter(slices=(), mask=mask_obj.to(dtype=torch.bool), shape=(mask_obj.shape[0],))
+        # Here, mask is in sliced space already, and value is assumed already masked.
+        return cls(value=value, filter=filt)
+
+    @classmethod
+    def from_unmasked_value(
+        cls,
+        value: Indexable,
+        slicing: Sequence[slice | int | None] | None = None,
+        mask: Tensor | None = None,
+        filter_obj: Filter | NamedFilter | Tensor | None = None,
+        presliced: bool = False,
+    ) -> Self:
+        """
+        Build a FilteredTensor by applying slicing (optional) then mask (optional).
+
+        - If `presliced=False`, slicing is applied to `value`.
+        - Mask is always interpreted as applying on dim0 *after slicing*.
+        """
+        # Resolve filter_obj -> (slices, mask, shape)
+        shape: tuple[int, ...] | None = None
+        if filter_obj is not None:
+            if isinstance(filter_obj, Filter):
+                slicing = filter_obj.slices
+                mask = filter_obj.mask
+                shape = filter_obj.shape
+            elif isinstance(filter_obj, NamedFilter):
+                slicing = ()
+                mask = filter_obj.filter
+                shape = (int(mask.shape[0]),)
+            elif isinstance(filter_obj, Tensor):
+                slicing = ()
+                mask = filter_obj
+                shape = (int(mask.shape[0]),)
+            else:
+                raise TypeError(f"Unsupported filter_obj type: {type(filter_obj)}")
+
+        slices = _normalize_slices(slicing)
+
+        if shape is None:
+            # Infer shape for filtered dims from the (un-sliced) input if possible.
+            if presliced:
+                raise ValueError("presliced=True requires filter_obj with explicit shape")
+            if isinstance(value, DictBatch):
+                base = (value.batch_size,)
+            else:
+                base = tuple(value.shape)
+            if mask is not None:
+                shape = (int(mask.shape[0]),)
+            else:
+                shape = base[: len(slices)] if slices else (base[0],)
+
+        filt = Filter(slices=slices, mask=mask, shape=shape)
+
+        # Apply slicing if needed.
+        if slices and not presliced:
+            value = _apply_slices(value, slices)
+
+        # Normalize mask into sliced space, then apply it.
+        m = filt.normalized_mask_in_sliced_space()
+        if m is not None:
+            m = m.to(device=_device_of(value), dtype=torch.bool)
+            if isinstance(value, DictBatch):
+                value = value[m]
+            else:
+                if value.is_sparse:
+                    value = _sparse_row_mask(value, m)
+                else:
+                    value = value[m]
+
+            filt = Filter(slices=slices, mask=m, shape=shape)
+
+        return cls(value=value, filter=filt)
+
+    # ---- index mapping ----
+
+    def internalize_indices(self, indices: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        Map full-space indices -> stored-space indices.
+
+        Indices are shaped (ndim, n_points) and may include trailing dims beyond Filter.shape.
+        """
+        if indices.ndim != 2:
+            raise ValueError("indices must be a 2D tensor shaped (ndim, n_points)")
+        if indices.dtype is not torch.long:
+            indices = indices.to(dtype=torch.long)
+
+        filt_ndim = len(self.filter.shape)
+        in_ndim = indices.shape[0]
+        n = indices.shape[1]
+        device = indices.device
+
+        idx_filtered = indices[: min(filt_ndim, in_ndim)]
+        trailing = indices[filt_ndim:] if in_ndim > filt_ndim else None
+
+        valid = torch.ones(n, dtype=torch.bool, device=device)
+        inner_rows: list[Tensor] = []
+
+        # For dims we have, apply slicing mapping and validate int dims if provided.
+        for dim_i in range(idx_filtered.shape[0]):
+            spec = self.slices[dim_i] if dim_i < len(self.slices) else None
+            coord = idx_filtered[dim_i]
+
+            match spec:
+                case int(val):
+                    valid &= coord == val
+                case slice() as s:
+                    start, stop, step = _normalize_slice(s, self.filter.shape[dim_i])
+                    valid &= (coord >= start) & (coord < stop)
+                    valid &= ((coord - start) % step) == 0
+                    inner_rows.append((coord - start) // step)
+                case None:
+                    inner_rows.append(coord)
+                case _:
+                    raise TypeError(f"Unexpected slice spec: {type(spec)}")
+
+        inner = (
+            torch.stack(inner_rows, dim=0)
+            if inner_rows
+            else torch.empty((0, n), dtype=torch.long, device=device)
+        )
+
+        # Apply doc-mask mapping on first stored dim (if present).
+        m = self.filter.normalized_mask_in_sliced_space()
+        if m is not None and inner.shape[0] >= 1:
+            m = m.to(device=device)
+            inv = self._mask_inverse_map
+            if inv is None:
+                raise RuntimeError("mask inverse map missing")
+            inv = inv.to(device=device)
+
+            doc = inner[0]
+            valid &= (doc >= 0) & (doc < m.shape[0])
+            doc_clamped = doc.clamp(0, m.shape[0] - 1)
+            valid &= m[doc_clamped]
+
+            mapped = inv[doc_clamped]
+            inner = inner.clone()
+            inner[0] = mapped
+
+        if trailing is not None and trailing.numel() > 0:
+            inner = torch.cat([inner, trailing], dim=0)
+
+        return inner, valid
+
+    def externalize_indices(self, indices: Tensor) -> Tensor:
+        """
+        Map stored-space indices -> full-space indices.
+
+        Input indices may include trailing dims beyond stored filtered dims; they are preserved.
+        """
+        if indices.ndim != 2:
+            raise ValueError("indices must be a 2D tensor shaped (ndim, n_points)")
+        if indices.dtype is not torch.long:
+            indices = indices.to(dtype=torch.long)
+
+        filt_ndim = len(self.filter.shape)
+        stored_ndim = self._stored_ndim
+        in_ndim = indices.shape[0]
+
+        idx_filtered = indices[: min(stored_ndim, in_ndim)]
+        trailing = indices[stored_ndim:] if in_ndim > stored_ndim else None
+
+        # Unmask doc dimension.
+        m = self.filter.normalized_mask_in_sliced_space()
+        if m is not None and idx_filtered.shape[0] >= 1:
+            tp = self._mask_true_positions
+            if tp is None:
+                raise RuntimeError("mask true positions missing")
+            tp = tp.to(device=indices.device)
+            doc = idx_filtered[0]
+            idx_filtered = idx_filtered.clone()
+            idx_filtered[0] = tp[doc]
+
+        # Rebuild full filtered dims, inserting int dims.
+        out_rows: list[Tensor] = []
+        p = 0
+        for dim_i in range(filt_ndim):
+            spec = self.slices[dim_i] if dim_i < len(self.slices) else None
+            match spec:
+                case int(val):
+                    out_rows.append(
+                        torch.full(
+                            (idx_filtered.shape[1],),
+                            int(val),
+                            device=indices.device,
+                            dtype=torch.long,
+                        )
+                    )
+                case slice() as s:
+                    inner = idx_filtered[p]
+                    p += 1
+                    start, _stop, step = _normalize_slice(s, self.filter.shape[dim_i])
+                    out_rows.append(inner * step + start)
+                case None:
+                    inner = idx_filtered[p]
+                    p += 1
+                    out_rows.append(inner)
+                case _:
+                    raise TypeError(f"Unexpected slice spec: {type(spec)}")
+
+        out = torch.stack(out_rows, dim=0) if out_rows else idx_filtered
+        if trailing is not None and trailing.numel() > 0:
+            out = torch.cat([out, trailing], dim=0)
+        return out
+
+    # ---- indexing / selection helpers ----
+
+    def index_where_valid(self, indices: Tensor) -> tuple[Indexable, Tensor]:
+        inner, valid = self.internalize_indices(indices)
+        inner_valid = inner[:, valid]
+        if isinstance(self.value, DictBatch):
+            return self.value[inner_valid[0]], valid
+
+        if self.value.is_sparse:
+            # We only support row selection for sparse values here.
+            return self.value.index_select(0, inner_valid[0]).coalesce(), valid
+
+        return self.value[tuple(inner_valid)], valid
+
+    def index_select(self, index: Tensor, dim: int = 0) -> Indexable:
+        if dim != 0:
+            raise NotImplementedError("FilteredTensor.index_select only supports dim=0")
+
+        if index.ndim != 1:
+            raise ValueError("index must be 1D")
+
+        inner, valid = self.internalize_indices(index.unsqueeze(0))
+        if not bool(valid.all().item()):
+            raise IndexError("Some indices are outside the filtered region")
+
+        inner_idx = inner[0]
+        if isinstance(self.value, DictBatch):
+            return self.value[inner_idx]
+        if self.value.is_sparse:
+            return self.value.index_select(0, inner_idx).coalesce()
+        return self.value.index_select(0, inner_idx)
+
+    # ---- mask composition ----
+
+    @overload
+    def mask_by_other(
+        self,
+        other: Tensor | Self,
+        *,
+        return_ft: Literal[True],
+        presliced: bool = False,
+        value_like: bool = False,
+    ) -> Self: ...
+
+    @overload
+    def mask_by_other(
+        self,
+        other: Tensor | Self,
+        *,
+        return_ft: Literal[False] = False,
+        presliced: bool = False,
+        value_like: bool = False,
+    ) -> Indexable: ...
+
+    def mask_by_other(
+        self,
+        other: Tensor | Filter | Self,
+        *,
+        return_ft: bool = False,
+        presliced: bool = False,
+        value_like: bool = False,
+    ) -> Indexable | Self:
+        """
+        Apply an additional doc-mask.
+
+        Args:
+          other:
+            - Tensor[bool]
+            - Filter
+            - FilteredTensor (we use its filter.mask)
+          presliced:
+            If True, `other` is defined in sliced space (after our slices[0]).
+            If False, `other` is defined in virtual space (length == filter.shape[0]).
+          value_like:
+            If True, `other` is defined in *value* space (length == self.value.shape[0]).
+        """
+        if isinstance(other, FilteredTensor):
+            if other.filter.mask is None:
+                raise ValueError("Cannot use a FilteredTensor with no mask as a mask source")
+            other_mask = other.filter.mask
+        elif isinstance(other, Filter):
+            if other.mask is None:
+                return self if return_ft else self.value
+            other_mask = other.mask
+        else:
+            other_mask = other
+
+        if not isinstance(other_mask, Tensor) or other_mask.dtype is not torch.bool:
+            other_mask = other_mask.to(dtype=torch.bool)
+
+        # Move to this device for actual masking.
+        other_mask = other_mask.to(device=self.device)
+
+        current_mask_sliced = self.filter.normalized_mask_in_sliced_space()
+        doc_virtual_len = self.filter.shape[0]
+        sl0 = self.slices[0] if self.slices else None
+        doc_sliced_len = _slice_len(doc_virtual_len, sl0)
+
+        if value_like:
+            # other_mask is in value space: length == self.value.shape[0]
+            other_value = other_mask
+            if isinstance(self.value, DictBatch):
+                new_value = self.value[other_value]
+            else:
+                new_value = (
+                    _sparse_row_mask(self.value, other_value)
+                    if self.value.is_sparse
+                    else self.value[other_value]
+                )
+
+            if current_mask_sliced is None:
+                # value space == sliced space
+                new_mask_sliced = other_value
+            else:
+                # Compose: new_mask_sliced = current_mask_sliced with subset applied inside True positions.
+                true_pos = current_mask_sliced.nonzero(as_tuple=False).flatten()
+                if true_pos.numel() != other_value.numel():
+                    raise ValueError(
+                        "value_like mask must match number of currently-selected docs"
+                    )
+                new_mask_sliced = current_mask_sliced.clone()
+                new_mask_sliced[true_pos] = other_value
+
+            new_filter = Filter(slices=self.slices, mask=new_mask_sliced, shape=self.filter.shape)
+            return self.__class__(value=new_value, filter=new_filter) if return_ft else new_value
+
+        # Not value_like: compute other mask in sliced space.
+        if presliced:
+            other_sliced = other_mask
+        else:
+            # other is in virtual space (global docs). Slice it if needed.
+            if other_mask.shape[0] == doc_virtual_len:
+                if sl0 is None:
+                    other_sliced = other_mask
+                elif isinstance(sl0, slice):
+                    other_sliced = other_mask[sl0]
+                elif isinstance(sl0, int):
+                    other_sliced = other_mask[sl0 : sl0 + 1]
+                else:
+                    other_sliced = other_mask
+            else:
+                other_sliced = other_mask
+
+        if other_sliced.shape[0] != doc_sliced_len:
+            raise ValueError(
+                f"Mask length mismatch in sliced space: got {other_sliced.shape[0]}, expected {doc_sliced_len}"
+            )
+
+        if current_mask_sliced is None:
+            # No current mask: apply other_sliced directly.
+            other_value = other_sliced
+            new_mask_sliced = other_sliced
+        else:
+            other_value = other_sliced[current_mask_sliced]
+            new_mask_sliced = current_mask_sliced & other_sliced
+
+        if isinstance(self.value, DictBatch):
+            new_value = self.value[other_value]
+        else:
+            new_value = (
+                _sparse_row_mask(self.value, other_value)
+                if self.value.is_sparse
+                else self.value[other_value]
+            )
+
+        new_filter = Filter(slices=self.slices, mask=new_mask_sliced, shape=self.filter.shape)
+        return self.__class__(value=new_value, filter=new_filter) if return_ft else new_value
+
+    def filter_inactive_docs(self) -> Self:
+        """
+        Refine to only docs where inner value has any nonzero.
+
+        (Used heavily by patching code.)
+        """
+        if isinstance(self.value, DictBatch):
+            raise TypeError("filter_inactive_docs not supported for DictBatch")
+
+        if self.value.is_sparse:
+            v = self.value.coalesce()
+            active = torch.zeros(v.shape[0], dtype=torch.bool, device=v.device)
+            active[v.indices()[0].unique()] = True
+        else:
+            active = self.value != 0
+            while active.ndim > 1:
+                active = active.any(dim=-1)
+
+        return self.mask_by_other(active, return_ft=True, value_like=True)
+
+    # ---- wrapping helpers ----
+
+    def to_filtered_like_self(
+        self,
+        t: Indexable,
+        *,
+        presliced: bool = True,
+        premasked: bool = True,
+        ndim: int | None = None,
+    ) -> Self:
+        """
+        Wrap a new tensor/DictBatch `t` with the same filter semantics.
+
+        `presliced/premasked` describe whether `t` is already in stored space.
+        """
+        filt = self.filter
+        if ndim is not None:
+            # Truncate filtered dims.
+            new_shape = filt.shape[:ndim]
+            new_slices = self.slices[:ndim]
+            new_mask = filt.mask if (ndim >= 1) else None
+            filt = Filter(slices=new_slices, mask=new_mask, shape=new_shape)
+
+        if not presliced and filt.slices:
+            t = _apply_slices(t, filt.slices)
+
+        if not premasked and filt.normalized_mask_in_sliced_space() is not None:
+            m = filt.normalized_mask_in_sliced_space().to(device=_device_of(t))
+            if isinstance(t, DictBatch):
+                t = t[m]
+            else:
+                t = _sparse_row_mask(t, m) if t.is_sparse else t[m]
+
+        return self.__class__(value=t, filter=filt)
+
+    def apply_to_inner(self, func: Callable[[Tensor], Tensor], cut_to_ndim: int | None = None) -> Self:
+        if isinstance(self.value, DictBatch):
+            new_value = self.value.apply_func(func)
+        else:
+            new_value = func(self.value)
+        return self.to_filtered_like_self(new_value, presliced=True, premasked=True, ndim=cut_to_ndim)
+
+    def clone(self) -> Self:
+        return self.__class__(value=self.value.clone(), filter=self.filter)
+
+    def __mul__(self, other: Any) -> Self:
+        if isinstance(other, FilteredTensor):
+            other = other.value
+        return self.apply_to_inner(lambda x: x * other)
+
+    def __rmul__(self, other: Any) -> Self:
+        return self.__mul__(other)
+
+    def __imul__(self, other: Any) -> Self:
+        if isinstance(other, FilteredTensor):
+            other = other.value
+        self.value *= other
+        return self
+
+    def __add__(self, other: Any) -> Self:
+        if isinstance(other, FilteredTensor):
+            other = other.value
+        return self.apply_to_inner(lambda x: x + other)
+
+    def __radd__(self, other: Any) -> Self:
+        return self.__add__(other)
+
+    def __iadd__(self, other: Any) -> Self:
+        if isinstance(other, FilteredTensor):
+            other = other.value
+        self.value += other
+        return self
+
+    # ---- materialization ----
+
+    def to_dense_unfiltered(self, fill_value: float = 0.0) -> Tensor:
+        """
+        Materialize full virtual tensor (dense), filling unselected positions.
+        """
+        if isinstance(self.value, DictBatch):
+            raise TypeError("to_dense_unfiltered not supported for DictBatch")
+
+        inner = self.value.to_dense() if self.value.is_sparse else self.value
+        out = torch.full(self.shape, fill_value, dtype=inner.dtype, device=inner.device)
+        self.filter.writeat(out, inner)
+        return out
+
+    def to_sparse_unfiltered(self) -> Tensor:
+        if isinstance(self.value, DictBatch):
+            raise TypeError("to_sparse_unfiltered not supported for DictBatch")
+        return torch.sparse_coo_tensor(
+            indices=self.indices(),
+            values=self.values(),
+            size=self.shape,
+            dtype=self.value.dtype,
+            device=self.value.device,
+        ).coalesce()
+
+    def to_sparse(self) -> Self:
+        if isinstance(self.value, DictBatch):
+            raise TypeError("to_sparse is only defined for tensor values")
+        if self.is_sparse:
+            return self
+        return self.to_filtered_like_self(self.value.to_sparse_coo(), presliced=True, premasked=True)
+
+    def to_dense(self) -> Self:
+        if isinstance(self.value, DictBatch):
+            return self
+        if not self.value.is_sparse:
+            return self
+        return self.to_filtered_like_self(self.value.to_dense(), presliced=True, premasked=True)
+
+    def writeat(self, target: Indexable, value: Indexable | None = None) -> None:
+        """
+        Write into target using our filter.
+        """
+        if value is None:
+            value = self.value
+        self.filter.writeat(target, value)
+
+    # ---- sparse helpers ----
+
+    def indices(self) -> Tensor:
+        if not isinstance(self.value, Tensor) or not self.value.is_sparse:
+            raise TypeError("indices() only valid when value is a sparse tensor")
+        inner = self.value.coalesce().indices()
+        return self.externalize_indices(inner)
+
+    def values(self) -> Tensor:
+        if not isinstance(self.value, Tensor) or not self.value.is_sparse:
+            raise TypeError("values() only valid when value is a sparse tensor")
+        return self.value.coalesce().values()
+
+    def nonzero(self) -> Tensor:
+        if isinstance(self.value, DictBatch):
+            raise TypeError("nonzero() not supported for DictBatch")
+        if self.value.is_sparse:
+            return self.indices().T
+        inner = self.value.nonzero().T
+        return self.externalize_indices(inner).T
+
+    # ---- device helpers ----
+
+    def to(self, *args, **kwargs) -> Self:
+        if isinstance(self.value, DictBatch):
+            new_value = self.value.to(*args, **kwargs)
+        else:
+            new_value = self.value.to(*args, **kwargs)
+
+        m = self.filter.mask
+        if m is not None:
+            # Keep boolean dtype.
+            m = m.to(*args, dtype=torch.bool, **{k: v for k, v in kwargs.items() if k != "dtype"})
+
+        new_filter = Filter(slices=self.filter.slices, mask=m, shape=self.filter.shape)
+        return self.__class__(value=new_value, filter=new_filter)
+
+    def cuda(self) -> Self:
+        return self.to(device="cuda")
+
+    def __getitem__(self, key: Tensor):
+        if not isinstance(key, Tensor) or key.dtype != torch.long or key.ndim != 2:
+            raise NotImplementedError("Only 2D long index tensors are supported")
+        inner, valid = self.internalize_indices(key)
+        if not bool(valid.all().item()):
+            raise IndexError("Some indices are outside the filtered region")
+        if isinstance(self.value, DictBatch):
+            # Only batch selection is meaningful here.
+            return self.value[inner[0]]
+        return self.value[inner.unbind()]
