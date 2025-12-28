@@ -45,18 +45,8 @@ if TYPE_CHECKING:
     from saeco.trainer.trainable import Trainable
 
 
-def _extract_token_tensor(x: Tensor | DictBatch) -> Tensor:
-    if isinstance(x, Tensor):
-        return x
-    # Try common keys.
-    for key in ("tokens", "input_ids", "ids"):
-        try:
-            t = x[key]
-            if isinstance(t, Tensor):
-                return t
-        except Exception:
-            continue
-    raise KeyError("Could not find token id tensor in DictBatch (expected one of: tokens, input_ids, ids)")
+from saeco.evaluation.token_utils import extract_token_tensor
+from saeco.evaluation.views import DecodedTextView, MetadataView, TokenStringsView
 
 
 @define(slots=True)
@@ -214,6 +204,221 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     @property
     def d_vocab(self) -> int:
         return self.tokenizer.vocab_size
+
+    # -----------------------------
+    # Constructors (polished names)
+    # -----------------------------
+
+    @classmethod
+    def open_cache(cls, cache: str | Path) -> "Evaluation":
+        """Preferred alias for from_cache_name()."""
+        return cls.from_cache_name(cache)
+
+    @classmethod
+    def open_model(cls, path: str | Path, *, averaged_weights: bool = False) -> "Evaluation":
+        """Preferred alias for from_model_path()."""
+        return cls.from_model_path(Path(path), averaged_weights=averaged_weights)
+
+    # -----------------------------
+    # Device / caching naming
+    # -----------------------------
+
+    @property
+    def device(self) -> torch.device:
+        """Preferred alias for `.cuda` (even if it's CPU)."""
+        return self.cuda
+
+    @cached_property
+    def cached(self) -> Union[CachedCalls, "Evaluation"]:
+        """Preferred alias for cached_call."""
+        return self.cached_call
+
+    # -----------------------------
+    # Docs / tokens / text
+    # -----------------------------
+
+    @property
+    def tokens(self):
+        """
+        Token IDs for docs.
+
+        This is the same object as `.docs` (compat), but the name is clearer.
+        """
+        if self.saved_acts is None:
+            raise ValueError("No saved_acts loaded; use Evaluation.open_cache(...) first")
+        return self.saved_acts.tokens
+
+    @property
+    def docs(self):
+        """Compatibility alias for `.tokens`."""
+        return self.tokens
+
+    @property
+    def text(self) -> DecodedTextView:
+        """Decoded text view: eval.text[idx] -> str / list[str]."""
+        return DecodedTextView(self)
+
+    @property
+    def token_strs(self) -> TokenStringsView:
+        """Token string view: eval.token_strs[idx] -> list[str] / list[list[str]]."""
+        return TokenStringsView(self)
+
+    @property
+    def docstrs(self):
+        """Compatibility alias for token_strs (old behavior)."""
+        return self.token_strs
+
+    # -----------------------------
+    # Token decoding helpers
+    # -----------------------------
+
+    def decode_text(
+        self,
+        tokens: int | list[int] | Tensor | DictBatch,
+        *,
+        skip_special_tokens: bool = False,
+    ) -> str | list[str]:
+        """
+        Decode token ids into human-readable text.
+
+        - 1D -> str
+        - 2D -> list[str]
+        """
+        if isinstance(tokens, int):
+            return self.tokenizer.decode([tokens], skip_special_tokens=skip_special_tokens)
+
+        if isinstance(tokens, list):
+            t = torch.tensor(tokens, dtype=torch.long)
+        else:
+            t = extract_token_tensor(tokens)
+
+        if t.ndim == 0:
+            return self.tokenizer.decode([int(t.item())], skip_special_tokens=skip_special_tokens)
+        if t.ndim == 1:
+            return self.tokenizer.decode(t.tolist(), skip_special_tokens=skip_special_tokens)
+        if t.ndim == 2:
+            return self.tokenizer.batch_decode(t.tolist(), skip_special_tokens=skip_special_tokens)
+
+        raise ValueError(f"decode_text expects token tensor with ndim 0/1/2, got {t.ndim}")
+
+    def token_strings(self, tokens: int | list[int] | Tensor | DictBatch) -> list[str] | list[list[str]] | str:
+        """
+        Convert token ids to token strings (not decoded text).
+
+        - int  -> str
+        - 1D   -> list[str]
+        - 2D   -> list[list[str]]
+        """
+        if isinstance(tokens, int):
+            return self.tokenizer.convert_ids_to_tokens(tokens)
+
+        if isinstance(tokens, list):
+            t = torch.tensor(tokens, dtype=torch.long)
+        else:
+            t = extract_token_tensor(tokens)
+
+        if t.ndim == 0:
+            return self.tokenizer.convert_ids_to_tokens(int(t.item()))
+        if t.ndim == 1:
+            return self.tokenizer.convert_ids_to_tokens(t.tolist())
+        if t.ndim == 2:
+            return [self.tokenizer.convert_ids_to_tokens(row.tolist()) for row in t]
+
+        raise ValueError(f"token_strings expects token tensor with ndim 0/1/2, got {t.ndim}")
+
+    # Back-compat name: detokenize previously returned token strings, not decoded text.
+    def detokenize(self, tokens):
+        """Compatibility alias for token_strings()."""
+        return self.token_strings(tokens)
+
+    # -----------------------------
+    # Metadata (works on filtered evals)
+    # -----------------------------
+
+    @property
+    def metadata(self) -> MetadataView:
+        """eval.metadata[key] gives you evaluation-scoped metadata (filtered-aware)."""
+        return MetadataView(self)
+
+    def metadata_tensor(self, key: str, *, device: torch.device | str | None = None) -> Tensor:
+        """
+        Get metadata aligned to this Evaluation's doc space.
+
+        - Root eval: returns root metadatas[key]
+        - Filtered eval: returns root metadatas[key][filter_mask]
+        """
+        md = self._root_metadatas[key]
+        if self.filter is not None:
+            mask = self.filter.filter.detach().cpu()
+            md = md[mask]
+        if device is not None:
+            md = md.to(device)
+        return md
+
+    # -----------------------------
+    # Filters (polished names)
+    # -----------------------------
+
+    @property
+    def filter_store(self) -> Filters:
+        """Always returns the *root* filter store (even on filtered evals)."""
+        return self.root.filters
+
+    def save_filter(self, name: str, mask: Tensor) -> NamedFilter:
+        """
+        Persist a boolean doc-mask in the root filter store under `name`.
+        """
+        mask = mask.detach().to(dtype=torch.bool, device="cpu")
+        self.filter_store[name] = mask
+        return self.filter_store[name]
+
+    def open_filter(self, name: str) -> "Evaluation":
+        """
+        Open a named filter from the root store and return a filtered Evaluation.
+        """
+        return self.root._apply_filter(self.filter_store[name])
+
+    def where(self, mask: Tensor) -> "Evaluation":
+        """
+        Create an *ephemeral* filtered evaluation with an unnamed filter (no persistent directory).
+        """
+        nf = NamedFilter(filter=mask.detach().to(dtype=torch.bool, device="cpu"), filter_name=None)
+        return self.root._apply_filter(nf)
+
+    # Keep old name as alias
+    def open_filtered(self, filter_name: str) -> "Evaluation":
+        """Compatibility alias for open_filter()."""
+        return self.open_filter(filter_name)
+
+    # -----------------------------
+    # Features + top activations (polished names)
+    # -----------------------------
+
+    def feature(self, feature: int | FilteredTensor) -> Feature:
+        """Preferred alias for get_feature()."""
+        return self.get_feature(feature)
+
+    def top_activations(
+        self,
+        feature: int | FilteredTensor,
+        *,
+        k: int | None = None,
+        p: float | None = None,
+        agg=None,
+    ) -> TopActivations:
+        """
+        Clean entrypoint for top activations.
+
+        `agg` defaults to Feature.top_activations default if None.
+        """
+        f = self.feature(feature)
+        if agg is None:
+            return f.top_activations(k=k, p=p)
+        return f.top_activations(agg=agg, k=k, p=p)
+
+    # Keep old weird name as alias (compat)
+    def chill_top_activations_and_metadatas(self, feature, p=None, k=None, return_acts_sparse=False):
+        return self.top_activations(feature, p=p, k=k)
 
     @takes_alias
     @classmethod
@@ -482,7 +687,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def count_token_occurrence(self) -> Tensor:
         counts = torch.zeros(self.d_vocab, dtype=torch.long, device=self.cuda)
         for chunk in self.saved_acts.chunks:  # type: ignore[union-attr]
-            toks = _extract_token_tensor(chunk.tokens.value).to(self.cuda).flatten()
+            toks = extract_token_tensor(chunk.tokens.value).to(self.cuda).flatten()
             counts.scatter_add_(0, toks, torch.ones_like(toks, dtype=torch.long))
         return counts
 

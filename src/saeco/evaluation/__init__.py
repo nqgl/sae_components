@@ -2,6 +2,16 @@ from __future__ import annotations
 
 from .evaluation import Evaluation
 from .filtered import FilteredTensor
-from .storage.saved_acts_config import CachingConfig
+from .named_filter import NamedFilter
+from .return_objects import Feature, TopActivations
 
-__all__ = ["Evaluation", "FilteredTensor", "CachingConfig"]
+from .storage.saved_acts_config import CachingConfig as CacheConfig
+
+__all__ = [
+    "Evaluation",
+    "FilteredTensor",
+    "NamedFilter",
+    "Feature",
+    "TopActivations",
+    "CacheConfig",
+]

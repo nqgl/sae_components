@@ -94,6 +94,9 @@ class Feature(EvalRefData):
             case _:
                 raise ValueError(f"Invalid aggregation type: {agg}")
 
+    def top(self, *args, **kwargs) -> "TopActivations":
+        return self.top_activations(*args, **kwargs)
+
     def top_activations(
         self,
         agg: AggregationType = AggregationType.MAX,
@@ -177,6 +180,14 @@ class SelectedDocs:
         return self.src_eval.docs[self.doc_indices]
 
     @property
+    def texts(self) -> str | list[str]:
+        return self.src_eval.text[self.doc_indices]
+
+    @property
+    def token_strs(self):
+        return self.src_eval.token_strs[self.doc_indices]
+
+    @property
     def doc_strs(self):
         return self.src_eval.docstrs[self.doc_indices]
 
@@ -226,6 +237,14 @@ class TopActivations(EvalRefData):
     @property
     def docs(self) -> Tensor | DictBatch:
         return self.doc_selection.docs
+
+    @property
+    def texts(self):
+        return self.doc_selection.texts
+
+    @property
+    def token_strs(self):
+        return self.doc_selection.token_strs
 
     @property
     def doc_strs(self):
