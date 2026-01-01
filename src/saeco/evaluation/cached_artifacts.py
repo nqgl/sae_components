@@ -55,16 +55,6 @@ def _cache_dir_for_artifacts(artifacts: Any) -> Path:
     raise AttributeError("Artifacts collection does not expose a Path-like directory")
 
 
-def _legacy_call_key(
-    name: str, args: tuple[Any, ...], kwargs: dict[str, Any], version: Any | None
-) -> str:
-    # Old scheme: repr-based and unsafe, but keep for reading old caches.
-    s = f"{name}({args}, {kwargs})".replace(".", "-")
-    if version is not None:
-        s += f"__v{version}"
-    return s
-
-
 class CachedCalls:
     """
     Wrap an Evaluation and transparently cache call results into:
@@ -116,17 +106,12 @@ class CachedCalls:
                     args=args,
                     kwargs=kwargs,
                     name_override=name_override,
-                    version=version,  # unlike legacy: DictBatch caches should be versioned
+                    version=version,
                     prefix=name_override,
                 )
                 path = artifacts_dir / "dict_batches" / key
                 path.parent.mkdir(parents=True, exist_ok=True)
 
-                # Legacy (unversioned) path fallback.
-                legacy = _legacy_call_key(name_override, args, kwargs, version=None)
-                legacy_path = artifacts_dir / "dict_batches" / legacy
-
-                # Prefer new key, fallback to legacy.
                 if path.exists():
                     # Return type should be a DictBatch subclass with load_from_safetensors.
                     return_ann = ann if ann is not inspect.Signature.empty else None
@@ -134,12 +119,6 @@ class CachedCalls:
                         return_ann, DictBatch
                     ):
                         return return_ann.load_from_safetensors(path)
-                if legacy_path.exists():
-                    return_ann = ann if ann is not inspect.Signature.empty else None
-                    if isinstance(return_ann, type) and issubclass(
-                        return_ann, DictBatch
-                    ):
-                        return return_ann.load_from_safetensors(legacy_path)
 
                 value = func(*args, **kwargs)
                 if not isinstance(value, DictBatch):
@@ -156,12 +135,9 @@ class CachedCalls:
                 version=version,
                 prefix=name_override,
             )
-            legacy = _legacy_call_key(name_override, args, kwargs, version=version)
 
             if key in self.raw.artifacts:
                 return self.raw.artifacts[key]
-            if legacy in self.raw.artifacts:
-                return self.raw.artifacts[legacy]
 
             result = func(*args, **kwargs)
             if isinstance(result, FilteredTensor):

@@ -58,28 +58,14 @@ class BMStorShelf:
         )
         return base, f"{base}::version"
 
-    def _legacy_keys(
-        self, func: Any, args: tuple[Any, ...], kwargs: dict[str, Any]
-    ) -> tuple[str, str]:
-        base = f"{func.__name__}__{args}__{kwargs}"
-        return base, f"{base}__version"
-
     def has(self, func: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> bool:
         ver = self.version(func)
         key, vkey = self._keys(func, args, kwargs)
-        if key in self.shelf and vkey in self.shelf and self.shelf[vkey] == ver:
-            return True
-
-        # Legacy fallback (older key scheme).
-        lkey, lvkey = self._legacy_keys(func, args, kwargs)
-        return lkey in self.shelf and lvkey in self.shelf and self.shelf[lvkey] == ver
+        return key in self.shelf and vkey in self.shelf and self.shelf[vkey] == ver
 
     def get(self, func: Any, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
         key, _ = self._keys(func, args, kwargs)
-        if key in self.shelf:
-            return self.shelf[key]
-        lkey, _ = self._legacy_keys(func, args, kwargs)
-        return self.shelf[lkey]
+        return self.shelf[key]
 
     def set(
         self, func: Any, args: tuple[Any, ...], kwargs: dict[str, Any], value: Any
