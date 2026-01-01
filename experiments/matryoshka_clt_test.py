@@ -2,7 +2,6 @@ from saeco.architectures.matry_clt.matryoshka_clt import (
     MatryoshkaCLT,
     MatryoshkaCLTConfig,
 )
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,

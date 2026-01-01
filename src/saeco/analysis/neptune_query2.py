@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
-import numpy as np
-import pandas as pd
 import neptune_query as nq
 import neptune_query.runs as nq_runs
-import os
+import pandas as pd
 
 nq.set_api_token(os.getenv("NEPTUNE_API_TOKEN"))
 MetricAgg = Literal["last", "mean_last_n", "min", "max", "mean_all"]

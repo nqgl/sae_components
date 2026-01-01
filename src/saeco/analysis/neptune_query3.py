@@ -1,6 +1,7 @@
 # %%
 
-from typing import Callable
+from collections.abc import Callable
+
 import neptune
 import pandas as pd
 

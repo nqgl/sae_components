@@ -18,6 +18,7 @@ from saeco.evaluation.BMStorShelf import BMStorShelf
 from saeco.evaluation.eval_components.coacts import Coactivity
 from saeco.evaluation.eval_components.enrichment import Enrichment
 from saeco.evaluation.eval_components.patching import Patching
+from saeco.evaluation.eval_components.perturbation_analysis import PerturbationAnalysis
 from saeco.evaluation.model_interface import (
     ComlmEvalAdapter,
     LanguageModelEvalAdapter,
@@ -49,7 +50,7 @@ if TYPE_CHECKING:
 
 @define
 class Evaluation[InputsT: torch.Tensor | DictBatch](
-    FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity
+    FamilyGenerator, FamilyOps, Enrichment, Patching, Coactivity, PerturbationAnalysis
 ):
     model_path: Path
     architecture: Architecture = field(

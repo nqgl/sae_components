@@ -1,0 +1,57 @@
+import torch
+from load_comlm_tahoe import root_eval
+
+root = root_eval
+
+
+def main():
+    # Act 1: phenomatching
+    drugs = [
+        "ralimetinib",
+        "erlotinib",
+        "gefitinib",
+        "osimertinib",
+        "PH-797804",
+        "doramapimod",
+    ]
+
+    sim = root.cached_call.compute_drug_similarity_matrix(
+        drugs=drugs,
+        mode="profile",
+        pooling="max",
+        dose_mode="max",
+    )
+
+    top = root.top_similar_drugs(sim, drugs, query="ralimetinib", k=5)
+    print("Top similar to ralimetinib:")
+    for d, s in top:
+        print(f"  {d:>12s}: {s:0.4f}")
+
+    # Shared differential features example
+    ral = root.cached_call.compute_drug_profile("ralimetinib")
+    erl = root.cached_call.compute_drug_profile("erlotinib")
+    shared = root.top_shared_differential_features(ral, erl, k=10)
+    print("\nTop shared features (ralimetinib ↔ erlotinib):")
+    for fid, p1, p2, c in shared:
+        print(f"  feat {fid:>6d}: p1={p1:+0.4f} p2={p2:+0.4f} contrib={c:+0.4f}")
+
+    # Act 1.3: cytotox (once you pick a candidate)
+    CYTOTOX_ID = 42
+    token_enrich, logit_effects = root.validate_cytotox_feature(CYTOTOX_ID)
+    print("\nToken enrichment output (raw):", type(token_enrich))
+
+    # Act 2: control predictors of sensitivity
+    corr = root.cached_call.compute_feature_sensitivity_correlation(
+        drug="ralimetinib",
+        response_feature=CYTOTOX_ID,
+        pooling="max",
+        dose_mode="max",
+    )
+    topk = torch.topk(corr, 20)
+    print("\nTop control features predicting sensitivity:")
+    for fid, r in zip(topk.indices.tolist(), topk.values.tolist(), strict=True):
+        print(f"  feat {fid:>6d}: r={r:+0.4f}")
+
+
+if __name__ == "__main__":
+    main()

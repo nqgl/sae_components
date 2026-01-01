@@ -1,5 +1,6 @@
 # %%
 from collections.abc import Callable
+
 import torch
 from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank import XRNoisedBatch

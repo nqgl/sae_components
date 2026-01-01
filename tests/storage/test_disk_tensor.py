@@ -1,13 +1,14 @@
 from pathlib import Path
+
 import pytest
 import torch
 
+from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.disk_tensor import (
     DiskTensor,
     DiskTensorMetadata,
     _numel_from_shape,
 )
-from saeco.data.storage.compressed_safetensors import CompressionType
 
 
 @pytest.fixture

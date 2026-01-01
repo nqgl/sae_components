@@ -1,18 +1,13 @@
 from functools import cached_property
 
-import saeco.components.features.features as ft
-
-import saeco.core as cl
 import torch
 import torch.nn as nn
 
-from saeco.architecture import Architecture, aux_model_prop, loss_prop, model_prop, SAE
-
-from saeco.components import L2Loss, Lambda, Loss, SparsityPenaltyLoss
-from saeco.components.sae_cache import SAECache
+import saeco.components.features.features as ft
+import saeco.core as cl
+from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.components import L2Loss, Lambda, SparsityPenaltyLoss
 from saeco.core import Seq
-from saeco.core.reused_forward import ReuseForward
-from saeco.misc import useif
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
