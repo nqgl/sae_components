@@ -7,7 +7,7 @@ from attrs import define, field
 from pydantic import BaseModel
 from torch import Tensor
 
-from saeco.evaluation.storage.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.cache_config import CacheConfig
 
 from ...data.storage.disk_tensor import DiskTensor
 from ...data.storage.disk_tensor_collection import DiskTensorCollection
@@ -15,23 +15,23 @@ from ..named_filter import NamedFilter
 
 
 @define(kw_only=True, slots=True)
-class CollectionWithCachingConfig(DiskTensorCollection):
-    cached_config: CachingConfig
+class CollectionWithCacheConfig(DiskTensorCollection):
+    cache_config: CacheConfig
 
 
 @define(slots=True)
-class Artifacts(CollectionWithCachingConfig):
+class Artifacts(CollectionWithCacheConfig):
     stored_tensors_subdirectory_name: str = "artifacts"
 
 
 @define(slots=True)
-class Filters(CollectionWithCachingConfig):
+class Filters(CollectionWithCacheConfig):
     stored_tensors_subdirectory_name: str = "filters"
 
     def __setitem__(self, name: str, value: Tensor):
-        if value.shape[0] != self.cached_config.num_docs:
+        if value.shape[0] != self.cache_config.num_docs:
             raise ValueError(
-                f"Filter tensor must have first dim == num_docs ({self.cached_config.num_docs}); got {value.shape}"
+                f"Filter tensor must have first dim == num_docs ({self.cache_config.num_docs}); got {value.shape}"
             )
         if value.dtype is not torch.bool:
             raise ValueError(f"Filter tensor must have dtype bool, got {value.dtype}")
@@ -42,12 +42,12 @@ class Filters(CollectionWithCachingConfig):
 
 
 @define(slots=True)
-class Metadatas(CollectionWithCachingConfig):
+class Metadatas(CollectionWithCacheConfig):
     stored_tensors_subdirectory_name: str = "metadatas"
 
     def create(self, name: str, dtype: torch.dtype, item_shape: list[int] | tuple[int, ...] = ()) -> DiskTensor:
         path = self.storage_dir / name
-        shape = [self.cached_config.num_docs, *list(item_shape)]
+        shape = [self.cache_config.num_docs, *list(item_shape)]
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             raise ValueError(f"Metadata already exists at {path}")
@@ -59,9 +59,9 @@ class Metadatas(CollectionWithCachingConfig):
     def __setitem__(self, name: str, value: Tensor):
         if name in self:
             raise ValueError(f"Metadata already exists at {name}")
-        if value.shape[0] != self.cached_config.num_docs:
+        if value.shape[0] != self.cache_config.num_docs:
             raise ValueError(
-                f"Metadata first dim must be num_docs ({self.cached_config.num_docs}); got {value.shape}"
+                f"Metadata first dim must be num_docs ({self.cache_config.num_docs}); got {value.shape}"
             )
 
         disk_tensor = self.create(name=name, dtype=value.dtype, item_shape=value.shape[1:])

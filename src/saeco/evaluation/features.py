@@ -63,7 +63,7 @@ class Features:
 
     def get_active(self, key: int | Tensor | Sequence[int]) -> FilteredTensor | list[FilteredTensor]:
         """
-        Convenience: return feature(s) with inactive docs removed.
+        Convenience: return feature(s) with inactive tokens removed.
         """
         ft = self[key]
         if isinstance(ft, list):

@@ -85,7 +85,7 @@ class FamilyTopActivatingExamplesQuery(FilterableQuery):
     p: float | None = None
     k: int | None = None
     metadata_keys: list[str] = []
-    return_str_docs: bool = False
+    return_str_tokens: bool = False
     return_str_metadatas: bool = True
 
 
@@ -112,6 +112,6 @@ class ActivationsOnDocsRequest(FilterableQuery):
     document_ids: list[int]
     families: list[FamilyRef]
     feature_ids: list[int] = []
-    return_str_docs: bool = True
+    return_str_tokens: bool = True
     return_str_metadatas: bool = True
     metadata_keys: list[str] = []

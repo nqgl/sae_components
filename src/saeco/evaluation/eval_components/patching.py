@@ -217,32 +217,32 @@ class Patching:
         if scale is None:
             scale = 1 if by_fwad else 0
 
-        feature0 = self.features[feature_id].to(self.cuda)
+        feature0 = self.features[feature_id].to(self.device)
         feature = feature0.filter_inactive_docs()
 
         if random_subset_n:
             s = int(feature.filter.mask.sum().item()) if feature.filter.mask is not None else 0
             if s > random_subset_n:
-                new_mask = torch.zeros_like(feature.filter.mask, device=self.cuda)  # type: ignore[arg-type]
-                new_mask[feature.filter.mask] = (torch.randperm(s, device=self.cuda) < random_subset_n)  # type: ignore[index]
+                new_mask = torch.zeros_like(feature.filter.mask, device=self.device)  # type: ignore[arg-type]
+                new_mask[feature.filter.mask] = (torch.randperm(s, device=self.device) < random_subset_n)  # type: ignore[index]
                 feature = feature.mask_by_other(new_mask, return_ft=True, presliced=True, value_like=False)
 
         feature_active = feature.indices()
         feature = feature.to_dense()
 
         def batch_iter(bbatch):
-            for chunk in tqdm.tqdm(self.saved_acts.chunks):
-                token_store = chunk.tokens_batch
+            for chunk in tqdm.tqdm(self.cached_acts.chunks):
+                token_store = chunk.tokens
                 doc_tokens = None
                 doc_ids = None
                 seq_pos = None
 
-                tokens = chunk.tokens.to(self.cuda)
-                docs_i, mask_i = tokens.index_where_valid(feature_active[0:1])
+                tokens = chunk.tokens.to(self.device)
+                tokens_i, mask_i = tokens.index_where_valid(feature_active[0:1])
                 doc_ids_i = feature_active[0, mask_i]
                 seq_pos_i = feature_active[1, mask_i]
 
-                doc_tokens = docs_i if doc_tokens is None else torch.cat([doc_tokens, docs_i])
+                doc_tokens = tokens_i if doc_tokens is None else torch.cat([doc_tokens, tokens_i])
                 doc_ids = doc_ids_i if doc_ids is None else torch.cat([doc_ids, doc_ids_i])
                 seq_pos = seq_pos_i if seq_pos is None else torch.cat([seq_pos, seq_pos_i])
 
@@ -264,9 +264,9 @@ class Patching:
             return ts.index_select(0, indices)
 
         with torch.no_grad():
-            for token_store, docs, doc_ids, seq_pos in batch_iter(batch_size * 4):
-                for i in range(0, docs.shape[0], batch_size):
-                    batch_docs = docs[i : i + batch_size]
+            for token_store, tokens, doc_ids, seq_pos in batch_iter(batch_size * 4):
+                for i in range(0, tokens.shape[0], batch_size):
+                    batch_tokens = tokens[i : i + batch_size]
                     batch_doc_ids = doc_ids[i : i + batch_size] if doc_ids is not None else None
                     batch_seq_pos = seq_pos[i : i + batch_size]
 
@@ -276,9 +276,9 @@ class Patching:
                         return acts
 
                     if batch_doc_ids is None:
-                        batch_doc_ids = torch.arange(batch_docs.shape[0], device=batch_docs.device)
+                        batch_doc_ids = torch.arange(batch_tokens.shape[0], device=batch_tokens.device)
 
-                    batch_input = select_batch_tokens(token_store.to(self.cuda), batch_doc_ids)
+                    batch_input = select_batch_tokens(token_store.to(self.device), batch_doc_ids)
 
                     if by_fwad:
                         def tangent_gen(acts: Tensor):

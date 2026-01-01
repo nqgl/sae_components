@@ -61,29 +61,29 @@ def create_app(app: FastAPI, root: Evaluation):
     ) -> TopActivatingExamplesResult:
         print("calling top_activating_examples")
         evaluation = query.filter(root)
-        docs, acts, metadatas, doc_indices = evaluation.top_activations_and_metadatas(
+        tokens, acts, metadatas, doc_indices = evaluation.top_activations_and_metadatas(
             query.feature,
             p=query.p,
             k=query.k,
             metadata_keys=query.metadata_keys,
-            return_str_docs=query.return_str_docs,
+            return_str_tokens=query.return_str_tokens,
             str_metadatas=query.return_str_metadatas,
         )
-        if not query.return_str_docs:
-            docs = docs.tolist()
+        if not query.return_str_tokens:
+            tokens = tokens.tolist()
         acts = acts.to_dense()
         acts = acts.tolist()
         metadatas = [metadatas[k] for k in query.metadata_keys]
         metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
         if len(metadatas) == 0:
-            metadatas = [[] for _ in range(len(docs))]
+            metadatas = [[] for _ in range(len(tokens))]
         else:
             metadatas = [
                 [metadatas[i][j] for i in range(len(metadatas))]
                 for j in range(len(metadatas[0]))
             ]
-        assert len(docs) == len(acts) == len(metadatas) == len(doc_indices), (
-            len(docs),
+        assert len(tokens) == len(acts) == len(metadatas) == len(doc_indices), (
+            len(tokens),
             len(acts),
             len(metadatas),
             len(doc_indices),
@@ -98,12 +98,12 @@ def create_app(app: FastAPI, root: Evaluation):
                     doc_index=doc_id,
                 )
                 for doc, act, md, doc_id in zip(
-                    docs, acts, metadatas, doc_indices.tolist()
+                    tokens, acts, metadatas, doc_indices.tolist()
                 )
             ]
         )
         # return TopActivatingExamplesResult(
-        #     docs=docs,
+        #     tokens=tokens,
         #     acts=acts,
         #     metadatas=[m.tolist() for m in metadatas],
         #     doc_indices=doc_indices.tolist(),
@@ -136,7 +136,7 @@ def create_app(app: FastAPI, root: Evaluation):
                 sort_by=query.sort_by,
             )
         )
-        tokstrs = ev.detokenize(tokens)
+        tokstrs = ev.token_strings(tokens)
         assert (
             len(tokens)
             == len(counts)
@@ -229,27 +229,27 @@ def create_app(app: FastAPI, root: Evaluation):
             p=query.p,
             k=query.k,
             metadata_keys=query.metadata_keys,
-            return_str_docs=query.return_str_docs,
+            return_str_tokens=query.return_str_tokens,
             str_metadatas=query.return_str_metadatas,
         )
         out = []
         for batch in batches:
-            docs, acts, metadatas, doc_indices = batch
-            if not query.return_str_docs:
-                docs = docs.tolist()
+            tokens, acts, metadatas, doc_indices = batch
+            if not query.return_str_tokens:
+                tokens = tokens.tolist()
             acts = acts.to_dense()
             acts = acts.tolist()
             metadatas = [metadatas[k] for k in query.metadata_keys]
             metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
             if len(metadatas) == 0:
-                metadatas = [[] for _ in range(len(docs))]
+                metadatas = [[] for _ in range(len(tokens))]
             else:
                 metadatas = [
                     [metadatas[i][j] for i in range(len(metadatas))]
                     for j in range(len(metadatas[0]))
                 ]
-            assert len(docs) == len(acts) == len(metadatas) == len(doc_indices), (
-                len(docs),
+            assert len(tokens) == len(acts) == len(metadatas) == len(doc_indices), (
+                len(tokens),
                 len(acts),
                 len(metadatas),
                 len(doc_indices),
@@ -265,7 +265,7 @@ def create_app(app: FastAPI, root: Evaluation):
                             doc_index=doc_id,
                         )
                         for doc, act, md, doc_id in zip(
-                            docs, acts, metadatas, doc_indices.tolist()
+                            tokens, acts, metadatas, doc_indices.tolist()
                         )
                     ]
                 )
@@ -285,21 +285,21 @@ def create_app(app: FastAPI, root: Evaluation):
             for family in query.families
         ]
 
-        docs, fam_acts, metadatas, doc_indices = (
+        tokens, fam_acts, metadatas, doc_indices = (
             ev.top_overlapped_feature_family_documents(
                 families=families,
                 p=query.p,
                 k=query.k,
                 metadata_keys=query.metadata_keys,
-                return_str_docs=query.return_str_docs,
+                return_str_tokens=query.return_str_tokens,
                 str_metadatas=query.return_str_metadatas,
             )
         )
-        metadatas = transform_metadatas(metadatas, query.metadata_keys, docs)
+        metadatas = transform_metadatas(metadatas, query.metadata_keys, tokens)
         fam_acts = [a.to_dense() for a in fam_acts]
         fam_acts = [a.tolist() for a in fam_acts]
-        if not query.return_str_docs:
-            docs = docs.tolist()
+        if not query.return_str_tokens:
+            tokens = tokens.tolist()
 
         return [
             TopFamilyOverlappingExamplesResponseDoc(
@@ -309,19 +309,19 @@ def create_app(app: FastAPI, root: Evaluation):
                 doc_index=doc_id,
             )
             for i, (doc, md, doc_id) in enumerate(
-                zip(docs, metadatas, doc_indices.tolist())
+                zip(tokens, metadatas, doc_indices.tolist())
             )
         ]
 
-    @app.put("/get_families_activations_on_docs")
-    def get_families_activations_on_docs(
+    @app.put("/get_families_activations_on_tokens")
+    def get_families_activations_on_tokens(
         query: ActivationsOnDocsRequest,
     ) -> list[ActivationsOnDoc]:
-        print("calling get_families_activations_on_docs")
+        print("calling get_families_activations_on_tokens")
         ev = query.filter(root)
         all_families = ev.get_feature_families()
 
-        docs, fam_acts, metadatas, feat_acts = ev.get_families_activations_on_docs(
+        tokens, fam_acts, metadatas, feat_acts = ev.get_families_activations_on_tokens(
             families=[
                 all_families.levels[family.level].families[family.family_id]
                 for family in query.families
@@ -329,13 +329,13 @@ def create_app(app: FastAPI, root: Evaluation):
             doc_indices=query.document_ids,
             features=query.feature_ids,
             metadata_keys=query.metadata_keys,
-            return_str_docs=query.return_str_docs,
-            str_metadatas=query.return_str_docs,
+            return_str_tokens=query.return_str_tokens,
+            str_metadatas=query.return_str_tokens,
         )
         fam_acts = [a.to_dense().tolist() for a in fam_acts]
         feat_acts = [a.to_dense().tolist() for a in feat_acts]
 
-        metadatas = transform_metadatas(metadatas, query.metadata_keys, docs)
+        metadatas = transform_metadatas(metadatas, query.metadata_keys, tokens)
         return [
             ActivationsOnDoc(
                 document=doc,
@@ -343,7 +343,7 @@ def create_app(app: FastAPI, root: Evaluation):
                 family_acts=[acts[i] for acts in fam_acts],
                 feature_acts=[acts[i] for acts in feat_acts],
             )
-            for i, (doc, md) in enumerate(zip(docs, metadatas))
+            for i, (doc, md) in enumerate(zip(tokens, metadatas))
         ]
 
     @app.put("/init_all_families")
@@ -407,20 +407,20 @@ def create_app(app: FastAPI, root: Evaluation):
         topk = effects.topk(query.k)
         neg_topk = effects.topk(query.k, largest=False)
         return TopKFeatureEffects(
-            pos_tokens=ev.detokenize(topk.indices),
+            pos_tokens=ev.token_strings(topk.indices),
             pos_values=topk.values,
-            neg_tokens=ev.detokenize(neg_topk.indices),
+            neg_tokens=ev.token_strings(neg_topk.indices),
             neg_values=neg_topk.values,
         )
 
     return app
 
 
-def transform_metadatas(metadatas, metadata_keys, docs):
+def transform_metadatas(metadatas, metadata_keys, tokens):
     metadatas = [metadatas[k] for k in metadata_keys]
     metadatas = [m if isinstance(m, list) else m.tolist() for m in metadatas]
     if len(metadatas) == 0:
-        metadatas = [[] for _ in range(len(docs))]
+        metadatas = [[] for _ in range(len(tokens))]
     else:
         metadatas = [
             [metadatas[i][j] for i in range(len(metadatas))]

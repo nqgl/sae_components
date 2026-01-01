@@ -22,7 +22,7 @@ def load_eval() -> Evaluation:
       - an absolute/relative path to the cache directory
     """
     cache = os.environ.get("SAECO_CACHE", "test")
-    return Evaluation.from_cache_name(cache)
+    return Evaluation.open_cache(cache)
 
 
 def ensure_comlm_metadata(eval: Evaluation) -> list[str]:
@@ -77,28 +77,28 @@ def show_basic(eval: Evaluation) -> None:
     print("num_docs:", eval.num_docs)
     print("seq_len:", eval.seq_len)
     print("d_dict:", eval.d_dict)
-    print("device:", eval.cuda)
+    print("device:", eval.device)
 
     _print_header("First docs (detokenized)")
-    # docs may be Tensor or DictBatch; detokenize handles both.
-    doc0 = eval.docs[0]
-    doc1 = eval.docs[1]
-    print("doc[0]:", eval.detokenize(doc0))
-    print("doc[1]:", eval.detokenize(doc1))
+    # tokens may be Tensor or DictBatch; decode_text handles both.
+    doc0 = eval.tokens[0]
+    doc1 = eval.tokens[1]
+    print("doc[0]:", eval.decode_text(doc0))
+    print("doc[1]:", eval.decode_text(doc1))
 
 
 def showcase_feature(eval: Evaluation, feature_id: int, metadata_keys: list[str]) -> None:
     _print_header(f"Feature {feature_id}: top activations")
 
-    feat = eval.get_feature(feature_id)
-    top = feat.top_activations(k=8)
+    feat = eval.feature(feature_id)
+    top = feat.top(k=8)
 
     print("Top doc indices:", top.doc_selection.doc_indices.tolist())
     print("Example doc strings:")
-    doc_strs = top.doc_strs
-    # doc_strs might be list[list[str]] or list[str]; print a compact view
-    for i, s in enumerate(doc_strs[:3] if isinstance(doc_strs, list) else [doc_strs]):
-        print(f"- #{i}:", s if isinstance(s, str) else "".join(s))
+    # Use the new .texts or .token_strs properties
+    doc_texts = top.texts
+    for i, s in enumerate(doc_texts[:3] if isinstance(doc_texts, list) else [doc_texts]):
+        print(f"- #{i}:", s)
 
     if metadata_keys:
         _print_header("Metadata enrichments")
@@ -108,18 +108,15 @@ def showcase_feature(eval: Evaluation, feature_id: int, metadata_keys: list[str]
             p=0.10,
             str_label=True,
         )
-        # This is a pydantic model; printing keeps it readable enough.
         print(enrich)
-
 
 def showcase_cosims(eval: Evaluation) -> None:
     _print_header("Activation cosine similarities")
+    # Note: activation_cosims method name was not changed in polish pass, but uses .device internally
     cos = eval.activation_cosims(out_device="cpu", blocks_per_dim=2)
     print("cosims shape:", tuple(cos.shape))
-    # quick sanity
     diag = cos.diag()
     print("diag mean (ignoring NaN):", diag[~diag.isnan()].mean().item())
-
 
 def main() -> None:
     eval = load_eval()
@@ -137,22 +134,20 @@ def main() -> None:
     # OPTIONAL: patching demo (can be slow / requires model interface)
     if os.environ.get("SAECO_PATCHING_DEMO", "0") == "1":
         _print_header("Patching demo: ablate feature at its max-activation position")
-        # This is intentionally minimal; for deeper attribution, use the patching helpers.
         feature_id = 7
-        feat = eval.features[feature_id].to(eval.cuda).filter_inactive_docs()
+        feat = eval.features[feature_id].to(eval.device).filter_inactive_docs()
         idx = feat.indices()
-        # pick one occurrence (doc, seq, feat) from sparse indices
         doc_id = int(idx[0, 0].item())
         seq_pos = int(idx[1, 0].item())
-        tokens = eval.docs[doc_id : doc_id + 1]
-        tokens = tokens.to(eval.cuda) if torch.is_tensor(tokens) else tokens.to(eval.cuda)
+        tokens = eval.tokens[doc_id : doc_id + 1]
+        tokens = tokens.to(eval.device) if torch.is_tensor(tokens) else tokens.to(eval.device)
 
         def patch_fn(acts: torch.Tensor) -> torch.Tensor:
             acts = acts.clone()
             acts[0, seq_pos, feature_id] = 0
             return acts
 
-        diff = eval.patchdiff(tokens, patch_fn, invert=True, doc_indices=torch.tensor([doc_id], device=eval.cuda))
+        diff = eval.patchdiff(tokens, patch_fn, invert=True, doc_indices=torch.tensor([doc_id], device=eval.device))
         print("patchdiff:", diff.shape)
 
 

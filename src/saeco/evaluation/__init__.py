@@ -5,7 +5,8 @@ from .filtered import FilteredTensor
 from .named_filter import NamedFilter
 from .return_objects import Feature, TopActivations
 
-from .storage.saved_acts_config import CachingConfig as CacheConfig
+from .storage.cache_config import CacheConfig
+from .storage.cached_acts import CachedActs
 
 __all__ = [
     "Evaluation",
@@ -14,4 +15,5 @@ __all__ = [
     "Feature",
     "TopActivations",
     "CacheConfig",
+    "CachedActs",
 ]

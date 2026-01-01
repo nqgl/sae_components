@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 @define(slots=True)
 class DecodedTextView:
     """
-    Indexable view returning decoded text for docs.
+    Indexable view returning decoded text for tokens.
 
     Examples:
       eval.text[0]        -> str

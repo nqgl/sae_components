@@ -28,14 +28,14 @@ class Coactivity:
         f_chunk_i: int | None = None,
         f_chunk_j: int | None = None,
     ) -> Tensor:
-        out_device = out_device or self.cuda
+        out_device = out_device or self.device
         f_chunk_i = f_chunk_i or self.d_dict
         f_chunk_j = f_chunk_j or self.d_dict
 
         mat = torch.zeros(self.d_dict, self.d_dict, device=out_device)
 
-        for chunk in tqdm.tqdm(self.saved_acts.chunks, total=len(self.saved_acts.chunks)):
-            acts = chunk.acts.value.to(self.cuda).to_dense()
+        for chunk in tqdm.tqdm(self.cached_acts.chunks, total=len(self.cached_acts.chunks)):
+            acts = chunk.acts.value.to(self.device).to_dense()
             if acts.ndim != 3:
                 raise ValueError("Expected acts shaped (doc, seq, feat)")
 
@@ -63,14 +63,14 @@ class Coactivity:
         f_chunk_i: int | None = None,
         f_chunk_j: int | None = None,
     ) -> Tensor:
-        out_device = out_device or self.cuda
+        out_device = out_device or self.device
         f_chunk_i = f_chunk_i or self.d_dict
         f_chunk_j = f_chunk_j or self.d_dict
 
         mat = torch.zeros(self.d_dict, self.d_dict, device=out_device)
 
-        for chunk in tqdm.tqdm(self.saved_acts.chunks, total=len(self.saved_acts.chunks)):
-            acts = chunk.acts.value.to(self.cuda).to_dense()
+        for chunk in tqdm.tqdm(self.cached_acts.chunks, total=len(self.cached_acts.chunks)):
+            acts = chunk.acts.value.to(self.device).to_dense()
             if acts.ndim != 3:
                 raise ValueError("Expected acts shaped (doc, seq, feat)")
 

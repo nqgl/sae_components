@@ -25,7 +25,7 @@ class NamedFilter:
         if value.dtype is not torch.bool:
             raise TypeError(f"NamedFilter.filter must have dtype bool, got {value.dtype}")
         if value.ndim != 1:
-            raise ValueError("NamedFilter.filter must be 1D over docs")
+            raise ValueError("NamedFilter.filter must be 1D over tokens")
 
     def chunk_filters(self, cfg) -> list[Tensor]:
         chunked = list(self.filter.chunk(cfg.num_chunks))
