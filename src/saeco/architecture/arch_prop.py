@@ -95,12 +95,12 @@ class arch_prop[T](
 
     def __get__(self, instance: object | None, owner: Any | None = None) -> T | Self:
         if instance is not None:
-            assert isinstance(instance, Instantiable) and isinstance(
-                instance, SetupComplete
-            )
+            assert isinstance(instance, Instantiable)
+            assert isinstance(instance, SetupComplete)
             if not instance._instantiated:
                 instance.instantiate()
-            assert instance._instantiated and instance._setup_complete
+            assert instance._instantiated
+            assert instance._setup_complete
         return super().__get__(instance, owner)
 
     def __set_name__(self, owner: type, name: str) -> None:

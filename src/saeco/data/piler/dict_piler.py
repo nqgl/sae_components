@@ -418,7 +418,7 @@ def convert_sample_index_to_pile_pair(
 ) -> tuple[int, int]:
     pile_idx = idx
     for i, pile_size in enumerate(pile_sizes):
-        if pile_idx < pile_size:
+        if pile_idx <= pile_size:
             return i, pile_idx
         pile_idx -= pile_size
     raise ValueError(f"Index {idx} is out of bounds for pile sizes {pile_sizes}")

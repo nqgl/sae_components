@@ -48,7 +48,9 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
             end=100,
         )
     )
-    override_dictpiler_path_str: str | None = None
+    override_dictpiler_path_str: str | None = (
+        None  # TODO make this use relative user path
+    )
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"  # tok
     load_from_disk: bool = False  # tok
     set_bos: bool = True  # tok

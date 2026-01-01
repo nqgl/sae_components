@@ -2,6 +2,7 @@ from types import GenericAlias, UnionType
 from typing import (
     Any,
     ClassVar,
+    Literal,
     Self,
     TypeVar,
     Union,
@@ -29,9 +30,6 @@ from saeco.sweeps.sweepable_config.sweep_expressions import Op, SweepVar, Val
 from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
-
-T = TypeVar("T")
-
 
 # def generic_issubclass(t, cls):
 #     try:
@@ -96,6 +94,8 @@ def SweptValidatorConverter(t, name=None):
 
 
 def Sweepable(t, name=None):
+    if get_origin(t) is Literal:
+        return t
     if get_origin(t) is dict and get_args(t) and len(get_args(t)) == 2:
         key_type, value_type = get_args(t)
         s_t = t | dict[key_type, Sweepable(value_type, name=name)]

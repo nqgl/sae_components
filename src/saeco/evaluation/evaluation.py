@@ -59,13 +59,17 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     saved_acts: SavedActs | None = field(default=None, repr=False)
     filter: NamedFilter | None = field(default=None)
     _root: "Evaluation | None" = field(default=None, repr=False)
+    _tokenizer: PreTrainedTokenizerFast | None = field(default=None, repr=False)
 
-    def _tokenizer_default(self) -> PreTrainedTokenizerFast:
+    @cached_property
+    def tokenizer(self) -> PreTrainedTokenizerFast:
+        if self._tokenizer is not None:
+            return self._tokenizer
         return self.sae_cfg.train_cfg.data_cfg.model_cfg.tokenizer
 
-    tokenizer: PreTrainedTokenizerFast = field(
-        default=Factory(_tokenizer_default, takes_self=True)
-    )
+    # tokenizer: PreTrainedTokenizerFast = field(
+    #     default=Factory(_tokenizer_default, takes_self=True)
+    # )
 
     @takes_alias
     @classmethod

@@ -3,6 +3,7 @@ from typing import Any, cast
 
 import torch
 from comlm.architecture import TransformerArchitecture
+from comlm.config.data_configs import DataConfig as ComlmDataConfig
 from comlm.datasource import FinalizedStorageBatch
 from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank import XRArch, XRNoisedBatch
@@ -20,6 +21,7 @@ class ComlmModelConfig[ArchT: XRArch[Any, Any, XRComposerMaskedLM] = XRArch](
     ModelLoadingConfigBase[XRTransformer]
 ):
     chk_ident: ModelCheckpointIdentifier
+    inject_arch_data_cfg: ComlmDataConfig | None = None
 
     @takes_alias
     @classmethod
@@ -71,6 +73,8 @@ class ComlmModelConfig[ArchT: XRArch[Any, Any, XRComposerMaskedLM] = XRArch](
         arch.run_cfg.train_cfg.evals_cfg.spearman_min_gene_counts = []
         arch.run_cfg.train_cfg.evals_cfg.ce_min_gene_counts = []
         arch.run_cfg.train_cfg.checkpoint_interval_batches = None
+        if self.inject_arch_data_cfg is not None:
+            arch.run_cfg.train_cfg.data_cfg = self.inject_arch_data_cfg
 
     def update_arch_after_load(self, arch: TransformerArchitecture):
         pass
