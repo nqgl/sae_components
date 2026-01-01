@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import torch
 from attrs import define
-from jaxtyping import Int
 from paramsight import get_resolved_typevars_for_base, takes_alias
 from torch import Tensor
 
-from saeco.data.dict_batch.dict_batch import DictBatch
+from saeco.data.dict_batch import DictBatch
 
 from ..features import Features
 from ..named_filter import NamedFilter
@@ -14,7 +15,7 @@ from .chunk import Chunk
 from .saved_acts_config import CachingConfig
 
 
-@define
+@define(slots=True)
 class SavedActs[InputsT: torch.Tensor | DictBatch]:
     path: Path
     cfg: CachingConfig
@@ -53,18 +54,14 @@ class SavedActs[InputsT: torch.Tensor | DictBatch]:
 
     @takes_alias
     @classmethod
-    def _filtered_chunks_initializer(
-        cls, path: Path, filter_obj: NamedFilter
-    ) -> list[Chunk[InputsT]]:
+    def _filtered_chunks_initializer(cls, path: Path, filter_obj: NamedFilter) -> list[Chunk[InputsT]]:
         return Chunk[cls.get_inputs_type()].load_chunks_from_dir(
-            filter_obj=filter_obj, path=path, lazy=True
+            path=path, lazy=True, filter_obj=filter_obj
         )
 
-    def filtered(self, filter_obj: NamedFilter):
+    def filtered(self, filter_obj: NamedFilter) -> "SavedActs[InputsT]":
         if self.data_filter is not None:
-            raise ValueError(
-                "Tried to add a filter to already filtered dataset. Add filters to root (unfiltered) dataset instead"
-            )
+            raise ValueError("Cannot filter an already-filtered SavedActs")
         return SavedActs[self.get_inputs_type()](
             path=self.path,
             cfg=self.cfg,
@@ -75,113 +72,119 @@ class SavedActs[InputsT: torch.Tensor | DictBatch]:
 
     @property
     def iter_chunks(self):
-        return Chunk[self.get_inputs_type()].chunks_from_dir_iter(
-            path=self.path, lazy=True
-        )
+        return Chunk[self.get_inputs_type()].chunks_from_dir_iter(path=self.path, lazy=True)
 
     @property
     def tokens(self):
         return ChunksGetter(self, "tokens", dense_target=True, ft=True)
-        return ChunksGetter(self, "tokens_raw", dense_target=True)
 
     @property
     def acts(self):
         return ChunksGetter(self, "acts", dense_target=False, ft=True)
-        return ChunksGetter(self, "acts_raw", dense_target=False)
-
-    @property
-    def filtered_acts(self):
-        return ChunksGetter(self, "acts")
-
-    @property
-    def filtered_tokens(self):
-        return ChunksGetter(self, "tokens")
 
 
-def torange(s: slice):
-    kw = {}
-
-    if s.start:
-        kw["start"] = s.start or 0
-    if s.stop:
-        kw["end"] = s.stop
-    if s.step:
-        kw["step"] = s.step
-    return torch.arange(**kw)
+def _slice_to_arange(s: slice, *, length: int) -> Tensor:
+    start = 0 if s.start is None else s.start
+    stop = length if s.stop is None else s.stop
+    step = 1 if s.step is None else s.step
+    return torch.arange(start, stop, step, dtype=torch.long)
 
 
-@define
+def _select_batch(x, indices: Tensor, *, dense: bool):
+    if isinstance(x, DictBatch):
+        # Prefer native indexing if supported.
+        try:
+            return x[indices]
+        except Exception:
+            return x.__class__.construct_with_other_data(
+                {k: v.index_select(0, indices) for k, v in x.items()},
+                x._get_other_dict(),
+            )
+
+    if dense:
+        return x.index_select(0, indices)
+    return x.index_select(0, indices).coalesce()
+
+
+@define(slots=True)
 class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
     saved_acts: SavedActs[InputsT]
     target_attr: str
     dense_target: bool
-    ft: bool = False
+    ft: bool = False  # True when underlying chunks return FilteredTensor (virtual indexing)
 
-    def get_chunk(self, i) -> InputsT:
+    def get_chunk(self, i: int):
         return getattr(self.saved_acts.chunks[i], self.target_attr)
 
-    def docsel(self, doc_ids: Int[Tensor, "sdoc"], dense=True) -> InputsT:
-        assert doc_ids.ndim == 1
-        sdi2 = doc_ids.argsort(descending=False)
-        doc_ids2 = doc_ids[sdi2]
-        doc_ids, sdi = doc_ids.sort(descending=False)
-        assert (sdi2 == sdi).all()
-        assert (doc_ids2 == doc_ids).all()
-        if self.ft:
-            cdoc_idx = doc_ids
-        else:
-            cdoc_idx = doc_ids % self.saved_acts.cfg.docs_per_chunk
-        chunk_ids = doc_ids // self.saved_acts.cfg.docs_per_chunk
-        chunks = chunk_ids.unique()
+    def docsel(self, doc_ids: Tensor, *, dense: bool) -> InputsT:
+        if doc_ids.ndim != 1:
+            raise ValueError("docsel expects a 1D doc_ids tensor")
 
-        def isel(chunk_id, dim, index):
-            if dense:
-                return self.get_chunk(chunk_id).index_select(dim=dim, index=index)
-            return (
-                self.get_chunk(chunk_id).index_select(dim=dim, index=index).coalesce()
-            )
+        doc_ids = doc_ids.to(dtype=torch.long, device="cpu")
+        n = int(doc_ids.numel())
 
-        docs_l = [
-            isel(chunk_id=chunk_id, dim=0, index=cdoc_idx[chunk_ids == chunk_id])
-            for chunk_id in chunks
-        ]
-        input_t = self.saved_acts.get_inputs_type()
+        # Sort to group by chunk for fewer loads.
+        sorted_ids, sort_idx = doc_ids.sort()
+        inv = torch.empty_like(sort_idx)
+        inv[sort_idx] = torch.arange(n, dtype=torch.long)
+
+        cfg = self.saved_acts.cfg
+        chunk_ids = sorted_ids // cfg.docs_per_chunk
+
+        # Group by chunk id.
+        uniq, counts = chunk_ids.unique_consecutive(return_counts=True)
+
+        parts: list[InputsT] = []
+        cursor = 0
+        for cid, cnt in zip(uniq.tolist(), counts.tolist(), strict=True):
+            ids_chunk = sorted_ids[cursor : cursor + cnt]
+            cursor += cnt
+
+            index_for_chunk = ids_chunk if self.ft else (ids_chunk % cfg.docs_per_chunk)
+            chunk_obj = self.get_chunk(cid)
+
+            part = _select_batch(chunk_obj, index_for_chunk, dense=dense)
+            parts.append(part)
+
+        input_cls = self.saved_acts.get_inputs_type()
+
+        if issubclass(input_cls, DictBatch):
+            out_sorted = input_cls.cat_list(parts)
+            # Reorder back to original input order.
+            return out_sorted.apply_func(lambda t: t.index_select(0, inv))  # type: ignore[return-value]
+
+        # Tensor
+        out_sorted = torch.cat(parts, dim=0) if dense else torch.cat(parts, dim=0).coalesce()
         if dense:
+            return out_sorted.index_select(0, inv)  # type: ignore[return-value]
 
-            def make_new(t: Tensor):
-                new = torch.empty_like(t)
-                new[sdi] = t
-                return new
-        else:
+        # Sparse: remap row indices from sorted-order -> original-order.
+        coo = out_sorted.coalesce()
+        idx = coo.indices()
+        new_row = sort_idx.to(device=idx.device)[idx[0]]
+        new_idx = torch.cat([new_row.unsqueeze(0), idx[1:]], dim=0)
+        out = torch.sparse_coo_tensor(new_idx, coo.values(), coo.shape, device=coo.device, dtype=coo.dtype).coalesce()
+        return out  # type: ignore[return-value]
 
-            def make_new(t: Tensor):
-                sorted_out = t.coalesce()
-                oi = sorted_out.indices().clone()
-                oi[0][sdi[oi[0]]] = sorted_out.indices()[0]
-                new = torch.sparse_coo_tensor(
-                    oi,
-                    sorted_out.values(),
-                    sorted_out.shape,
-                ).coalesce()
-                return new
+    def __getitem__(self, key: slice | Tensor | int) -> Tensor | DictBatch:
+        cfg = self.saved_acts.cfg
+        if isinstance(key, slice):
+            key = _slice_to_arange(key, length=cfg.num_docs)
 
-        if issubclass(input_t, DictBatch):
-            sorted_out = input_t.cat_list(docs_l)
-            out = sorted_out.apply_func(make_new)
-        else:
-            sorted_out = torch.cat(docs_l)
-            out = make_new(sorted_out)
-        return out
+        if isinstance(key, int):
+            key = torch.tensor([key], dtype=torch.long)
 
-    def __getitem__(self, sl: slice | torch.Tensor) -> Tensor:
-        if isinstance(sl, slice):
-            sl = torange(sl)
-        if sl.ndim == 0:
-            sl = sl.unsqueeze(0)
-        sl = sl.cpu()
-        if sl.ndim == 1:
-            return self.docsel(sl, dense=self.dense_target)
-        print(
-            "warning: performing seq level indexing, which is inefficient for accesses which index multiple tokens per document"
-        )
-        return self.docsel(sl[0], dense=self.dense_target)[:, sl[1:]]
+        if key.ndim == 0:
+            key = key.unsqueeze(0)
+
+        key = key.cpu()
+
+        if key.ndim == 1:
+            return self.docsel(key, dense=self.dense_target)
+
+        # key.ndim >= 2: interpret as (doc_ids, ...extra indexing...)
+        # This is intentionally simple and can be slow.
+        docs = self.docsel(key[0], dense=self.dense_target)
+        if isinstance(docs, DictBatch):
+            raise TypeError("Seq-level indexing not supported for DictBatch via ChunksGetter")
+        return docs[(slice(None), *key[1:].tolist())]

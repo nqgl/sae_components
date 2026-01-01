@@ -1,18 +1,21 @@
+from __future__ import annotations
+
 from enum import Enum
 from functools import cached_property
-from typing import TYPE_CHECKING, Self, overload
+from typing import TYPE_CHECKING, Self
 
 import torch
 from attrs import define, field
 from torch import Tensor
 
-from saeco.data.dict_batch.dict_batch import DictBatch
+from saeco.data.dict_batch import DictBatch
 from saeco.evaluation.eval_components.enrichment import score_enrichment
 from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 
 if TYPE_CHECKING:
     from saeco.evaluation.evaluation import Evaluation
     from saeco.evaluation.filtered import FilteredTensor
+    from saeco.evaluation.fastapi_models.families_draft import FamilyRef
 
 
 def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:
@@ -21,14 +24,13 @@ def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:
     if p is not None and not (0 < p <= 1):
         raise ValueError("p must be in (0, 1]")
     if k is None:
-        assert p is not None
         k = int(quantity * p)
     if k <= 0:
         raise ValueError("k must be positive")
     return min(k, quantity)
 
 
-@define
+@define(slots=True)
 class EvalRefData:
     src_eval: "Evaluation"
 
@@ -36,14 +38,8 @@ class EvalRefData:
     def device(self) -> torch.device:
         return self.src_eval.cuda
 
-    ### NOTE:
-    # if memory management is an issue due to the cached properties,
-    # add method to this to clear all cached properties
-    # and also possibly register each into a weakrefdict on the base eval
-    # so base eval can clear all the props if needed
 
-
-@define
+@define(slots=True)
 class FeatureSpec:
     feature_id: int
 
@@ -59,9 +55,9 @@ class AggregationType(Enum):
     ANY = "any"
 
 
-@define
+@define(slots=True)
 class Feature(EvalRefData):
-    spec: "FeatureSpec | FilteredTensor"
+    spec: FeatureSpec | "FilteredTensor"
 
     @cached_property
     def data(self) -> "FilteredTensor":
@@ -76,36 +72,30 @@ class Feature(EvalRefData):
         feature_id: int | None = None,
         feature: "FilteredTensor | None" = None,
     ) -> Self:
-        if feature is not None:
-            if feature_id is not None:
-                raise ValueError("Exactly one of feat_id and feature must be set")
-            return cls(src_eval=src_eval, spec=feature)
-        if feature_id is None:
-            raise ValueError("Exactly one of feat_id and feature must be set")
+        if (feature_id is None) == (feature is None):
+            raise ValueError("Exactly one of feature_id and feature must be set")
+        return cls(src_eval=src_eval, spec=feature if feature is not None else FeatureSpec(feature_id=feature_id))  # type: ignore[arg-type]
 
-        return cls(src_eval=src_eval, spec=FeatureSpec(feature_id=feature_id))
+    def aggregate(self, agg: AggregationType) -> "FilteredTensor":
+        def _dense(x: Tensor) -> Tensor:
+            return x.to_dense() if x.is_sparse else x
 
-    def aggregate(self, agg: AggregationType):
         match agg:
             case AggregationType.MEAN:
-
-                def fn(x: Tensor):
-                    return x.to_dense().mean(dim=1)
+                return self.data.apply_to_inner(lambda x: _dense(x).mean(dim=1), cut_to_ndim=1)
             case AggregationType.MAX:
-
-                def fn(x: Tensor):
-                    return x.to_dense().max(dim=1).values
+                return self.data.apply_to_inner(lambda x: _dense(x).max(dim=1).values, cut_to_ndim=1)
             case AggregationType.SUM:
-
-                def fn(x: Tensor):
-                    return x.to_dense().sum(dim=1)
+                return self.data.apply_to_inner(lambda x: _dense(x).sum(dim=1), cut_to_ndim=1)
             case AggregationType.COUNT:
-
-                def fn(x: Tensor):
-                    return (x > 0).to_dense().sum(dim=1)
+                return self.data.apply_to_inner(lambda x: (_dense(x) > 0).sum(dim=1), cut_to_ndim=1)
+            case AggregationType.ANY:
+                return self.data.apply_to_inner(lambda x: (_dense(x) > 0).any(dim=1).to(dtype=torch.float32), cut_to_ndim=1)
             case _:
                 raise ValueError(f"Invalid aggregation type: {agg}")
-        return self.data.apply_to_inner(fn, cut_to_ndim=1)
+
+    def top(self, *args, **kwargs) -> "TopActivations":
+        return self.top_activations(*args, **kwargs)
 
     def top_activations(
         self,
@@ -115,46 +105,27 @@ class Feature(EvalRefData):
         k: int | None = None,
     ) -> "TopActivations":
         doc_acts = self.aggregate(agg)
-        k = _pk_to_k(p, k, doc_acts.value.shape[0])
-        topk = doc_acts.value.topk(k, sorted=True)
+        k = _pk_to_k(p, k, int(doc_acts.value.shape[0]))  # type: ignore[attr-defined]
+
+        vals = doc_acts.value  # type: ignore[attr-defined]
+        topk = vals.topk(k, sorted=True)
+
         top_outer_indices = doc_acts.externalize_indices(topk.indices.unsqueeze(0))
         doc_indices = top_outer_indices[0]
+
         return TopActivations(
             src_eval=self.src_eval,
             feature=self,
-            doc_selection=SelectedDocs(
-                doc_indices=doc_indices,
-                src_eval=self.src_eval,
-            ),
+            doc_selection=SelectedDocs(doc_indices=doc_indices, src_eval=self.src_eval),
         )
 
-    # @cached_property
-    # def id(self) -> int:
-    #     # oh maybe list[int] or something more flexible to do more complex citation?
-    #     assert self.feature.slicing is not None
-    #     i = self.feature.slicing.slices[2]
-    #     assert isinstance(i, int)
-    #     return i
 
-
-@define
-class DocSelectionCitation:
-    feature_id: int
-    topk: int
-
-
-@define
+@define(slots=True)
 class MetadataAccessor(EvalRefData):
     doc_selection: "SelectedDocs"
     metadatas: dict[str, "SelectedMetadata"] = field(factory=dict)
 
-    @overload
-    def __getitem__(self, key: str) -> "SelectedMetadata": ...
-    @overload
-    def __getitem__(self, key: list[str]) -> "SelectedMetadatas": ...
-    def __getitem__(
-        self, key: str | list[str]
-    ) -> "SelectedMetadata| SelectedMetadatas":
+    def __getitem__(self, key: str | list[str]) -> "SelectedMetadata | SelectedMetadatas":
         if isinstance(key, list):
             return SelectedMetadatas(
                 selected_metadatas={k: self[k] for k in key}, src_eval=self.src_eval
@@ -168,14 +139,13 @@ class MetadataAccessor(EvalRefData):
         return self.metadatas[key]
 
 
-@define
+@define(slots=True)
 class SelectedMetadata(EvalRefData):
     docs: "SelectedDocs"
     key: str
 
     @cached_property
-    def data(self):
-        # TODO: check in on the return raw thing (eg below is caused by it)
+    def data(self) -> Tensor:
         return self.src_eval._root_metadatas[self.key][self.docs.doc_indices.cpu()]
 
     @cached_property
@@ -183,9 +153,9 @@ class SelectedMetadata(EvalRefData):
         return self.src_eval._root_metadatas.translate({self.key: self.data})[self.key]
 
 
-@define
+@define(slots=True)
 class SelectedMetadatas(EvalRefData):
-    selected_metadatas: dict[str, "SelectedMetadata"]
+    selected_metadatas: dict[str, SelectedMetadata]
 
     @cached_property
     def metadatas(self) -> dict[str, Tensor]:
@@ -196,32 +166,30 @@ class SelectedMetadatas(EvalRefData):
         return {k: v.as_str for k, v in self.selected_metadatas.items()}
 
 
-@define
+@define(slots=True)
 class SelectedDocs:
-    doc_indices: Tensor  # so if you had more data sources,
-    # this could totally be a dictbatch
-    # of dataset id -> indices for that dataset
-    # or no maybe just a pair of (name, indices)
-
+    doc_indices: Tensor
     src_eval: "Evaluation"
 
     @cached_property
     def metadata(self) -> MetadataAccessor:
-        return MetadataAccessor(
-            doc_selection=self,
-            src_eval=self.src_eval,
-        )
+        return MetadataAccessor(doc_selection=self, src_eval=self.src_eval)
 
     @property
     def docs(self) -> Tensor | DictBatch:
         return self.src_eval.docs[self.doc_indices]
 
     @property
-    def doc_strs(self) -> list[str] | str | list[list[str]]:
+    def texts(self) -> str | list[str]:
+        return self.src_eval.text[self.doc_indices]
+
+    @property
+    def token_strs(self):
+        return self.src_eval.token_strs[self.doc_indices]
+
+    @property
+    def doc_strs(self):
         return self.src_eval.docstrs[self.doc_indices]
-
-
-from saeco.data import DictBatch
 
 
 @DictBatch.auto_other_fields
@@ -249,29 +217,17 @@ class MetadataEnrichmentResult(DictBatch):
         return self[i]
 
 
-@define
+@define(slots=True)
 class TopActivations(EvalRefData):
     feature: Feature
     doc_selection: SelectedDocs
-    # info about k?
 
     @classmethod
-    def make(
-        cls,
-        src_eval: "Evaluation",
-        feature: "FilteredTensor",
-        doc_indices: Tensor,
-    ) -> Self:
+    def make(cls, src_eval: "Evaluation", feature: "FilteredTensor", doc_indices: Tensor) -> Self:
         return cls(
             src_eval=src_eval,
-            feature=Feature(
-                src_eval=src_eval,
-                spec=feature,
-            ),
-            doc_selection=SelectedDocs(
-                src_eval=src_eval,
-                doc_indices=doc_indices,
-            ),
+            feature=Feature(src_eval=src_eval, spec=feature),
+            doc_selection=SelectedDocs(src_eval=src_eval, doc_indices=doc_indices),
         )
 
     @cached_property
@@ -283,7 +239,15 @@ class TopActivations(EvalRefData):
         return self.doc_selection.docs
 
     @property
-    def doc_strs(self) -> list[str] | str | list[list[str]]:
+    def texts(self):
+        return self.doc_selection.texts
+
+    @property
+    def token_strs(self):
+        return self.doc_selection.token_strs
+
+    @property
+    def doc_strs(self):
         return self.doc_selection.doc_strs
 
     def top_activations_metadata_enrichments(
@@ -291,29 +255,21 @@ class TopActivations(EvalRefData):
         *,
         metadata_keys: list[str],
     ) -> dict[str, MetadataEnrichmentResult]:
-        # docs = self.docs
-        # acts = self.acts
-        metadatas = self.doc_selection.metadata[list(metadata_keys)].metadatas
+        metadatas = self.doc_selection.metadata[metadata_keys].metadatas
         doc_ids = self.doc_selection.doc_indices
-        r = {}
-        num_docs = doc_ids.shape[0]
+        num_docs = int(doc_ids.shape[0])
+
+        out: dict[str, MetadataEnrichmentResult] = {}
         for mdname, md in metadatas.items():
-            assert md.ndim == 1
-            metadata_counts = (
-                self.src_eval.cached_call._metadata_unique_labels_and_counts_tensor(
-                    mdname
-                )
-            )
-            labels, mdcat_counts = torch.cat(
-                [md, metadata_counts.labels]
-                # adds one of each of all labels to it so
-                # it has all metadatas and is consistently indexed with the full counts
-            ).unique(return_counts=True)
-            assert isinstance(labels, Tensor)
-            assert isinstance(mdcat_counts, Tensor)
-            counts = mdcat_counts - 1  # remove the 1 of each labels added
-            assert (labels == metadata_counts.labels).all()
-            assert counts.shape == labels.shape == metadata_counts.counts.shape
+            if md.ndim != 1:
+                raise ValueError("Metadata enrichment expects 1D metadata")
+
+            metadata_counts = self.src_eval.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
+            labels, mdcat_counts = torch.cat([md, metadata_counts.labels]).unique(return_counts=True)
+
+            counts = mdcat_counts - 1  # remove the one-of-each we added
+            if not (labels == metadata_counts.labels).all():
+                raise RuntimeError("Label alignment mismatch in enrichment calculation")
 
             proportions = counts / metadata_counts.counts
             scores = score_enrichment(
@@ -322,72 +278,15 @@ class TopActivations(EvalRefData):
                 total_counts=metadata_counts.counts,
                 total_denom=self.src_eval.num_docs,
             )
-            r[mdname] = MetadataEnrichmentResult(
+            out[mdname] = MetadataEnrichmentResult(
                 name=mdname,
                 labels=labels,
                 counts=counts,
                 proportions=proportions,
-                normalized_counts=proportions
-                * self.src_eval.num_docs
-                / doc_ids.shape[0],
+                normalized_counts=proportions * self.src_eval.num_docs / num_docs,
                 scores=scores,
             )
-        return r
-
-    # def top_activations_token_enrichments(
-    #     self: "Evaluation",
-    #     *,
-    #     feature: int | FilteredTensor,
-    #     p: float = None,
-    #     k: int = None,
-    #     mode: TokenEnrichmentMode = "doc",
-    #     sort_by: EnrichmentSortBy = "count",
-    # ):
-    #     docs, acts, metadatas, doc_ids = self.top_activations_and_metadatas(
-    #         feature=feature, p=p, k=k, metadata_keys=[]
-    #     )
-    #     docs = docs.to(self.cuda)
-    #     if mode == TokenEnrichmentMode.doc:
-    #         seltoks = docs
-    #     elif mode == TokenEnrichmentMode.max:
-    #         max_pos = acts.argmax(dim=1)
-    #         max_top = docs[torch.arange(max_pos.shape[0]), max_pos]
-    #         seltoks = max_top
-    #     elif mode == TokenEnrichmentMode.active:
-    #         active_top = docs[acts > 0]
-    #         seltoks = active_top
-    #     elif mode == TokenEnrichmentMode.top:
-    #         top_threshold = docs[
-    #             acts > acts.max(dim=-1).values.min(dim=0).values.item()
-    #         ]
-    #         seltoks = top_threshold
-    #     else:
-    #         raise ValueError(f"Unknown mode {mode}")
-    #     tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
-    #     normalized_counts = (counts / seltoks.numel()) / (
-    #         self.token_occurrence_count.to(self.cuda)[tokens]
-    #         / (self.num_docs * self.seq_len)
-    #     )
-    #     scores = score_enrichment(
-    #         counts=counts,
-    #         sel_denom=seltoks.numel(),
-    #         total_counts=self.token_occurrence_count.to(self.cuda)[tokens],
-    #         total_denom=self.num_docs * self.seq_len,
-    #     )
-    #     if sort_by == EnrichmentSortBy.counts:
-    #         i = counts.argsort(descending=True)
-    #     elif sort_by == EnrichmentSortBy.normalized_count:
-    #         i = normalized_counts.argsort(descending=True)
-    #     elif sort_by == EnrichmentSortBy.score:
-    #         i = scores.argsort(descending=True)
-    #     else:
-    #         raise ValueError(f"Unknown sort_by {sort_by}")
-    #     tokens = tokens[i]
-    #     counts = counts[i]
-    #     normalized_counts = normalized_counts[i]
-    #     scores = scores[i]
-
-    #     return tokens, counts, normalized_counts, scores
+        return out
 
 
 @DictBatch.auto_other_fields

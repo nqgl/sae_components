@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Sequence
 from functools import cached_property
 from pathlib import Path
@@ -7,118 +9,94 @@ import torch
 from attrs import define
 from torch import Tensor
 
-# from .storage.filtered_chunk import FilteredChunk
 from ..data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from .filtered import Filter, FilteredTensor
 from .named_filter import NamedFilter
 
 
-@define
+@define(slots=True)
 class Features:
+    """
+    Feature activations stored as one SparseGrowingDiskTensor per feature.
+
+    Each feature tensor typically has shape (num_docs, seq_len) and is sparse.
+    We expose each feature as a FilteredTensor over a virtual tensor of shape:
+        (num_docs, seq_len, num_features)
+    with the last dim fixed via an int slice.
+    """
+
     path: Path
-    # cfg: CachingConfig
-    # feature_tensors: tuple[SparseGrowingDiskTensor] | None = None
     filter: NamedFilter | None = None
 
     @cached_property
     def feature_tensors(self) -> tuple[SparseGrowingDiskTensor, ...]:
-        return self._feature_tensors_initializer(self.path)
+        return self._open_feature_tensors(self.path)
 
     @classmethod
-    def from_path(cls, path: Path, filter_obj: NamedFilter | None):
-        return cls(
-            path=path,
-            filter=filter_obj,
-        )
+    def from_path(cls, path: Path, filter_obj: NamedFilter | None) -> "Features":
+        return cls(path=path, filter=filter_obj)
 
     @classmethod
-    def _feature_tensors_initializer(
-        cls, path: Path
-    ) -> tuple[SparseGrowingDiskTensor, ...]:
+    def _open_feature_tensors(cls, path: Path) -> tuple[SparseGrowingDiskTensor, ...]:
         import time
 
-        for i in range(10):
+        feat_dir = path / "features"
+        for _ in range(10):
             try:
-                feat_dir = path / "features"
-                num_features = len(list(feat_dir.glob("feature*")))
-                return tuple(
-                    [
-                        SparseGrowingDiskTensor.open(path=feat_dir / f"feature{i}")
-                        for i in range(num_features)
-                    ]
+                if not feat_dir.exists():
+                    raise FileNotFoundError(feat_dir)
+
+                # Prefer deterministic ordering.
+                candidates = sorted(
+                    (p for p in feat_dir.iterdir() if p.name.startswith("feature")),
+                    key=lambda p: int(p.name.removeprefix("feature")) if p.name.removeprefix("feature").isdigit() else p.name,
                 )
+                return tuple(SparseGrowingDiskTensor.open(path=p) for p in candidates)
             except FileNotFoundError:
-                print(
-                    "opening features failed, waiting 1 second",
-                    "and retrying up to 10 times",
-                )
+                print("Opening features failed; retrying in 1s (up to 10x).")
                 time.sleep(1)
-        raise FileNotFoundError(f"Could not find features at {path}")
 
-    def get_active(  # TODO oh, it's not even used.
-        self, key: int | Tensor | Sequence[int]
-    ) -> FilteredTensor | list[FilteredTensor]:
-        # for now does doc level filtering, in future with nested masks
-        # or indices could filter at token level
-        if isinstance(key, Tensor) or not isinstance(key, int):
-            return self[key]  # TODO is this code path okay
-            # seems like it may be doing a totally different thing
-            ### previously:
-            # if isinstance(key, Tensor):
-            #     assert key.dtype == torch.int64
-            #     [self[i] for i in key]
-            # return [self[i] for i in key]
-            # I wonder if the above should be swappred to calls to self.get_active(i)?
-        if not isinstance(key, int):
-            raise TypeError("need to implement handling other key type for features")
-        tensor = self.feature_tensors[key].tensor.coalesce()
-        slicing = [None, None, key]
-        fmask = (
-            self.filter.filter
-            if self.filter is not None
-            else torch.zeros(tensor.shape[0], dtype=torch.bool)
-        )
-        mask = torch.zeros_like(fmask)
-        mask[tensor.indices()[0]] = 1
-        mask = mask & fmask
-        shape = [*tensor.shape[:2], len(self.feature_tensors)]
+        raise FileNotFoundError(f"Could not find features directory at {feat_dir}")
 
-        return FilteredTensor.from_unmasked_value(
-            value=tensor,
-            filter_obj=Filter(
-                slices=slicing,
-                mask=mask,
-                shape=shape,
-            ),
-            presliced=True,
-        ).to_dense()
+    def __len__(self) -> int:
+        return len(self.feature_tensors)
+
+    def get_active(self, key: int | Tensor | Sequence[int]) -> FilteredTensor | list[FilteredTensor]:
+        """
+        Convenience: return feature(s) with inactive docs removed.
+        """
+        ft = self[key]
+        if isinstance(ft, list):
+            return [x.filter_inactive_docs() for x in ft]
+        return ft.filter_inactive_docs()
 
     @overload
     def __getitem__(self, key: Tensor | Sequence[int]) -> list[FilteredTensor]: ...
     @overload
     def __getitem__(self, key: int) -> FilteredTensor: ...
 
-    def __getitem__(
-        self, key: int | Tensor | Sequence[int]
-    ) -> FilteredTensor | list[FilteredTensor]:
+    def __getitem__(self, key: int | Tensor | Sequence[int]) -> FilteredTensor | list[FilteredTensor]:
         if isinstance(key, Tensor) or not isinstance(key, int):
             if isinstance(key, Tensor):
-                assert key.dtype == torch.int64
+                if key.dtype != torch.long:
+                    raise TypeError("Feature id tensor must be torch.long")
                 return [self[int(i.item())] for i in key]
             return [self[i] for i in key]
-        if not isinstance(key, int):
-            raise TypeError("need to implement handling other key type for features")
-        tensor = self.feature_tensors[key].tensor
-        slicing = [None, None, key]
 
-        shape = [*tensor.shape[:2], len(self.feature_tensors)]
+        tensor = self.feature_tensors[key].tensor
+        if not isinstance(tensor, Tensor):
+            raise TypeError("feature tensor backend did not return a torch.Tensor")
+
+        # Virtual tensor adds a feature dimension of size len(feature_tensors).
+        virtual_shape = (*tensor.shape[:2], len(self.feature_tensors))
+        slicing = (None, None, int(key))
 
         return FilteredTensor.from_unmasked_value(
-            value=tensor.coalesce(),
+            value=tensor.coalesce() if tensor.is_sparse else tensor,
             filter_obj=Filter(
                 slices=slicing,
                 mask=self.filter.filter if self.filter is not None else None,
-                shape=tuple(shape),
+                shape=virtual_shape,
             ),
             presliced=True,
         )

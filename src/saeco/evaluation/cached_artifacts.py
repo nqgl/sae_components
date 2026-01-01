@@ -1,70 +1,173 @@
+from __future__ import annotations
+
 import functools
 import inspect
-from typing import TYPE_CHECKING, Any
+import types
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 from pydantic import BaseModel
+import torch
 from torch import Tensor
 
-from saeco.data.dict_batch.dict_batch import DictBatch
+from saeco.data.dict_batch import DictBatch
 
+from .cache_keys import call_cache_key
 from .filtered import FilteredTensor
 
 if TYPE_CHECKING:
     from saeco.evaluation.evaluation import Evaluation
 
 
+def _is_subclass_safe(t: Any, base: type) -> bool:
+    try:
+        return isinstance(t, type) and issubclass(t, base)
+    except Exception:
+        return False
+
+
+def _iter_union_members(ann: Any) -> tuple[Any, ...]:
+    if ann is None or ann is inspect.Signature.empty:
+        return ()
+    if isinstance(ann, str):
+        return ()
+    if isinstance(ann, types.UnionType):
+        return ann.__args__
+    origin = get_origin(ann)
+    if origin is None:
+        return (ann,)
+    if origin is types.UnionType:
+        return get_args(ann)
+    if origin is getattr(types, "UnionType", None):
+        return get_args(ann)
+    if origin is getattr(__import__("typing"), "Union"):
+        return get_args(ann)
+    return (ann,)
+
+
+def _cache_dir_for_artifacts(artifacts: Any) -> Path:
+    # DiskTensorCollection-like objects typically expose storage_dir.
+    p = getattr(artifacts, "storage_dir", None)
+    if isinstance(p, Path):
+        return p
+    p = getattr(artifacts, "path", None)
+    if isinstance(p, Path):
+        return p
+    raise AttributeError("Artifacts collection does not expose a Path-like directory")
+
+
+def _legacy_call_key(name: str, args: tuple[Any, ...], kwargs: dict[str, Any], version: Any | None) -> str:
+    # Old scheme: repr-based and unsafe, but keep for reading old caches.
+    s = f"{name}({args}, {kwargs})".replace(".", "-")
+    if version is not None:
+        s += f"__v{version}"
+    return s
+
+
 class CachedCalls:
+    """
+    Wrap an Evaluation and transparently cache call results into:
+      - BMStorShelf for pydantic models
+      - safetensors on disk for DictBatch
+      - Artifacts collection for torch.Tensor
+
+    The wrapper targets methods only; non-callables raise.
+    """
+
     def __init__(self, raw: "Evaluation"):
         self.raw = raw
-        assert not hasattr(self.raw, "raw")
+        if hasattr(self.raw, "raw"):
+            raise AssertionError("Double-wrapping CachedCalls is not supported")
 
-    def __getattribute__(self, name: str) -> Any:
-        if name in (
-            "raw",
-            "_wrap_call_with_caching____",
-            "cache_some_other_call",
-        ):
-            return super().__getattribute__(name)
+    def __getattr__(self, name: str) -> Any:
         attr = getattr(self.raw, name)
-        assert callable(attr), f"Attribute {name} is not callable"
-        return self._wrap_call_with_caching____(attr, name)
+        if not callable(attr):
+            raise AttributeError(f"{name} is not callable on {type(self.raw).__name__}")
+        return self._wrap(attr, name_override=name)
 
-    def _wrap_call_with_caching____(self, func, name=None):
-        name = name or func.__name__
+    def _wrap(self, func: Any, name_override: str | None = None) -> Any:
+        name_override = name_override or getattr(func, "__name__", "call")
+        ann = inspect.signature(func).return_annotation
+        ann_members = _iter_union_members(ann)
+        version = getattr(func, "_version", None)
+
+        wants_pydantic = any(_is_subclass_safe(t, BaseModel) for t in ann_members)
+        wants_dictbatch = any(_is_subclass_safe(t, DictBatch) for t in ann_members)
+
+        artifacts_dir = _cache_dir_for_artifacts(self.raw.artifacts)
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            stringified_call = f"{name}({args}, {kwargs})".replace(".", "-")
-            return_type = inspect.signature(func).return_annotation
-            if return_type is not None and issubclass(return_type, BaseModel):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # --- Pydantic models -> BMStorShelf (versioned) ---
+            if wants_pydantic:
                 if self.raw.bmstore.has(func, args, kwargs):
                     return self.raw.bmstore.get(func, args, kwargs)
                 value = func(*args, **kwargs)
+                if not isinstance(value, BaseModel):
+                    return value
                 self.raw.bmstore.set(func, args, kwargs, value)
                 return value
-            if return_type is not None and issubclass(return_type, DictBatch):
-                assert self.raw.artifacts.path is not None
-                path = self.raw.artifacts.path / "dict_batches" / stringified_call
+
+            # --- DictBatch -> safetensors dir ---
+            if wants_dictbatch:
+                key = call_cache_key(
+                    func,
+                    args=args,
+                    kwargs=kwargs,
+                    name_override=name_override,
+                    version=version,  # unlike legacy: DictBatch caches should be versioned
+                    prefix=name_override,
+                )
+                path = artifacts_dir / "dict_batches" / key
+                path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Legacy (unversioned) path fallback.
+                legacy = _legacy_call_key(name_override, args, kwargs, version=None)
+                legacy_path = artifacts_dir / "dict_batches" / legacy
+
+                # Prefer new key, fallback to legacy.
                 if path.exists():
-                    return return_type.load_from_safetensors(path)
+                    # Return type should be a DictBatch subclass with load_from_safetensors.
+                    return_ann = ann if ann is not inspect.Signature.empty else None
+                    if isinstance(return_ann, type) and issubclass(return_ann, DictBatch):
+                        return return_ann.load_from_safetensors(path)
+                if legacy_path.exists():
+                    return_ann = ann if ann is not inspect.Signature.empty else None
+                    if isinstance(return_ann, type) and issubclass(return_ann, DictBatch):
+                        return return_ann.load_from_safetensors(legacy_path)
+
                 value = func(*args, **kwargs)
-                assert isinstance(value, return_type)
+                if not isinstance(value, DictBatch):
+                    return value
                 value.save_as_safetensors(path)
                 return value
 
-            if hasattr(func, "_version"):
-                stringified_call += f"__v{func._version}"
+            # --- Everything else: Tensor caching into artifacts collection ---
+            key = call_cache_key(
+                func,
+                args=args,
+                kwargs=kwargs,
+                name_override=name_override,
+                version=version,
+                prefix=name_override,
+            )
+            legacy = _legacy_call_key(name_override, args, kwargs, version=version)
 
-            if stringified_call in self.raw.artifacts:
-                return self.raw.artifacts[stringified_call]
+            if key in self.raw.artifacts:
+                return self.raw.artifacts[key]
+            if legacy in self.raw.artifacts:
+                return self.raw.artifacts[legacy]
+
             result = func(*args, **kwargs)
             if isinstance(result, FilteredTensor):
-                raise NotImplementedError("FilteredTensor caching not yet supported")
-            assert isinstance(result, Tensor)
+                raise NotImplementedError("FilteredTensor caching is intentionally not supported.")
+            if not isinstance(result, Tensor):
+                return result
 
-            self.raw.artifacts[stringified_call] = result
+            self.raw.artifacts[key] = result
             return result
 
         return wrapper
 
-    def cache_some_other_call(self, func): ...
+    def cache_some_other_call(self, func):  # left intentionally for extension
+        raise NotImplementedError
