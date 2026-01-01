@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Literal
 
 import torch
 import tqdm
+from pydantic import BaseModel
 from torch import Tensor
 
 from saeco.evaluation.cache_version import cache_version
@@ -19,18 +20,66 @@ ProfileAggregation = Literal["mean", "median"]
 SimilarityMode = Literal["profile", "pattern"]
 
 
+class PerturbationConfig(BaseModel, frozen=True):
+    """
+    Session-wide configuration for perturbation analysis.
+
+    This config controls default values for metadata keys, control conditions,
+    and analysis parameters. Individual method calls can override by passing
+    a different config.
+    """
+
+    # Control condition
+    control_drug: str = "DMSO"
+    control_dosage: int = 0
+
+    # Metadata keys
+    cell_line_key: str = "cell_line"
+    drug_key: str = "drug"
+    dosage_key: str = "dosage"
+
+    # Analysis defaults
+    doses: tuple[int, ...] = (1, 2, 3)
+    pooling: Pooling = "max"
+    dose_mode: DoseMode = "max"
+    aggregation: ProfileAggregation = "mean"
+    normalize_across_cell_lines: bool = True
+
+
 class PerturbationAnalysis:
     """
     Act 1 + Act 2 utilities:
-      - Compute drug deltas vs DMSO control per (cell_line, dose)
+      - Compute drug deltas vs control per (cell_line, dose)
       - Build drug profiles and drug-drug similarity
       - Compute cell-line sensitivity signals and correlate control features to sensitivity
 
     Notes on indexing:
-      - This code assumes doc indices are GLOBAL (0..root.num_docs-1), matching how your
+      - This code assumes doc indices are GLOBAL (0..root.num_samples-1), matching how your
         Chunk filtering/FilteredTensor virtual shapes are set up.
       - It works on both root and filtered evals as long as metadatas exist on root.
+
+    Configuration:
+      - Use `perturbation_config` property to set session-wide defaults for control drug,
+        metadata keys, doses, pooling, etc.
+      - Individual methods accept `config: PerturbationConfig | None` to override defaults.
     """
+
+    # ---------------------------------------------------------------------
+    # Configuration
+    # ---------------------------------------------------------------------
+
+    @property
+    def perturbation_config(self: Evaluation) -> PerturbationConfig:
+        """Get the current perturbation analysis configuration."""
+        cfg = getattr(self, "_perturbation_config", None)
+        if cfg is None:
+            return PerturbationConfig()
+        return cfg
+
+    @perturbation_config.setter
+    def perturbation_config(self: Evaluation, cfg: PerturbationConfig) -> None:
+        """Set the perturbation analysis configuration."""
+        self._perturbation_config = cfg
 
     # ---------------------------------------------------------------------
     # Metadata helpers
@@ -40,7 +89,7 @@ class PerturbationAnalysis:
         return self.root  # unfiltered root evaluation
 
     def _root_metadata_tensor(self: Evaluation, key: str) -> Tensor:
-        meta = self._meta_root().metadatas[key]
+        meta = self._meta_root().metadata_store[key]
         assert isinstance(meta, Tensor), f"Metadata {key} must be a torch.Tensor"
         return meta
 
@@ -51,7 +100,7 @@ class PerturbationAnalysis:
         """
         if isinstance(value, int):
             return value
-        md = self._meta_root().metadatas.get(key)
+        md = self._meta_root().metadata_store.get(key)
         info = md.info
         if info is None or info.fromstr is None:
             raise ValueError(
@@ -67,7 +116,7 @@ class PerturbationAnalysis:
         """
         Translate integer ID -> string metadata value.
         """
-        md = self._meta_root().metadatas.get(key)
+        md = self._meta_root().metadata_store.get(key)
         info = md.info
         if info is None or info.tostr is None:
             raise ValueError(
@@ -88,7 +137,7 @@ class PerturbationAnalysis:
         """
         List all known string labels for a metadata key, using its translator.
         """
-        md = self._meta_root().metadatas.get(key)
+        md = self._meta_root().metadata_store.get(key)
         info = md.info
         if info is None or info.tostr is None:
             # Fallback: infer from tensor unique values (no translator)
@@ -102,18 +151,29 @@ class PerturbationAnalysis:
         return out
 
     def get_all_cell_lines(
-        self: Evaluation, *, exclude_special: bool = True
+        self: Evaluation,
+        *,
+        exclude_special: bool = True,
+        config: PerturbationConfig | None = None,
     ) -> list[str]:
+        cfg = config or self.perturbation_config
         return self.get_all_metadata_strings(
-            "cell_line", exclude_special=exclude_special
+            cfg.cell_line_key, exclude_special=exclude_special
         )
 
     def get_all_drugs(
-        self: Evaluation, *, exclude_special: bool = True, exclude_dmso: bool = True
+        self: Evaluation,
+        *,
+        exclude_special: bool = True,
+        exclude_control: bool = True,
+        config: PerturbationConfig | None = None,
     ) -> list[str]:
-        drugs = self.get_all_metadata_strings("drug", exclude_special=exclude_special)
-        if exclude_dmso:
-            drugs = [d for d in drugs if d != "DMSO"]
+        cfg = config or self.perturbation_config
+        drugs = self.get_all_metadata_strings(
+            cfg.drug_key, exclude_special=exclude_special
+        )
+        if exclude_control:
+            drugs = [d for d in drugs if d != cfg.control_drug]
         return drugs
 
     # ---------------------------------------------------------------------
@@ -185,7 +245,7 @@ class PerturbationAnalysis:
             yield doc_ids, agg
 
     # ---------------------------------------------------------------------
-    # Control stats (DMSO dose 0)
+    # Control stats
     # ---------------------------------------------------------------------
 
     @cache_version(1)
@@ -193,11 +253,7 @@ class PerturbationAnalysis:
     def control_sums_counts_by_cell_line(
         self: Evaluation,
         *,
-        pooling: Pooling = "max",
-        cell_line_key: str = "cell_line",
-        drug_key: str = "drug",
-        dosage_key: str = "dosage",
-        dmso_name: str = "DMSO",
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> Tensor:
         """
@@ -211,29 +267,28 @@ class PerturbationAnalysis:
 
         Consumers should use `unpack_control_sums_counts(...)`.
         """
+        cfg = config or self.perturbation_config
         root = self._meta_root()
-        drug_meta = root.metadatas[drug_key]
-        cell_meta = root.metadatas[cell_line_key]
-        dose_meta = root.metadatas[dosage_key]
+        drug_meta = root.metadata_store[cfg.drug_key]
+        cell_meta = root.metadata_store[cfg.cell_line_key]
+        dose_meta = root.metadata_store[cfg.dosage_key]
         assert (
             isinstance(drug_meta, Tensor)
             and isinstance(cell_meta, Tensor)
             and isinstance(dose_meta, Tensor)
         )
 
-        dmso_id = self.get_metadata_id(drug_key, dmso_name)
+        control_drug_id = self.get_metadata_id(cfg.drug_key, cfg.control_drug)
 
         n_cell_lines = int(cell_meta.max().item()) + 1
         d_dict = self.d_dict
 
         device = self.device
-        sums = torch.zeros(
-            (n_cell_lines, d_dict), dtype=torch.float32, device=device
-        )
+        sums = torch.zeros((n_cell_lines, d_dict), dtype=torch.float32, device=device)
         counts = torch.zeros((n_cell_lines,), dtype=torch.long, device=device)
 
         for doc_ids, agg in self.iter_seq_aggregated_acts_by_chunk(
-            pooling=pooling, device=device, show_progress=show_progress
+            pooling=cfg.pooling, device=device, show_progress=show_progress
         ):
             # Pull metadata for these docs
             did = doc_ids.to(torch.long)
@@ -241,7 +296,7 @@ class PerturbationAnalysis:
             c = cell_meta[did].to(device)
             z = dose_meta[did].to(device)
 
-            m = (d == dmso_id) & (z == 0)
+            m = (d == control_drug_id) & (z == cfg.control_dosage)
             if not m.any():
                 continue
 
@@ -277,7 +332,7 @@ class PerturbationAnalysis:
     def control_means_by_cell_line(
         self: Evaluation,
         *,
-        pooling: Pooling = "max",
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> tuple[Tensor, Tensor]:
         """
@@ -285,8 +340,9 @@ class PerturbationAnalysis:
           means: (n_cell_lines, d_dict) float32
           counts: (n_cell_lines,) long
         """
+        cfg = config or self.perturbation_config
         packed = self.cached.control_sums_counts_by_cell_line(
-            pooling=pooling, show_progress=show_progress
+            config=cfg, show_progress=show_progress
         )
         sums, counts = self.unpack_control_sums_counts(packed)
         denom = counts.clamp(min=1).to(torch.float32).unsqueeze(1)
@@ -307,59 +363,54 @@ class PerturbationAnalysis:
         drug: str,
         cell_lines: list[str] | None = None,
         *,
-        pooling: Pooling = "max",
-        doses: Sequence[int] = (1, 2, 3),
-        cell_line_key: str = "cell_line",
-        drug_key: str = "drug",
-        dosage_key: str = "dosage",
-        dmso_name: str = "DMSO",
-        control_dosage: int = 0,
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> Tensor:
         """
         Act 1 Step 1.1:
           Returns (n_cell_lines, n_doses, d_dict) where entries are:
-            delta[cl, dose_idx, :] = mean_acts(drug @ dose) - mean_acts(DMSO @ 0)
+            delta[cl, dose_idx, :] = mean_acts(drug @ dose) - mean_acts(control @ control_dosage)
 
         Notes:
           - "cell_lines" controls *which* cell lines are returned and in which order.
             If None, returns all known cell lines (excluding specials if translator exists).
-          - Doses default to (1,2,3) and dose_idx corresponds to that ordering.
+          - Doses from config (default: (1,2,3)), dose_idx corresponds to that ordering.
         """
+        cfg = config or self.perturbation_config
         root = self._meta_root()
-        drug_meta = root.metadatas[drug_key]
-        cell_meta = root.metadatas[cell_line_key]
-        dose_meta = root.metadatas[dosage_key]
+        drug_meta = root.metadata_store[cfg.drug_key]
+        cell_meta = root.metadata_store[cfg.cell_line_key]
+        dose_meta = root.metadata_store[cfg.dosage_key]
         assert (
             isinstance(drug_meta, Tensor)
             and isinstance(cell_meta, Tensor)
             and isinstance(dose_meta, Tensor)
         )
 
-        dmso_id = self.get_metadata_id(drug_key, dmso_name)
-        drug_id = self.get_metadata_id(drug_key, drug)
+        drug_id = self.get_metadata_id(cfg.drug_key, drug)
 
         # Determine returned cell_lines
         if cell_lines is None:
             # Prefer translator order; fallback to unique IDs
             try:
-                cell_lines = self.get_all_cell_lines(exclude_special=True)
+                cell_lines = self.get_all_cell_lines(exclude_special=True, config=cfg)
             except Exception:
                 ids = cell_meta.unique(sorted=True).tolist()
                 cell_lines = [str(i) for i in ids]
 
         cell_line_ids = torch.tensor(
-            [self.get_metadata_id(cell_line_key, cl) for cl in cell_lines],
+            [self.get_metadata_id(cfg.cell_line_key, cl) for cl in cell_lines],
             dtype=torch.long,
         )
 
         # Control means by cell_line (CPU)
         control_means_cpu, _control_counts = self.control_means_by_cell_line(
-            pooling=pooling, show_progress=show_progress
+            config=cfg, show_progress=show_progress
         )
 
         n_cell_lines_total = control_means_cpu.shape[0]
         d_dict = control_means_cpu.shape[1]
+        doses = cfg.doses
         n_doses = len(doses)
 
         device = self.device
@@ -385,7 +436,7 @@ class PerturbationAnalysis:
             lut[int(d)] = int(i)
 
         for doc_ids, agg in self.iter_seq_aggregated_acts_by_chunk(
-            pooling=pooling, device=device, show_progress=show_progress
+            pooling=cfg.pooling, device=device, show_progress=show_progress
         ):
             did = doc_ids.to(torch.long)
             d = drug_meta[did].to(device)
@@ -411,8 +462,8 @@ class PerturbationAnalysis:
             z_sel = z_sel[in_range]
 
             # Exclude control dosage explicitly
-            if control_dosage is not None:
-                keep = z_sel != int(control_dosage)
+            if cfg.control_dosage is not None:
+                keep = z_sel != int(cfg.control_dosage)
                 if not keep.any():
                     continue
                 c_sel = c_sel[keep]
@@ -453,32 +504,30 @@ class PerturbationAnalysis:
         drug: str,
         cell_lines: list[str] | None = None,
         *,
-        pooling: Pooling = "max",
-        dose_mode: DoseMode = "max",
-        doses: Sequence[int] = (1, 2, 3),
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> Tensor:
         """
         Act 1 Step 1.1 (reduced):
           Returns (n_cell_lines, d_dict)
 
-        dose_mode:
+        dose_mode (from config):
           - "max": take highest dose in `doses` ordering (default dose 3)
           - "slope": fit linear dose-response slope across `doses`
         """
+        cfg = config or self.perturbation_config
         deltas_3d = self.cached.compute_drug_deltas_tensor(
             drug=drug,
             cell_lines=cell_lines,
-            pooling=pooling,
-            doses=tuple(doses),
+            config=cfg,
             show_progress=show_progress,
         )  # (n_cell_lines, n_doses, d_dict) on CPU
 
-        if dose_mode == "max":
+        if cfg.dose_mode == "max":
             return deltas_3d[:, -1, :]
 
-        if dose_mode == "slope":
-            x = torch.tensor(list(doses), dtype=torch.float32)
+        if cfg.dose_mode == "slope":
+            x = torch.tensor(list(cfg.doses), dtype=torch.float32)
             x = x - x.mean()
             denom = (x * x).sum().clamp(min=1e-8)
             y = torch.nan_to_num(deltas_3d.to(torch.float32), nan=0.0)
@@ -486,7 +535,7 @@ class PerturbationAnalysis:
             slope = (y * x.view(1, -1, 1)).sum(dim=1) / denom
             return slope
 
-        raise ValueError(f"Unknown dose_mode={dose_mode!r}")
+        raise ValueError(f"Unknown dose_mode={cfg.dose_mode!r}")
 
     # ---------------------------------------------------------------------
     # Drug profiles + similarity (Act 1 Step 1.2)
@@ -498,41 +547,36 @@ class PerturbationAnalysis:
         drug: str,
         cell_lines: list[str] | None = None,
         *,
-        pooling: Pooling = "max",
-        dose_mode: DoseMode = "max",
-        doses: Sequence[int] = (1, 2, 3),
-        aggregation: ProfileAggregation = "mean",
-        normalize_across_cell_lines: bool = True,
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> Tensor:
         """
         Aggregate perturbation deltas across cell lines -> (d_dict,).
 
-        normalize_across_cell_lines:
+        normalize_across_cell_lines (from config):
           If True: z-score each feature across cell lines before aggregating.
         """
+        cfg = config or self.perturbation_config
         matrix = self.cached.compute_drug_deltas_matrix(
             drug=drug,
             cell_lines=cell_lines,
-            pooling=pooling,
-            dose_mode=dose_mode,
-            doses=tuple(doses),
+            config=cfg,
             show_progress=show_progress,
         ).to(torch.float32)  # CPU, (n_cell_lines, d_dict)
 
         x = torch.nan_to_num(matrix, nan=0.0)
 
-        if normalize_across_cell_lines:
+        if cfg.normalize_across_cell_lines:
             mu = x.mean(dim=0)
             sd = x.std(dim=0, unbiased=False).clamp(min=1e-8)
             x = (x - mu) / sd
 
-        if aggregation == "mean":
+        if cfg.aggregation == "mean":
             prof = x.mean(dim=0)
-        elif aggregation == "median":
+        elif cfg.aggregation == "median":
             prof = x.median(dim=0).values
         else:
-            raise ValueError(f"Unknown aggregation={aggregation!r}")
+            raise ValueError(f"Unknown aggregation={cfg.aggregation!r}")
 
         prof = torch.nan_to_num(prof, nan=0.0)
         return prof
@@ -544,11 +588,7 @@ class PerturbationAnalysis:
         cell_lines: list[str] | None = None,
         *,
         mode: SimilarityMode = "profile",
-        pooling: Pooling = "max",
-        dose_mode: DoseMode = "max",
-        doses: Sequence[int] = (1, 2, 3),
-        aggregation: ProfileAggregation = "mean",
-        normalize_across_cell_lines: bool = True,
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> Tensor:
         """
@@ -561,8 +601,11 @@ class PerturbationAnalysis:
         Warning:
           pattern mode can be very large if you pass many drugs and many cell lines.
         """
+        cfg = config or self.perturbation_config
         if drugs is None:
-            drugs = self.get_all_drugs(exclude_special=True, exclude_dmso=True)
+            drugs = self.get_all_drugs(
+                exclude_special=True, exclude_control=True, config=cfg
+            )
 
         if mode == "profile":
             profiles: list[Tensor] = []
@@ -571,11 +614,7 @@ class PerturbationAnalysis:
                 p = self.cached.compute_drug_profile(
                     drug=d,
                     cell_lines=cell_lines,
-                    pooling=pooling,
-                    dose_mode=dose_mode,
-                    doses=tuple(doses),
-                    aggregation=aggregation,
-                    normalize_across_cell_lines=normalize_across_cell_lines,
+                    config=cfg,
                     show_progress=False,  # avoid nested bars
                 )
                 profiles.append(p)
@@ -591,9 +630,7 @@ class PerturbationAnalysis:
                 m = self.cached.compute_drug_deltas_matrix(
                     drug=d,
                     cell_lines=cell_lines,
-                    pooling=pooling,
-                    dose_mode=dose_mode,
-                    doses=tuple(doses),
+                    config=cfg,
                     show_progress=False,
                 ).to(torch.float32)
                 mats.append(torch.nan_to_num(m, nan=0.0).flatten())
@@ -643,7 +680,9 @@ class PerturbationAnalysis:
         top = contrib.topk(min(k, contrib.numel()), largest=True)
         out: list[tuple[int, float, float, float]] = []
         for fid, c in zip(top.indices.tolist(), top.values.tolist(), strict=True):
-            out.append((int(fid), float(p1[fid].item()), float(p2[fid].item()), float(c)))
+            out.append(
+                (int(fid), float(p1[fid].item()), float(p2[fid].item()), float(c))
+            )
         return out
 
     # ---------------------------------------------------------------------
@@ -687,24 +726,21 @@ class PerturbationAnalysis:
         cell_lines: list[str] | None,
         *,
         response_feature: int,
-        pooling: Pooling = "max",
-        dose_mode: DoseMode = "max",
-        doses: Sequence[int] = (1, 2, 3),
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> dict[str, float]:
         """
         Sensitivity signal per cell line = delta(response_feature) under drug (default: highest dose).
         Returns mapping {cell_line_name: sensitivity_value}.
         """
+        cfg = config or self.perturbation_config
         if cell_lines is None:
-            cell_lines = self.get_all_cell_lines(exclude_special=True)
+            cell_lines = self.get_all_cell_lines(exclude_special=True, config=cfg)
 
         deltas = self.cached.compute_drug_deltas_matrix(
             drug=drug,
             cell_lines=cell_lines,
-            pooling=pooling,
-            dose_mode=dose_mode,
-            doses=tuple(doses),
+            config=cfg,
             show_progress=show_progress,
         )
         sens = deltas[:, int(response_feature)]
@@ -714,21 +750,22 @@ class PerturbationAnalysis:
         self: Evaluation,
         cell_lines: list[str] | None,
         *,
-        pooling: Pooling = "max",
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
     ) -> Tensor:
         """
-        Returns (n_cell_lines, d_dict) control (DMSO, dose 0) mean feature activations per cell line.
+        Returns (n_cell_lines, d_dict) control mean feature activations per cell line.
         """
+        cfg = config or self.perturbation_config
         if cell_lines is None:
-            cell_lines = self.get_all_cell_lines(exclude_special=True)
+            cell_lines = self.get_all_cell_lines(exclude_special=True, config=cfg)
 
         means, _counts = self.control_means_by_cell_line(
-            pooling=pooling, show_progress=show_progress
+            config=cfg, show_progress=show_progress
         )
         # We stored control means indexed by cell_line_id; select in requested order:
         cell_line_ids = torch.tensor(
-            [self.get_metadata_id("cell_line", cl) for cl in cell_lines],
+            [self.get_metadata_id(cfg.cell_line_key, cl) for cl in cell_lines],
             dtype=torch.long,
         )
         return means.index_select(0, cell_line_ids)
@@ -740,30 +777,27 @@ class PerturbationAnalysis:
         cell_lines: list[str] | None,
         *,
         response_feature: int,
-        pooling: Pooling = "max",
-        dose_mode: DoseMode = "max",
-        doses: Sequence[int] = (1, 2, 3),
+        config: PerturbationConfig | None = None,
         show_progress: bool = True,
         eps: float = 1e-8,
     ) -> Tensor:
         """
         Act 2:
-          Correlate CONTROL features (DMSO) with sensitivity across cell lines.
+          Correlate CONTROL features with sensitivity across cell lines.
 
         Returns:
           correlations: (d_dict,) Pearson r for each feature.
         """
+        cfg = config or self.perturbation_config
         if cell_lines is None:
-            cell_lines = self.get_all_cell_lines(exclude_special=True)
+            cell_lines = self.get_all_cell_lines(exclude_special=True, config=cfg)
 
         # sensitivity vector (n_cell_lines,)
         sens_map = self.compute_sensitivity_by_cell_line(
             drug=drug,
             cell_lines=cell_lines,
             response_feature=response_feature,
-            pooling=pooling,
-            dose_mode=dose_mode,
-            doses=tuple(doses),
+            config=cfg,
             show_progress=show_progress,
         )
         sens = torch.tensor([sens_map[cl] for cl in cell_lines], dtype=torch.float32)
@@ -771,7 +805,7 @@ class PerturbationAnalysis:
         # control features (n_cell_lines, d_dict)
         control_feats = self.compute_control_features_by_cell_line(
             cell_lines=cell_lines,
-            pooling=pooling,
+            config=cfg,
             show_progress=show_progress,
         ).to(torch.float32)
 

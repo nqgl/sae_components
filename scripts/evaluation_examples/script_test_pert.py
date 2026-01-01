@@ -3,6 +3,11 @@ from load_comlm_tahoe import root_eval
 
 root = root_eval
 
+# Use default config (pooling="max", dose_mode="max", etc.)
+# For custom settings, create a config:
+# cfg = PerturbationConfig(pooling="mean", dose_mode="slope")
+# root.perturbation_config = cfg
+
 
 def main():
     # Act 1: phenomatching
@@ -18,8 +23,6 @@ def main():
     sim = root.cached.compute_drug_similarity_matrix(
         drugs=drugs,
         mode="profile",
-        pooling="max",
-        dose_mode="max",
     )
 
     top = root.top_similar_drugs(sim, drugs, query="ralimetinib", k=5)
@@ -44,8 +47,7 @@ def main():
     corr = root.cached.compute_feature_sensitivity_correlation(
         drug="ralimetinib",
         response_feature=CYTOTOX_ID,
-        pooling="max",
-        dose_mode="max",
+        cell_lines=None,
     )
     topk = torch.topk(corr, 20)
     print("\nTop control features predicting sensitivity:")

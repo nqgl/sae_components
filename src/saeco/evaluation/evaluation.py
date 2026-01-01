@@ -12,7 +12,10 @@ from transformers import PreTrainedTokenizerFast
 
 from saeco.architecture.architecture import Architecture
 from saeco.data.dict_batch import DictBatch
-from saeco.evaluation.eval_components.perturbation_analysis import PerturbationAnalysis
+from saeco.evaluation.eval_components.perturbation_analysis import (
+    PerturbationAnalysis,
+    PerturbationConfig,
+)
 from saeco.evaluation.model_interface import (
     ComlmEvalAdapter,
     LanguageModelEvalAdapter,
@@ -51,6 +54,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     filter: NamedFilter | None = field(default=None)
     _root: Evaluation | None = field(default=None, repr=False, alias="root")
     _tokenizer: PreTrainedTokenizerFast | None = field(default=None, repr=False)
+    _perturbation_config: PerturbationConfig | None = field(default=None, repr=False)
 
     @cached_property
     def tokenizer(self) -> PreTrainedTokenizerFast:
