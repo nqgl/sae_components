@@ -19,13 +19,13 @@ from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.data.training_data.tokens_data import PermutedDocs
 from saeco.evaluation.storage.chunk import Chunk
-from saeco.evaluation.storage.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.cache_config import CacheConfig
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
 @define(slots=True)
 class ActsCacher:
-    cfg: CachingConfig
+    cfg: CacheConfig
     tokens_source: Iterator
     architecture: Architecture
     acts_data: ActsDataCreator
@@ -35,7 +35,7 @@ class ActsCacher:
     @classmethod
     def from_cache_and_runner[ArchCfgT: SweepableConfig](
         cls,
-        caching_config: CachingConfig,
+        caching_config: CacheConfig,
         architecture: Architecture[ArchCfgT],
         split: str = "val",
     ) -> "ActsCacher":
@@ -64,7 +64,7 @@ class ActsCacher:
             raise TypeError("Expected DictPiledTokensData for DictBatch pipeline")
 
         def gen_with_columns():
-            for tokens in tokens_data.piler.batch_generator(batch_size=cfg.docs_per_chunk):
+            for tokens in tokens_data.piler.batch_generator(batch_size=cfg.tokens_per_chunk):
                 yield (
                     architecture.run_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.input_data_transform(tokens),
                     {col: tokens[col] for col in cfg.metadatas_from_src_column_names},
@@ -90,7 +90,7 @@ class ActsCacher:
 
     def store_acts(self):
         metadata_chunks = self.store(self.cfg.num_chunks)
-        (self.path / CachingConfig.STANDARD_FILE_NAME).write_text(self.cfg.model_dump_json())
+        (self.path / CacheConfig.STANDARD_FILE_NAME).write_text(self.cfg.model_dump_json())
         return metadata_chunks
 
     @property
@@ -182,7 +182,7 @@ class ActsCacher:
                         spacts = chunk.read_sparse_raw().cuda()
                         if acts is None:
                             acts = torch.zeros(
-                                self.cfg.docs_per_chunk * B,
+                                self.cfg.tokens_per_chunk * B,
                                 self.seq_len,
                                 features_batch_size,
                                 device="cuda",
@@ -193,7 +193,7 @@ class ActsCacher:
                         ids[2] -= i
                         vals = spacts.values()[mask]
                         acts[
-                            ci * self.cfg.docs_per_chunk : (chunk.idx + 1) * self.cfg.docs_per_chunk
+                            ci * self.cfg.tokens_per_chunk : (chunk.idx + 1) * self.cfg.tokens_per_chunk
                         ][ids.unbind()] = vals
 
                     for k, feat_acts in enumerate(batch):

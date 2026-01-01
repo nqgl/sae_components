@@ -19,5 +19,5 @@ class TopActivatingExamplesQuery(FilterableQuery):
     p: float | None = None
     k: int | None = None
     metadata_keys: list[str] = []
-    return_str_docs: bool = False
+    return_str_tokens: bool = False
     return_str_metadatas: bool = True

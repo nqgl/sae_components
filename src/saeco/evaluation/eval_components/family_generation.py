@@ -238,7 +238,7 @@ class FamilyGenerator:
             max(level_lens),
             self.d_dict,
             dtype=torch.float,
-            device=self.cuda,
+            device=self.device,
         )
         for i, level in enumerate(levels):
             for j, family in level.families.items():
@@ -332,7 +332,7 @@ class FamilyGenerator:
             max(level_lens),
             self.d_dict,
             dtype=torch.float,
-            device=self.cuda,
+            device=self.device,
         )
         for i, level in enumerate(levels):
             for j, family in level.families.items():
@@ -427,7 +427,7 @@ class FamilyGenerator:
         from ..mst import mst
 
         levels = []
-        feat_counts = feat_counts.to(self.cuda)
+        feat_counts = feat_counts.to(self.device)
         for _ in tqdm.trange(n):
             tree = mst(C).transpose(0, 1)
             roots = ((tree > 0).sum(dim=0) == 0) & ((tree > 0).sum(dim=1) > 0)
@@ -633,7 +633,7 @@ class FamilyGenerator:
         from ..mst import my_mst
 
         levels = []
-        feat_counts = feat_counts.to(self.cuda)
+        feat_counts = feat_counts.to(self.device)
         for _ in range(n):
             # tree = mst(C)
             i, v = my_mst(C.cuda())
@@ -797,7 +797,7 @@ class FamilyGenerator:
             max_num_families = [2**5, 2**8, 2**11]
 
         cconn = lambda CC, tree, roots: connectedness(
-            tree.to(self.cuda), roots.to(self.cuda)
+            tree.to(self.device), roots.to(self.device)
         ).to(CC.device)
         conn = lambda CC, tree, roots: CC[roots]
         fam_fn = bid_on_dists
@@ -807,7 +807,7 @@ class FamilyGenerator:
             getC=self.cached_call.get_infoC,
             dist_gen=conn,
             fam_fn=bid_on_dists,
-            cuda=self.cuda,
+            cuda=self.device,
             dist_gen_final=conn,
         )
 

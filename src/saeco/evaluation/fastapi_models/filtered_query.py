@@ -10,4 +10,4 @@ class FilterableQuery(BaseModel):
     def filter(self, root):
         if self.filter_id is None:
             return root
-        return root.open_filtered(self.filter_id)
+        return root.open_filter(self.filter_id)

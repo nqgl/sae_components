@@ -36,7 +36,7 @@ class EvalRefData:
 
     @property
     def device(self) -> torch.device:
-        return self.src_eval.cuda
+        return self.src_eval.device
 
 
 @define(slots=True)
@@ -176,8 +176,8 @@ class SelectedDocs:
         return MetadataAccessor(doc_selection=self, src_eval=self.src_eval)
 
     @property
-    def docs(self) -> Tensor | DictBatch:
-        return self.src_eval.docs[self.doc_indices]
+    def tokens(self) -> Tensor | DictBatch:
+        return self.src_eval.tokens[self.doc_indices]
 
     @property
     def texts(self) -> str | list[str]:
@@ -186,10 +186,6 @@ class SelectedDocs:
     @property
     def token_strs(self):
         return self.src_eval.token_strs[self.doc_indices]
-
-    @property
-    def doc_strs(self):
-        return self.src_eval.docstrs[self.doc_indices]
 
 
 @DictBatch.auto_other_fields
@@ -235,8 +231,8 @@ class TopActivations(EvalRefData):
         return self.feature.data.index_select(self.doc_selection.doc_indices, dim=0)
 
     @property
-    def docs(self) -> Tensor | DictBatch:
-        return self.doc_selection.docs
+    def tokens(self) -> Tensor | DictBatch:
+        return self.doc_selection.tokens
 
     @property
     def texts(self):
@@ -245,10 +241,6 @@ class TopActivations(EvalRefData):
     @property
     def token_strs(self):
         return self.doc_selection.token_strs
-
-    @property
-    def doc_strs(self):
-        return self.doc_selection.doc_strs
 
     def top_activations_metadata_enrichments(
         self,
@@ -264,7 +256,7 @@ class TopActivations(EvalRefData):
             if md.ndim != 1:
                 raise ValueError("Metadata enrichment expects 1D metadata")
 
-            metadata_counts = self.src_eval.cached_call._metadata_unique_labels_and_counts_tensor(mdname)
+            metadata_counts = self.src_eval.cached._metadata_unique_labels_and_counts_tensor(mdname)
             labels, mdcat_counts = torch.cat([md, metadata_counts.labels]).unique(return_counts=True)
 
             counts = mdcat_counts - 1  # remove the one-of-each we added

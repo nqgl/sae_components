@@ -10,11 +10,11 @@ from torch import Tensor
 from saeco.data.dict_batch import DictBatch
 
 
-class CachingConfig[InputDataT: Tensor | DictBatch](BaseModel):
+class CacheConfig[InputDataT: Tensor | DictBatch](BaseModel):
     model_path_str: str | None = None
     averaged_model_weights: bool = False
 
-    docs_per_chunk: int = 100
+    tokens_per_chunk: int = 100
     num_chunks: int = 30
 
     store_sparse: bool = True
@@ -37,7 +37,7 @@ class CachingConfig[InputDataT: Tensor | DictBatch](BaseModel):
     @takes_alias
     @classmethod
     def get_input_data_cls(cls) -> type[InputDataT]:
-        return get_resolved_typevars_for_base(cls, CachingConfig)[0]  # type: ignore
+        return get_resolved_typevars_for_base(cls, CacheConfig)[0]  # type: ignore
 
     @property
     def model_path(self) -> Path | None:
@@ -49,7 +49,7 @@ class CachingConfig[InputDataT: Tensor | DictBatch](BaseModel):
 
     @property
     def num_docs(self) -> int:
-        return self.docs_per_chunk * self.num_chunks
+        return self.tokens_per_chunk * self.num_chunks
 
     @property
     def path(self) -> Path:
