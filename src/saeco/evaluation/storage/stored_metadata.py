@@ -37,6 +37,9 @@ class Filters(CollectionWithCacheConfig):
             raise ValueError(f"Filter tensor must have dtype bool, got {value.dtype}")
         return super().__setitem__(name, value)
 
+    def get_filter(self, name: str) -> NamedFilter:
+        return NamedFilter(filter=super().__getitem__(name), filter_name=name)
+
     def __getitem__(self, name: str) -> NamedFilter:
         return NamedFilter(filter=super().__getitem__(name), filter_name=name)
 
@@ -45,7 +48,12 @@ class Filters(CollectionWithCacheConfig):
 class Metadatas(CollectionWithCacheConfig):
     stored_tensors_subdirectory_name: str = "metadatas"
 
-    def create(self, name: str, dtype: torch.dtype, item_shape: list[int] | tuple[int, ...] = ()) -> DiskTensor:
+    def create(
+        self,
+        name: str,
+        dtype: torch.dtype,
+        item_shape: list[int] | tuple[int, ...] = (),
+    ) -> DiskTensor:
         path = self.storage_dir / name
         shape = [self.cache_config.num_docs, *list(item_shape)]
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,7 +72,9 @@ class Metadatas(CollectionWithCacheConfig):
                 f"Metadata first dim must be num_docs ({self.cache_config.num_docs}); got {value.shape}"
             )
 
-        disk_tensor = self.create(name=name, dtype=value.dtype, item_shape=value.shape[1:])
+        disk_tensor = self.create(
+            name=name, dtype=value.dtype, item_shape=value.shape[1:]
+        )
         disk_tensor.tensor[:] = value
         disk_tensor.finalize()
 
@@ -106,7 +116,11 @@ class Metadata(DiskTensor):
 
     @classmethod
     def open(cls, path: Path) -> Metadata:
-        return cls(path=path, metadata=cls._open_metadata(path), info=MetadataTensorInfo.open(path))
+        return cls(
+            path=path,
+            metadata=cls._open_metadata(path),
+            info=MetadataTensorInfo.open(path),
+        )
 
     def finalize(self):
         if self.info is not None:

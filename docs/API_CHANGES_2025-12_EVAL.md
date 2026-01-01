@@ -19,10 +19,12 @@ This document describes **breaking** API changes made to `saeco.evaluation` to i
 |---|---|
 | `Evaluation.saved_acts` | `Evaluation.cached_acts` |
 | `Evaluation.cuda` (device) | `Evaluation.device` |
-| `Evaluation.docs` | `Evaluation.tokens` |
+| `Evaluation.docs` | `Evaluation.samples` |
+| `Evaluation.num_docs` | `Evaluation.num_samples` |
 | `Evaluation.docstrs` | `Evaluation.token_strs` (token strings) OR `Evaluation.text` (decoded text) |
-| `Evaluation.detokenize(...)` | `Evaluation.token_strings(...)` (token strings) OR `Evaluation.decode_text(...)` (decoded) |
 | `Evaluation.cached_call` | `Evaluation.cached` |
+| `Evaluation.metadatas` | `Evaluation.metadata_store` |
+| `Evaluation.artifacts` | `Evaluation.artifact_store` |
 | `Evaluation.filters` | `Evaluation.filter_store` |
 | `Evaluation.open_filtered(name)` | `Evaluation.open_filter(name)` |
 | `Evaluation.get_feature(x)` | `Evaluation.feature(x)` |
@@ -33,8 +35,6 @@ This document describes **breaking** API changes made to `saeco.evaluation` to i
 - `eval.text[idx]` returns decoded text (`str` or `list[str]`).
 - `eval.token_strs[idx]` returns token strings (`list[str]` / `list[list[str]]`).
 - `eval.metadata[key]` returns metadata aligned to the current evaluation doc space.
-- `eval.save_filter(name, mask)` persists a filter in the root store.
-- `eval.where(mask)` creates an ephemeral filtered eval.
 
 ## How to update downstream code (search/replace)
 
@@ -53,25 +53,21 @@ This document describes **breaking** API changes made to `saeco.evaluation` to i
 - Replace `eval.cuda` (as a device) with `eval.device`.
   - Example: `t.to(eval.cuda)` -> `t.to(eval.device)`
 
-### Tokens vs text
-- `eval.docs[...]` -> `eval.tokens[...]`
+### Samples vs text
+- `eval.docs[...]` -> `eval.samples[...]`
+- `eval.num_docs` -> `eval.num_samples`
 - `eval.docstrs[...]`:
   - if you want token strings: `eval.token_strs[...]`
   - if you want decoded text: `eval.text[...]`
 
-### Detokenize
-- `eval.detokenize(tokens)`:
-  - token strings: `eval.token_strings(tokens)`
-  - decoded text: `eval.decode_text(tokens)`
-
 ### Cached calls
 - `eval.cached_call.some_method(...)` -> `eval.cached.some_method(...)`
 
-### Filters
+### Filters / Metadata / Artifacts
 - `eval.open_filtered(name)` -> `eval.open_filter(name)`
 - `eval.filters[name]` -> `eval.filter_store[name]`
-- Creating temporary filters: use `eval.where(mask)`
-- Persisting: `eval.save_filter("name", mask)` then `eval.open_filter("name")`
+- `eval.metadatas[name]` -> `eval.metadata_store[name]`
+- `eval.artifacts[name]` -> `eval.artifact_store[name]`
 
 ### Features / top activations
 - `eval.get_feature(7)` -> `eval.feature(7)`

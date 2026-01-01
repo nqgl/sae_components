@@ -51,7 +51,6 @@ class DiskTensorCollection[
 ]:
     path: Path | None = None
     stored_tensors_subdirectory_name: str = "tensors"
-    return_raw: bool = False
     cache: MixedCache[DiskTensorType] = field(factory=MixedCache[DiskTensorType])
 
     @property
@@ -116,10 +115,8 @@ class DiskTensorCollection[
             self.cache[name] = obj
             return obj
 
-    def __getitem__(self, name: str | int) -> torch.Tensor | DiskTensorType:
+    def __getitem__(self, name: str | int) -> torch.Tensor:
         disk_tensor = self.get(name)
-        if self.return_raw:
-            return disk_tensor
         return disk_tensor.tensor
 
     def __setitem__(self, name: str, value: torch.Tensor) -> None:

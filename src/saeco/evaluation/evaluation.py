@@ -60,13 +60,13 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
     def _model_adapter_default(self):
         model_kwargs = getattr(
-            self.run_cfg.train_cfg.data_cfg.model_cfg, "model_kwargs", {}
+            self.sae_cfg.train_cfg.data_cfg.model_cfg, "model_kwargs", {}
         )
         try:
             from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 
             if isinstance(
-                self.run_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg,
+                self.sae_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg,
                 ComlmModelConfig,
             ):  # type: ignore[attr-defined]
                 return ComlmEvalAdapter(model_kwargs=model_kwargs)
@@ -134,7 +134,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         )
 
     @property
-    def run_cfg(self) -> RunConfig:
+    def sae_cfg(self) -> RunConfig:
         return self.architecture.run_cfg
 
     @property
@@ -158,7 +158,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         return BMStorShelf.from_path(self.path)
 
     @cached_property
-    def cached(self) -> Union[CachedCalls, Evaluation]:
+    def cached(self) -> CachedCalls | Evaluation:
         return CachedCalls(self)
 
     # -----------------------
@@ -166,7 +166,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # -----------------------
 
     @property
-    def tokens(self):
+    def samples(self):
         if self.cached_acts is None:
             raise ValueError("No cached_acts loaded")
         return self.cached_acts.tokens
@@ -179,7 +179,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
     @property
     def nnsight_model(self):
-        return self.run_cfg.train_cfg.data_cfg.model_cfg.model
+        return self.sae_cfg.train_cfg.data_cfg.model_cfg.model
 
     @property
     def subject_model(self):
@@ -187,11 +187,13 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
     @property
     def nnsight_site_name(self) -> str:
-        return self.run_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.site
+        return self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.site
 
     @property
     def seq_len(self) -> int:
-        return self.run_cfg.train_cfg.data_cfg.seq_len
+        seq_len = self.sae_cfg.train_cfg.data_cfg.seq_len
+        assert seq_len is not None
+        return seq_len
 
     @property
     def d_dict(self) -> int:
@@ -222,11 +224,11 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # -----------------------
 
     @cached_property
-    def artifacts(self) -> Artifacts:
+    def artifact_store(self) -> Artifacts:
         return Artifacts(self.path, cache_config=self.cache_config)
 
     @cached_property
-    def metadatas(self) -> Metadatas:
+    def metadata_store(self) -> Metadatas:
         if self.filter is not None:
             raise ValueError(
                 "Use eval.metadata[...] on filtered evals (metadatas store is root-only)"
@@ -235,7 +237,9 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
     @property
     def _root_metadatas(self) -> Metadatas:
-        return self.root.metadatas if self._root is not None else self.metadatas
+        return (
+            self.root.metadata_store if self._root is not None else self.metadata_store
+        )
 
     @cached_property
     def filter_store(self) -> Filters:
@@ -246,19 +250,8 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # Filtering
     # -----------------------
 
-    def save_filter(self, name: str, mask: Tensor) -> NamedFilter:
-        mask = mask.detach().to(dtype=torch.bool, device="cpu")
-        self.filter_store[name] = mask
-        return self.filter_store[name]
-
     def open_filter(self, name: str) -> Evaluation:
-        return self.root._apply_filter(self.filter_store[name])
-
-    def where(self, mask: Tensor) -> Evaluation:
-        nf = NamedFilter(
-            filter=mask.detach().to(dtype=torch.bool, device="cpu"), filter_name=None
-        )
-        return self.root._apply_filter(nf)
+        return self.root._apply_filter(self.filter_store.get_filter(name))
 
     def _apply_filter(self, filter_obj: NamedFilter | Tensor) -> Evaluation:
         if isinstance(filter_obj, Tensor):
@@ -277,20 +270,6 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             tokenizer=self.tokenizer,
             model_adapter=self.model_adapter,
         )
-
-    # -----------------------
-    # Metadata on *this* eval (filtered-aware)
-    # -----------------------
-
-    def metadata_tensor(
-        self, key: str, *, device: torch.device | str | None = None
-    ) -> Tensor:
-        md = self._root_metadatas[key]
-        if self.filter is not None:
-            md = md[self.filter.filter.detach().cpu()]
-        if device is not None:
-            md = md.to(device)
-        return md
 
     # -----------------------
     # Token decoding
@@ -326,7 +305,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             )
         raise ValueError(f"decode_text expects ndim 0/1/2, got {t.ndim}")
 
-    def token_strings(
+    def detokenize(
         self, tokens: int | list[int] | Tensor | DictBatch
     ) -> str | list[str] | list[list[str]]:
         if isinstance(tokens, int):
@@ -380,7 +359,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # -----------------------
 
     @property
-    def num_docs(self) -> int:
+    def num_samples(self) -> int:
         if self.filter is not None:
             return int(self.filter.filter.sum().item())
         return self.cache_config.num_docs

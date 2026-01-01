@@ -55,7 +55,9 @@ def _cache_dir_for_artifacts(artifacts: Any) -> Path:
     raise AttributeError("Artifacts collection does not expose a Path-like directory")
 
 
-def _legacy_call_key(name: str, args: tuple[Any, ...], kwargs: dict[str, Any], version: Any | None) -> str:
+def _legacy_call_key(
+    name: str, args: tuple[Any, ...], kwargs: dict[str, Any], version: Any | None
+) -> str:
     # Old scheme: repr-based and unsafe, but keep for reading old caches.
     s = f"{name}({args}, {kwargs})".replace(".", "-")
     if version is not None:
@@ -93,7 +95,7 @@ class CachedCalls:
         wants_pydantic = any(_is_subclass_safe(t, BaseModel) for t in ann_members)
         wants_dictbatch = any(_is_subclass_safe(t, DictBatch) for t in ann_members)
 
-        artifacts_dir = _cache_dir_for_artifacts(self.raw.artifacts)
+        artifacts_dir = _cache_dir_for_artifacts(self.raw.artifact_store)
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -128,11 +130,15 @@ class CachedCalls:
                 if path.exists():
                     # Return type should be a DictBatch subclass with load_from_safetensors.
                     return_ann = ann if ann is not inspect.Signature.empty else None
-                    if isinstance(return_ann, type) and issubclass(return_ann, DictBatch):
+                    if isinstance(return_ann, type) and issubclass(
+                        return_ann, DictBatch
+                    ):
                         return return_ann.load_from_safetensors(path)
                 if legacy_path.exists():
                     return_ann = ann if ann is not inspect.Signature.empty else None
-                    if isinstance(return_ann, type) and issubclass(return_ann, DictBatch):
+                    if isinstance(return_ann, type) and issubclass(
+                        return_ann, DictBatch
+                    ):
                         return return_ann.load_from_safetensors(legacy_path)
 
                 value = func(*args, **kwargs)
@@ -159,7 +165,9 @@ class CachedCalls:
 
             result = func(*args, **kwargs)
             if isinstance(result, FilteredTensor):
-                raise NotImplementedError("FilteredTensor caching is intentionally not supported.")
+                raise NotImplementedError(
+                    "FilteredTensor caching is intentionally not supported."
+                )
             if not isinstance(result, Tensor):
                 return result
 

@@ -25,7 +25,9 @@ class DecodedTextView:
 
     def __getitem__(self, idx: Any) -> str | list[str]:
         tokens = self.eval.tokens[idx]
-        return self.eval.decode_text(tokens, skip_special_tokens=self.skip_special_tokens)
+        return self.eval.decode_text(
+            tokens, skip_special_tokens=self.skip_special_tokens
+        )
 
 
 @define(slots=True)
@@ -41,9 +43,9 @@ class TokenStringsView:
 
     eval: Evaluation
 
-    def __getitem__(self, idx: Any) -> list[str] | list[list[str]]:
-        tokens = self.eval.tokens[idx]
-        return self.eval.token_strings(tokens)
+    def __getitem__(self, idx: Any) -> str | list[str] | list[list[str]]:
+        tokens = self.eval.samples[idx]
+        return self.eval.detokenize(tokens)
 
 
 @define(slots=True)
@@ -62,7 +64,7 @@ class MetadataView:
     eval: Evaluation
 
     def __getitem__(self, key: str) -> Tensor:
-        return self.eval.metadata_tensor(key)
+        return self.eval.metadata_store[key]
 
     def as_str(self, key: str, values: Tensor | None = None) -> list[str]:
         vals = self[key] if values is None else values
