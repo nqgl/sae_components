@@ -73,7 +73,10 @@ class Feature(EvalRefData):
     ) -> Self:
         if (feature_id is None) == (feature is None):
             raise ValueError("Exactly one of feature_id and feature must be set")
-        return cls(src_eval=src_eval, spec=feature if feature is not None else FeatureSpec(feature_id=feature_id))  # type: ignore[arg-type]
+        return cls(
+            src_eval=src_eval,
+            spec=feature if feature is not None else FeatureSpec(feature_id=feature_id),
+        )  # type: ignore[arg-type]
 
     def aggregate(self, agg: AggregationType) -> FilteredTensor:
         def _dense(x: Tensor) -> Tensor:
@@ -81,15 +84,26 @@ class Feature(EvalRefData):
 
         match agg:
             case AggregationType.MEAN:
-                return self.data.apply_to_inner(lambda x: _dense(x).mean(dim=1), cut_to_ndim=1)
+                return self.data.apply_to_inner(
+                    lambda x: _dense(x).mean(dim=1), cut_to_ndim=1
+                )
             case AggregationType.MAX:
-                return self.data.apply_to_inner(lambda x: _dense(x).max(dim=1).values, cut_to_ndim=1)
+                return self.data.apply_to_inner(
+                    lambda x: _dense(x).max(dim=1).values, cut_to_ndim=1
+                )
             case AggregationType.SUM:
-                return self.data.apply_to_inner(lambda x: _dense(x).sum(dim=1), cut_to_ndim=1)
+                return self.data.apply_to_inner(
+                    lambda x: _dense(x).sum(dim=1), cut_to_ndim=1
+                )
             case AggregationType.COUNT:
-                return self.data.apply_to_inner(lambda x: (_dense(x) > 0).sum(dim=1), cut_to_ndim=1)
+                return self.data.apply_to_inner(
+                    lambda x: (_dense(x) > 0).sum(dim=1), cut_to_ndim=1
+                )
             case AggregationType.ANY:
-                return self.data.apply_to_inner(lambda x: (_dense(x) > 0).any(dim=1).to(dtype=torch.float32), cut_to_ndim=1)
+                return self.data.apply_to_inner(
+                    lambda x: (_dense(x) > 0).any(dim=1).to(dtype=torch.float32),
+                    cut_to_ndim=1,
+                )
             case _:
                 raise ValueError(f"Invalid aggregation type: {agg}")
 
@@ -176,7 +190,7 @@ class SelectedDocs:
 
     @property
     def tokens(self) -> Tensor | DictBatch:
-        return self.src_eval.tokens[self.doc_indices]
+        return self.src_eval.samples[self.doc_indices]
 
     @property
     def texts(self) -> str | list[str]:
@@ -218,7 +232,9 @@ class TopActivations(EvalRefData):
     doc_selection: SelectedDocs
 
     @classmethod
-    def make(cls, src_eval: Evaluation, feature: FilteredTensor, doc_indices: Tensor) -> Self:
+    def make(
+        cls, src_eval: Evaluation, feature: FilteredTensor, doc_indices: Tensor
+    ) -> Self:
         return cls(
             src_eval=src_eval,
             feature=Feature(src_eval=src_eval, spec=feature),
@@ -255,8 +271,12 @@ class TopActivations(EvalRefData):
             if md.ndim != 1:
                 raise ValueError("Metadata enrichment expects 1D metadata")
 
-            metadata_counts = self.src_eval.cached._metadata_unique_labels_and_counts_tensor(mdname)
-            labels, mdcat_counts = torch.cat([md, metadata_counts.labels]).unique(return_counts=True)
+            metadata_counts = (
+                self.src_eval.cached._metadata_unique_labels_and_counts_tensor(mdname)
+            )
+            labels, mdcat_counts = torch.cat([md, metadata_counts.labels]).unique(
+                return_counts=True
+            )
 
             counts = mdcat_counts - 1  # remove the one-of-each we added
             if not (labels == metadata_counts.labels).all():
@@ -267,14 +287,14 @@ class TopActivations(EvalRefData):
                 counts=counts,
                 sel_denom=num_docs,
                 total_counts=metadata_counts.counts,
-                total_denom=self.src_eval.num_docs,
+                total_denom=self.src_eval.num_samples,
             )
             out[mdname] = MetadataEnrichmentResult(
                 name=mdname,
                 labels=labels,
                 counts=counts,
                 proportions=proportions,
-                normalized_counts=proportions * self.src_eval.num_docs / num_docs,
+                normalized_counts=proportions * self.src_eval.num_samples / num_docs,
                 scores=scores,
             )
         return out

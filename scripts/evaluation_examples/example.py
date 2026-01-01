@@ -44,7 +44,7 @@ assert (feature_indices[2] == FEAT_NUM).all()
 top_tensor = root.top_activating_examples(FEAT_NUM, p=0.1)  # top 10% of activations
 top_indices = top_tensor.indices()
 
-top_docs = root.tokens[top_indices[0]]
+top_docs = root.samples[top_indices[0]]
 
 i = 0
 print(root.token_strings(top_docs[i]))
@@ -70,7 +70,7 @@ print("active on:", root.token_strings(top_docs[i][top_indices[1][i].item()]))
 ### making metadatas
 # it's just a tensor, so eg a metadata that is the document id mod 4 would be:
 if "mod 4" not in root.metadata_store:
-    root.metadata_store["mod 4"] = torch.arange(root.num_docs) % 4
+    root.metadata_store["mod 4"] = torch.arange(root.num_samples) % 4
 
 # feature active:
 if "feature active" not in root.metadata_store:

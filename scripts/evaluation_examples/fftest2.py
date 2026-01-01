@@ -181,7 +181,7 @@ def ftk2(feat, set_to=0, doc_index=1, ndocs=20, **kwargs):
     print(feat_active[doc_index : doc_index + ndocs])
     print(feat_active[doc_index : doc_index + ndocs].shape)
 
-    doc = root_eval.docs[feat_active[doc_index : doc_index + ndocs].squeeze(-1)]
+    doc = root_eval.samples[feat_active[doc_index : doc_index + ndocs].squeeze(-1)]
     print("".join(root_eval.detokenize(doc)[0]))
     fab = procedure2_by_ablation_preacts(doc, feat, set_to=set_to, **kwargs)
     print(fab)

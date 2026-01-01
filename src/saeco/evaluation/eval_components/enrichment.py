@@ -34,7 +34,9 @@ def score_enrichment(
     p_total = (total_counts + base_smoothing * base_rate**r_base) / (
         total_denom + base_smoothing * base_rate ** (r_base - 1)
     )
-    p_subset = (counts + smoothing * p_total**r) / (sel_denom + smoothing * p_total ** (r - 1))
+    p_subset = (counts + smoothing * p_total**r) / (
+        sel_denom + smoothing * p_total ** (r - 1)
+    )
     return torch.log2(p_subset / p_total)
 
 
@@ -54,7 +56,9 @@ class Enrichment:
         sort_by: EnrichmentSortBy = EnrichmentSortBy.counts,
     ) -> MetadataEnrichmentResponse:
         top_acts = self.top_activations(feature=feature, p=p, k=k)
-        enrichments = top_acts.top_activations_metadata_enrichments(metadata_keys=metadata_keys)
+        enrichments = top_acts.top_activations_metadata_enrichments(
+            metadata_keys=metadata_keys
+        )
 
         results: dict[str, list[MetadataEnrichmentLabelResult]] = {}
         for mdname, enrichment in enrichments.items():
@@ -116,14 +120,15 @@ class Enrichment:
         tokens, counts = seltoks.flatten().unique(return_counts=True, sorted=True)
 
         normalized_counts = (counts / seltoks.numel()) / (
-            self.token_occurrence_count.to(self.device)[tokens] / (self.num_docs * self.seq_len)
+            self.token_occurrence_count.to(self.device)[tokens]
+            / (self.num_samples * self.seq_len)
         )
 
         scores = score_enrichment(
             counts=counts,
             sel_denom=seltoks.numel(),
             total_counts=self.token_occurrence_count.to(self.device)[tokens],
-            total_denom=self.num_docs * self.seq_len,
+            total_denom=self.num_samples * self.seq_len,
         )
 
         match sort_by:

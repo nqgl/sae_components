@@ -9,7 +9,7 @@ from torch import Tensor
 def get_ff_matrix_on_document(doc_index=1, batch_size=32):
     ffmat = torch.zeros(root_eval.d_dict, root_eval.d_dict, device="cuda")
 
-    doc = root_eval.docs[torch.arange(doc_index, doc_index + 1)].squeeze(0)
+    doc = root_eval.samples[torch.arange(doc_index, doc_index + 1)].squeeze(0)
     for i in tqdm.trange(0, root_eval.d_dict, batch_size):
         d = root_eval.ff_multi_feature(
             doc, torch.arange(i, min(i + batch_size, root_eval.d_dict)), set_or_add=1
@@ -24,7 +24,7 @@ def get_active_ff_matrix_on_document(doc_index=1, batch_size=32, active_only=Tru
     ffmat = torch.zeros(root_eval.d_dict, root_eval.d_dict, device="cuda")
     ffmat_preacts = torch.zeros(root_eval.d_dict, root_eval.d_dict, device="cuda")
 
-    doc = root_eval.docs[torch.arange(doc_index, doc_index + 1)].squeeze(0)
+    doc = root_eval.samples[torch.arange(doc_index, doc_index + 1)].squeeze(0)
     if active_only:
         acts = (
             root_eval.acts[torch.arange(doc_index, doc_index + 1)]
@@ -58,7 +58,7 @@ def get_active_ff_matrix_on_document(doc_index=1, batch_size=32, active_only=Tru
 
 # %%
 DOC = 11
-root_eval.detokenize(root_eval.docs[torch.arange(DOC, DOC + 1)].squeeze())
+root_eval.detokenize(root_eval.samples[torch.arange(DOC, DOC + 1)].squeeze())
 
 
 # %%

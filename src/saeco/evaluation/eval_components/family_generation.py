@@ -568,7 +568,7 @@ class FamilyGenerator:
                 0,
             )
 
-        N = self.num_docs if doc_agg else self.seq_len * self.num_docs
+        N = self.num_samples if doc_agg else self.seq_len * self.num_samples
         A = feat_counts.unsqueeze(1).expand(-1, feat_counts.shape[0])
         B = feat_counts.unsqueeze(0).expand(feat_counts.shape[0], -1)
         V = unnormalized
@@ -872,7 +872,7 @@ class FamilyGenerator:
                 0,
             )
 
-        num_docs = self.num_docs if doc_agg else self.seq_len * self.num_docs
+        num_docs = self.num_samples if doc_agg else self.seq_len * self.num_samples
         a_mat = feat_counts.unsqueeze(1).expand(-1, feat_counts.shape[0])
         b_mat = feat_counts.unsqueeze(0).expand(feat_counts.shape[0], -1)
         v_mat = unnormalized
