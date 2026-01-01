@@ -40,11 +40,11 @@ def score_enrichment(
 
 class Enrichment:
     @property
-    def token_occurrence_count(self: "Evaluation") -> Tensor:
+    def token_occurrence_count(self: Evaluation) -> Tensor:
         return self.cached.count_token_occurrence()
 
     def top_activations_metadata_enrichments(
-        self: "Evaluation",
+        self: Evaluation,
         *,
         feature: int | FilteredTensor,
         metadata_keys: list[str],
@@ -87,7 +87,7 @@ class Enrichment:
         return MetadataEnrichmentResponse(results=results)
 
     def top_activations_token_enrichments(
-        self: "Evaluation",
+        self: Evaluation,
         *,
         feature: int | FilteredTensor,
         p: float | None = None,

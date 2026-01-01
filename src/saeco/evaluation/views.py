@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import torch
 from attrs import define
 from torch import Tensor
 
@@ -21,7 +20,7 @@ class DecodedTextView:
       eval.text[doc_ids]  -> list[str]
     """
 
-    eval: "Evaluation"
+    eval: Evaluation
     skip_special_tokens: bool = False
 
     def __getitem__(self, idx: Any) -> str | list[str]:
@@ -40,7 +39,7 @@ class TokenStringsView:
       eval.token_strs[doc_ids]  -> list[list[str]]
     """
 
-    eval: "Evaluation"
+    eval: Evaluation
 
     def __getitem__(self, idx: Any) -> list[str] | list[list[str]]:
         tokens = self.eval.tokens[idx]
@@ -60,7 +59,7 @@ class MetadataView:
       eval.metadata.as_str("language", eval.metadata["language"][:10])
     """
 
-    eval: "Evaluation"
+    eval: Evaluation
 
     def __getitem__(self, key: str) -> Tensor:
         return self.eval.metadata_tensor(key)

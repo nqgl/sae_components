@@ -33,7 +33,7 @@ class Features:
         return self._open_feature_tensors(self.path)
 
     @classmethod
-    def from_path(cls, path: Path, filter_obj: NamedFilter | None) -> "Features":
+    def from_path(cls, path: Path, filter_obj: NamedFilter | None) -> Features:
         return cls(path=path, filter=filter_obj)
 
     @classmethod

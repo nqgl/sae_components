@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, get_args, get_origin
 
 from pydantic import BaseModel
-import torch
 from torch import Tensor
 
 from saeco.data.dict_batch import DictBatch
@@ -74,7 +73,7 @@ class CachedCalls:
     The wrapper targets methods only; non-callables raise.
     """
 
-    def __init__(self, raw: "Evaluation"):
+    def __init__(self, raw: Evaluation):
         self.raw = raw
         if hasattr(self.raw, "raw"):
             raise AssertionError("Double-wrapping CachedCalls is not supported")

@@ -11,7 +11,7 @@ from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.split_config import SplitConfig
 from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.storage.saved_acts_config import CachingConfig
+from saeco.evaluation.storage.cache_config import CacheConfig
 from saeco.mlog import mlog
 
 data_cfg = DataConfig[ComlmModelConfig](
@@ -49,13 +49,13 @@ mlog.init(project="markov-bio/evaluator")
 # )
 # data_cfg.store_split(data_cfg.trainsplit)
 
-root_eval = Evaluation[XRNoisedBatch].from_model_path(model_name)
+root_eval = Evaluation[XRNoisedBatch].open_model(model_name)
 
 root_eval.sae_cfg.train_cfg.data_cfg = data_cfg
 # root_eval.
 # Path.home() / "workspace" / "tahoe_batches"
 root_eval.store_acts(
-    CachingConfig[NoisedBatch](
+    CacheConfig[NoisedBatch](
         dirname=storage_name,
         num_chunks=42,  # 3,
         docs_per_chunk=128,

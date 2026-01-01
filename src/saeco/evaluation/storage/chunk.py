@@ -11,10 +11,10 @@ from safetensors.torch import load_file, save_file
 
 from saeco.data.dict_batch import DictBatch
 
-from .cache_config import CacheConfig
 from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from ..filtered import Filter, FilteredTensor
 from ..named_filter import NamedFilter
+from .cache_config import CacheConfig
 
 
 @define(slots=True)
@@ -136,7 +136,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         load_sparse_only: bool = False,
         lazy: bool = False,
         filter_obj: NamedFilter | None = None,
-    ) -> "Chunk":
+    ) -> Chunk:
         inst = cls(path=path, idx=index, named_filter=filter_obj)
         if lazy:
             return inst
@@ -168,7 +168,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         load_sparse_only: bool = False,
         lazy: bool = False,
         filter_obj: NamedFilter | None = None,
-    ) -> list["Chunk"]:
+    ) -> list[Chunk]:
         return list(cls.chunks_from_dir_iter(path, load_sparse_only, lazy=lazy, filter_obj=filter_obj))
 
     def load(self, load_sparse_only: bool = False) -> None:

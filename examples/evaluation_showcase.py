@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import torch
 
-from saeco.evaluation.evaluation import Evaluation
 from saeco.data.dict_batch import DictBatch
+from saeco.evaluation.evaluation import Evaluation
 
 
 def _print_header(title: str) -> None:

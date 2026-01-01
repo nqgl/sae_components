@@ -15,7 +15,6 @@ from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 if TYPE_CHECKING:
     from saeco.evaluation.evaluation import Evaluation
     from saeco.evaluation.filtered import FilteredTensor
-    from saeco.evaluation.fastapi_models.families_draft import FamilyRef
 
 
 def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:
@@ -32,7 +31,7 @@ def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:
 
 @define(slots=True)
 class EvalRefData:
-    src_eval: "Evaluation"
+    src_eval: Evaluation
 
     @property
     def device(self) -> torch.device:
@@ -43,7 +42,7 @@ class EvalRefData:
 class FeatureSpec:
     feature_id: int
 
-    def open(self, src_eval: "Evaluation") -> "FilteredTensor":
+    def open(self, src_eval: Evaluation) -> FilteredTensor:
         return src_eval.features[self.feature_id]
 
 
@@ -57,10 +56,10 @@ class AggregationType(Enum):
 
 @define(slots=True)
 class Feature(EvalRefData):
-    spec: FeatureSpec | "FilteredTensor"
+    spec: FeatureSpec | FilteredTensor
 
     @cached_property
-    def data(self) -> "FilteredTensor":
+    def data(self) -> FilteredTensor:
         if isinstance(self.spec, FeatureSpec):
             return self.spec.open(self.src_eval)
         return self.spec
@@ -68,15 +67,15 @@ class Feature(EvalRefData):
     @classmethod
     def make(
         cls,
-        src_eval: "Evaluation",
+        src_eval: Evaluation,
         feature_id: int | None = None,
-        feature: "FilteredTensor | None" = None,
+        feature: FilteredTensor | None = None,
     ) -> Self:
         if (feature_id is None) == (feature is None):
             raise ValueError("Exactly one of feature_id and feature must be set")
         return cls(src_eval=src_eval, spec=feature if feature is not None else FeatureSpec(feature_id=feature_id))  # type: ignore[arg-type]
 
-    def aggregate(self, agg: AggregationType) -> "FilteredTensor":
+    def aggregate(self, agg: AggregationType) -> FilteredTensor:
         def _dense(x: Tensor) -> Tensor:
             return x.to_dense() if x.is_sparse else x
 
@@ -94,7 +93,7 @@ class Feature(EvalRefData):
             case _:
                 raise ValueError(f"Invalid aggregation type: {agg}")
 
-    def top(self, *args, **kwargs) -> "TopActivations":
+    def top(self, *args, **kwargs) -> TopActivations:
         return self.top_activations(*args, **kwargs)
 
     def top_activations(
@@ -103,7 +102,7 @@ class Feature(EvalRefData):
         *,
         p: float | None = None,
         k: int | None = None,
-    ) -> "TopActivations":
+    ) -> TopActivations:
         doc_acts = self.aggregate(agg)
         k = _pk_to_k(p, k, int(doc_acts.value.shape[0]))  # type: ignore[attr-defined]
 
@@ -122,10 +121,10 @@ class Feature(EvalRefData):
 
 @define(slots=True)
 class MetadataAccessor(EvalRefData):
-    doc_selection: "SelectedDocs"
-    metadatas: dict[str, "SelectedMetadata"] = field(factory=dict)
+    doc_selection: SelectedDocs
+    metadatas: dict[str, SelectedMetadata] = field(factory=dict)
 
-    def __getitem__(self, key: str | list[str]) -> "SelectedMetadata | SelectedMetadatas":
+    def __getitem__(self, key: str | list[str]) -> SelectedMetadata | SelectedMetadatas:
         if isinstance(key, list):
             return SelectedMetadatas(
                 selected_metadatas={k: self[k] for k in key}, src_eval=self.src_eval
@@ -141,7 +140,7 @@ class MetadataAccessor(EvalRefData):
 
 @define(slots=True)
 class SelectedMetadata(EvalRefData):
-    docs: "SelectedDocs"
+    docs: SelectedDocs
     key: str
 
     @cached_property
@@ -169,7 +168,7 @@ class SelectedMetadatas(EvalRefData):
 @define(slots=True)
 class SelectedDocs:
     doc_indices: Tensor
-    src_eval: "Evaluation"
+    src_eval: Evaluation
 
     @cached_property
     def metadata(self) -> MetadataAccessor:
@@ -219,7 +218,7 @@ class TopActivations(EvalRefData):
     doc_selection: SelectedDocs
 
     @classmethod
-    def make(cls, src_eval: "Evaluation", feature: "FilteredTensor", doc_indices: Tensor) -> Self:
+    def make(cls, src_eval: Evaluation, feature: FilteredTensor, doc_indices: Tensor) -> Self:
         return cls(
             src_eval=src_eval,
             feature=Feature(src_eval=src_eval, spec=feature),

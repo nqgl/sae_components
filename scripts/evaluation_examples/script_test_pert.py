@@ -15,7 +15,7 @@ def main():
         "doramapimod",
     ]
 
-    sim = root.cached_call.compute_drug_similarity_matrix(
+    sim = root.cached.compute_drug_similarity_matrix(
         drugs=drugs,
         mode="profile",
         pooling="max",
@@ -28,8 +28,8 @@ def main():
         print(f"  {d:>12s}: {s:0.4f}")
 
     # Shared differential features example
-    ral = root.cached_call.compute_drug_profile("ralimetinib")
-    erl = root.cached_call.compute_drug_profile("erlotinib")
+    ral = root.cached.compute_drug_profile("ralimetinib")
+    erl = root.cached.compute_drug_profile("erlotinib")
     shared = root.top_shared_differential_features(ral, erl, k=10)
     print("\nTop shared features (ralimetinib ↔ erlotinib):")
     for fid, p1, p2, c in shared:
@@ -41,7 +41,7 @@ def main():
     print("\nToken enrichment output (raw):", type(token_enrich))
 
     # Act 2: control predictors of sensitivity
-    corr = root.cached_call.compute_feature_sensitivity_correlation(
+    corr = root.cached.compute_feature_sensitivity_correlation(
         drug="ralimetinib",
         response_feature=CYTOTOX_ID,
         pooling="max",

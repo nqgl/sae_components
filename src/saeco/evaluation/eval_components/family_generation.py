@@ -379,7 +379,7 @@ class FamilyGenerator:
         return GetFamiliesResponse(levels=levels)
 
     def get_feature_families(self: "Evaluation", **kwargs):
-        ffs = self.cached_call._get_feature_families_unlabeled(**kwargs)
+        ffs = self.cached._get_feature_families_unlabeled(**kwargs)
         for level in ffs.levels:
             for family in level.families.values():
                 family.label = self.get_family_label(family)
@@ -395,9 +395,9 @@ class FamilyGenerator:
         freq_bounds=None,
     ):
         if use_d:
-            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.cosims(doc_agg=doc_agg).cpu()
         else:
-            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.coactivity(doc_agg=doc_agg).cpu()
         # D = D.cpu()
         C = unnormalized / (
             (
@@ -446,9 +446,9 @@ class FamilyGenerator:
         self: "Evaluation", doc_agg, use_d=False, threshold=None, freq_bounds=None
     ):
         if use_d:
-            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.cosims(doc_agg=doc_agg).cpu()
         else:
-            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.coactivity(doc_agg=doc_agg).cpu()
         # D = D.cpu()
         C = unnormalized / (
             (
@@ -524,9 +524,9 @@ class FamilyGenerator:
     def generate_feature_families(
         self: "Evaluation", doc_agg=None, threshold=None, n=3, use_D=False
     ):
-        unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+        unnormalized = self.cached.coactivity(doc_agg=doc_agg).cpu()
         if use_D:
-            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.cosims(doc_agg=doc_agg).cpu()
         unnormalized[unnormalized.isnan()] = 0
         feat_counts = (
             self.doc_activation_counts if doc_agg else self.seq_activation_counts
@@ -680,9 +680,9 @@ class FamilyGenerator:
         if min_family_sizes is None:
             min_family_sizes = [20, 12, 7]
         if use_d:
-            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.cosims(doc_agg=doc_agg).cpu()
         else:
-            unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.coactivity(doc_agg=doc_agg).cpu()
         # D = D.cpu()
         C = unnormalized / (
             (
@@ -804,7 +804,7 @@ class FamilyGenerator:
         fam_max = lambda x: x.max(dim=0)
 
         fg = FamilyGen(
-            getC=self.cached_call.get_infoC,
+            getC=self.cached.get_infoC,
             dist_gen=conn,
             fam_fn=bid_on_dists,
             cuda=self.device,
@@ -828,9 +828,9 @@ class FamilyGenerator:
         threshold=None,
         use_d=False,
     ):
-        unnormalized = self.cached_call.coactivity(doc_agg=doc_agg).cpu()
+        unnormalized = self.cached.coactivity(doc_agg=doc_agg).cpu()
         if use_d:
-            unnormalized = self.cached_call.cosims(doc_agg=doc_agg).cpu()
+            unnormalized = self.cached.cosims(doc_agg=doc_agg).cpu()
         unnormalized[unnormalized.isnan()] = 0
         feat_counts = (
             self.doc_activation_counts if doc_agg else self.seq_activation_counts

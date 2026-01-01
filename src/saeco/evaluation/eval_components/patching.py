@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import einops
 import nnsight
 import torch
-import tqdm
 import torch.autograd.forward_ad as fwAD
+import tqdm
 
 from saeco.data.dict_batch import DictBatch
 from saeco.evaluation.utils import fwad_safe_sdp
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
 
 class Patching:
     def sae_with_patch(
-        self: "Evaluation",
+        self: Evaluation,
         patch_fn: Callable,
         for_nnsight: bool = True,
         cache_template=None,
@@ -100,7 +101,7 @@ class Patching:
         return apply_nnsight
 
     def run_with_sae(
-        self: "Evaluation",
+        self: Evaluation,
         tokens_or_batch,
         patch=lambda x: x,
         doc_indices=None,
@@ -118,7 +119,7 @@ class Patching:
         return (out, batch) if return_batch else out
 
     def forward_ad_with_sae(
-        self: "Evaluation",
+        self: Evaluation,
         tokens_or_batch,
         tangent=None,
         tangent_gen=None,
@@ -165,13 +166,13 @@ class Patching:
 
             return (out, tangent_out, probspace) if return_prob_grads else (out, tangent_out)
 
-    def _skip_bos_if_appropriate(self: "Evaluation", lm_acts, reconstructed_acts):
+    def _skip_bos_if_appropriate(self: Evaluation, lm_acts, reconstructed_acts):
         if self.sae_cfg.train_cfg.data_cfg.model_cfg.acts_cfg.excl_first:
             return torch.cat([lm_acts[:, :1], reconstructed_acts[:, 1:]], dim=1)
         return reconstructed_acts
 
     def patchdiff(
-        self: "Evaluation",
+        self: Evaluation,
         tokens,
         patch_fn,
         return_prob_diffs=False,
@@ -207,7 +208,7 @@ class Patching:
     # easy to break. They benefit from the cleaned FilteredTensor.
 
     def patching_effect_on_dataset(
-        self: "Evaluation",
+        self: Evaluation,
         feature_id,
         batch_size=8,
         scale=None,

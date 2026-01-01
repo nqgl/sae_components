@@ -18,8 +18,8 @@ from saeco.data.training_data import ActsDataCreator
 from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.data.training_data.tokens_data import PermutedDocs
-from saeco.evaluation.storage.chunk import Chunk
 from saeco.evaluation.storage.cache_config import CacheConfig
+from saeco.evaluation.storage.chunk import Chunk
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
@@ -38,7 +38,7 @@ class ActsCacher:
         caching_config: CacheConfig,
         architecture: Architecture[ArchCfgT],
         split: str = "val",
-    ) -> "ActsCacher":
+    ) -> ActsCacher:
         cfg = caching_config
 
         if cfg.get_input_data_cls() == torch.Tensor:

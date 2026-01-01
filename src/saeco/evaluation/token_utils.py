@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
-import torch
 from torch import Tensor
 
 from saeco.data.dict_batch import DictBatch
-
 
 _DEFAULT_TOKEN_KEYS: tuple[str, ...] = ("tokens", "input_ids", "ids")
 

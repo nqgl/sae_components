@@ -20,7 +20,7 @@ def f2sum_fn_default(acts: Tensor) -> Tensor:
 class Coactivity:
     @torch.inference_mode()
     def coacts(
-        self: "Evaluation",
+        self: Evaluation,
         S: Callable[[Tensor], tuple[Tensor, Tensor]],
         reduce_prod: Callable[[Tensor, Tensor], Tensor],
         f2sum_fn: Callable[[Tensor], Tensor] = f2sum_fn_default,
@@ -54,7 +54,7 @@ class Coactivity:
 
     @torch.inference_mode()
     def coacts2(
-        self: "Evaluation",
+        self: Evaluation,
         S0: Callable[[Tensor], Tensor],
         S1: Callable[[Tensor], Tensor],
         reduce_prod: Callable[[Tensor, Tensor], Tensor],
@@ -86,7 +86,7 @@ class Coactivity:
         return mat
 
     def causal_coacts(
-        self: "Evaluation",
+        self: Evaluation,
         acts_pre_mod_func: Callable[[Tensor], Tensor] = lambda acts: acts,
         out_device: torch.device | str | None = None,
         f_chunk_i: int | None = None,
@@ -110,7 +110,7 @@ class Coactivity:
         )
 
     def act_coacts2(
-        self: "Evaluation",
+        self: Evaluation,
         out_device: torch.device | str | None = None,
         f_chunk_i: int | None = None,
         f_chunk_j: int | None = None,

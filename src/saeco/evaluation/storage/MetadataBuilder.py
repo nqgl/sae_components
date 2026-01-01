@@ -83,14 +83,14 @@ class MetadataBuilder:
         return new_id
 
     class _Setter:
-        def __init__(self, mb: "MetadataBuilder", chunk: Chunk):
+        def __init__(self, mb: MetadataBuilder, chunk: Chunk):
             self._mb = mb
             self._chunk = chunk
 
         def __lshift__(self, v: FilteredTensor | Tensor) -> None:
             self._mb._recv(self._chunk, v)
 
-    def __getitem__(self, chunk: Chunk) -> "_Setter":
+    def __getitem__(self, chunk: Chunk) -> _Setter:
         return MetadataBuilder._Setter(self, chunk)
 
     def __setitem__(self, chunk: Chunk, value: FilteredTensor | Tensor) -> None:

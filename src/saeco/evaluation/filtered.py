@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Sequence
 from functools import cached_property
 from typing import Literal, Self, overload

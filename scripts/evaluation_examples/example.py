@@ -20,7 +20,7 @@ STORAGE_NAME = "stored_acts"
 # )
 
 
-root = Evaluation.from_cache_name(STORAGE_NAME)
+root = Evaluation.open_cache(STORAGE_NAME)
 
 
 # Retrieving a feature:
@@ -44,11 +44,11 @@ assert (feature_indices[2] == FEAT_NUM).all()
 top_tensor = root.top_activating_examples(FEAT_NUM, p=0.1)  # top 10% of activations
 top_indices = top_tensor.indices()
 
-top_docs = root.docs[top_indices[0]]
+top_docs = root.tokens[top_indices[0]]
 
 i = 0
-print(root.detokenize(top_docs[i]))
-print("active on:", root.detokenize(top_docs[i][top_indices[1][i].item()]))
+print(root.token_strings(top_docs[i]))
+print("active on:", root.token_strings(top_docs[i][top_indices[1][i].item()]))
 
 # if there are specific use cases you have let me know and I can add support for them
 # eg if it would be good to have an iterator that iterates over active docs and gives the
@@ -101,11 +101,11 @@ if "average active features" not in root.metadatas:
 
 # filters are just boolean tensors that can be used to filter the data
 # eg,
-if "very active" not in root.filters:
-    root.filters["very active"] = root.metadatas["average active features"] > 50
+if "very active" not in root.filter_store:
+    root.filter_store["very active"] = root.metadatas["average active features"] > 50
 
 # if there is a filter, you can now open a filtered evaluation object
-filtered_eval = root.open_filtered("very active")
+filtered_eval = root.open_filter("very active")
 
 
 ### other less organized stuff:

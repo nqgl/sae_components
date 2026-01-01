@@ -53,7 +53,7 @@ class Metadatas(CollectionWithCacheConfig):
             raise ValueError(f"Metadata already exists at {path}")
         return DiskTensor.create(path, shape, dtype)
 
-    def get(self, name: str) -> "Metadata":
+    def get(self, name: str) -> Metadata:
         return Metadata.open(self.storage_dir / name)
 
     def __setitem__(self, name: str, value: Tensor):
@@ -84,7 +84,7 @@ class MetadataTensorInfo(BaseModel):
     fromstr: dict[str, int] | None
 
     @classmethod
-    def open(cls, path: Path) -> "MetadataTensorInfo":
+    def open(cls, path: Path) -> MetadataTensorInfo:
         info_path = path.with_suffix(".metadatainfo")
         if info_path.exists():
             return cls.model_validate_json(info_path.read_text())
@@ -105,7 +105,7 @@ class Metadata(DiskTensor):
     info: MetadataTensorInfo | None = field(default=None)
 
     @classmethod
-    def open(cls, path: Path) -> "Metadata":
+    def open(cls, path: Path) -> Metadata:
         return cls(path=path, metadata=cls._open_metadata(path), info=MetadataTensorInfo.open(path))
 
     def finalize(self):

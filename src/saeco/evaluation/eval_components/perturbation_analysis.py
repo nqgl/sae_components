@@ -168,9 +168,9 @@ class PerturbationAnalysis:
         doc_ids: (n_docs_in_chunk,)
         agg_acts: (n_docs_in_chunk, d_dict)
         """
-        device = self.cuda if device is None else torch.device(device)
+        device = self.device if device is None else torch.device(device)
 
-        chunks = self.saved_acts.chunks
+        chunks = self.cached_acts.chunks
         it = tqdm.tqdm(chunks, total=len(chunks), disable=not show_progress)
         for chunk in it:
             doc_ids = self._chunk_doc_ids(chunk)  # CPU
@@ -226,7 +226,7 @@ class PerturbationAnalysis:
         n_cell_lines = int(cell_meta.max().item()) + 1
         d_dict = self.d_dict
 
-        device = self.cuda
+        device = self.device
         sums = torch.zeros(
             (n_cell_lines, d_dict), dtype=torch.float32, device=device
         )
@@ -285,7 +285,7 @@ class PerturbationAnalysis:
           means: (n_cell_lines, d_dict) float32
           counts: (n_cell_lines,) long
         """
-        packed = self.cached_call.control_sums_counts_by_cell_line(
+        packed = self.cached.control_sums_counts_by_cell_line(
             pooling=pooling, show_progress=show_progress
         )
         sums, counts = self.unpack_control_sums_counts(packed)
@@ -362,7 +362,7 @@ class PerturbationAnalysis:
         d_dict = control_means_cpu.shape[1]
         n_doses = len(doses)
 
-        device = self.cuda
+        device = self.device
 
         # Move control means to device for subtraction/indexing
         control_means = control_means_cpu.to(device)
@@ -466,7 +466,7 @@ class PerturbationAnalysis:
           - "max": take highest dose in `doses` ordering (default dose 3)
           - "slope": fit linear dose-response slope across `doses`
         """
-        deltas_3d = self.cached_call.compute_drug_deltas_tensor(
+        deltas_3d = self.cached.compute_drug_deltas_tensor(
             drug=drug,
             cell_lines=cell_lines,
             pooling=pooling,
@@ -511,7 +511,7 @@ class PerturbationAnalysis:
         normalize_across_cell_lines:
           If True: z-score each feature across cell lines before aggregating.
         """
-        matrix = self.cached_call.compute_drug_deltas_matrix(
+        matrix = self.cached.compute_drug_deltas_matrix(
             drug=drug,
             cell_lines=cell_lines,
             pooling=pooling,
@@ -568,7 +568,7 @@ class PerturbationAnalysis:
             profiles: list[Tensor] = []
             it = tqdm.tqdm(drugs, disable=not show_progress)
             for d in it:
-                p = self.cached_call.compute_drug_profile(
+                p = self.cached.compute_drug_profile(
                     drug=d,
                     cell_lines=cell_lines,
                     pooling=pooling,
@@ -588,7 +588,7 @@ class PerturbationAnalysis:
             mats: list[Tensor] = []
             it = tqdm.tqdm(drugs, disable=not show_progress)
             for d in it:
-                m = self.cached_call.compute_drug_deltas_matrix(
+                m = self.cached.compute_drug_deltas_matrix(
                     drug=d,
                     cell_lines=cell_lines,
                     pooling=pooling,
@@ -699,7 +699,7 @@ class PerturbationAnalysis:
         if cell_lines is None:
             cell_lines = self.get_all_cell_lines(exclude_special=True)
 
-        deltas = self.cached_call.compute_drug_deltas_matrix(
+        deltas = self.cached.compute_drug_deltas_matrix(
             drug=drug,
             cell_lines=cell_lines,
             pooling=pooling,

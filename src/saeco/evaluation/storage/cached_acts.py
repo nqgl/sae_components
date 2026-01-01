@@ -11,8 +11,8 @@ from saeco.data.dict_batch import DictBatch
 
 from ..features import Features
 from ..named_filter import NamedFilter
-from .chunk import Chunk
 from .cache_config import CacheConfig
+from .chunk import Chunk
 
 
 @define(slots=True)
@@ -25,7 +25,7 @@ class CachedActs[InputsT: torch.Tensor | DictBatch]:
 
     @takes_alias
     @classmethod
-    def open(cls, path: Path) -> "CachedActs":
+    def open(cls, path: Path) -> CachedActs:
         cfg = cls._cfg_initializer(path)
         chunks = cls._chunks_initializer(path)
         return cls(
@@ -59,7 +59,7 @@ class CachedActs[InputsT: torch.Tensor | DictBatch]:
             path=path, lazy=True, filter_obj=filter_obj
         )
 
-    def filtered(self, filter_obj: NamedFilter) -> "CachedActs[InputsT]":
+    def filtered(self, filter_obj: NamedFilter) -> CachedActs[InputsT]:
         if self.data_filter is not None:
             raise ValueError("Cannot filter an already-filtered CachedActs")
         return CachedActs[self.get_inputs_type()](
