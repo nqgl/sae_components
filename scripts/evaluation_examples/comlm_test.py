@@ -4,7 +4,7 @@ from collections.abc import Callable
 import torch
 from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank import XRNoisedBatch
-from load_comlm import root_eval
+from load_comlm_tahoe import root_eval
 from torch import Tensor
 
 from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
@@ -53,7 +53,7 @@ root.saved_acts.get_inputs_type()
 # Initialize metadata if necessary
 #
 metadata_keys = list(metadata_tokenizer.tokenizers.keys())
-has_metadata = [key in root.metadatas for key in metadata_keys]
+has_metadata = [key in root.metadata_store for key in metadata_keys]
 if not all(has_metadata):
     assert not any(has_metadata), "Some metadata keys are already present"
     all_metadata_builder = root.metadata_builder(
@@ -66,8 +66,8 @@ if not all(has_metadata):
     for i, key in enumerate(metadata_keys):
         tokenizer = metadata_tokenizer.tokenizers[key]
         metadata = all_metadata_builder.value[:, i]
-        root.metadatas[key] = metadata
-        root.metadatas.set_str_translator(
+        root.metadata_store[key] = metadata
+        root.metadata_store.set_str_translator(
             key, {"<<PAD>>": 0, "<<UNK>>": 1, **tokenizer.tokens}
         )
 # %%
@@ -258,7 +258,7 @@ def print_for_metadatas(metadata_keys: list[str], num_top_meta: int = 3):
         print(mk)
         d = data.remove_zero_counts().sort(sort_by=EnrichmentSortBy.score)
         # data.labels
-        labeled = root.metadatas.translate({d.name: d.labels})[d.name]
+        labeled = root.metadata_store.translate({d.name: d.labels})[d.name]
         for label, proportion, score, normalized_count, count in zip(
             labeled[:num_top_meta],
             d[:num_top_meta].proportions,

@@ -1,4 +1,3 @@
-
 from load import root_eval
 
 # t = root_eval.cached_call.test()
@@ -30,7 +29,7 @@ def dist_counter(ls):
         print([len(root) for root in level.roots[:50]])
 
 
-root_eval.artifacts.keys()
+root_eval.artifact_store.keys()
 ff = root_eval.get_feature_families()
 ff.levels[0].families[4].subfamilies
 

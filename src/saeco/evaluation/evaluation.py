@@ -213,15 +213,15 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
     @property
     def text(self) -> DecodedTextView:
-        return DecodedTextView(self)
+        return DecodedTextView(eval=self)
 
     @property
     def token_strs(self) -> TokenStringsView:
-        return TokenStringsView(self)
+        return TokenStringsView(eval=self)
 
     @property
     def metadata(self) -> MetadataView:
-        return MetadataView(self)
+        return MetadataView(eval=self)
 
     # -----------------------
     # Stores (root-scoped)
@@ -235,7 +235,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def metadata_store(self) -> Metadatas:
         if self.filter is not None:
             raise ValueError(
-                "Use eval.metadata[...] on filtered evals (metadatas store is root-only)"
+                "Use eval.metadata[...] on filtered evals (metadata_store is root-only)"
             )
         return Metadatas(self.path, cache_config=self.cache_config)
 

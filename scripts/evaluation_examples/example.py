@@ -69,12 +69,12 @@ print("active on:", root.token_strings(top_docs[i][top_indices[1][i].item()]))
 
 ### making metadatas
 # it's just a tensor, so eg a metadata that is the document id mod 4 would be:
-if "mod 4" not in root.metadatas:
-    root.metadatas["mod 4"] = torch.arange(root.num_docs) % 4
+if "mod 4" not in root.metadata_store:
+    root.metadata_store["mod 4"] = torch.arange(root.num_docs) % 4
 
 # feature active:
-if "feature active" not in root.metadatas:
-    root.metadatas["feature active"] = (
+if "feature active" not in root.metadata_store:
+    root.metadata_store["feature active"] = (
         root.features[FEAT_NUM].to_dense().value.count_nonzero(-1).bool()
     )
 
@@ -82,27 +82,29 @@ if "feature active" not in root.metadatas:
 # making less trivial metadatas that actually care about the contents of the data is different:
 # eg, to create a metadata that includes documents with a certain token:
 SELECTED_TOKEN_ID = 9999
-if "selected token" not in root.metadatas:
+if "selected token" not in root.metadata_store:
     builder = root.metadata_builder(dtype=torch.bool, device="cpu")
     for chunk in builder:
         builder << (chunk.tokens.value == SELECTED_TOKEN_ID).any(-1)
-    root.metadatas["selected token"] = builder.value
+    root.metadata_store["selected token"] = builder.value
 # we do it with this loop because we've got more data than fits in memory,
 # so it's stored in chunks and we're iterating through the chunks
 
 # if we wanted to create a metadata that counts the average number of active features
 
-if "average active features" not in root.metadatas:
+if "average active features" not in root.metadata_store:
     builder = root.metadata_builder(torch.float, "cpu")
     for chunk in builder:
         builder << chunk.acts.value.to_dense().count_nonzero(-1).float().mean(dim=-1)
-    root.metadatas["average active features"] = builder.value
+    root.metadata_store["average active features"] = builder.value
 
 
 # filters are just boolean tensors that can be used to filter the data
 # eg,
 if "very active" not in root.filter_store:
-    root.filter_store["very active"] = root.metadatas["average active features"] > 50
+    root.filter_store["very active"] = (
+        root.metadata_store["average active features"] > 50
+    )
 
 # if there is a filter, you can now open a filtered evaluation object
 filtered_eval = root.open_filter("very active")
@@ -112,7 +114,7 @@ filtered_eval = root.open_filter("very active")
 
 # getting the metadatas of the max-activating examples
 top_tensor = root.top_activating_examples(FEAT_NUM, p=0.1)
-metadata = root.metadatas["average active features"]
+metadata = root.metadata_store["average active features"]
 top_tensor_filtered = top_tensor.filter_inactive_docs()
 filtered_metadata = top_tensor_filtered.to_filtered_like_self(
     metadata,
@@ -123,7 +125,7 @@ filtered_metadata = top_tensor_filtered.to_filtered_like_self(
 
 # simpler but only works on root Evaluations
 top_tensor = root.top_activating_examples(FEAT_NUM, p=0.1)
-metadata = root.metadatas["average active features"]
+metadata = root.metadata_store["average active features"]
 filtered_metadata2 = top_tensor.filter_inactive_docs().filter.apply_mask(metadata)
 assert (filtered_metadata.value == filtered_metadata2).all()
 

@@ -136,8 +136,8 @@ class CachedCalls:
                 prefix=name_override,
             )
 
-            if key in self.raw.artifacts:
-                return self.raw.artifacts[key]
+            if key in self.raw.artifact_store:
+                return self.raw.artifact_store[key]
 
             result = func(*args, **kwargs)
             if isinstance(result, FilteredTensor):
@@ -147,7 +147,7 @@ class CachedCalls:
             if not isinstance(result, Tensor):
                 return result
 
-            self.raw.artifacts[key] = result
+            self.raw.artifact_store[key] = result
             return result
 
         return wrapper

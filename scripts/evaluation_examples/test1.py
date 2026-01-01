@@ -18,7 +18,7 @@ acts3 = root_eval.acts[doc_ids[sdi]].to_dense()[:, :, feat]
 (acts2 == acts3).all()
 assert (acts[sdi] == acts2).all()
 assert (acts == root_eval.features[feat].to_dense()[doc_ids.unsqueeze(0)]).all()
-assert (root_eval.metadatas["third"][doc_ids] == metas[0]).all()
+assert (root_eval.metadata_store["third"][doc_ids] == metas[0]).all()
 assert (
     acts.flatten().topk(25).values
     == root_eval.features[feat]
@@ -50,7 +50,7 @@ acts3 = root_eval.acts[doc_ids[sdi]].to_dense()[:, :, feat]
 (acts2 == acts3).all()
 assert (acts[sdi] == acts2).all()
 assert (acts == root_eval.features[feat].to_dense()[doc_ids.unsqueeze(0)]).all()
-assert (root_eval.metadatas["third"][doc_ids] == metas[0]).all()
+assert (root_eval.metadata_store["third"][doc_ids] == metas[0]).all()
 assert (
     acts.flatten().topk(25).values
     == fe.features[feat]

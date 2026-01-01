@@ -75,7 +75,10 @@ class FamilyOps:
         ]
 
     def get_family_psuedofeature_tensors(
-        self: "Evaluation", families: list[Family], aggregation_method="sum", device=None
+        self: "Evaluation",
+        families: list[Family],
+        aggregation_method="sum",
+        device=None,
     ) -> list[FilteredTensor]:
         artifact_names = self._get_family_psuedofeature_artifact_names(
             families, aggregation_method
@@ -84,9 +87,9 @@ class FamilyOps:
         return [
             FilteredTensor.from_value_and_mask(
                 (
-                    self.artifacts[artifact_name].to(self.device)
+                    self.artifact_store[artifact_name].to(self.device)
                     if device is not None
-                    else self.artifacts[artifact_name]
+                    else self.artifact_store[artifact_name]
                 ),
                 self.filter,
             )
@@ -100,7 +103,7 @@ class FamilyOps:
             families, aggregation_method
         )
         precached = [
-            artifact_name in self.artifacts for artifact_name in artifact_names
+            artifact_name in self.artifact_store for artifact_name in artifact_names
         ]
 
         if not all(precached):
@@ -130,7 +133,7 @@ class FamilyOps:
                     mb << a.to_filtered_like_self(a.value[:, :, i].sum(dim=-1), ndim=2)
             for artifact_name, mb in zip(new_artifact_names, builders):
                 feature_value = mb.value
-                self.artifacts[artifact_name] = feature_value.value
+                self.artifact_store[artifact_name] = feature_value.value
 
     def batched_top_activations_and_metadatas(
         self: "Evaluation",
@@ -205,7 +208,11 @@ class FamilyOps:
         return_str_tokens: bool,
         return_str_metadatas: bool,
     ):
-        tokens = self.token_strs[doc_indices] if return_str_tokens else self.tokens[doc_indices]
+        tokens = (
+            self.token_strs[doc_indices]
+            if return_str_tokens
+            else self.tokens[doc_indices]
+        )
         metadatas = {
             key: self._root_metadatas[key][doc_indices] for key in metadata_keys
         }
@@ -223,7 +230,11 @@ class FamilyOps:
         str_metadatas: bool,
     ):
         acts = [f.index_select(doc_indices, dim=0) for f in features]
-        tokens = self.token_strs[doc_indices] if return_str_tokens else self.tokens[doc_indices]
+        tokens = (
+            self.token_strs[doc_indices]
+            if return_str_tokens
+            else self.tokens[doc_indices]
+        )
 
         tokens, metadatas = self.get_tokens_and_metadatas(
             doc_indices,

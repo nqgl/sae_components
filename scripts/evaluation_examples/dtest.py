@@ -1,4 +1,3 @@
-
 import pandas as pd
 import torch
 from load import root_eval
@@ -124,11 +123,11 @@ if __name__ == "__main__":
     builder = root_eval.metadata_builder(torch.bool, "cpu")
     for chunk in builder:
         builder << (chunk.tokens.value == spend).any(-1)
-    root_eval.filters["filter A"] = builder.value
+    root_eval.filter_store["filter A"] = builder.value
     builder = root_eval.metadata_builder(torch.bool, "cpu")
     for chunk in builder:
         builder << (chunk.tokens.value == android).any(-1)
-    root_eval.filters["filter B"] = builder.value
+    root_eval.filter_store["filter B"] = builder.value
     A = root_eval.open_filtered("filter A")
     B = root_eval.open_filtered("filter B")
     co_occurence_delta = A.doc_level_co_occurrence() - B.doc_level_co_occurrence()

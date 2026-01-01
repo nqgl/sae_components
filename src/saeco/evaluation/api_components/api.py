@@ -368,12 +368,12 @@ def create_app(app: FastAPI, root: Evaluation):
     @app.put("/get_metadata_names")
     def get_metadata_names() -> list[str]:
         print("calling get_metadata_names")
-        return root.metadatas.keys()
+        return root.metadata_store.keys()
 
     @app.put("/get_metadata_key_names")
     def get_metadata_key_names(metadata: str) -> list[str] | None:
         print("calling get_metadata_key_names")
-        md = root.metadatas.get(metadata)
+        md = root.metadata_store.get(metadata)
         if md.info.tostr is None:
             return None
         return list(md.info.tostr.values())

@@ -30,7 +30,7 @@ class PerturbationConfig(BaseModel, frozen=True):
     """
 
     # Control condition
-    control_drug: str = "DMSO"
+    control_drug: str = "DMSO_TF"
     control_dosage: int = 0
 
     # Metadata keys

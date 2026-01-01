@@ -32,7 +32,9 @@ def ensure_comlm_metadata(eval: Evaluation) -> list[str]:
     Returns: metadata keys list (possibly empty if not applicable).
     """
     # Detect metadata_tokenizer (comlm arch usually has this)
-    metadata_tokenizer = getattr(getattr(eval.architecture, "data", None), "metadata_tokenizer", None)
+    metadata_tokenizer = getattr(
+        getattr(eval.architecture, "data", None), "metadata_tokenizer", None
+    )
     if metadata_tokenizer is None:
         return []
 
@@ -41,14 +43,16 @@ def ensure_comlm_metadata(eval: Evaluation) -> list[str]:
         return []
 
     # If already present, do nothing.
-    missing = [k for k in keys if k not in eval.metadatas]
+    missing = [k for k in keys if k not in eval.metadata_store]
     if not missing:
         return keys
 
     _print_header("Initializing metadata tensors (one-time)")
 
     # Build a single tensor shaped (num_docs, num_keys) by streaming chunks.
-    builder = eval.metadata_builder(dtype=torch.long, device="cpu", item_size=(len(keys),))
+    builder = eval.metadata_builder(
+        dtype=torch.long, device="cpu", item_size=(len(keys),)
+    )
     for chunk in builder:
         tokens = chunk.tokens.value
         if not isinstance(tokens, DictBatch):
@@ -62,9 +66,11 @@ def ensure_comlm_metadata(eval: Evaluation) -> list[str]:
     # Store each column under its own name.
     for i, k in enumerate(keys):
         tok = metadata_tokenizer.tokenizers[k]
-        eval.metadatas[k] = full[:, i]
+        eval.metadata_store[k] = full[:, i]
         # Include PAD/UNK then tokenizer vocab.
-        eval.metadatas.set_str_translator(k, {"<<PAD>>": 0, "<<UNK>>": 1, **tok.tokens})
+        eval.metadata_store.set_str_translator(
+            k, {"<<PAD>>": 0, "<<UNK>>": 1, **tok.tokens}
+        )
 
     print(f"Stored metadatas: {keys}")
     return keys
@@ -86,7 +92,9 @@ def show_basic(eval: Evaluation) -> None:
     print("doc[1]:", eval.decode_text(doc1))
 
 
-def showcase_feature(eval: Evaluation, feature_id: int, metadata_keys: list[str]) -> None:
+def showcase_feature(
+    eval: Evaluation, feature_id: int, metadata_keys: list[str]
+) -> None:
     _print_header(f"Feature {feature_id}: top activations")
 
     feat = eval.feature(feature_id)
@@ -96,7 +104,9 @@ def showcase_feature(eval: Evaluation, feature_id: int, metadata_keys: list[str]
     print("Example doc strings:")
     # Use the new .texts or .token_strs properties
     doc_texts = top.texts
-    for i, s in enumerate(doc_texts[:3] if isinstance(doc_texts, list) else [doc_texts]):
+    for i, s in enumerate(
+        doc_texts[:3] if isinstance(doc_texts, list) else [doc_texts]
+    ):
         print(f"- #{i}:", s)
 
     if metadata_keys:
@@ -109,6 +119,7 @@ def showcase_feature(eval: Evaluation, feature_id: int, metadata_keys: list[str]
         )
         print(enrich)
 
+
 def showcase_cosims(eval: Evaluation) -> None:
     _print_header("Activation cosine similarities")
     # Note: activation_cosims method name was not changed in polish pass, but uses .device internally
@@ -116,6 +127,7 @@ def showcase_cosims(eval: Evaluation) -> None:
     print("cosims shape:", tuple(cos.shape))
     diag = cos.diag()
     print("diag mean (ignoring NaN):", diag[~diag.isnan()].mean().item())
+
 
 def main() -> None:
     eval = load_eval()
@@ -139,14 +151,23 @@ def main() -> None:
         doc_id = int(idx[0, 0].item())
         seq_pos = int(idx[1, 0].item())
         tokens = eval.tokens[doc_id : doc_id + 1]
-        tokens = tokens.to(eval.device) if torch.is_tensor(tokens) else tokens.to(eval.device)
+        tokens = (
+            tokens.to(eval.device)
+            if torch.is_tensor(tokens)
+            else tokens.to(eval.device)
+        )
 
         def patch_fn(acts: torch.Tensor) -> torch.Tensor:
             acts = acts.clone()
             acts[0, seq_pos, feature_id] = 0
             return acts
 
-        diff = eval.patchdiff(tokens, patch_fn, invert=True, doc_indices=torch.tensor([doc_id], device=eval.device))
+        diff = eval.patchdiff(
+            tokens,
+            patch_fn,
+            invert=True,
+            doc_indices=torch.tensor([doc_id], device=eval.device),
+        )
         print("patchdiff:", diff.shape)
 
 

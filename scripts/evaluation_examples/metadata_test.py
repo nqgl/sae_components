@@ -9,23 +9,23 @@ torch.backends.cuda.enable_flash_sdp(False)
 # root_eval.tokenizer.encode(".")
 # root_eval.detokenize([13])
 
-if "period_count" not in root_eval.metadatas:
+if "period_count" not in root_eval.metadata_store:
     b = root_eval.metadata_builder(dtype=torch.long, device="cpu")
     for chunk in b:
         b << (chunk.tokens.value == 13).sum(-1)
-    root_eval.metadatas["period_count"] = b.value
+    root_eval.metadata_store["period_count"] = b.value
 
-if "third" not in root_eval.metadatas:
+if "third" not in root_eval.metadata_store:
     data = torch.zeros(root_eval.saved_acts.cfg.num_docs, dtype=torch.bool)
 
     for i, chunk in enumerate(root_eval.saved_acts.chunks):
         start = i * root_eval.saved_acts.cfg.docs_per_chunk
         end = start + root_eval.saved_acts.cfg.docs_per_chunk
         data[start:end] = (chunk.tokens_raw.sum(-1) % 3) == 0
-    root_eval.metadatas["third"] = data
-metadata = root_eval.metadatas["third"]
-if "test_filter" not in root_eval.filters:
-    root_eval.filters["test_filter"] = metadata
+    root_eval.metadata_store["third"] = data
+metadata = root_eval.metadata_store["third"]
+if "test_filter" not in root_eval.filter_store:
+    root_eval.filter_store["test_filter"] = metadata
 
 filtered_eval = root_eval.open_filtered("test_filter")
 
@@ -194,11 +194,11 @@ android = 9989
 builder = root_eval.metadata_builder(torch.bool, "cpu")
 for chunk in builder:
     builder << (chunk.tokens.value == spend).any(-1)
-root_eval.filters["filter A"] = builder.value
+root_eval.filter_store["filter A"] = builder.value
 builder = root_eval.metadata_builder(torch.bool, "cpu")
 for chunk in builder:
     builder << (chunk.tokens.value == android).any(-1)
-root_eval.filters["filter B"] = builder.value
+root_eval.filter_store["filter B"] = builder.value
 A = root_eval.open_filtered("filter A")
 B = root_eval.open_filtered("filter B")
 co_occurence_delta = A.doc_level_co_occurrence() - B.doc_level_co_occurrence()
