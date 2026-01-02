@@ -12,6 +12,7 @@ from saeco.evaluation.fastapi_models.metadata_enrichment import (
 )
 from saeco.evaluation.fastapi_models.token_enrichment import TokenEnrichmentMode
 from saeco.evaluation.filtered import FilteredTensor
+from saeco.evaluation.token_utils import extract_token_tensor
 
 if TYPE_CHECKING:
     from saeco.evaluation.evaluation import Evaluation
@@ -99,10 +100,10 @@ class Enrichment:
         mode: TokenEnrichmentMode = TokenEnrichmentMode.doc,
         sort_by: EnrichmentSortBy = EnrichmentSortBy.counts,
     ):
-        tokens, acts, _metadatas, _doc_ids = self.top_activations_and_metadatas(
-            feature=feature, p=p, k=k, metadata_keys=[]
-        )
-        tokens = tokens.to(self.device)
+        top_acts = self.top_activations(feature=feature, p=p, k=k)
+        tokens = top_acts.docs
+        acts = top_acts.acts
+        tokens = extract_token_tensor(tokens).to(self.device)
 
         if mode == TokenEnrichmentMode.doc:
             seltoks = tokens
@@ -110,10 +111,10 @@ class Enrichment:
             max_pos = acts.argmax(dim=1)
             seltoks = tokens[torch.arange(max_pos.shape[0]), max_pos]
         elif mode == TokenEnrichmentMode.active:
-            seltoks = tokens[acts > 0]
+            seltoks = tokens[acts.indices().unbind()]
         elif mode == TokenEnrichmentMode.top:
             threshold = acts.max(dim=-1).values.min(dim=0).values.item()
-            seltoks = tokens[acts > threshold]
+            seltoks = tokens[acts.to_dense() > threshold]
         else:
             raise ValueError(f"Unknown mode {mode}")
 
@@ -121,14 +122,14 @@ class Enrichment:
 
         normalized_counts = (counts / seltoks.numel()) / (
             self.token_occurrence_count.to(self.device)[tokens]
-            / (self.num_samples * self.seq_len)
+            / (self.num_docs * self.seq_len)
         )
 
         scores = score_enrichment(
             counts=counts,
             sel_denom=seltoks.numel(),
             total_counts=self.token_occurrence_count.to(self.device)[tokens],
-            total_denom=self.num_samples * self.seq_len,
+            total_denom=self.num_docs * self.seq_len,
         )
 
         match sort_by:

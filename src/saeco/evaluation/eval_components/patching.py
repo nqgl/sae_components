@@ -430,7 +430,7 @@ class Patching:
         """
         results = torch.zeros(
             self.d_vocab,
-        ).to(self.cuda)
+        ).to(self.device)
         num_batches = 0
         for ldiff, batch_seq_pos in self.patching_effect_on_dataset(
             feature_id=feature_id,

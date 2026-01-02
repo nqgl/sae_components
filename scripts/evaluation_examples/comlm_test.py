@@ -42,7 +42,7 @@ Also, I should probably drop out either all or none of the metadata for
 """
 
 
-data0 = root.samples[0:4]
+data0 = root.docs[0:4]
 # %%
 
 root.get_inputs_type()
@@ -327,7 +327,7 @@ enr.score_enrichment = score_enrichment
 print_for_metadatas(good_metadatas, 3)
 # %%
 base_freqs = base_freqs.cpu()
-mean_acts = base_freqs / root.num_samples
+mean_acts = base_freqs / root.num_docs
 ccb = causal_coacts / mean_acts.unsqueeze(0) / mean_acts.unsqueeze(1)
 # %%
 ccb.diag()
@@ -347,7 +347,7 @@ for i in interesting_maybe:
 # root.get_acts_with_intervention(feature=interesting_maybe[0])
 model = root.nnsight_model
 # for layer in root.nnsight_model.layers:
-batch = root.samples[:4]
+batch = root.docs[:4]
 args, kwargs = (
     root.sae_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.unpack_model_inputs(
         batch, {}

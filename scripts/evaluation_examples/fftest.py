@@ -134,7 +134,7 @@ def topk(fd, k=35):
 # %%
 if False:
     feat = 605
-    fd1 = procedure(root_eval.samples[torch.arange(5, 6, 1)], feat)
+    fd1 = procedure(root_eval.docs[torch.arange(5, 6, 1)], feat)
     tk = topk(fd1)
     tk
 
@@ -228,10 +228,10 @@ def procedure_one_pos_per_batch(tokens: Tensor, feat_id, offset=1, batch_size=8)
     return torch.cat(l)
 
 
-fdp = procedure_one_pos_per_batch(root_eval.samples[torch.arange(5, 6, 1)], feat)
+fdp = procedure_one_pos_per_batch(root_eval.docs[torch.arange(5, 6, 1)], feat)
 # %%
 
-fd = procedure(root_eval.samples[torch.arange(5, 6, 1)], feat)
+fd = procedure(root_eval.docs[torch.arange(5, 6, 1)], feat)
 
 # %%
 fdm = fd.mean(0).mean(0)
@@ -253,7 +253,7 @@ k3 = k2 = topk(fdp[80:])
 # %%
 k2.indices == k3.indices
 # %%
-fdp2 = procedure_one_pos_per_batch(root_eval.samples[torch.arange(6, 7, 1)], feat)
+fdp2 = procedure_one_pos_per_batch(root_eval.docs[torch.arange(6, 7, 1)], feat)
 
 # %%
 k4 = topk(fdp2)
@@ -339,9 +339,7 @@ def procedure_by_ablation(tokens, feat_id, offset=1, set_to=0, ln=False):
 feature = root_eval.features[feat]
 feat_active = feature.filter_inactive_docs().filter.mask.nonzero()
 # %%
-doc = root_eval.samples[
-    torch.arange(feat_active[1].item(), feat_active[1].item() + 1, 1)
-]
+doc = root_eval.docs[torch.arange(feat_active[1].item(), feat_active[1].item() + 1, 1)]
 
 # %%
 fab = procedure_by_ablation(
@@ -385,7 +383,7 @@ feature.indices()
 def feature_tk(feat, set_to=0, doc_index=1):
     feature = root_eval.features[feat]
     feat_active = feature.filter_inactive_docs().filter.mask.nonzero()
-    doc = root_eval.samples[
+    doc = root_eval.docs[
         torch.arange(
             feat_active[doc_index].item(), feat_active[doc_index].item() + 1, 1
         )
@@ -402,7 +400,7 @@ def feature_tk(feat, set_to=0, doc_index=1):
 def feature_tk_norm(feat, doc_index=1):
     feature = root_eval.features[feat]
     feat_active = feature.filter_inactive_docs().filter.mask.nonzero()
-    doc = root_eval.samples[
+    doc = root_eval.docs[
         torch.arange(
             feat_active[doc_index].item(), feat_active[doc_index].item() + 1, 1
         )
@@ -469,7 +467,7 @@ s & freqset
 def ftk(feat, set_to=0, doc_index=1, **kwargs):
     feature = root_eval.features[feat]
     feat_active = feature.filter_inactive_docs().filter.mask.nonzero()
-    doc = root_eval.samples[
+    doc = root_eval.docs[
         torch.arange(
             feat_active[doc_index].item(), feat_active[doc_index].item() + 1, 1
         )
@@ -482,7 +480,7 @@ def ftk(feat, set_to=0, doc_index=1, **kwargs):
 def ftkn(feat, doc_index=1, **kwargs):
     feature = root_eval.features[feat]
     feat_active = feature.filter_inactive_docs().filter.mask.nonzero()
-    doc = root_eval.samples[
+    doc = root_eval.docs[
         torch.arange(
             feat_active[doc_index].item(), feat_active[doc_index].item() + 1, 1
         )
@@ -582,7 +580,7 @@ def ftk2(feat, set_to=0, doc_index=1, ndocs=20, **kwargs):
     print(feat_active[doc_index : doc_index + ndocs])
     print(feat_active[doc_index : doc_index + ndocs].shape)
 
-    doc = root_eval.samples[feat_active[doc_index : doc_index + ndocs].squeeze(-1)]
+    doc = root_eval.docs[feat_active[doc_index : doc_index + ndocs].squeeze(-1)]
     print("".join(root_eval.detokenize(doc)[0]))
     fab = procedure2_by_ablation(doc, feat, set_to=set_to, **kwargs)
     tk = topk(fab)

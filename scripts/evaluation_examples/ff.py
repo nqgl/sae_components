@@ -145,7 +145,7 @@ def ftk2(feat, set_to=0, doc_index=1, ndocs=20, **kwargs):
     print(feat_active[doc_index : doc_index + ndocs])
     print(feat_active[doc_index : doc_index + ndocs].shape)
 
-    doc = root_eval.samples[feat_active[doc_index : doc_index + ndocs].squeeze(-1)]
+    doc = root_eval.docs[feat_active[doc_index : doc_index + ndocs].squeeze(-1)]
     print("".join(root_eval.detokenize(doc)[0]))
     fab = procedure2_by_ablation_preacts(doc, feat, set_to=set_to, **kwargs)
 
@@ -157,7 +157,7 @@ def ftk2(feat, set_to=0, doc_index=1, ndocs=20, **kwargs):
 def get_ff_matrix_on_document(doc_index=1, batch_size=32):
     ffmat = torch.zeros(root_eval.d_dict, root_eval.d_dict, device="cuda")
 
-    doc = root_eval.samples[torch.arange(doc_index, doc_index + 1)].squeeze(0)
+    doc = root_eval.docs[torch.arange(doc_index, doc_index + 1)].squeeze(0)
     for i in tqdm.trange(0, root_eval.d_dict, batch_size):
         d = root_eval.ff_multi_feature(
             doc, torch.arange(i, min(i + batch_size, root_eval.d_dict)), set_or_add=1

@@ -211,7 +211,7 @@ class FamilyOps:
         tokens = (
             self.token_strs[doc_indices]
             if return_str_tokens
-            else self.samples[doc_indices]
+            else self.docs[doc_indices]
         )
         metadatas = {
             key: self._root_metadatas[key][doc_indices] for key in metadata_keys
@@ -233,7 +233,7 @@ class FamilyOps:
         tokens = (
             self.token_strs[doc_indices]
             if return_str_tokens
-            else self.samples[doc_indices]
+            else self.docs[doc_indices]
         )
 
         tokens, metadatas = self.get_tokens_and_metadatas(

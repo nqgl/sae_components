@@ -84,8 +84,8 @@ print(len(levels2[0]), len(levels2[1]), len(levels2[2]))
 nabove(levels2, 4)
 dist_counter(levels2)
 root_eval.seq_activation_counts[levels2[0].roots[3].feature_id]
-root_eval.num_samples * 128
-root_eval.num_samples * 128 / 3
+root_eval.num_docs * 128
+root_eval.num_docs * 128 / 3
 
 seq_hyper = (root_eval.seq_activation_counts).topk(5)
 doc_hyper = (root_eval.doc_activation_counts).topk(5)
@@ -155,4 +155,4 @@ feat_counts = root_eval.cached_call._feature_num_active_docs().to(root_eval.cuda
 feat_counts[levels4[0].roots[0].feature_id]
 feat_counts.float().mean()
 (feat_counts > 5_000).sum()
-root_eval.num_samples
+root_eval.num_docs

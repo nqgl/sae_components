@@ -49,7 +49,7 @@ mlog.init(project="markov-bio/evaluator")
 # )
 # data_cfg.store_split(data_cfg.trainsplit)
 
-root_eval = Evaluation[XRNoisedBatch].open_model(model_name)
+root_eval = Evaluation[XRNoisedBatch].open_from_model(model_name)
 
 root_eval.sae_cfg.train_cfg.data_cfg = data_cfg
 # root_eval.
@@ -57,7 +57,7 @@ root_eval.sae_cfg.train_cfg.data_cfg = data_cfg
 root_eval.store_acts(
     CacheConfig[NoisedBatch](
         dirname=storage_name,
-        num_chunks=42,  # 3,
+        num_chunks=423,  # 3,
         docs_per_chunk=128,
         documents_per_micro_batch=32,
         # exclude_bos_from_storage=True,

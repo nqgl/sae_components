@@ -10,6 +10,7 @@ from paramsight import get_resolved_typevars_for_base, takes_alias
 from safetensors.torch import load_file, save_file
 
 from saeco.data.dict_batch import DictBatch
+from saeco.misc.utils import chill_issubclass
 
 from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from ..filtered import Filter, FilteredTensor
@@ -17,7 +18,7 @@ from ..named_filter import NamedFilter
 from .cache_config import CacheConfig
 
 
-@define(slots=True)
+@define
 class Chunk[InputsT: torch.Tensor | DictBatch]:
     idx: int
     path: Path
@@ -121,7 +122,7 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
     def read_tokens_raw(self) -> InputsT:
         if self.loaded_input_data is not None:
             return self.loaded_input_data
-        if issubclass(self.input_data_cls, DictBatch):
+        if chill_issubclass(self.input_data_cls, DictBatch):
             return self.input_data_cls.load_from_safetensors(self.tokens_path)
         loaded = load_file(self.tokens_path)
         if set(loaded.keys()) != {"tokens"}:

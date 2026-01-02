@@ -79,15 +79,15 @@ def ensure_comlm_metadata(eval: Evaluation) -> list[str]:
 def show_basic(eval: Evaluation) -> None:
     _print_header("Basic info")
     print("cache path:", eval.path)
-    print("num_docs:", eval.num_samples)
+    print("num_docs:", eval.num_docs)
     print("seq_len:", eval.seq_len)
     print("d_dict:", eval.d_dict)
     print("device:", eval.device)
 
     _print_header("First docs (detokenized)")
     # tokens may be Tensor or DictBatch; decode_text handles both.
-    doc0 = eval.samples[0]
-    doc1 = eval.samples[1]
+    doc0 = eval.docs[0]
+    doc1 = eval.docs[1]
     print("doc[0]:", eval.decode_text(doc0))
     print("doc[1]:", eval.decode_text(doc1))
 
@@ -103,7 +103,7 @@ def showcase_feature(
     print("Top doc indices:", top.doc_selection.doc_indices.tolist())
     print("Example doc strings:")
     # Use the new .texts or .token_strs properties
-    doc_texts = top.texts
+    doc_texts = top.docs
     for i, s in enumerate(
         doc_texts[:3] if isinstance(doc_texts, list) else [doc_texts]
     ):
@@ -150,7 +150,7 @@ def main() -> None:
         idx = feat.indices()
         doc_id = int(idx[0, 0].item())
         seq_pos = int(idx[1, 0].item())
-        tokens = eval.samples[doc_id : doc_id + 1]
+        tokens = eval.docs[doc_id : doc_id + 1]
         tokens = (
             tokens.to(eval.device)
             if torch.is_tensor(tokens)

@@ -15,7 +15,7 @@ from .cache_config import CacheConfig
 from .chunk import Chunk
 
 
-@define(slots=True)
+@define
 class CachedActs[InputsT: torch.Tensor | DictBatch]:
     path: Path
     cfg: CacheConfig
@@ -100,16 +100,16 @@ def _select_batch(x, indices: Tensor, *, dense: bool):
             return x[indices]
         except Exception:
             return x.__class__.construct_with_other_data(
-                {k: v.index_select(0, indices) for k, v in x.items()},
+                {k: v.index_select(indices, dim=0) for k, v in x.items()},
                 x._get_other_dict(),
             )
 
     if dense:
-        return x.index_select(0, indices)
-    return x.index_select(0, indices).coalesce()
+        return x.index_select(indices, dim=0)
+    return x.index_select(indices, dim=0).coalesce()
 
 
-@define(slots=True)
+@define
 class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
     cached_acts: CachedActs[InputsT]
     target_attr: str
@@ -117,7 +117,9 @@ class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
     ft: bool = False
 
     def get_chunk(self, i: int):
-        return getattr(self.cached_acts.chunks[i], self.target_attr)
+        chunk = getattr(self.cached_acts.chunks[i], self.target_attr)
+        # assert isinstance(chunk, Chunk)
+        return chunk
 
     def tokensel(self, doc_ids: Tensor, *, dense: bool) -> InputsT:
         if doc_ids.ndim != 1:

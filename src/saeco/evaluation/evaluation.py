@@ -91,6 +91,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def get_inputs_type(cls) -> type[InputsT]:
         return get_resolved_typevars_for_base(cls, Evaluation)[0]  # type: ignore
 
+    @takes_alias
     @classmethod
     def open_cache(cls, name: Path | str) -> Evaluation:
         if isinstance(name, str):
@@ -105,14 +106,15 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         if cached.cfg.model_path is None:
             raise ValueError("cache_config.json missing model_path")
 
-        inst = cls.open_model(
+        inst = cls.open_from_model(
             cached.cfg.model_path, averaged_weights=cached.cfg.averaged_model_weights
         )
         inst.cached_acts = cached
         return inst
 
+    @takes_alias
     @classmethod
-    def open_model(
+    def open_from_model(
         cls, path: Path | str, *, averaged_weights: bool = False
     ) -> Evaluation:
         p = path if isinstance(path, Path) else Path(path)
@@ -170,7 +172,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # -----------------------
 
     @property
-    def samples(self):
+    def docs(self):
         if self.cached_acts is None:
             raise ValueError("No cached_acts loaded")
         return self.cached_acts.tokens
@@ -210,10 +212,6 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # -----------------------
     # Views
     # -----------------------
-
-    @property
-    def text(self) -> DecodedTextView:
-        return DecodedTextView(eval=self)
 
     @property
     def token_strs(self) -> TokenStringsView:
@@ -347,13 +345,13 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
     def top_activations(
         self,
-        f: int | FilteredTensor,
+        feature: int | FilteredTensor,
         *,
         k: int | None = None,
         p: float | None = None,
         agg=None,
     ) -> TopActivations:
-        feat = self.feature(f)
+        feat = self.feature(feature)
         if agg is None:
             return feat.top_activations(k=k, p=p)
         return feat.top_activations(agg=agg, k=k, p=p)
@@ -363,7 +361,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # -----------------------
 
     @property
-    def num_samples(self) -> int:
+    def num_docs(self) -> int:
         if self.filter is not None:
             return int(self.filter.filter.sum().item())
         return self.cache_config.num_docs
@@ -405,3 +403,53 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
         cacher.store_acts()
         self.cached_acts = CachedActs[self.get_inputs_type()].open(cacher.path)
+
+    # -----------------------
+    # Legacy
+    # -----------------------
+    def top_activations_and_metadatas(
+        self,
+        feature: int | FilteredTensor,
+        p: float | None = None,
+        k: int | None = None,
+        metadata_keys: list[str] | None = None,
+        return_str_docs: bool = False,
+        return_acts_sparse: bool = False,
+        return_doc_indices: bool = True,
+        str_metadatas: bool = False,
+    ):
+        if metadata_keys is None:
+            metadata_keys = []
+        top_acts = self.top_activations(
+            feature=feature,
+            p=p,
+            k=k,
+        )
+        return self._legacy_top_activations_and_metadatas_getter(
+            top_acts=top_acts,
+            metadata_keys=metadata_keys,
+            return_str_docs=return_str_docs,
+            return_doc_indices=return_doc_indices,
+            str_metadatas=str_metadatas,
+        )
+
+    def _legacy_top_activations_and_metadatas_getter(
+        self,
+        top_acts: TopActivations,
+        metadata_keys: list[str],
+        return_str_docs: bool,
+        return_doc_indices: bool,
+        str_metadatas: bool,
+    ):
+        acts = top_acts.acts
+        docs = top_acts.doc_selection.doc_strs if return_str_docs else top_acts.docs
+        metadatas = top_acts.doc_selection.metadata[list(metadata_keys)]
+        if str_metadatas:
+            metadatas = metadatas.str_metadatas
+        else:
+            metadatas = metadatas.metadatas
+
+        if return_doc_indices:
+            doc_indices = top_acts.doc_selection.doc_indices
+            return docs, acts, metadatas, doc_indices
+        return docs, acts, metadatas

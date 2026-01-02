@@ -189,15 +189,11 @@ class SelectedDocs:
         return MetadataAccessor(doc_selection=self, src_eval=self.src_eval)
 
     @property
-    def tokens(self) -> Tensor | DictBatch:
-        return self.src_eval.samples[self.doc_indices]
+    def docs(self) -> Tensor | DictBatch:
+        return self.src_eval.docs[self.doc_indices]
 
     @property
-    def texts(self) -> str | list[str]:
-        return self.src_eval.text[self.doc_indices]
-
-    @property
-    def token_strs(self):
+    def doc_strs(self):
         return self.src_eval.token_strs[self.doc_indices]
 
 
@@ -246,16 +242,12 @@ class TopActivations(EvalRefData):
         return self.feature.data.index_select(self.doc_selection.doc_indices, dim=0)
 
     @property
-    def tokens(self) -> Tensor | DictBatch:
-        return self.doc_selection.tokens
+    def docs(self) -> Tensor | DictBatch:
+        return self.doc_selection.docs
 
     @property
-    def texts(self):
-        return self.doc_selection.texts
-
-    @property
-    def token_strs(self):
-        return self.doc_selection.token_strs
+    def doc_strs(self):
+        return self.doc_selection.doc_strs
 
     def top_activations_metadata_enrichments(
         self,
@@ -287,14 +279,14 @@ class TopActivations(EvalRefData):
                 counts=counts,
                 sel_denom=num_docs,
                 total_counts=metadata_counts.counts,
-                total_denom=self.src_eval.num_samples,
+                total_denom=self.src_eval.num_docs,
             )
             out[mdname] = MetadataEnrichmentResult(
                 name=mdname,
                 labels=labels,
                 counts=counts,
                 proportions=proportions,
-                normalized_counts=proportions * self.src_eval.num_samples / num_docs,
+                normalized_counts=proportions * self.src_eval.num_docs / num_docs,
                 scores=scores,
             )
         return out

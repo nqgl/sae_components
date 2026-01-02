@@ -24,7 +24,7 @@ class DecodedTextView:
     skip_special_tokens: bool = False
 
     def __getitem__(self, idx: Any) -> str | list[str]:
-        tokens = self.eval.samples[idx]
+        tokens = self.eval.docs[idx]
         return self.eval.decode_text(
             tokens, skip_special_tokens=self.skip_special_tokens
         )
@@ -44,7 +44,7 @@ class TokenStringsView:
     eval: Evaluation
 
     def __getitem__(self, idx: Any) -> str | list[str] | list[list[str]]:
-        tokens = self.eval.samples[idx]
+        tokens = self.eval.docs[idx]
         return self.eval.detokenize(tokens)
 
 
