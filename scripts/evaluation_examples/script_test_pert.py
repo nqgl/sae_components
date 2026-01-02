@@ -18,12 +18,29 @@ def main():
         "Osimertinib (mesylate)",
         "PH-797804",
     ]
-
-    sim, sim_keys = root_eval.compute_drug_similarity_matrix(
-        drugs=drugs,
+    drug_metadata_map = root_eval.get_metadata_values_and_strings("drug")
+    meta = root_eval.metadata_store["drug"]
+    u, c = meta.unique(return_counts=True)
+    c
+    u
+    sim = root_eval.cached.compute_drug_similarity_matrix(
+        drug_metadata_map=drug_metadata_map,
         mode="profile",
     )
-    r_i = sim_keys.index(ralimetinib)
+    sim2 = sim.clone()
+    sim2.diag().sum()
+    sim2.diagonal().fill_(0)
+    sim2.sum()
+    sim2 = sim2.triu()
+    m = sim2.max(dim=0)
+    N = 5
+    tk = m.values.topk(N)
+    for i, j in zip(m.indices[tk.indices], tk.indices, strict=True):
+        print(
+            f"{drug_metadata_map.value_strings[i]} <--> {drug_metadata_map.value_strings[j]} : {m.values[j]}"
+        )
+
+    r_i = drug_metadata_map.value_strings.index(ralimetinib)
     top = root_eval.top_similar_drugs(sim, sim_keys, query=ralimetinib, k=5)
     print("Top similar to ralimetinib:")
     for d, s in top:

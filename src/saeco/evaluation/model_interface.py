@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import torch
 
 from saeco.data.dict_batch import DictBatch
+
+if TYPE_CHECKING:
+    from saeco.evaluation.evaluation import Evaluation
 
 
 class ModelEvalAdapter[BatchT, OutputT](ABC):
@@ -12,8 +17,13 @@ class ModelEvalAdapter[BatchT, OutputT](ABC):
     structure (language models vs. comlm gene models, etc.).
     """
 
-    def __init__(self, model_kwargs: dict[str, Any] | None = None):
-        self.model_kwargs = model_kwargs or {}
+    def __init__(self, eval: Evaluation | None = None):
+        self.eval = eval
+
+    def unwrap_input(self, batch: BatchT, **kwargs):
+        return self.eval.sae_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.unpack_model_inputs(
+            batch, extra_kwargs=kwargs
+        )
 
     def make_batch(
         self,
@@ -25,12 +35,6 @@ class ModelEvalAdapter[BatchT, OutputT](ABC):
         Default: pass through.
         """
         return tokens  # type: ignore[return-value]
-
-    def trace(self, model, batch: BatchT):
-        """
-        Wraps the model trace call so callers don't need to know the signature.
-        """
-        return model.trace(batch, **self.model_kwargs)
 
     def unwrap_output(self, output: OutputT) -> OutputT:
         """
@@ -139,9 +143,6 @@ class ComlmEvalAdapter(ModelEvalAdapter[Any, Any]):
             ranks=ranks,
             attention_mask=attention_mask,
         )
-
-    def trace(self, model, batch: Any):
-        return model.trace(batch, **self.model_kwargs)
 
     def get_logits(self, output: Any) -> torch.Tensor:
         if hasattr(output, "get_logits"):

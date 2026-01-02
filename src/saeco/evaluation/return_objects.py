@@ -239,7 +239,9 @@ class TopActivations(EvalRefData):
 
     @cached_property
     def acts(self) -> Tensor | DictBatch:
-        return self.feature.data.index_select(self.doc_selection.doc_indices, dim=0)
+        return self.feature.data.index_select(
+            index=self.doc_selection.doc_indices, dim=0
+        )
 
     @property
     def docs(self) -> Tensor | DictBatch:

@@ -100,13 +100,13 @@ def _select_batch(x, indices: Tensor, *, dense: bool):
             return x[indices]
         except Exception:
             return x.__class__.construct_with_other_data(
-                {k: v.index_select(indices, dim=0) for k, v in x.items()},
+                {k: v.index_select(index=indices, dim=0) for k, v in x.items()},
                 x._get_other_dict(),
             )
 
     if dense:
-        return x.index_select(indices, dim=0)
-    return x.index_select(indices, dim=0).coalesce()
+        return x.index_select(index=indices, dim=0)
+    return x.index_select(index=indices, dim=0).coalesce()
 
 
 @define
@@ -150,13 +150,13 @@ class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
 
         if issubclass(input_cls, DictBatch):
             out_sorted = input_cls.cat_list(parts)
-            return out_sorted.apply_func(lambda t: t.index_select(0, inv))  # type: ignore[return-value]
+            return out_sorted.apply_func(lambda t: t.index_select(index=inv, dim=0))  # type: ignore[return-value]
 
         out_sorted = (
             torch.cat(parts, dim=0) if dense else torch.cat(parts, dim=0).coalesce()
         )
         if dense:
-            return out_sorted.index_select(0, inv)  # type: ignore[return-value]
+            return out_sorted.index_select(index=inv, dim=0)  # type: ignore[return-value]
 
         coo = out_sorted.coalesce()
         idx = coo.indices()

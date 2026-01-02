@@ -63,9 +63,6 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         return self.sae_cfg.train_cfg.data_cfg.model_cfg.tokenizer
 
     def _model_adapter_default(self):
-        model_kwargs = getattr(
-            self.sae_cfg.train_cfg.data_cfg.model_cfg, "model_kwargs", {}
-        )
         try:
             from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 
@@ -73,10 +70,10 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
                 self.sae_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg,
                 ComlmModelConfig,
             ):  # type: ignore[attr-defined]
-                return ComlmEvalAdapter(model_kwargs=model_kwargs)
+                return ComlmEvalAdapter(eval=self)
         except Exception:
             pass
-        return LanguageModelEvalAdapter(model_kwargs=model_kwargs)
+        return LanguageModelEvalAdapter(eval=self)
 
     model_adapter: ModelEvalAdapter = field(
         default=Factory(_model_adapter_default, takes_self=True)

@@ -75,7 +75,7 @@ cfg = RunConfig[DynamicThreshConfig](
         use_autocast=False,
         use_lars=Swept(False),
         #
-        l0_target=50,
+        l0_target=250,
         l0_target_adjustment_size=Swept(0.0003),
         coeffs={
             "sparsity_loss": Swept(0),

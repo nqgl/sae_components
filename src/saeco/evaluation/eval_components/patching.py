@@ -120,7 +120,8 @@ class Patching:
         batch = batch or self._build_model_batch(
             tokens_or_batch, doc_indices=doc_indices, metadata=metadata
         )
-        with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
+        args, kwargs = self.model_adapter.unwrap_input(batch)
+        with self.nnsight_model.trace(batch) as tracer:
             lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
             res = self.sae_with_patch(patch, return_sae_acts=True)(lm_acts)
             patch_in = self._skip_bos_if_appropriate(lm_acts, res[0])
@@ -162,7 +163,8 @@ class Patching:
                 batch = self._build_model_batch(
                     tokens_or_batch, doc_indices=doc_indices, metadata=metadata
                 )
-                with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
+                args, kwargs = self.model_adapter.unwrap_input(batch)
+                with self.nnsight_model(args, kwargs) as tracer:
                     lm_acts = getsite(self.nnsight_model, self.nnsight_site_name)
                     orig_lm_acts = lm_acts.save()
                     acts_re = patched_sae(orig_lm_acts).save()
@@ -320,10 +322,10 @@ class Patching:
         def select_batch_tokens(ts, indices):
             if isinstance(ts, DictBatch):
                 return ts.__class__.construct_with_other_data(
-                    {k: v.index_select(0, indices) for k, v in ts.items()},
+                    {k: v.index_select(index=indices, dim=0) for k, v in ts.items()},
                     ts._get_other_dict(),
                 )
-            return ts.index_select(0, indices)
+            return ts.index_select(index=indices, dim=0)
 
         with torch.no_grad():
             for token_store, tokens, doc_ids, seq_pos in batch_iter(batch_size * 4):
@@ -548,7 +550,8 @@ class Patching:
         batch = self._build_model_batch(
             tokens, doc_indices=doc_indices, metadata=metadata
         )
-        with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
+        args, kwargs = self.model_adapter.unwrap_input(batch)
+        with self.nnsight_model.trace(args, kwargs) as tracer:
             setsite(
                 self.nnsight_model,
                 write_in_site,
@@ -577,7 +580,8 @@ class Patching:
         batch = self._build_model_batch(
             tokens, doc_indices=doc_indices, metadata=metadata
         )
-        with self.model_adapter.trace(self.nnsight_model, batch) as tracer:
+        args, kwargs = self.model_adapter.unwrap_input(batch)
+        with self.nnsight_model.trace(args, kwargs) as tracer:
             setsite(
                 self.nnsight_model,
                 write_in_site,

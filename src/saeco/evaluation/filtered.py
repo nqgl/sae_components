@@ -121,7 +121,9 @@ def _sparse_row_mask(v: Tensor, mask: Tensor) -> Tensor:
     new_idx = torch.cat([new_rows.unsqueeze(0), idx[1:, keep]], dim=0)
 
     new_size = (n_selected,) + tuple(v.shape[1:])
-    return torch.sparse_coo_tensor(new_idx, vals[keep], new_size, device=v.device, dtype=v.dtype).coalesce()
+    return torch.sparse_coo_tensor(
+        new_idx, vals[keep], new_size, device=v.device, dtype=v.dtype
+    ).coalesce()
 
 
 def _device_of(x: Indexable) -> torch.device:
@@ -204,7 +206,9 @@ class Filter:
             m = m.to(*args, **kwargs)
         return self.__class__(slices=self.slices, mask=m, shape=self.shape)
 
-    def writeat(self, target: Indexable, value: Indexable, *, _value_kw: Any = None) -> None:
+    def writeat(
+        self, target: Indexable, value: Indexable, *, _value_kw: Any = None
+    ) -> None:
         """
         Write `value` into `target` at the positions selected by (slices, mask).
 
@@ -221,10 +225,14 @@ class Filter:
         if isinstance(target, DictBatch):
             if idx and len(idx) > 1:
                 non_batch = [
-                    s for s in idx[1:] if not (isinstance(s, slice) and _is_full_slice(s))
+                    s
+                    for s in idx[1:]
+                    if not (isinstance(s, slice) and _is_full_slice(s))
                 ]
                 if non_batch:
-                    raise ValueError("Cannot writeat into DictBatch with non-batch slicing")
+                    raise ValueError(
+                        "Cannot writeat into DictBatch with non-batch slicing"
+                    )
             sl0 = idx[0] if idx else slice(None)
             if m is None:
                 target[sl0] = value  # type: ignore[index]
@@ -358,7 +366,9 @@ class FilteredTensor:
             # Trivial full mask.
             bs = value.shape[0] if isinstance(value, Tensor) else value.batch_size
             mask_obj = torch.ones(bs, dtype=torch.bool, device=_device_of(value))
-        filt = Filter(slices=(), mask=mask_obj.to(dtype=torch.bool), shape=(mask_obj.shape[0],))
+        filt = Filter(
+            slices=(), mask=mask_obj.to(dtype=torch.bool), shape=(mask_obj.shape[0],)
+        )
         # Here, mask is in sliced space already, and value is assumed already masked.
         return cls(value=value, filter=filt)
 
@@ -400,7 +410,9 @@ class FilteredTensor:
         if shape is None:
             # Infer shape for filtered dims from the (un-sliced) input if possible.
             if presliced:
-                raise ValueError("presliced=True requires filter_obj with explicit shape")
+                raise ValueError(
+                    "presliced=True requires filter_obj with explicit shape"
+                )
             if isinstance(value, DictBatch):
                 base = (value.batch_size,)
             else:
@@ -574,11 +586,13 @@ class FilteredTensor:
 
         if self.value.is_sparse:
             # We only support row selection for sparse values here.
-            return self.value.index_select(0, inner_valid[0]).coalesce(), valid
+            return self.value.index_select(
+                index=inner_valid[0], dim=0
+            ).coalesce(), valid
 
         return self.value[tuple(inner_valid)], valid
 
-    def index_select(self, index: Tensor, dim: int = 0) -> Indexable:
+    def index_select(self, *, index: Tensor, dim: int = 0) -> Indexable:
         if dim != 0:
             raise NotImplementedError("FilteredTensor.index_select only supports dim=0")
 
@@ -593,8 +607,8 @@ class FilteredTensor:
         if isinstance(self.value, DictBatch):
             return self.value[inner_idx]
         if self.value.is_sparse:
-            return self.value.index_select(0, inner_idx).coalesce()
-        return self.value.index_select(0, inner_idx)
+            return self.value.index_select(index=inner_idx, dim=0).coalesce()
+        return self.value.index_select(index=inner_idx, dim=0)
 
     # ---- mask composition ----
 
@@ -642,7 +656,9 @@ class FilteredTensor:
         """
         if isinstance(other, FilteredTensor):
             if other.filter.mask is None:
-                raise ValueError("Cannot use a FilteredTensor with no mask as a mask source")
+                raise ValueError(
+                    "Cannot use a FilteredTensor with no mask as a mask source"
+                )
             other_mask = other.filter.mask
         elif isinstance(other, Filter):
             if other.mask is None:
@@ -687,8 +703,14 @@ class FilteredTensor:
                 new_mask_sliced = current_mask_sliced.clone()
                 new_mask_sliced[true_pos] = other_value
 
-            new_filter = Filter(slices=self.slices, mask=new_mask_sliced, shape=self.filter.shape)
-            return self.__class__(value=new_value, filter=new_filter) if return_ft else new_value
+            new_filter = Filter(
+                slices=self.slices, mask=new_mask_sliced, shape=self.filter.shape
+            )
+            return (
+                self.__class__(value=new_value, filter=new_filter)
+                if return_ft
+                else new_value
+            )
 
         # Not value_like: compute other mask in sliced space.
         if presliced:
@@ -729,8 +751,14 @@ class FilteredTensor:
                 else self.value[other_value]
             )
 
-        new_filter = Filter(slices=self.slices, mask=new_mask_sliced, shape=self.filter.shape)
-        return self.__class__(value=new_value, filter=new_filter) if return_ft else new_value
+        new_filter = Filter(
+            slices=self.slices, mask=new_mask_sliced, shape=self.filter.shape
+        )
+        return (
+            self.__class__(value=new_value, filter=new_filter)
+            if return_ft
+            else new_value
+        )
 
     def filter_inactive_docs(self) -> Self:
         """
@@ -787,12 +815,16 @@ class FilteredTensor:
 
         return self.__class__(value=t, filter=filt)
 
-    def apply_to_inner(self, func: Callable[[Tensor], Tensor], cut_to_ndim: int | None = None) -> Self:
+    def apply_to_inner(
+        self, func: Callable[[Tensor], Tensor], cut_to_ndim: int | None = None
+    ) -> Self:
         if isinstance(self.value, DictBatch):
             new_value = self.value.apply_func(func)
         else:
             new_value = func(self.value)
-        return self.to_filtered_like_self(new_value, presliced=True, premasked=True, ndim=cut_to_ndim)
+        return self.to_filtered_like_self(
+            new_value, presliced=True, premasked=True, ndim=cut_to_ndim
+        )
 
     def clone(self) -> Self:
         return self.__class__(value=self.value.clone(), filter=self.filter)
@@ -855,14 +887,18 @@ class FilteredTensor:
             raise TypeError("to_sparse is only defined for tensor values")
         if self.is_sparse:
             return self
-        return self.to_filtered_like_self(self.value.to_sparse_coo(), presliced=True, premasked=True)
+        return self.to_filtered_like_self(
+            self.value.to_sparse_coo(), presliced=True, premasked=True
+        )
 
     def to_dense(self) -> Self:
         if isinstance(self.value, DictBatch):
             return self
         if not self.value.is_sparse:
             return self
-        return self.to_filtered_like_self(self.value.to_dense(), presliced=True, premasked=True)
+        return self.to_filtered_like_self(
+            self.value.to_dense(), presliced=True, premasked=True
+        )
 
     def writeat(self, target: Indexable, value: Indexable | None = None) -> None:
         """
@@ -904,7 +940,11 @@ class FilteredTensor:
         m = self.filter.mask
         if m is not None:
             # Keep boolean dtype.
-            m = m.to(*args, dtype=torch.bool, **{k: v for k, v in kwargs.items() if k != "dtype"})
+            m = m.to(
+                *args,
+                dtype=torch.bool,
+                **{k: v for k, v in kwargs.items() if k != "dtype"},
+            )
 
         new_filter = Filter(slices=self.filter.slices, mask=m, shape=self.filter.shape)
         return self.__class__(value=new_value, filter=new_filter)

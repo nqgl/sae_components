@@ -435,7 +435,7 @@ class TestGrowingDiskTensorShuffleThenFinalize:
         gdt.shuffle_then_finalize(shuffle_axis=1, perm=perm)
 
         gdt2 = GrowingDiskTensor.open(tmp_tensor_path)
-        expected = data.index_select(1, perm)
+        expected = data.index_select(index=perm, dim=1)
         assert torch.allclose(gdt2.tensor, expected)
 
     def test_shuffle_then_finalize_wrong_perm_length_raises(

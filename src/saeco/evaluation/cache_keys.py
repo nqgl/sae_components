@@ -69,7 +69,7 @@ def _tensor_hash(t: Tensor) -> str:
 
     k = min(_MAX_TENSOR_SAMPLES, n)
     sample_idx = torch.linspace(0, n - 1, steps=k).round().to(dtype=torch.long)
-    sample = flat.index_select(0, sample_idx).contiguous()
+    sample = flat.index_select(index=sample_idx, dim=0).contiguous()
     return hashlib.sha256(sample.numpy().tobytes()).hexdigest()
 
 
@@ -134,7 +134,9 @@ def _canonicalize(obj: Any) -> Any:
 
 
 def func_identity(func: Any, *, name_override: str | None = None) -> str:
-    name = name_override or getattr(func, "__qualname__", getattr(func, "__name__", "call"))
+    name = name_override or getattr(
+        func, "__qualname__", getattr(func, "__name__", "call")
+    )
     module = getattr(func, "__module__", None)
     return f"{module}.{name}" if module else name
 

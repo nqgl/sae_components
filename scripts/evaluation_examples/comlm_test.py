@@ -20,40 +20,15 @@ model_cfg: ModelConfig[ComlmModelConfig] = root.sae_cfg.train_cfg.data_cfg.model
 
 arch = model_cfg.model_load_cfg.pretrained_arch
 comlm_cfg = arch.run_cfg
-# %%
 
-arch.data.metadata_tokenizer
-# %%
-root.features[0].value.device
-# %%
-root.features[1].indices()
-# %%
 metadata_tokenizer = arch.data.metadata_tokenizer
-for key in comlm_cfg.arch_cfg.metadata_embedding_config.selected_metadata:
-    tokenizer = metadata_tokenizer.tokenizers[key]
-
-
 # %%
-"""
-maybe we will want some "compare intervention on input data" method
-
-Also, I should probably drop out either all or none of the metadata for 
-
-"""
-
-
-data0 = root.docs[0:4]
-# %%
-
-root.get_inputs_type()
-# %%
-root.cached_acts.get_inputs_type()
-# %%
-#
 # Initialize metadata if necessary
 #
 metadata_keys = list(metadata_tokenizer.tokenizers.keys())
 has_metadata = [key in root.metadata_store for key in metadata_keys]
+has_metadata
+# %%
 if not all(has_metadata):
     assert not any(has_metadata), "Some metadata keys are already present"
     all_metadata_builder = root.metadata_builder(
@@ -443,5 +418,69 @@ with model.trace(*args, **kw2):
     ranks_saved = ranks.save()
 # %%
 
+
+# %%
+dtok = metadata_tokenizer.tokenizers["drug"]
+len(dtok)
+# %%
+len(metadata_tokenizer.tokenizers["dosage"])
+# %%
+len(metadata_tokenizer.tokenizers["cell_line"])
+
+# %%
+4 * 380 * 50
+# %%
+meta = root_eval.metadata_store["drug"]
+u, c = meta.unique(return_counts=True)
+
+# %%
+len(u)
+# %%
+
+meta[1024:]
+# %%
+all_metadata_builder << chunk.tokens.value["metadata"]
+# %%
+
+meta = root_eval.metadata_store["dosage"]
+u, c = meta.unique(return_counts=True)
+
+# %%
+u
+# %%
+chunk = root_eval.cached_acts.chunks[0]
+# %%
+chunk.tokens.value.metadata
+# %%
+chunk.tokens.value.metadata.unique()
+
+# %%
+metadata_tokenizer.metadata_keys.index("drug")
+# %%
+import anndata as ad
+from comlm.datasource.data_config_definitions import tahoe_data_config
+
+piler = tahoe_data_config.single_cell_data.tokenized_piled_data.r_piler
+
+# %%
+piler.num_piles
+# %%
+s = set()
+for i in range(1024):
+    for e in piler[i]["metadata"][:, 43].tolist():
+        s.add(e)
+
+
+# %%
+# %%
+s
+# %%
+from pathlib import Path
+
+t = ad.read_h5ad(
+    Path.home() / "workspace/data/sc_data/large_datasets/pseudobulked_tahoe.h5ad"
+)
+# %%
+t.obs["drug"][:100]
 
 # %%

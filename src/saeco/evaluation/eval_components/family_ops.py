@@ -224,7 +224,7 @@ class FamilyOps:
         return_str_docs: bool,
         str_metadatas: bool,
     ):
-        acts = [f.index_select(doc_indices, dim=0) for f in features]
+        acts = [f.index_select(index=doc_indices, dim=0) for f in features]
 
         docs, metadatas = self.get_docs_and_metadatas(
             doc_indices,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING, Literal
 
 import torch
@@ -736,8 +737,7 @@ class PerturbationAnalysis:
     @cache_version(1)
     def compute_drug_similarity_matrix(
         self: Evaluation,
-        drugs: list[str] | None = None,
-        cell_lines: list[str] | None = None,
+        drug_metadata_map: MetadataValueMap,
         *,
         mode: SimilarityMode = "profile",
         config: PerturbationConfig | None = None,
@@ -754,28 +754,23 @@ class PerturbationAnalysis:
           pattern mode can be very large if you pass many drugs and many cell lines.
         """
         cfg = config or self.perturbation_config
-        if drugs is None:
-            drugs = self.get_all_drugs(
-                exclude_special=True, exclude_control=False, config=cfg
-            )
-        drug_metadata_ids, drug_metadata_strs = self.get_metadata_values_and_strings(
-            cfg.drug_key
-        )
         metadata_effects = torch.zeros(
-            len(drug_metadata_strs),
+            len(drug_metadata_map.value_strings),
             self.d_dict,
             dtype=torch.float32,
             device=self.device,
         )
-        drug_metadata = self.metadata_store["drug"]
+        drug_metadata = self.metadata_store[cfg.drug_key]
         for chunk, agg in self.iter_chunk_and_agg():
             metadata = drug_metadata[chunk.doc_ids]
-            for i in range(len(drug_metadata_strs)):
-                metadata_effects[i] += (metadata == drug_metadata_ids[i].item()).to(
+            for i in range(
+                len(drug_metadata_map.value_strings)
+            ):  # TODO scatter add this
+                metadata_effects[i] += (metadata == drug_metadata_map.ids[i]).to(
                     agg.device, torch.float32
                 ) @ agg
         similarity = metadata_effects @ metadata_effects.T
-        return similarity, drug_metadata_strs
+        return similarity
 
     def top_similar_drugs(
         self: Evaluation,
@@ -929,7 +924,7 @@ class PerturbationAnalysis:
         *,
         exclude_special: bool = True,
         special_prefix: str = "<<",
-    ) -> tuple[Tensor, list[str]]:
+    ) -> MetadataValueMap:
         md = self._meta_root().metadata_store.get(key)
         info = md.info
         if info is None or info.tostr is None or info.fromstr is None:
@@ -939,5 +934,21 @@ class PerturbationAnalysis:
         out = [info.tostr[i] for i in sorted(info.tostr.keys())]
         if exclude_special:
             out = [s for s in out if not s.startswith(special_prefix)]
-        values = torch.tensor([info.fromstr[s] for s in out], dtype=torch.long)
-        return values, out
+        return MetadataValueMap(
+            metadata_key=key,
+            ids=tuple([info.fromstr[s] for s in out]),
+            value_strings=tuple(out),
+        )
+
+
+class MetadataValueMap(BaseModel):
+    metadata_key: str
+    ids: tuple[int, ...]
+    value_strings: tuple[str, ...]
+
+    @cached_property
+    def indices(self) -> Tensor:
+        return torch.arange(len(self.ids))
+
+    def __len__(self) -> int:
+        return len(self.ids)

@@ -36,3 +36,8 @@ saeco_tahoe_data_cfg = DataConfig[ComlmModelConfig](
     ),
     seq_len=1024,
 )
+if __name__ == "__main__":
+    from saeco.mlog import mlog
+
+    mlog.init(project="markov-bio/evaluator")
+    saeco_tahoe_data_cfg.store_split(saeco_tahoe_data_cfg.trainsplit)
