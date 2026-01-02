@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from torch import Tensor
 
 from saeco.evaluation.cache_version import cache_version
+from saeco.evaluation.storage.chunk import Chunk
 
 if TYPE_CHECKING:
     from saeco.evaluation.evaluation import Evaluation
@@ -180,7 +181,7 @@ class PerturbationAnalysis:
     # Chunk iteration + seq-aggregation
     # ---------------------------------------------------------------------
 
-    def _chunk_doc_ids(self: Evaluation, chunk) -> Tensor:
+    def _chunk_doc_ids(self: Evaluation, chunk: Chunk) -> Tensor:
         """
         Return the *global* doc indices corresponding to the docs present in this chunk's
         loaded tensors (after any NamedFilter masking).

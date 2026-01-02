@@ -12,12 +12,11 @@ root = root_eval
 def main():
     # Act 1: phenomatching
     drugs = [
-        "ralimetinib",
-        "erlotinib",
-        "gefitinib",
-        "osimertinib",
+        "Ralimetinib dimesylate",
+        "Erlotinib",
+        "Gefitinib",
+        "Osimertinib (mesylate)",
         "PH-797804",
-        "doramapimod",
     ]
 
     sim = root.cached.compute_drug_similarity_matrix(

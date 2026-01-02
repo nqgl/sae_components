@@ -113,7 +113,8 @@ class CachedCalls:
                 path.parent.mkdir(parents=True, exist_ok=True)
 
                 if path.exists():
-                    # Return type should be a DictBatch subclass with load_from_safetensors.
+                    # Return type should be a DictBatch subclass
+                    # with load_from_safetensors.
                     return_ann = ann if ann is not inspect.Signature.empty else None
                     if isinstance(return_ann, type) and issubclass(
                         return_ann, DictBatch

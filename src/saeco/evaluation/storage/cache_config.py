@@ -14,7 +14,7 @@ class CacheConfig[InputDataT: Tensor | DictBatch](BaseModel):
     model_path_str: str | None = None
     averaged_model_weights: bool = False
 
-    tokens_per_chunk: int = 100
+    docs_per_chunk: int = 100
     num_chunks: int = 30
 
     store_sparse: bool = True
@@ -49,7 +49,7 @@ class CacheConfig[InputDataT: Tensor | DictBatch](BaseModel):
 
     @property
     def num_docs(self) -> int:
-        return self.tokens_per_chunk * self.num_chunks
+        return self.docs_per_chunk * self.num_chunks
 
     @property
     def path(self) -> Path:

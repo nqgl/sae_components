@@ -54,7 +54,9 @@ class CachedActs[InputsT: torch.Tensor | DictBatch]:
 
     @takes_alias
     @classmethod
-    def _filtered_chunks_initializer(cls, path: Path, filter_obj: NamedFilter) -> list[Chunk[InputsT]]:
+    def _filtered_chunks_initializer(
+        cls, path: Path, filter_obj: NamedFilter
+    ) -> list[Chunk[InputsT]]:
         return Chunk[cls.get_inputs_type()].load_chunks_from_dir(
             path=path, lazy=True, filter_obj=filter_obj
         )
@@ -72,7 +74,9 @@ class CachedActs[InputsT: torch.Tensor | DictBatch]:
 
     @property
     def iter_chunks(self):
-        return Chunk[self.get_inputs_type()].chunks_from_dir_iter(path=self.path, lazy=True)
+        return Chunk[self.get_inputs_type()].chunks_from_dir_iter(
+            path=self.path, lazy=True
+        )
 
     @property
     def tokens(self):
@@ -127,7 +131,7 @@ class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
         inv[sort_idx] = torch.arange(n, dtype=torch.long)
 
         cfg = self.cached_acts.cfg
-        chunk_ids = sorted_ids // cfg.tokens_per_chunk
+        chunk_ids = sorted_ids // cfg.docs_per_chunk
         uniq, counts = chunk_ids.unique_consecutive(return_counts=True)
 
         parts: list[InputsT] = []
@@ -136,7 +140,7 @@ class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
             ids_chunk = sorted_ids[cursor : cursor + cnt]
             cursor += cnt
 
-            index_for_chunk = ids_chunk if self.ft else (ids_chunk % cfg.tokens_per_chunk)
+            index_for_chunk = ids_chunk if self.ft else (ids_chunk % cfg.docs_per_chunk)
             chunk_obj = self.get_chunk(cid)
             parts.append(_select_batch(chunk_obj, index_for_chunk, dense=dense))
 
@@ -146,7 +150,9 @@ class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
             out_sorted = input_cls.cat_list(parts)
             return out_sorted.apply_func(lambda t: t.index_select(0, inv))  # type: ignore[return-value]
 
-        out_sorted = torch.cat(parts, dim=0) if dense else torch.cat(parts, dim=0).coalesce()
+        out_sorted = (
+            torch.cat(parts, dim=0) if dense else torch.cat(parts, dim=0).coalesce()
+        )
         if dense:
             return out_sorted.index_select(0, inv)  # type: ignore[return-value]
 
@@ -177,5 +183,7 @@ class ChunksGetter[InputsT: torch.Tensor | DictBatch]:
 
         tokens = self.tokensel(key[0], dense=self.dense_target)
         if isinstance(tokens, DictBatch):
-            raise TypeError("Seq-level indexing not supported for DictBatch via ChunksGetter")
+            raise TypeError(
+                "Seq-level indexing not supported for DictBatch via ChunksGetter"
+            )
         return tokens[(slice(None), *key[1:].tolist())]

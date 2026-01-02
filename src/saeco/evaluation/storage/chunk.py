@@ -86,18 +86,28 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
 
     def _to_filtered(self, chunk_tensor: torch.Tensor | DictBatch) -> FilteredTensor:
         sl = slice(
-            self.cfg.tokens_per_chunk * self.idx,
-            self.cfg.tokens_per_chunk * (self.idx + 1),
+            self.cfg.docs_per_chunk * self.idx,
+            self.cfg.docs_per_chunk * (self.idx + 1),
         )
         mask = self.named_filter.filter[sl] if self.named_filter is not None else None
         filt = Filter(slices=(sl,), mask=mask, shape=(self.cfg.num_docs,))
-        return FilteredTensor.from_unmasked_value(chunk_tensor, filter_obj=filt, presliced=True)
+        return FilteredTensor.from_unmasked_value(
+            chunk_tensor, filter_obj=filt, presliced=True
+        )
 
     def read_sparse_raw(self) -> torch.Tensor:
-        return self.sparse_acts if self.sparse_acts is not None else load_sparse_tensor(self.sparse_path)
+        return (
+            self.sparse_acts
+            if self.sparse_acts is not None
+            else load_sparse_tensor(self.sparse_path)
+        )
 
     def read_dense_raw(self) -> torch.Tensor:
-        return self.dense_acts if self.dense_acts is not None else load_file(self.dense_path)["acts"]
+        return (
+            self.dense_acts
+            if self.dense_acts is not None
+            else load_file(self.dense_path)["acts"]
+        )
 
     @takes_alias
     @classmethod
@@ -154,7 +164,9 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
     ):
         i = 0
         while True:
-            inst = cls.load_from_dir(path, i, load_sparse_only, lazy=lazy, filter_obj=filter_obj)
+            inst = cls.load_from_dir(
+                path, i, load_sparse_only, lazy=lazy, filter_obj=filter_obj
+            )
             if not inst.exists:
                 break
             yield inst
@@ -169,7 +181,11 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
         lazy: bool = False,
         filter_obj: NamedFilter | None = None,
     ) -> list[Chunk]:
-        return list(cls.chunks_from_dir_iter(path, load_sparse_only, lazy=lazy, filter_obj=filter_obj))
+        return list(
+            cls.chunks_from_dir_iter(
+                path, load_sparse_only, lazy=lazy, filter_obj=filter_obj
+            )
+        )
 
     def load(self, load_sparse_only: bool = False) -> None:
         if not self.tokens_path.exists():
@@ -184,7 +200,9 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
 
     @property
     def exists(self) -> bool:
-        return self.tokens_path.exists() and (self.dense_path.exists() or self.sparse_path.exists())
+        return self.tokens_path.exists() and (
+            self.dense_path.exists() or self.sparse_path.exists()
+        )
 
     @property
     def acts(self) -> FilteredTensor:

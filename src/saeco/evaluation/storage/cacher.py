@@ -64,9 +64,13 @@ class ActsCacher:
             raise TypeError("Expected DictPiledTokensData for DictBatch pipeline")
 
         def gen_with_columns():
-            for tokens in tokens_data.piler.batch_generator(batch_size=cfg.tokens_per_chunk):
+            for tokens in tokens_data.piler.batch_generator(
+                batch_size=cfg.docs_per_chunk
+            ):
                 yield (
-                    architecture.run_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.input_data_transform(tokens),
+                    architecture.run_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.input_data_transform(
+                        tokens
+                    ),
                     {col: tokens[col] for col in cfg.metadatas_from_src_column_names},
                 )
 
@@ -90,7 +94,9 @@ class ActsCacher:
 
     def store_acts(self):
         metadata_chunks = self.store(self.cfg.num_chunks)
-        (self.path / CacheConfig.STANDARD_FILE_NAME).write_text(self.cfg.model_dump_json())
+        (self.path / CacheConfig.STANDARD_FILE_NAME).write_text(
+            self.cfg.model_dump_json()
+        )
         return metadata_chunks
 
     @property
@@ -110,7 +116,10 @@ class ActsCacher:
 
     @cached_property
     def feature_tensors(self) -> list[SparseGrowingDiskTensor] | None:
-        if not (self.cfg.store_feature_tensors or self.cfg.deferred_blocked_store_feats_block_size):
+        if not (
+            self.cfg.store_feature_tensors
+            or self.cfg.deferred_blocked_store_feats_block_size
+        ):
             return None
 
         feat_root = self.path / "features"
@@ -150,12 +159,16 @@ class ActsCacher:
 
                 if not self.cfg.eager_sparse_generation:
                     if chunk.dense_acts is None:
-                        raise RuntimeError("Expected dense_acts for feature tensor storage")
+                        raise RuntimeError(
+                            "Expected dense_acts for feature tensor storage"
+                        )
                     for i, feat_acts in enumerate(chunk.dense_acts.split(1, dim=2)):
                         self.feature_tensors[i].append(feat_acts.squeeze(-1))
                 else:
                     if chunk.sparse_acts is None:
-                        raise RuntimeError("Expected sparse_acts for eager sparse generation")
+                        raise RuntimeError(
+                            "Expected sparse_acts for eager sparse generation"
+                        )
                     ff_sparse_acts = chunk.sparse_acts.transpose(0, 2).transpose(1, 2)
                     for i in range(self.d_dict):
                         self.feature_tensors[i].append(ff_sparse_acts[i])
@@ -174,7 +187,9 @@ class ActsCacher:
             prog = tqdm.tqdm(total=self.cfg.num_chunks)
             for i in range(0, self.d_dict, features_batch_size):
                 batch = self.feature_tensors[i : i + features_batch_size]
-                chunks = Chunk[self.cfg.get_input_data_cls()].load_chunks_from_dir(self.path, lazy=True)
+                chunks = Chunk[self.cfg.get_input_data_cls()].load_chunks_from_dir(
+                    self.path, lazy=True
+                )
 
                 for j in range(0, len(chunks), B):
                     acts = None
@@ -182,18 +197,21 @@ class ActsCacher:
                         spacts = chunk.read_sparse_raw().cuda()
                         if acts is None:
                             acts = torch.zeros(
-                                self.cfg.tokens_per_chunk * B,
+                                self.cfg.docs_per_chunk * B,
                                 self.seq_len,
                                 features_batch_size,
                                 device="cuda",
                                 dtype=spacts.dtype,
                             )
-                        mask = (spacts.indices()[2] >= i) & (spacts.indices()[2] < i + features_batch_size)
+                        mask = (spacts.indices()[2] >= i) & (
+                            spacts.indices()[2] < i + features_batch_size
+                        )
                         ids = spacts.indices()[:, mask].clone()
                         ids[2] -= i
                         vals = spacts.values()[mask]
                         acts[
-                            ci * self.cfg.tokens_per_chunk : (chunk.idx + 1) * self.cfg.tokens_per_chunk
+                            ci * self.cfg.docs_per_chunk : (chunk.idx + 1)
+                            * self.cfg.docs_per_chunk
                         ][ids.unbind()] = vals
 
                     for k, feat_acts in enumerate(batch):
@@ -222,7 +240,9 @@ class ActsCacher:
                     idx=self.chunk_counter,
                     path=self.path,
                     loaded_input_data=tokens,
-                    sparse_acts=self.batched_tokens_to_sae_acts(tokens, sparse_eager=True),
+                    sparse_acts=self.batched_tokens_to_sae_acts(
+                        tokens, sparse_eager=True
+                    ),
                 )
             else:
                 chunk = Chunk(
@@ -236,9 +256,13 @@ class ActsCacher:
             yield chunk, columns
 
     @torch.inference_mode()
-    def batched_tokens_to_sae_acts(self, tokens: Tensor | DictBatch, *, sparse_eager: bool = False) -> Tensor:
+    def batched_tokens_to_sae_acts(
+        self, tokens: Tensor | DictBatch, *, sparse_eager: bool = False
+    ) -> Tensor:
         sae_acts: list[Tensor] = []
-        batch_size = tokens.batch_size if isinstance(tokens, DictBatch) else tokens.shape[0]
+        batch_size = (
+            tokens.batch_size if isinstance(tokens, DictBatch) else tokens.shape[0]
+        )
 
         for i in range(0, batch_size, self.cfg.documents_per_micro_batch):
             batch_tokens = tokens[i : i + self.cfg.documents_per_micro_batch]
@@ -247,20 +271,27 @@ class ActsCacher:
             del subj_acts
             sae_acts.append(sae.to_sparse_coo() if sparse_eager else sae)
 
-        return torch.cat(sae_acts, dim=0).coalesce() if sparse_eager else torch.cat(sae_acts, dim=0)
+        return (
+            torch.cat(sae_acts, dim=0).coalesce()
+            if sparse_eager
+            else torch.cat(sae_acts, dim=0)
+        )
 
     @torch.inference_mode()
     def get_llm_acts(self, tokens: Int[Tensor, "doc seq"] | DictBatch) -> DictBatch:
         return self.acts_data._to_acts_unprocessed_inputs(
             tokens,
-            llm_batch_size=self.cfg.llm_batch_size or self.cfg.documents_per_micro_batch,
+            llm_batch_size=self.cfg.llm_batch_size
+            or self.cfg.documents_per_micro_batch,
             rearrange=False,
             force_not_skip_padding=True,
             skip_exclude=True,
         )
 
     def get_sae_acts(self, subj_acts: DictBatch) -> Tensor:
-        subj_acts_flat = subj_acts.einops_rearrange("doc seq d_dict -> (doc seq) d_dict")
+        subj_acts_flat = subj_acts.einops_rearrange(
+            "doc seq d_dict -> (doc seq) d_dict"
+        )
         batch = SAETrainBatch(
             **subj_acts_flat,
             input_sites=self.architecture.run_cfg.train_cfg.input_sites
