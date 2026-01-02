@@ -11,6 +11,8 @@ root = root_eval
 
 def main():
     # Act 1: phenomatching
+    ralimetinib = "Ralimetinib dimesylate"
+    erlotinib = "Erlotinib"
     drugs = [
         "Ralimetinib dimesylate",
         "Erlotinib",
@@ -19,19 +21,19 @@ def main():
         "PH-797804",
     ]
 
-    sim = root.cached.compute_drug_similarity_matrix(
+    sim, sim_keys = root.cached.compute_drug_similarity_matrix(
         drugs=drugs,
         mode="profile",
     )
 
-    top = root.top_similar_drugs(sim, drugs, query="ralimetinib", k=5)
+    top = root.top_similar_drugs(sim, sim_keys, query=ralimetinib, k=5)
     print("Top similar to ralimetinib:")
     for d, s in top:
         print(f"  {d:>12s}: {s:0.4f}")
 
     # Shared differential features example
-    ral = root.cached.compute_drug_profile("ralimetinib")
-    erl = root.cached.compute_drug_profile("erlotinib")
+    ral = root.cached.compute_drug_profile(ralimetinib)
+    erl = root.cached.compute_drug_profile(erlotinib)
     shared = root.top_shared_differential_features(ral, erl, k=10)
     print("\nTop shared features (ralimetinib ↔ erlotinib):")
     for fid, p1, p2, c in shared:

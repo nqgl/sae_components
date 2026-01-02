@@ -211,3 +211,13 @@ class Chunk[InputsT: torch.Tensor | DictBatch]:
     @property
     def tokens(self) -> FilteredTensor:
         return self.read_tokens()
+
+    @property
+    def doc_ids(self) -> torch.Tensor:
+        start = self.cfg.docs_per_chunk * self.idx
+        stop = self.cfg.docs_per_chunk * (self.idx + 1)
+        doc_ids = torch.arange(start, stop, dtype=torch.long)
+        if self.named_filter is not None and self.named_filter.filter is not None:
+            mask = self.named_filter.filter[start:stop].to(doc_ids.device)
+            doc_ids = doc_ids[mask]
+        return doc_ids

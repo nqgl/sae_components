@@ -181,22 +181,6 @@ class PerturbationAnalysis:
     # Chunk iteration + seq-aggregation
     # ---------------------------------------------------------------------
 
-    def _chunk_doc_ids(self: Evaluation, chunk: Chunk) -> Tensor:
-        """
-        Return the *global* doc indices corresponding to the docs present in this chunk's
-        loaded tensors (after any NamedFilter masking).
-        """
-        cfg = chunk.cfg
-        start = cfg.docs_per_chunk * chunk.idx
-        stop = cfg.docs_per_chunk * (chunk.idx + 1)
-        doc_ids = torch.arange(start, stop, dtype=torch.long)
-
-        nf = getattr(chunk, "named_filter", None)
-        if nf is not None and nf.filter is not None:
-            mask = nf.filter[start:stop].to(torch.bool).cpu()
-            doc_ids = doc_ids[mask]
-        return doc_ids
-
     def _seq_aggregate_dense(
         self: Evaluation, acts: Tensor, pooling: Pooling
     ) -> Tensor:
@@ -234,7 +218,7 @@ class PerturbationAnalysis:
         chunks = self.cached_acts.chunks
         it = tqdm.tqdm(chunks, total=len(chunks), disable=not show_progress)
         for chunk in it:
-            doc_ids = self._chunk_doc_ids(chunk)  # CPU
+            doc_ids = chunk.doc_ids  # CPU
             acts_ft = chunk.acts
             v = acts_ft.value
             assert isinstance(v, Tensor), "Expected chunk.acts.value to be a Tensor"
@@ -245,7 +229,36 @@ class PerturbationAnalysis:
             agg = self._seq_aggregate_dense(v, pooling=pooling).to(dtype=torch.float32)
             yield doc_ids, agg
 
-    # ---------------------------------------------------------------------
+    def iter_chunk_and_agg(
+        self: Evaluation,
+        *,
+        pooling: Pooling = "max",
+        device: torch.device | str | None = None,
+        show_progress: bool = True,
+    ) -> Iterable[tuple[Chunk, Tensor]]:
+        """
+        Yields (doc_ids, agg_acts) per chunk.
+
+        doc_ids: (n_docs_in_chunk,)
+        agg_acts: (n_docs_in_chunk, d_dict)
+        """
+        device = self.device if device is None else torch.device(device)
+
+        chunks = self.cached_acts.chunks
+        it = tqdm.tqdm(chunks, total=len(chunks), disable=not show_progress)
+        for chunk in it:
+            acts_ft = chunk.acts
+            v = acts_ft.value
+            assert isinstance(v, Tensor), "Expected chunk.acts.value to be a Tensor"
+            v = v.to(device)
+            if v.is_sparse:
+                v = v.coalesce().to_dense()
+            # v: (doc, seq, d_dict)
+            agg = self._seq_aggregate_dense(v, pooling=pooling).to(dtype=torch.float32)
+            yield chunk, agg
+
+    # ---------------------------------------------------------------
+    # ------
     # Control stats
     # ---------------------------------------------------------------------
 
@@ -273,12 +286,9 @@ class PerturbationAnalysis:
         drug_meta = root.metadata_store[cfg.drug_key]
         cell_meta = root.metadata_store[cfg.cell_line_key]
         dose_meta = root.metadata_store[cfg.dosage_key]
-        assert (
-            isinstance(drug_meta, Tensor)
-            and isinstance(cell_meta, Tensor)
-            and isinstance(dose_meta, Tensor)
-        )
-
+        assert isinstance(drug_meta, Tensor)
+        assert isinstance(dose_meta, Tensor)
+        assert isinstance(cell_meta, Tensor)
         control_drug_id = self.get_metadata_id(cfg.drug_key, cfg.control_drug)
 
         n_cell_lines = int(cell_meta.max().item()) + 1
@@ -293,15 +303,14 @@ class PerturbationAnalysis:
         ):
             # Pull metadata for these docs
             did = doc_ids.to(torch.long)
-            d = drug_meta[did].to(device)
-            c = cell_meta[did].to(device)
-            z = dose_meta[did].to(device)
 
-            m = (d == control_drug_id) & (z == cfg.control_dosage)
+            m = (drug_meta[did].to(device) == control_drug_id) & (
+                dose_meta[did].to(device) == cfg.control_dosage
+            )
             if not m.any():
                 continue
 
-            c_sel = c[m]
+            c_sel = cell_meta[did].to(device)[m]
             a_sel = agg[m]  # already float32 on device
 
             sums.index_add_(0, c_sel, a_sel)
@@ -399,11 +408,6 @@ class PerturbationAnalysis:
                 ids = cell_meta.unique(sorted=True).tolist()
                 cell_lines = [str(i) for i in ids]
 
-        cell_line_ids = torch.tensor(
-            [self.get_metadata_id(cfg.cell_line_key, cl) for cl in cell_lines],
-            dtype=torch.long,
-        )
-
         # Control means by cell_line (CPU)
         control_means_cpu, _control_counts = self.control_means_by_cell_line(
             config=cfg, show_progress=show_progress
@@ -495,6 +499,10 @@ class PerturbationAnalysis:
         # delta = perturbed - control (broadcast over dose)
         deltas = means - control_means.unsqueeze(1)
 
+        cell_line_ids = torch.tensor(
+            [self.get_metadata_id(cfg.cell_line_key, cl) for cl in cell_lines],
+            dtype=torch.long,
+        )
         # Return just the requested cell_lines order (CPU)
         out = deltas.index_select(0, cell_line_ids.to(device)).detach().cpu()
         return out
@@ -582,65 +590,65 @@ class PerturbationAnalysis:
         prof = torch.nan_to_num(prof, nan=0.0)
         return prof
 
-    @cache_version(1)
-    def compute_drug_similarity_matrix(
-        self: Evaluation,
-        drugs: list[str] | None = None,
-        cell_lines: list[str] | None = None,
-        *,
-        mode: SimilarityMode = "profile",
-        config: PerturbationConfig | None = None,
-        show_progress: bool = True,
-    ) -> Tensor:
-        """
-        Returns (n_drugs, n_drugs) cosine similarity.
+    # @cache_version(1)
+    # def compute_drug_similarity_matrix(
+    #     self: Evaluation,
+    #     drugs: list[str] | None = None,
+    #     cell_lines: list[str] | None = None,
+    #     *,
+    #     mode: SimilarityMode = "profile",
+    #     config: PerturbationConfig | None = None,
+    #     show_progress: bool = True,
+    # ) -> Tensor:
+    #     """
+    #     Returns (n_drugs, n_drugs) cosine similarity.
 
-        mode:
-          - "profile": cosine similarity over (d_dict,) profiles
-          - "pattern": cosine similarity over flattened (n_cell_lines, d_dict) deltas
+    #     mode:
+    #       - "profile": cosine similarity over (d_dict,) profiles
+    #       - "pattern": cosine similarity over flattened (n_cell_lines, d_dict) deltas
 
-        Warning:
-          pattern mode can be very large if you pass many drugs and many cell lines.
-        """
-        cfg = config or self.perturbation_config
-        if drugs is None:
-            drugs = self.get_all_drugs(
-                exclude_special=True, exclude_control=True, config=cfg
-            )
+    #     Warning:
+    #       pattern mode can be very large if you pass many drugs and many cell lines.
+    #     """
+    #     cfg = config or self.perturbation_config
+    #     if drugs is None:
+    #         drugs = self.get_all_drugs(
+    #             exclude_special=True, exclude_control=True, config=cfg
+    #         )
 
-        if mode == "profile":
-            profiles: list[Tensor] = []
-            it = tqdm.tqdm(drugs, disable=not show_progress)
-            for d in it:
-                p = self.cached.compute_drug_profile(
-                    drug=d,
-                    cell_lines=cell_lines,
-                    config=cfg,
-                    show_progress=False,  # avoid nested bars
-                )
-                profiles.append(p)
-            P = torch.stack(profiles).to(torch.float32)  # (n_drugs, d_dict)
-            norms = P.norm(dim=1, keepdim=True).clamp(min=1e-8)
-            N = P / norms
-            return (N @ N.T).to(torch.float32)
+    #     if mode == "profile":
+    #         profiles: list[Tensor] = []
+    #         it = tqdm.tqdm(drugs, disable=not show_progress)
+    #         for d in it:
+    #             p = self.cached.compute_drug_profile(
+    #                 drug=d,
+    #                 cell_lines=cell_lines,
+    #                 config=cfg,
+    #                 show_progress=False,  # avoid nested bars
+    #             )
+    #             profiles.append(p)
+    #         P = torch.stack(profiles).to(torch.float32)  # (n_drugs, d_dict)
+    #         norms = P.norm(dim=1, keepdim=True).clamp(min=1e-8)
+    #         N = P / norms
+    #         return (N @ N.T).to(torch.float32)
 
-        if mode == "pattern":
-            mats: list[Tensor] = []
-            it = tqdm.tqdm(drugs, disable=not show_progress)
-            for d in it:
-                m = self.cached.compute_drug_deltas_matrix(
-                    drug=d,
-                    cell_lines=cell_lines,
-                    config=cfg,
-                    show_progress=False,
-                ).to(torch.float32)
-                mats.append(torch.nan_to_num(m, nan=0.0).flatten())
-            M = torch.stack(mats)
-            norms = M.norm(dim=1, keepdim=True).clamp(min=1e-8)
-            N = M / norms
-            return (N @ N.T).to(torch.float32)
+    #     if mode == "pattern":
+    #         mats: list[Tensor] = []
+    #         it = tqdm.tqdm(drugs, disable=not show_progress)
+    #         for d in it:
+    #             m = self.cached.compute_drug_deltas_matrix(
+    #                 drug=d,
+    #                 cell_lines=cell_lines,
+    #                 config=cfg,
+    #                 show_progress=False,
+    #             ).to(torch.float32)
+    #             mats.append(torch.nan_to_num(m, nan=0.0).flatten())
+    #         M = torch.stack(mats)
+    #         norms = M.norm(dim=1, keepdim=True).clamp(min=1e-8)
+    #         N = M / norms
+    #         return (N @ N.T).to(torch.float32)
 
-        raise ValueError(f"Unknown mode={mode!r}")
+    #     raise ValueError(f"Unknown mode={mode!r}")
 
     def top_similar_drugs(
         self: Evaluation,
@@ -828,3 +836,69 @@ class PerturbationAnalysis:
         den = (Xc.pow(2).sum(dim=0).sqrt() * yc.pow(2).sum().sqrt()).clamp(min=eps)
         r = num / den
         return r
+
+    @cache_version(1)
+    def compute_drug_similarity_matrix(
+        self: Evaluation,
+        drugs: list[str] | None = None,
+        cell_lines: list[str] | None = None,
+        *,
+        mode: SimilarityMode = "profile",
+        config: PerturbationConfig | None = None,
+        show_progress: bool = True,
+    ):
+        """
+        Returns (n_drugs, n_drugs) cosine similarity.
+
+        mode:
+          - "profile": cosine similarity over (d_dict,) profiles
+          - "pattern": cosine similarity over flattened (n_cell_lines, d_dict) deltas
+
+        Warning:
+          pattern mode can be very large if you pass many drugs and many cell lines.
+        """
+        cfg = config or self.perturbation_config
+        if drugs is None:
+            drugs = self.get_all_drugs(
+                exclude_special=True, exclude_control=False, config=cfg
+            )
+        drug_metadata_ids, drug_metadata_strs = self.get_metadata_values_and_strings(
+            cfg.drug_key
+        )
+        metadata_effects = torch.zeros(
+            len(drug_metadata_strs),
+            self.d_dict,
+            dtype=torch.float32,
+            device=self.device,
+        )
+        drug_metadata = self.metadata_store["drug"]
+        for chunk, agg in self.iter_chunk_and_agg():
+            metadata = drug_metadata[chunk.doc_ids]
+            for i in range(len(drug_metadata_strs)):
+                metadata_effects[i] += (metadata == drug_metadata_ids[i].item()).to(
+                    agg.device, torch.float32
+                ) @ agg
+        similarity = metadata_effects @ metadata_effects.T
+        return similarity, drug_metadata_strs
+
+    def get_metadata_values_and_strings(
+        self: Evaluation,
+        key: str,
+        *,
+        exclude_special: bool = True,
+        special_prefix: str = "<<",
+    ) -> tuple[Tensor, list[str]]:
+        """
+        List all known string labels for a metadata key, using its translator.
+        """
+        md = self._meta_root().metadata_store.get(key)
+        info = md.info
+        if info is None or info.tostr is None or info.fromstr is None:
+            # Fallback: infer from tensor unique values (no translator)
+            raise ValueError("Metadata has no translator")
+
+        out = [info.tostr[i] for i in sorted(info.tostr.keys())]
+        if exclude_special:
+            out = [s for s in out if not s.startswith(special_prefix)]
+        values = torch.tensor([info.fromstr[s] for s in out], dtype=torch.long)
+        return values, out
