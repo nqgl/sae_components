@@ -76,7 +76,7 @@ class _ChunkBatch:
 
 
 @dataclass(slots=True, frozen=True)
-class _SortedTokenMap:
+class _SortedMetadataTokenMap:
     """
     Vectorized token -> value mapping without assuming tokens are small/contiguous.
 
@@ -89,7 +89,7 @@ class _SortedTokenMap:
     @classmethod
     def from_pairs(
         cls, keys: Sequence[int], values: Sequence[int], *, device: torch.device
-    ) -> "_SortedTokenMap":
+    ) -> _SortedMetadataTokenMap:
         keys_t = torch.tensor(list(keys), dtype=torch.long)
         vals_t = torch.tensor(list(values), dtype=torch.long)
 
@@ -126,17 +126,15 @@ class _DoseIndexer:
     Maps raw dosage values -> dose_idx (in cfg.doses ordering), with optional exclusion of control dosage.
     """
 
-    map_: _SortedTokenMap
+    map_: _SortedMetadataTokenMap
     n_doses: int
     control_dosage: int | None
 
     @classmethod
-    def from_cfg(
-        cls, cfg: PerturbationConfig, *, device: torch.device
-    ) -> "_DoseIndexer":
+    def from_cfg(cls, cfg: PerturbationConfig, *, device: torch.device) -> _DoseIndexer:
         doses = list(cfg.doses)
         return cls(
-            map_=_SortedTokenMap.from_pairs(
+            map_=_SortedMetadataTokenMap.from_pairs(
                 keys=doses,
                 values=list(range(len(doses))),
                 device=device,
@@ -165,7 +163,7 @@ class _GroupAccumulator:
     @classmethod
     def zeros(
         cls, *, n_groups: int, d_dict: int, device: torch.device
-    ) -> "_GroupAccumulator":
+    ) -> _GroupAccumulator:
         return cls(
             sums=torch.zeros((n_groups, d_dict), dtype=torch.float32, device=device),
             counts=torch.zeros((n_groups,), dtype=torch.long, device=device),
@@ -410,10 +408,10 @@ class PerturbationAnalysis:
         *,
         cfg: PerturbationConfig,
         device: torch.device,
-    ) -> _SortedTokenMap:
+    ) -> _SortedMetadataTokenMap:
         cell_tokens = [self.get_metadata_id(cfg.cell_line_key, cl) for cl in cell_lines]
         row_ids = list(range(len(cell_lines)))
-        return _SortedTokenMap.from_pairs(cell_tokens, row_ids, device=device)
+        return _SortedMetadataTokenMap.from_pairs(cell_tokens, row_ids, device=device)
 
     def _resolve_cell_lines(
         self: Evaluation,

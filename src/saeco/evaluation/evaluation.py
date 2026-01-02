@@ -36,7 +36,7 @@ from .storage.cached_acts import CachedActs
 from .storage.cacher import ActsCacher
 from .storage.stored_metadata import Artifacts, Filters, Metadatas
 from .token_utils import extract_token_tensor
-from .views import DecodedTextView, MetadataView, TokenStringsView
+from .views import MetadataView, TokenStringsView
 
 if TYPE_CHECKING:
     from saeco.evaluation.features import Features
@@ -81,6 +81,15 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     model_adapter: ModelEvalAdapter = field(
         default=Factory(_model_adapter_default, takes_self=True)
     )
+
+    def __attrs_post_init__(self):
+        if (
+            self.cached_acts is not None
+            and self.cached_acts.data_filter is not self.filter
+        ):
+            raise ValueError("Filter mismatch between Evaluation and storage")
+        if self.cached_acts is None and self.filter is not None:
+            raise ValueError("Cannot set filter without cached_acts")
 
     # -----------------------
     # Constructors
@@ -164,6 +173,22 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
         return BMStorShelf.from_path(self.path)
 
     @cached_property
+    def feature_labels(self):
+        import shelve
+
+        p = self.root.path
+        p.mkdir(parents=True, exist_ok=True)
+        return shelve.open(str(p / "feature_labels"))
+
+    @cached_property
+    def family_labels(self):
+        import shelve
+
+        p = self.path
+        p.mkdir(parents=True, exist_ok=True)
+        return shelve.open(str(p / "family_labels"))
+
+    @cached_property
     def cached(self) -> CachedCalls | Evaluation:
         return CachedCalls(self)
 
@@ -209,12 +234,17 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     def d_vocab(self) -> int:
         return self.tokenizer.vocab_size
 
+    @property
+    def sae(self):
+        """Returns the trainable SAE model."""
+        return self.architecture.trainable
+
     # -----------------------
     # Views
     # -----------------------
 
     @property
-    def token_strs(self) -> TokenStringsView:
+    def doc_strs(self) -> TokenStringsView:
         return TokenStringsView(eval=self)
 
     @property
@@ -252,8 +282,22 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
     # Filtering
     # -----------------------
 
+    def save_filter(self, name: str, mask: Tensor) -> NamedFilter:
+        """Persist a boolean doc-mask in the root filter store under `name`."""
+        mask = mask.detach().to(dtype=torch.bool, device="cpu")
+        self.filter_store[name] = mask
+        return self.filter_store[name]
+
     def open_filter(self, name: str) -> Evaluation:
+        """Open a named filter from the root store and return a filtered Evaluation."""
         return self.root._apply_filter(self.filter_store.get_filter(name))
+
+    def where(self, mask: Tensor) -> Evaluation:
+        """Create an ephemeral filtered evaluation with an unnamed filter."""
+        nf = NamedFilter(
+            filter=mask.detach().to(dtype=torch.bool, device="cpu"), filter_name=None
+        )
+        return self.root._apply_filter(nf)
 
     def _apply_filter(self, filter_obj: NamedFilter | Tensor) -> Evaluation:
         if isinstance(filter_obj, Tensor):
@@ -356,6 +400,26 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             return feat.top_activations(k=k, p=p)
         return feat.top_activations(agg=agg, k=k, p=p)
 
+    def get_features(self, feature_ids: list[int] | Tensor) -> list[FilteredTensor]:
+        return [self.features[int(fid)] for fid in feature_ids]
+
+    # -----------------------
+    # Labeling
+    # -----------------------
+
+    def get_feature_label(self, feature_id: int | str) -> str | None:
+        return self.feature_labels.get(str(int(feature_id)))
+
+    def set_feature_label(self, feature_id: int | str, label: str) -> None:
+        self.feature_labels[str(int(feature_id))] = label
+
+    def get_feature_model(self, feat_id: int | str):
+        from .fastapi_models import LabeledFeature
+
+        return LabeledFeature(
+            feature_id=int(feat_id), label=self.get_feature_label(feat_id)
+        )
+
     # -----------------------
     # Counts / stats
     # -----------------------
@@ -372,6 +436,91 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
             toks = extract_token_tensor(chunk.tokens.value).to(self.device).flatten()
             counts.scatter_add_(0, toks, torch.ones_like(toks, dtype=torch.long))
         return counts
+
+    def seq_aggregated_chunks_yielder(self, seq_agg: str):
+        import tqdm as tqdm_module
+
+        for chunk in tqdm_module.tqdm(self.cached_acts.chunks):  # type: ignore[union-attr]
+            acts = chunk.acts
+            acts_inner = acts.value.to(self.device).to_dense()
+            if acts_inner.ndim != 3:
+                raise ValueError("Expected acts shaped (doc, seq, feat)")
+
+            match seq_agg:
+                case "count":
+                    c_agg = (acts_inner > 0).sum(dim=1)
+                case "any":
+                    c_agg = (acts_inner > 0).any(dim=1)
+                case "max":
+                    c_agg = acts_inner.max(dim=1).values
+                case "mean" | "sum":
+                    c_agg = getattr(acts_inner, seq_agg)(dim=1)
+                case _:
+                    raise ValueError(f"Unknown seq_agg {seq_agg}")
+
+            yield acts.to_filtered_like_self(c_agg)
+
+    def acts_avg_over_dataset(
+        self, seq_agg: str = "mean", docs_agg: str = "mean"
+    ) -> Tensor:
+        results = torch.zeros(self.d_dict, device=self.device)
+
+        for agg_chunk in self.seq_aggregated_chunks_yielder(seq_agg):
+            if docs_agg == "max":
+                results = (
+                    torch.cat([results, agg_chunk.value.max(dim=0).values])
+                    .max(dim=0)
+                    .values
+                )
+            elif docs_agg in ("mean", "sum"):
+                results += agg_chunk.value.sum(dim=0)
+            else:
+                raise ValueError("docs_agg must be mean/max/sum")
+
+        if docs_agg == "mean":
+            results /= self.num_docs
+        return results
+
+    @torch.inference_mode()
+    def _feature_num_active_tokens(self) -> Tensor:
+        activity = torch.zeros(self.d_dict, dtype=torch.long, device=self.device)
+        for chunk in self.cached_acts.chunks:  # type: ignore[union-attr]
+            acts = chunk.acts.value.to(self.device).to_dense()
+            activity += (acts > 0).sum(dim=1).sum(dim=0)
+        return activity
+
+    @property
+    def seq_activation_counts(self) -> Tensor:
+        return self.cached._feature_num_active_tokens().cpu()
+
+    @property
+    def seq_activation_probs(self) -> Tensor:
+        return self.seq_activation_counts / (self.num_docs * self.seq_len)
+
+    def _feature_num_active_docs(self) -> Tensor:
+        activity = torch.zeros(self.d_dict, dtype=torch.long, device=self.device)
+        for chunk in self.cached_acts.chunks:  # type: ignore[union-attr]
+            acts = chunk.acts.value.to(self.device).to_dense()
+            activity += (acts > 0).any(dim=1).sum(dim=0)
+        return activity
+
+    @property
+    def doc_activation_counts(self) -> Tensor:
+        return self.cached._feature_num_active_docs().cpu()
+
+    def _feature_activity_sum(self) -> Tensor:
+        activity = torch.zeros(self.d_dict, dtype=torch.float, device=self.device)
+        for chunk in self.cached_acts.chunks:  # type: ignore[union-attr]
+            acts = chunk.acts.value.to(self.device).to_dense()
+            activity += acts.sum(dim=1).sum(dim=0)
+        return activity
+
+    @property
+    def doc_activation_probs(self) -> Tensor:
+        return self.doc_activation_counts / self.num_docs
+
+    def num_active_docs_for_feature(self, feature_id: int) -> int:
+        return int(self.cached._feature_num_active_docs()[feature_id].item())
 
     # -----------------------
     # Storing acts (unchanged behavior, renamed config type)
@@ -403,6 +552,139 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
         cacher.store_acts()
         self.cached_acts = CachedActs[self.get_inputs_type()].open(cacher.path)
+
+    # -----------------------
+    # Metadata utilities
+    # -----------------------
+
+    def metadata_tensor(
+        self, key: str, *, device: torch.device | str | None = None
+    ) -> Tensor:
+        """Get metadata aligned to this Evaluation's doc space (filtered-aware)."""
+        md = self._root_metadatas[key]
+        if self.filter is not None:
+            mask = self.filter.filter.detach().cpu()
+            md = md[mask]
+        if device is not None:
+            md = md.to(device)
+        return md
+
+    def metadata_builder(
+        self,
+        dtype: torch.dtype,
+        device: str | torch.device,
+        item_size: list[int] | tuple[int, ...] = (),
+    ):
+        from .storage.MetadataBuilder import MetadataBuilder
+
+        return MetadataBuilder(
+            self.cached_acts.chunks,  # type: ignore[union-attr]
+            dtype=dtype,
+            device=device,
+            shape=[self.cache_config.num_docs, *item_size],
+        )
+
+    def filtered_builder(
+        self,
+        dtype: torch.dtype,
+        device: str | torch.device,
+        item_size: list[int] | None = None,
+    ):
+        from .storage.MetadataBuilder import FilteredBuilder
+
+        if self.filter is None:
+            raise ValueError(
+                "filtered_builder can only be used on a filtered Evaluation"
+            )
+        item_size = item_size or []
+        return FilteredBuilder(
+            self.cached_acts.chunks,  # type: ignore[union-attr]
+            dtype=dtype,
+            device=device,
+            shape=[self.cache_config.num_docs, *item_size],
+            filter=self.filter,
+        )
+
+    def _metadata_for_doc_indices(
+        self,
+        doc_indices: Tensor | None,
+        metadata: dict[str, Tensor] | None = None,
+    ) -> dict[str, Tensor]:
+        meta: dict[str, Tensor] = {} if metadata is None else dict(metadata)
+        if doc_indices is None:
+            return meta
+        if not self.cache_config.metadatas_from_src_column_names:
+            return meta
+
+        idx = doc_indices.detach().cpu()
+        for name in self.cache_config.metadatas_from_src_column_names:
+            m = self._root_metadatas[name][idx]
+            if isinstance(m, Tensor):
+                meta[name] = m.to(self.device)
+        return meta
+
+    def _build_model_batch(
+        self,
+        tokens_or_batch,
+        doc_indices: Tensor | None = None,
+        metadata: dict[str, Tensor] | None = None,
+    ):
+        meta = self._metadata_for_doc_indices(doc_indices, metadata)
+
+        def unwrap(x):
+            if isinstance(x, FilteredTensor):
+                return x.value
+            if isinstance(x, DictBatch):
+                return x.__class__.construct_with_other_data(
+                    {k: unwrap(v) for k, v in x.items()},
+                    x._get_other_dict(),
+                )
+            return x
+
+        return self.model_adapter.make_batch(unwrap(tokens_or_batch), meta)
+
+    def _metadata_unique_labels_and_counts_tensor(self, key: str):
+        from .return_objects import MetadataLabelCounts
+
+        meta = self._root_metadatas[key]
+        if self.filter is not None:
+            meta = meta[self.filter.filter]
+        if meta.ndim != 1 or meta.dtype != torch.long:
+            raise ValueError("Expected 1D long metadata tensor")
+        labels, counts = meta.unique(return_counts=True)
+        return MetadataLabelCounts(key=key, labels=labels, counts=counts)
+
+    def get_metadata_intersection_filter_key(
+        self, values: dict[str, str | list[str] | int | list[int]]
+    ) -> str:
+        val_list = sorted(values.items(), key=lambda kv: kv[0])
+        normalized: dict[str, tuple[int, ...]] = {}
+        for k, v in val_list:
+            if isinstance(v, (int, str)):
+                v = [v]
+            if isinstance(v, list) and v and isinstance(v[0], str):
+                meta = self.metadata_store.get(k)
+                v = [meta.info.fromstr[x] for x in v]  # type: ignore[union-attr]
+            normalized[k] = tuple(sorted(int(x) for x in v))
+        key = str(normalized)
+
+        if key not in self.filter_store:
+            self.filter_store[key] = self._get_metadata_intersection_filter(normalized)
+        return key
+
+    def _get_metadata_intersection_filter(
+        self, mapping: dict[str, tuple[int, ...]]
+    ) -> Tensor:
+        filt = torch.ones(
+            self.cache_config.num_docs, dtype=torch.bool, device=self.device
+        )
+        for mdname, values in mapping.items():
+            md = self.metadata_store[mdname].to(self.device)
+            mdmask = torch.zeros_like(filt)
+            for v in values:
+                mdmask |= md == v
+            filt &= mdmask
+        return filt
 
     # -----------------------
     # Legacy

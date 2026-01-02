@@ -1,7 +1,6 @@
 import torch
 from load_comlm_tahoe import root_eval
 
-
 # Use default config (pooling="max", dose_mode="max", etc.)
 # For custom settings, create a config:
 # cfg = PerturbationConfig(pooling="mean", dose_mode="slope")

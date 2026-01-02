@@ -1,7 +1,6 @@
 # %%
 from load_comlm_tahoe import root_eval
 
-
 drugs = [
     "ralimetinib",
     "erlotinib",

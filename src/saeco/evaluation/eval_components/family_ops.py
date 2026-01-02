@@ -14,13 +14,13 @@ if TYPE_CHECKING:
 
 
 class FamilyOps:
-    def get_families_activations_on_tokens(
+    def get_families_activations_on_docs(
         self: "Evaluation",
         families: list[Family],
         doc_indices: list[int],
         features: list[int] | None = None,
         metadata_keys: list[str] | None = None,
-        return_str_tokens: bool = False,
+        return_str_docs: bool = False,
         str_metadatas: bool = False,
     ):
         if features is None:
@@ -30,15 +30,15 @@ class FamilyOps:
         doc_indices = torch.tensor(doc_indices, dtype=torch.long, device=self.device)
         print("getting families")
         print(self.device)
-        tokens, acts, metadatas = self.get_tokens_acts_metadatas(
+        docs, acts, metadatas = self.get_docs_acts_metadatas(
             doc_indices,
             features=self.get_family_psuedofeature_tensors(families=families)
             + [self.features[f].to(self.device) for f in features],
             metadata_keys=metadata_keys,
-            return_str_tokens=return_str_tokens,
+            return_str_docs=return_str_docs,
             str_metadatas=str_metadatas,
         )
-        return tokens, acts[: len(families)], metadatas, acts[len(families) :]
+        return docs, acts[: len(families)], metadatas, acts[len(families) :]
 
     def top_activations_and_metadatas_for_family(
         self: "Evaluation",
@@ -47,7 +47,7 @@ class FamilyOps:
         p: float | None = None,
         k: int | None = None,
         metadata_keys: list[str] | None = None,
-        return_str_tokens: bool = False,
+        return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
@@ -60,7 +60,7 @@ class FamilyOps:
             p=p,
             k=k,
             metadata_keys=metadata_keys,
-            return_str_tokens=return_str_tokens,
+            return_str_docs=return_str_docs,
             return_acts_sparse=return_acts_sparse,
             return_doc_indices=return_doc_indices,
             str_metadatas=str_metadatas,
@@ -141,7 +141,7 @@ class FamilyOps:
         p: float | None = None,
         k: int | None = None,
         metadata_keys: list[str] | None = None,
-        return_str_tokens: bool = False,
+        return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
@@ -154,7 +154,7 @@ class FamilyOps:
                 p,
                 k,
                 metadata_keys,
-                return_str_tokens,
+                return_str_docs,
                 return_acts_sparse,
                 return_doc_indices,
                 str_metadatas,
@@ -169,7 +169,7 @@ class FamilyOps:
         p: float | None = None,
         k: int | None = None,
         metadata_keys: list[str] | None = None,
-        return_str_tokens: bool = False,
+        return_str_docs: bool = False,
         return_acts_sparse: bool = False,
         return_doc_indices: bool = True,
         str_metadatas: bool = False,
@@ -183,7 +183,7 @@ class FamilyOps:
             p=p,
             k=k,
             metadata_keys=metadata_keys,
-            return_str_tokens=return_str_tokens,
+            return_str_docs=return_str_docs,
             return_acts_sparse=return_acts_sparse,
             return_doc_indices=return_doc_indices,
             str_metadatas=str_metadatas,
@@ -201,49 +201,39 @@ class FamilyOps:
             raise ValueError("k must be positive")
         return min(k, quantity)
 
-    def get_tokens_and_metadatas(
+    def get_docs_and_metadatas(
         self: "Evaluation",
         doc_indices: Tensor,
         metadata_keys: list[str],
-        return_str_tokens: bool,
+        return_str_docs: bool,
         return_str_metadatas: bool,
     ):
-        tokens = (
-            self.token_strs[doc_indices]
-            if return_str_tokens
-            else self.docs[doc_indices]
-        )
+        docs = self.doc_strs[doc_indices] if return_str_docs else self.docs[doc_indices]
         metadatas = {
             key: self._root_metadatas[key][doc_indices] for key in metadata_keys
         }
         if return_str_metadatas:
             metadatas = self._root_metadatas.translate(metadatas)
-        return tokens, metadatas
-        return tokens, metadatas
+        return docs, metadatas
 
-    def get_tokens_acts_metadatas(
+    def get_docs_acts_metadatas(
         self: "Evaluation",
         doc_indices: Tensor,
         features: list[FilteredTensor],
         metadata_keys: list[str],
-        return_str_tokens: bool,
+        return_str_docs: bool,
         str_metadatas: bool,
     ):
         acts = [f.index_select(doc_indices, dim=0) for f in features]
-        tokens = (
-            self.token_strs[doc_indices]
-            if return_str_tokens
-            else self.docs[doc_indices]
-        )
 
-        tokens, metadatas = self.get_tokens_and_metadatas(
+        docs, metadatas = self.get_docs_and_metadatas(
             doc_indices,
             metadata_keys=metadata_keys,
-            return_str_tokens=return_str_tokens,
+            return_str_docs=return_str_docs,
             return_str_metadatas=str_metadatas,
         )
 
-        return tokens, acts, metadatas
+        return docs, acts, metadatas
 
     def seq_agg_feat(
         self: "Evaluation",
@@ -277,7 +267,7 @@ class FamilyOps:
         p: float | None = None,
         k: int | None = None,
         metadata_keys: list[str] | None = None,
-        return_str_tokens: bool = False,
+        return_str_docs: bool = False,
         str_metadatas: bool = False,
     ):
         if metadata_keys is None:
@@ -308,11 +298,11 @@ class FamilyOps:
         topk = agg_doc.value.topk(k, sorted=True)
         top_outer_indices = agg_doc.externalize_indices(topk.indices.unsqueeze(0))
         doc_indices = top_outer_indices[0].to(self.device)
-        tokens, acts, metadatas = self.get_tokens_acts_metadatas(
+        docs, acts, metadatas = self.get_docs_acts_metadatas(
             doc_indices,
             features=famfeats,
             metadata_keys=metadata_keys,
-            return_str_tokens=return_str_tokens,
+            return_str_docs=return_str_docs,
             str_metadatas=str_metadatas,
         )
-        return tokens, acts, metadatas, doc_indices
+        return docs, acts, metadatas, doc_indices

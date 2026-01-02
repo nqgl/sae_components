@@ -47,7 +47,7 @@ data0 = root.docs[0:4]
 
 root.get_inputs_type()
 # %%
-root.saved_acts.get_inputs_type()
+root.cached_acts.get_inputs_type()
 # %%
 #
 # Initialize metadata if necessary

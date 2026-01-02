@@ -194,7 +194,7 @@ class SelectedDocs:
 
     @property
     def doc_strs(self):
-        return self.src_eval.token_strs[self.doc_indices]
+        return self.src_eval.doc_strs[self.doc_indices]
 
 
 @DictBatch.auto_other_fields
