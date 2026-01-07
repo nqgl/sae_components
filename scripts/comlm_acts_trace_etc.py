@@ -26,7 +26,7 @@ model = "1761861357-rustling-mule"
 model = ComposerModelName.from_str("1762986288-acoustic-asp")
 # model.get_latest_checkpoint_from_s3().fetch_from_s3()
 data_cfg = DataConfig[ComlmModelConfig](
-    override_dictpiler_path_str="/home/g/markov/sample_data_comlm",
+    override_token_dictpiler_path_str="/home/g/markov/sample_data_comlm",
     dataset="custom",
     model_cfg=ModelConfig[ComlmModelConfig](
         model_load_cfg=ComlmModelConfig(

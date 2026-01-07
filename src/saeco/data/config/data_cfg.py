@@ -48,7 +48,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
             end=100,
         )
     )
-    override_dictpiler_path_str: str | None = (
+    override_token_dictpiler_path_str: str | None = (
         None  # TODO make this use relative user path
     )
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"  # tok
@@ -267,10 +267,10 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     def tokens_data(
         self, split: SplitConfig | str = "train"
     ) -> TokensDataInterface[torch.Tensor] | TokensDataInterface[DictBatch]:
-        if self.override_dictpiler_path_str is not None:
+        if self.override_token_dictpiler_path_str is not None:
             return DictPiledTokensData(
                 cfg=self,
-                piler_path=Path(self.override_dictpiler_path_str),
+                piler_path=Path(self.override_token_dictpiler_path_str),
                 split=(
                     split
                     if isinstance(split, SplitConfig)

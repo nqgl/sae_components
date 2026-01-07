@@ -12,7 +12,7 @@ from jaxtyping import Int
 from torch import Tensor
 
 from saeco.architecture.architecture import Architecture
-from saeco.data.dict_batch.dict_batch import DictBatch
+from saeco.data.dict_batch.dict_batch import DictBatch, batch_size_targeter
 from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.training_data import ActsDataCreator
 from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
@@ -55,24 +55,47 @@ class ActsCacher:
             )
 
         # DictBatch input pipeline
-        override = architecture.run_cfg.train_cfg.data_cfg.override_dictpiler_path_str
+        override = (
+            architecture.run_cfg.train_cfg.data_cfg.override_token_dictpiler_path_str
+        )
         if override is None:
             raise ValueError("Expected dictpiler override for DictBatch input pipeline")
 
         tokens_data = architecture.run_cfg.train_cfg.data_cfg.tokens_data(split)
         if not isinstance(tokens_data, DictPiledTokensData):
             raise TypeError("Expected DictPiledTokensData for DictBatch pipeline")
+        dataloader = torch.utils.data.DataLoader(
+            tokens_data.piler.get_dataset(
+                batch_size=cfg.docs_per_chunk,
+                num_epochs=cfg.src_piler_num_epochs,
+                yield_final_spare=True,
+                shuffle=True,
+            ),
+            num_workers=16,
+            batch_size=None,
+        )
+        batch_generator = batch_size_targeter(
+            cfg.docs_per_chunk, yield_final_spare=True
+        )(dataloader)
 
         def gen_with_columns():
-            for tokens in tokens_data.piler.batch_generator(
-                batch_size=cfg.docs_per_chunk
-            ):
-                yield (
-                    architecture.run_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.input_data_transform(
-                        tokens
-                    ),
-                    {col: tokens[col] for col in cfg.metadatas_from_src_column_names},
-                )
+            try:
+                for batch in batch_generator:
+                    yield (
+                        architecture.run_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg.input_data_transform(
+                            batch
+                        ),
+                        {
+                            col: batch[col]
+                            for col in cfg.metadatas_from_src_column_names
+                        },
+                    )
+            except Exception as e:
+                import traceback
+
+                traceback.print_exc()
+                print("Exception in batch generator")
+                raise e
 
         tokens_source = gen_with_columns()
 

@@ -1,6 +1,6 @@
 from comlm.exprank import XRNoisedBatch
 from context import storage_name
-from saeco_tahoe_data_cfg import saeco_tahoe_data_cfg
+from saeco.data.config._comlm_data_config_definitions import saeco_tahoe_data_cfg
 
 from saeco.evaluation.evaluation import Evaluation
 from saeco.mlog import mlog

@@ -107,6 +107,9 @@ class ComlmModelConfig[ArchT: XRArch[Any, Any, XRComposerMaskedLM] = XRArch](
         )
         return [kwargs.pop("tokens")], kwargs
 
+    def get_model_load_ident_str(self) -> str:
+        return self.chk_ident.simple_name
+
     # def get_acts_mask(self, )
 
 

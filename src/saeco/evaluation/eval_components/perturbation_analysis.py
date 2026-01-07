@@ -735,13 +735,10 @@ class PerturbationAnalysis:
             yield chunk, agg
 
     @cache_version(1)
-    def compute_drug_similarity_matrix(
+    def compute_metadata_effect_profile(
         self: Evaluation,
-        drug_metadata_map: MetadataValueMap,
-        *,
-        mode: SimilarityMode = "profile",
-        config: PerturbationConfig | None = None,
-        show_progress: bool = True,
+        metadata_map: MetadataValueMap,
+        pooling: Pooling = "max",
     ):
         """
         Returns (n_drugs, n_drugs) cosine similarity.
@@ -753,24 +750,26 @@ class PerturbationAnalysis:
         Warning:
           pattern mode can be very large if you pass many drugs and many cell lines.
         """
-        cfg = config or self.perturbation_config
         metadata_effects = torch.zeros(
-            len(drug_metadata_map.value_strings),
+            len(metadata_map.value_strings),
             self.d_dict,
             dtype=torch.float32,
             device=self.device,
         )
-        drug_metadata = self.metadata_store[cfg.drug_key]
-        for chunk, agg in self.iter_chunk_and_agg():
-            metadata = drug_metadata[chunk.doc_ids]
-            for i in range(
-                len(drug_metadata_map.value_strings)
-            ):  # TODO scatter add this
-                metadata_effects[i] += (metadata == drug_metadata_map.ids[i]).to(
+        metadata = metadata_map.get_metadata(self)
+        num_matched = torch.zeros(
+            len(metadata_map.value_strings),
+            dtype=torch.float32,
+            device=self.device,
+        )
+        for chunk, agg in self.iter_chunk_and_agg(pooling=pooling):
+            chunk_metadata = metadata[chunk.doc_ids]
+            for i in range(len(metadata_map.value_strings)):  # TODO scatter add this
+                metadata_effects[i] += (chunk_metadata == metadata_map.ids[i]).to(
                     agg.device, torch.float32
                 ) @ agg
-        similarity = metadata_effects @ metadata_effects.T
-        return similarity
+                num_matched[i] += (chunk_metadata == metadata_map.ids[i]).sum()
+        return metadata_effects / num_matched.unsqueeze(1)
 
     def top_similar_drugs(
         self: Evaluation,
@@ -952,3 +951,6 @@ class MetadataValueMap(BaseModel):
 
     def __len__(self) -> int:
         return len(self.ids)
+
+    def get_metadata(self, e: Evaluation) -> Tensor:
+        return e.metadata_store[self.metadata_key]

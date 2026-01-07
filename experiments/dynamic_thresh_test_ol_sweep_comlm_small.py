@@ -28,33 +28,47 @@ def s(x, *a):
 
 
 model = ComposerModelName.from_str("1762986288-acoustic-asp")
-data_cfg = DataConfig[ComlmModelConfig](
-    override_dictpiler_path_str="/home/g/markov/sample_data_comlm",
-    dataset="custom",
-    model_cfg=ModelConfig[ComlmModelConfig](
-        model_load_cfg=ComlmModelConfig(
-            chk_ident=model.get_latest_downloaded_checkpoint()
-        ),
-        acts_cfg=ActsDataConfig(
-            filter_pad=False,
-            excl_first=False,
-            d_data=512,
-            sites=["layers.6.output.0"],  # .0 unpacks the tuple of (output, kv cache)
-            storage_dtype_str="float32",
-            autocast_dtype_str=None,
-        ),
-        torch_dtype_str="bfloat16",
-    ),
-    trainsplit=SplitConfig(start=0, end=80, tokens_from_split=None),
-    generation_config=DataGenerationProcessConfig(
-        # tokens_per_pile=2**25,
-        acts_per_pile=2**18,
-        meta_batch_size=2**18,
-        llm_batch_size=2**13,
-    ),
-    seq_len=1024,
+
+model = ComposerModelName.from_str("1767399915-fragrant-cuttlefish")
+
+# data_cfg = DataConfig[ComlmModelConfig](
+#     override_token_dictpiler_path_str="/home/g/markov/sample_data_comlm",
+#     dataset="custom",
+#     model_cfg=ModelConfig[ComlmModelConfig](
+#         model_load_cfg=ComlmModelConfig(
+#             chk_ident=model.get_latest_downloaded_checkpoint()
+#         ),
+#         acts_cfg=ActsDataConfig(
+#             filter_pad=False,
+#             excl_first=False,
+#             d_data=512,
+#             sites=["layers.6.output.0"],  # .0 unpacks the tuple of (output, kv cache)
+#             storage_dtype_str="float32",
+#             autocast_dtype_str=None,
+#         ),
+#         torch_dtype_str="bfloat16",
+#     ),
+#     trainsplit=SplitConfig(start=0, end=80, tokens_from_split=None),
+#     generation_config=DataGenerationProcessConfig(
+#         # tokens_per_pile=2**25,
+#         acts_per_pile=2**18,
+#         meta_batch_size=2**18,
+#         llm_batch_size=2**13,
+#     ),
+#     seq_len=1024,
+# )
+
+from saeco.data.config._comlm_data_config_definitions import (
+    get_data_cfg,
+    comlm_768_nodrop,
 )
 
+data_cfg = get_data_cfg(comlm_768_nodrop)
+# if __name__ == "__main__":
+#     from saeco.mlog import mlog
+
+#     mlog.init(project="nqgl/default-project")
+#     data_cfg.store_split(data_cfg.trainsplit)
 
 cfg = RunConfig[DynamicThreshConfig](
     train_cfg=TrainConfig(
@@ -75,7 +89,7 @@ cfg = RunConfig[DynamicThreshConfig](
         use_autocast=False,
         use_lars=Swept(False),
         #
-        l0_target=250,
+        l0_target=50,
         l0_target_adjustment_size=Swept(0.0003),
         coeffs={
             "sparsity_loss": Swept(0),
@@ -120,7 +134,7 @@ cfg = RunConfig[DynamicThreshConfig](
         dead_threshold=1e-6,
     ),
     #
-    init_cfg=InitConfig(d_data=512, dict_mult=16),
+    init_cfg=InitConfig(d_data=768, dict_mult=16),
     arch_cfg=DynamicThreshConfig(
         thresh_cfg=ThreshConfig(
             decay_toward_mean=0,
@@ -140,6 +154,7 @@ cfg = RunConfig[DynamicThreshConfig](
 )
 cfg.to_swept_nodes().swept_combinations_count_including_vars()
 arch = DynamicThreshSAE(cfg)
+
 # piler = data_cfg.acts_piler(data_cfg.trainsplit)
 # piler.num_samples / 4096
 # piler.shapes["layers.6.output.0"]

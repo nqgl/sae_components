@@ -484,3 +484,120 @@ t = ad.read_h5ad(
 t.obs["drug"][:100]
 
 # %%
+drug_metadata_map = root_eval.get_metadata_values_and_strings("drug")
+meta = root_eval.metadata_store["drug"]
+u, c = meta.unique(return_counts=True)
+c
+u
+profiles = root_eval.cached.compute_metadata_effect_profile(
+    metadata_map=drug_metadata_map,
+    pooling="max",
+)
+
+
+# sim =
+# sim2 = sim.clone()
+# sim2 = sim2 / sim2.diag().unsqueeze(0).pow(0.5) / sim2.diag().unsqueeze(1).pow(0.5)
+# sim2.diag().sum()
+# sim2.diagonal().fill_(0)
+# sim2.sum()
+# sim2 = sim2.triu()
+# sim2 = sim2 / sim2.sum(1, keepdim=True) / sim2.sum(0, keepdim=True)
+# m = sim2.max(dim=0)
+# print()
+# N = 10
+# tk = m.values.topk(N)
+# for i, j in zip(m.indices[tk.indices], tk.indices, strict=True):
+#     print(
+#         f"{drug_metadata_map.value_strings[i]} <--> {drug_metadata_map.value_strings[j]} : {m.values[j]}"
+#     )
+
+# r_i = drug_metadata_map.value_strings.index(ralimetinib)
+# for i in sim2[r_i].topk(10).indices:
+#     print(drug_metadata_map.value_strings[i])
+# top = root_eval.top_similar_drugs(sim, sim_keys, query=ralimetinib, k=5)
+
+
+# %%
+
+# %%
+profiles.shape
+# %%
+norms = profiles.norm(dim=1)
+
+norms.min(), norms.max()
+
+
+# %%
+norms.topk(10)
+
+# %%
+CONTROL_DRUG = "DMSO_TF"
+ctrl_index = drug_metadata_map.value_strings.index(CONTROL_DRUG)
+# %%
+feature_norms = profiles.norm(dim=0)
+# %%
+
+feature_norms.min(), feature_norms.max()
+# %%
+fnormed_profiles = profiles / (feature_norms.unsqueeze(0) + 1e-6)
+# %%
+fn_norms = fnormed_profiles.norm(dim=1)
+# %%
+fn_norms.min(), fn_norms.max()
+# %%
+fn_norms.topk(10, largest=False)
+# %%
+naive_diffs = profiles - profiles[ctrl_index].unsqueeze(0)
+
+# %%
+sims = naive_diffs @ naive_diffs.T
+# %%
+sim = sims.triu(diagonal=1)
+# %%
+
+ralimetinib = "Ralimetinib dimesylate"
+
+from saeco.evaluation.eval_components.perturbation_analysis import MetadataValueMap
+
+
+def print_from_sim(sim: Tensor, metadata_map: MetadataValueMap):
+    # sim2 = sim.clone()
+    # sim2 = sim2 / sim2.diag().unsqueeze(0).pow(0.5) / sim2.diag().unsqueeze(1).pow(0.5)
+    # sim2.diag().sum()
+    # sim2.diagonal().fill_(0)
+    # sim2.sum()
+    # sim2 = sim2.triu()
+    # sim2 = sim2 / sim2.sum(1, keepdim=True) / sim2.sum(0, keepdim=True)
+    m = sim.max(dim=0)
+    print()
+    N = 10
+    tk = m.values.topk(N)
+    for i, j in zip(m.indices[tk.indices], tk.indices, strict=True):
+        print(
+            f"{metadata_map.value_strings[i]} <--> {metadata_map.value_strings[j]} : {m.values[j]}"
+        )
+
+    print("\nsimilar to ralimetinib:")
+
+    r_i = metadata_map.value_strings.index(ralimetinib)
+    for i in sim[r_i].topk(30).indices:
+        s = metadata_map.value_strings[i]
+        if any(d in s.lower() for d in ["erlotinib", "gefitinib", "osimertinib"]):
+            print(f"EGFR: {s}")
+        elif any(d in s.lower() for d in ["PH-797804", "doramapimod"]):
+            print(f"p38a: {s}")
+        else:
+            print(s)
+
+
+# %%
+print_from_sim(sim, drug_metadata_map)
+# %%
+diffs2 = fnormed_profiles - fnormed_profiles[ctrl_index].unsqueeze(0)
+
+# %%
+sim2 = (diffs2 @ diffs2.T).triu(diagonal=1)
+
+print_from_sim(sim2, drug_metadata_map)
+# %%

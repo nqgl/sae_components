@@ -23,17 +23,22 @@ def main():
     u, c = meta.unique(return_counts=True)
     c
     u
-    sim = root_eval.cached.compute_drug_similarity_matrix(
-        drug_metadata_map=drug_metadata_map,
-        mode="profile",
+    profiles = root_eval.cached.compute_metadata_effect_profile(
+        metadata_map=drug_metadata_map,
+    )
+    sim = root_eval.compute_metadata_effect_profile(
+        metadata_map=drug_metadata_map,
     )
     sim2 = sim.clone()
+    sim2 = sim2 / sim2.diag().unsqueeze(0).pow(0.5) / sim2.diag().unsqueeze(1).pow(0.5)
     sim2.diag().sum()
     sim2.diagonal().fill_(0)
     sim2.sum()
     sim2 = sim2.triu()
+    sim2 = sim2 / sim2.sum(1, keepdim=True) / sim2.sum(0, keepdim=True)
     m = sim2.max(dim=0)
-    N = 5
+    print()
+    N = 10
     tk = m.values.topk(N)
     for i, j in zip(m.indices[tk.indices], tk.indices, strict=True):
         print(
@@ -41,6 +46,8 @@ def main():
         )
 
     r_i = drug_metadata_map.value_strings.index(ralimetinib)
+    for i in sim2[r_i].topk(10).indices:
+        print(drug_metadata_map.value_strings[i])
     top = root_eval.top_similar_drugs(sim, sim_keys, query=ralimetinib, k=5)
     print("Top similar to ralimetinib:")
     for d, s in top:

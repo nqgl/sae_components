@@ -93,8 +93,11 @@ def SweptValidatorConverter(t, name=None):
     return converter_validator
 
 
+NON_SWEPT_TYPES = (Literal, ClassVar)
+
+
 def Sweepable(t, name=None):
-    if get_origin(t) is Literal:
+    if t in NON_SWEPT_TYPES or get_origin(t) in NON_SWEPT_TYPES:
         return t
     if get_origin(t) is dict and get_args(t) and len(get_args(t)) == 2:
         key_type, value_type = get_args(t)
@@ -278,6 +281,7 @@ def fix_paramize(d):
 
 class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
     _ignore_this: int = 0  # needs field due to being a dataclass
+    _legacy_hash_mappings: ClassVar[dict[str, str]] = {}
 
     def is_concrete(self):
         return self._is_concrete(self)
@@ -363,9 +367,12 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
     def get_hash(self) -> str:
         from hashlib import sha256
 
-        return sha256(
+        hsh = sha256(
             self.model_dump_json(exclude_computed_fields=True).encode()
         ).hexdigest()
+        if hsh in self._legacy_hash_mappings:
+            return self._legacy_hash_mappings[hsh]
+        return hsh
 
     def from_optuna_trial(self, trial):
         import optuna

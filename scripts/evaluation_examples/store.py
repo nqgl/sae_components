@@ -13,9 +13,10 @@ from saeco.data.config.split_config import SplitConfig
 from saeco.evaluation.evaluation import Evaluation
 from saeco.evaluation.storage.cache_config import CacheConfig
 from saeco.mlog import mlog
+from saeco.data.config._comlm_data_config_definitions import convert_to_tahoe
 
 data_cfg = DataConfig[ComlmModelConfig](
-    override_dictpiler_path_str="/home/g/workspace/tahoe_batches",
+    override_token_dictpiler_path_str="/home/g/workspace/tahoe_batches",
     dataset="tahoe_bulked",
     model_cfg=ModelConfig[ComlmModelConfig](
         model_load_cfg=ComlmModelConfig(
@@ -27,7 +28,7 @@ data_cfg = DataConfig[ComlmModelConfig](
         acts_cfg=ActsDataConfig(
             filter_pad=False,
             excl_first=False,
-            d_data=512,
+            d_data=768,
             sites=["layers.6.output.0"],  # .0 unpacks the tuple of (output, kv cache)
             storage_dtype_str="float32",
             autocast_dtype_str=None,
@@ -40,7 +41,7 @@ data_cfg = DataConfig[ComlmModelConfig](
         meta_batch_size=2**18,
         llm_batch_size=2**13,
     ),
-    seq_len=1024,
+    seq_len=2048,
 )
 # tahoe_data_config.single_cell_data.tokenized_piled_data.r_piler.num_samples
 mlog.init(project="markov-bio/evaluator")
@@ -51,19 +52,22 @@ mlog.init(project="markov-bio/evaluator")
 
 root_eval = Evaluation[XRNoisedBatch].open_from_model(model_name)
 
-root_eval.sae_cfg.train_cfg.data_cfg = data_cfg
+root_eval.sae_cfg.train_cfg.data_cfg = convert_to_tahoe(
+    root_eval.sae_cfg.train_cfg.data_cfg  # type: ignore
+)
 # root_eval.
 # Path.home() / "workspace" / "tahoe_batches"
 root_eval.store_acts(
-    CacheConfig[NoisedBatch](
-        dirname=storage_name,
+    CacheConfig[XRNoisedBatch](
+        dirname="tahoe_2048_x5_v4",
         num_chunks=423,  # 3,
-        docs_per_chunk=128,
-        documents_per_micro_batch=32,
+        docs_per_chunk=512,
+        documents_per_micro_batch=128,
         # exclude_bos_from_storage=True,
         eager_sparse_generation=True,
         store_feature_tensors=False,
-        deferred_blocked_store_feats_block_size=8,
+        deferred_blocked_store_feats_block_size=None,
+        src_piler_num_epochs=4,
         # metadatas_from_src_column_names=["tissue", "cell_type"],
     ),
     displace_existing=True,

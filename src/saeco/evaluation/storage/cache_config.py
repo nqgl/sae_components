@@ -19,6 +19,7 @@ class CacheConfig[InputDataT: Tensor | DictBatch](BaseModel):
 
     store_sparse: bool = True
     store_dense: bool = False
+    src_piler_num_epochs: int | None = 1
 
     documents_per_micro_batch: int = 16
     llm_batch_size: int | None = None
@@ -29,7 +30,8 @@ class CacheConfig[InputDataT: Tensor | DictBatch](BaseModel):
     eager_sparse_generation: bool = True
     exclude_bos_from_storage: bool | None = None
 
-    deferred_blocked_store_feats_block_size: int = 10
+    deferred_blocked_store_feats_block_size: int | None = 10
+    last_chunk_num_docs: int | None = None
 
     STANDARD_FILE_NAME: ClassVar[str] = "cache_config.json"
     metadatas_from_src_column_names: list[str] = []
