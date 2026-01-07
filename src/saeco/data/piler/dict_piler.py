@@ -1,3 +1,4 @@
+from __future__ import annotations
 import itertools
 import random
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -195,36 +196,39 @@ class DictPiler:
     @overload
     def batch_generator(
         self,
-        batch_size,
+        batch_size: int,
         yield_dicts: Literal[False] = False,
-        id=None,
-        nw=None,
+        id: int | None = None,
+        nw: int | None = None,
         num_epochs: int | None = 1,
         shuffle: bool = True,
         shuffle_piles_order: bool = False,
+        yield_final_spare: bool = False,
     ) -> Generator[DictBatch]: ...
 
     @overload
     def batch_generator(
         self,
-        batch_size,
+        batch_size: int,
         yield_dicts: Literal[True],
-        id=None,
-        nw=None,
+        id: int | None = None,
+        nw: int | None = None,
         num_epochs: int | None = 1,
         shuffle: bool = True,
         shuffle_piles_order: bool = False,
+        yield_final_spare: bool = False,
     ) -> Generator[dict[str, torch.Tensor]]: ...
     @torch.inference_mode()
     def batch_generator(
         self,
-        batch_size,
+        batch_size: int,
         yield_dicts: bool = False,
-        id=None,
-        nw=None,
+        id: int | None = None,
+        nw: int | None = None,
         num_epochs: int | None = 1,
         shuffle: bool = True,
         shuffle_piles_order: bool = True,
+        yield_final_spare: bool = False,
     ):
         if not (id == nw == None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
@@ -294,18 +298,13 @@ class DictPiler:
                         ]
                         spares = [spare]
                         nspare = len(spare)
-                for piler in self.pilers.values():
-                    print("checking through pilers")
-
-                    if not piler.piles:
-                        print(f"not deleting item from piler cache: {p}")
-                        continue
-                        try:
-                            del piler.piles.cache[str(p)]
-                        except KeyError as e:
-                            print(
-                                f"Warning, deleting item from piler cache failed: {e}"
-                            )
+        if yield_final_spare and len(spares) > 0:
+            final = DictBatch.cat_list(spares, dim=0)
+            if not 0 < len(final) < batch_size:
+                # just precautionary
+                print(f"final spare batch wrong size: {len(final)}")
+                assert False, "final spare batch wrong size"
+            yield final
 
     def sized_generator(
         self,
@@ -412,6 +411,23 @@ class DictPiler:
     def sample_indexer(self) -> "DictPilerSampleIndexer":
         return DictPilerSampleIndexer(piler=self)
 
+    def get_dataset(
+        self,
+        batch_size: int,
+        num_epochs: int | None = 1,
+        shuffle: bool = True,
+        shuffle_piles_order: bool = False,
+        yield_final_spare: bool = False,
+    ) -> DictPilerDataset:
+        return DictPilerDataset(
+            self,
+            batch_size=batch_size,
+            num_epochs=num_epochs,
+            shuffle=shuffle,
+            shuffle_piles_order=shuffle_piles_order,
+            yield_final_spare=yield_final_spare,
+        )
+
 
 def convert_sample_index_to_pile_pair(
     idx: int, pile_sizes: list[int]
@@ -430,6 +446,43 @@ class DictPilerSampleIndexer:
 
     def __getitem__(self, index: int | slice) -> DictBatch:
         return self.piler._index_by_sample(index)
+
+
+class DictPilerDataset(torch.utils.data.IterableDataset):
+    def __init__(
+        self,
+        piler: DictPiler,
+        batch_size: int,
+        num_epochs: int | None = 1,
+        shuffle: bool = False,
+        shuffle_piles_order: bool = False,
+        yield_final_spare: bool = False,
+    ):
+        self.piler = piler
+        self.batch_size = batch_size
+        self.num_epochs = num_epochs
+        self.shuffle = shuffle
+        self.shuffle_piles_order = shuffle_piles_order
+        self.yield_final_spare = yield_final_spare
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+
+        id_ = None
+        nw_ = None
+
+        if worker_info is not None:
+            id_ = worker_info.id
+            nw_ = worker_info.num_workers
+        return self.piler.batch_generator(
+            batch_size=self.batch_size,
+            id=id_,
+            nw=nw_,
+            shuffle=self.shuffle,
+            shuffle_piles_order=self.shuffle_piles_order,
+            yield_final_spare=self.yield_final_spare,
+            num_epochs=self.num_epochs,
+        )
 
 
 def create_dict_piler_spec_from_dict_batch(

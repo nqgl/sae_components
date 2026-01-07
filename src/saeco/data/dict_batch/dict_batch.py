@@ -33,7 +33,7 @@ from saeco.data.storage.compressed_safetensors import load_file_with_metadata
 from saeco.misc.utils import assert_cast, chill_issubclass
 
 
-def batch_size_targeter(batch_size: int):
+def batch_size_targeter(batch_size: int, yield_final_spare: bool = False):
     spares = []
     nspare = 0
 
@@ -51,17 +51,25 @@ def batch_size_targeter(batch_size: int):
         batch_gen: Iterable[T],
     ) -> Generator[T]:
         nonlocal spares, nspare
-        for batch in batch_gen:
-            spare = yield from yield_batches_and_return_spares(batch)
+        try:
+            for batch in batch_gen:
+                spare = yield from yield_batches_and_return_spares(batch)
 
-            if spare.batch_size > 0:
-                spares.append(spare)
-                nspare += spare.batch_size
-                if nspare >= batch_size:
-                    consolidated = batch.cat_list(spares, dim=0)
-                    spare = yield from yield_batches_and_return_spares(consolidated)
-                    spares = [spare]
-                    nspare = spare.batch_size
+                if spare.batch_size > 0:
+                    spares.append(spare)
+                    nspare += spare.batch_size
+                    if nspare >= batch_size:
+                        consolidated = batch.cat_list(spares, dim=0)
+                        spare = yield from yield_batches_and_return_spares(consolidated)
+                        spares = [spare]
+                        nspare = spare.batch_size
+        except StopIteration as e:
+            if nspare > 0:
+                consolidated = spares[0].cat_list(spares, dim=0)
+                final = yield from yield_batches_and_return_spares(consolidated)
+                if final.batch_size > 0 and yield_final_spare:
+                    yield final
+            raise e
 
     return transformed_gen
 
