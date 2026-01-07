@@ -247,7 +247,6 @@ class ActsDataReader:
         piler = self.cfg.acts_piler(split)
         batch_gen = piler.batch_generator(
             batch_size,
-            yield_dicts=False,
             id=id,
             nw=nw,
         )

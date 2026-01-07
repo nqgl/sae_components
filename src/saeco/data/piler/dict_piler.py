@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import itertools
 import random
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -193,36 +194,10 @@ class DictPiler:
         assert all(isinstance(v, torch.Tensor) for v in data.values())
         return DictBatch(data=cast(dict[str, torch.Tensor], data))
 
-    @overload
-    def batch_generator(
-        self,
-        batch_size: int,
-        yield_dicts: Literal[False] = False,
-        id: int | None = None,
-        nw: int | None = None,
-        num_epochs: int | None = 1,
-        shuffle: bool = True,
-        shuffle_piles_order: bool = False,
-        yield_final_spare: bool = False,
-    ) -> Generator[DictBatch]: ...
-
-    @overload
-    def batch_generator(
-        self,
-        batch_size: int,
-        yield_dicts: Literal[True],
-        id: int | None = None,
-        nw: int | None = None,
-        num_epochs: int | None = 1,
-        shuffle: bool = True,
-        shuffle_piles_order: bool = False,
-        yield_final_spare: bool = False,
-    ) -> Generator[dict[str, torch.Tensor]]: ...
     @torch.inference_mode()
     def batch_generator(
         self,
         batch_size: int,
-        yield_dicts: bool = False,
         id: int | None = None,
         nw: int | None = None,
         num_epochs: int | None = 1,
@@ -230,7 +205,7 @@ class DictPiler:
         shuffle_piles_order: bool = True,
         yield_final_spare: bool = False,
     ):
-        if not (id == nw == None or id is not None and nw is not None):
+        if id is None != nw is None:
             raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
         nw = nw or 1
@@ -273,7 +248,7 @@ class DictPiler:
                     0, len(pile) // batch_size * batch_size, batch_size, shuffle=shuffle
                 ):
                     pile_slice = getslice(pile, i, i + batch_size).clone()
-                    yield (pile_slice.data if yield_dicts else pile_slice)
+                    yield pile_slice
                 spare = getslice(
                     pile, len(pile) // batch_size * batch_size, None
                 ).clone()
@@ -288,11 +263,7 @@ class DictPiler:
                             consolidated_slice = consolidated[
                                 i : i + batch_size
                             ].clone()  # no getslice because this was already permed
-                            yield (
-                                consolidated_slice.data
-                                if yield_dicts
-                                else consolidated_slice
-                            )
+                            yield (consolidated_slice)
                         spare = consolidated[
                             len(consolidated) // batch_size * batch_size :
                         ]
@@ -408,7 +379,7 @@ class DictPiler:
         return data[start_sample : start_sample + dist]
 
     @property
-    def sample_indexer(self) -> "DictPilerSampleIndexer":
+    def sample_indexer(self) -> DictPilerSampleIndexer:
         return DictPilerSampleIndexer(piler=self)
 
     def get_dataset(
