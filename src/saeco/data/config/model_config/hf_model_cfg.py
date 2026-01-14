@@ -11,6 +11,8 @@ from transformers import (
 
 from saeco.data.config.locations import DATA_DIRS
 from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
+from saeco.data.piler.dict_piler import DictBatch
+from typing import Any
 
 
 class HuggingFaceModelConfig(ModelLoadingConfigBase[PreTrainedModel]):
@@ -53,3 +55,8 @@ class HuggingFaceModelConfig(ModelLoadingConfigBase[PreTrainedModel]):
         if not hasattr(nnsight_model, "tokenizer"):
             setattr(nnsight_model, "tokenizer", self.tokenizer)
         return nnsight_model
+
+    def unpack_model_inputs(
+        self, input_data: torch.Tensor | DictBatch, extra_kwargs: dict[str, Any]
+    ) -> tuple[list[Any], dict[str, Any]]:
+        return [input_data], extra_kwargs

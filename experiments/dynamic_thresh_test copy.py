@@ -1,5 +1,3 @@
-from saeco.data.data_config_definitions import gpt_2_block
-
 from saeco.architectures.dynamic_thresh_prolu.model_zipf import (
     DynamicZipfThreshConfig,
     DynamicZipfThreshSAE,
@@ -32,7 +30,7 @@ cfg = RunConfig[DynamicZipfThreshConfig](
         betas=(0.9, 0.997),
         #
         use_autocast=True,
-        use_lars=True,
+        use_lars=False,
         #
         l0_target=50,
         l0_target_adjustment_size=0.001,
@@ -41,7 +39,7 @@ cfg = RunConfig[DynamicZipfThreshConfig](
             "L2_loss": 1,
         },
         #
-        intermittent_metric_freq=50,
+        intermittent_metric_freq=500,
     ),
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
@@ -64,6 +62,6 @@ sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent(project="nqgl/default-project")
 
 
-sweep_manager.initialize_sweep()
-sweep_manager.rand_run_no_agent()
+# sweep_manager.initialize_sweep()
+# sweep_manager.rand_run_no_agent()
 # sweep_manager.run_manual_sweep_with_monitoring(new_pods=10)

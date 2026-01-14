@@ -1,16 +1,15 @@
+from comlm.config.configs import ComposerRunConfig
 from comlm.datasource.data_config_definitions import tahoe_data_config
+from comlm.exprank.XRTransformerConfig import XRTransformerConfig
 from comlm.storage import ComposerModelName
 
-from saeco.architecture.arch_reload_info import ArchClassRef, ArchRef
+from saeco.architecture.arch_reload_info import ArchRef
 from saeco.data.config.data_cfg import DataConfig
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
-from comlm.config.configs import ComposerRunConfig
-from comlm.exprank.XRTransformerConfig import XRTransformerConfig
 from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.split_config import SplitConfig
-from comlm.exprank.xr_arch import XRArch
 
 saeco_tahoe_data_cfg = DataConfig[ComlmModelConfig](
     override_token_dictpiler_path_str="/home/g/workspace/tahoe_batches",
@@ -40,6 +39,7 @@ saeco_tahoe_data_cfg = DataConfig[ComlmModelConfig](
     ),
     seq_len=1024,
 )
+saeco_tahoe_data_cfg.model_cfg.model_load_cfg.name
 
 model = ComposerModelName.from_str("1762986288-acoustic-asp")
 
@@ -124,6 +124,8 @@ def convert_to_tahoe(
 
 
 if __name__ == "__main__":
+    from saeco.mlog import mlog
+
     mlog.init(project="markov-bio/evaluator")
     for model in [comlm_768_nodrop, comlm_768_dropout, comlm_768_nodrop_noperm]:
         cfg = get_data_cfg(model)

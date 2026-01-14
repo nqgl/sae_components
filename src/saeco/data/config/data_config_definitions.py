@@ -160,7 +160,7 @@ def gemma_2_2b_openwebtext_fp32(layer=17):
 
 
 def gemma_2_2b_openwebtext_bf16(layer=17):
-    return DataConfig(
+    return DataConfig[HuggingFaceModelConfig](
         dataset="jbloom/openwebtext_tokenized_gemma-2-9b",
         model_cfg=ModelConfig(
             model_load_cfg=HuggingFaceModelConfig(
@@ -188,9 +188,9 @@ def gemma_2_2b_openwebtext_bf16(layer=17):
 
 
 def gpt_2(block_postfix):
-    return DataConfig[HuggingFaceModelConfig](
+    cfg = DataConfig[HuggingFaceModelConfig](
         dataset="alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2",
-        model_cfg=ModelConfig(
+        model_cfg=ModelConfig[HuggingFaceModelConfig](
             model_load_cfg=HuggingFaceModelConfig(
                 model_name="gpt2",
             ),
@@ -207,15 +207,16 @@ def gpt_2(block_postfix):
                 storage_dtype_str="bfloat16",
             ),
         ),
-        trainsplit=SplitConfig(start=0, end=50, tokens_from_split=20_000_000),
+        trainsplit=SplitConfig(start=0, end=50, tokens_from_split=100_000_000),
         generation_config=DataGenerationProcessConfig(
             # tokens_per_pile=2**25,
-            acts_per_pile=2**17,
+            acts_per_pile=2**18,
             meta_batch_size=2**19,
             llm_batch_size=2**16,
         ),
         seq_len=256,
     )
+    return cfg
 
 
 def gpt_2_block(layer: int | list[int] | tuple[int], io="input"):

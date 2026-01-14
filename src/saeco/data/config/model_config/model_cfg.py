@@ -13,7 +13,7 @@ from saeco.misc.dtypes import str_to_dtype
 from saeco.sweeps import SweepableConfig
 
 
-class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = HuggingFaceModelConfig](
+class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBase](
     SweepableConfig
 ):
     model_load_cfg: ModelLoadT

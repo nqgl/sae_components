@@ -18,7 +18,7 @@ from saeco.data.dict_batch.dict_batch import DictBatch
 
 
 class ComlmModelConfig[ArchT: XRArch[Any, Any, XRComposerMaskedLM] = XRArch](
-    ModelLoadingConfigBase[XRTransformer]
+    ModelLoadingConfigBase[XRArch]
 ):
     chk_ident: ModelCheckpointIdentifier
     inject_arch_data_cfg: ComlmDataConfig | None = None

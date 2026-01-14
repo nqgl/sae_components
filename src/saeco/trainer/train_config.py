@@ -1,4 +1,5 @@
 from functools import cached_property
+from typing import Any
 
 from pydantic import Field
 
@@ -22,15 +23,10 @@ class EarlyStoppingBounds(SweepableConfig):
 
     @cached_property
     def check_timestamps(self):
-        return list(
-            set.union(
-                *[
-                    set(d.keys())
-                    for d in list(self.min_values.values())
-                    + list(self.max_values.values())
-                ]
-            )
-        )
+        values = list(self.min_values.values()) + list(self.max_values.values())
+        if len(values) == 0:
+            return []
+        return list(set.union(*[set(d.keys()) for d in values]))
 
     def should_stop(self, cache: SAECache, t: int):
         if t not in self.check_timestamps:

@@ -97,14 +97,17 @@ def with_sae_runner(
 ):
     def saerunner(tokens):
         with model.trace(tokens) as tracer:
-            lm_acts = getsite(model, cfg.site)
-            acts_re = nnsight.apply(lambda x: encoder(x.float()).to(x.dtype), lm_acts)
-            if skip_first:
-                patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
-            else:
-                patch_in = acts_re
-            setsite(model, cfg.site, patch_in)
-            out = model.output.logits.save()
+            for site in cfg.sites:
+                lm_acts = getsite(model, site)
+                acts_re = nnsight.apply(
+                    lambda x: encoder(x.float()).to(x.dtype), lm_acts
+                )
+                if skip_first:
+                    patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
+                else:
+                    patch_in = acts_re
+                setsite(model, site, patch_in)
+                out = model.output.logits.save()
 
         return out
 
@@ -116,14 +119,15 @@ def zero_ablated_runner(
 ):
     def zrunner(tokens):
         with model.trace(tokens) as tracer:
-            lm_acts = getsite(model, cfg.site)
-            acts_re = nnsight.apply(torch.zeros_like, lm_acts)
-            if skip_first:
-                patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
-            else:
-                patch_in = acts_re
-            setsite(model, cfg.site, patch_in)
-            out = model.output.logits.save()
+            for site in cfg.sites:
+                lm_acts = getsite(model, site)
+                acts_re = nnsight.apply(torch.zeros_like, lm_acts)
+                if skip_first:
+                    patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
+                else:
+                    patch_in = acts_re
+                setsite(model, site, patch_in)
+                out = model.output.logits.save()
         return out
 
     return zrunner
