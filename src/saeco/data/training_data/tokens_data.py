@@ -23,19 +23,18 @@ class TokensData(TokensDataInterface[torch.Tensor]):
     def src_dataset_data(self):
         dataset = self.cfg.load_dataset_from_split(self.split)
         data = dataset[self.cfg.tokens_column_name]
-        assert data.ndim == 2
-        if self.dataset_document_length < self.seq_len:
-            raise ValueError(
-                f"Document length {self.dataset_document_length} is less than the requested sequence length {self.seq_len}"
-            )
-        if self.dataset_document_length % self.seq_len != 0:
+        if not isinstance(data, torch.Tensor):
+            data = data[:]
+        assert isinstance(data, torch.Tensor)
+
+        dataset_document_length = data.shape[1]
+        if dataset_document_length % self.seq_len != 0:
             tqdm.tqdm.write(
-                f"Document length {self.dataset_document_length} is not a multiple of the requested sequence length {self.seq_len}, truncating documents"
+                f"Document length {dataset_document_length} is not a multiple of the requested sequence length {self.seq_len}, truncating documents"
             )
             input("Press enter to continue and acknowledge this warning")
-            data = data[
-                :, : self.seq_len * (self.dataset_document_length // self.seq_len)
-            ]
+            data = data[:, : self.seq_len * (dataset_document_length // self.seq_len)]
+
         return data
 
     @property
@@ -57,6 +56,10 @@ class TokensData(TokensDataInterface[torch.Tensor]):
             )
         else:
             docs = self.src_dataset_data
+        if self.dataset_document_length < self.seq_len:
+            raise ValueError(
+                f"Document length {self.dataset_document_length} is less than the requested sequence length {self.seq_len}"
+            )
         if self.cfg.set_bos:
             docs[:, 0] = self.cfg.model_cfg.tokenizer.bos_token_id
         return docs
@@ -78,6 +81,7 @@ class TokensData(TokensDataInterface[torch.Tensor]):
                 num_piles=(
                     1 + num_tokens // self.cfg.generation_config.tokens_per_pile
                 ),
+                compress=True,
             )
         return Piler.open(
             self.cfg._tokens_piles_path(self.split),

@@ -90,7 +90,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
         return (
             DATA_DIRS._CHUNKS_DIR
             / self.idstr()
-            / self.model_cfg.modelstring
+            # / self.model_cfg.modelstring
             / split.split_dir_id
             / "tokens"
         )
@@ -107,8 +107,13 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     def _tokens_piles_path(self, split: SplitConfig) -> Path:
         return self._get_tokens_split_path(split) / "piles"
 
-    def _tokens_perm_path(self, split: SplitConfig) -> Path:
-        return self._get_tokens_split_path(split) / "perm.safetensors"
+    def _tokens_perm_path(self) -> Path:
+        return (
+            DATA_DIRS._CHUNKS_DIR
+            / self.idstr()
+            / self.model_cfg.modelstring
+            / "perm.safetensors"
+        )
 
     def _acts_piles_path(self, split: SplitConfig) -> Path:
         return self._get_acts_split_path(split) / "piles"
@@ -221,12 +226,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
 
     def load_dataset_from_split(self, split: SplitConfig, to_torch=True):
         if self.perm_all:
-            perm_path = (
-                DATA_DIRS._CHUNKS_DIR
-                / self.idstr()
-                / self.model_cfg.modelstring
-                / "perm.safetensors"
-            )
+            perm_path = self._tokens_perm_path()
             assert not self.load_from_disk
             dataset = datasets.load_dataset(
                 self.dataset,
