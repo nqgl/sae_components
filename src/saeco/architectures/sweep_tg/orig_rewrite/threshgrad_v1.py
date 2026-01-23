@@ -1,15 +1,17 @@
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import cached_property, wraps
+from functools import cached_property
 from typing import Protocol, Self
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.amp.autocast_mode import custom_bwd, custom_fwd
-from torch.autograd.function import FunctionCtx
 
+import saeco.core as cl
+from saeco.components.features import FeaturesParam
 from saeco.components.penalties.l0targeter import L0Targeting
+from saeco.initializer import Initializer
 from saeco.sweeps import SweepableConfig
 
 
@@ -22,7 +24,7 @@ def sig_grad(x):
     return sig * (1 - sig)
 
 
-windows = {"sig": sig_grad}
+windows: dict[str, Callable[[Tensor], Tensor]] = {"sig": sig_grad}
 
 
 class WriteOnceBox[T]:
@@ -213,21 +215,24 @@ def make_threshgate_autograd_function(tg_config: ThreshGateConfigThing, d_data: 
     return apply
 
 
-@dataclass
-class GateFunctionConfig:
-    training: bool
+class GateFunctionConfig(SweepableConfig):
+    # in config
     uniform_noise: bool
     noise_mult: float
-    leniency: float
     exp_mag: bool
+
     mag_scale_noise: bool = False  # TODO calculate grad right if doing this
     gate_noise: bool = False
     scale_penalty: bool = True
     dd: int = 768  # TODO
     p_off_noise: float = 0.2
-    window_fn: Callable[[Tensor], Tensor] = sig_grad  # TODO to str
+    window_fn_str: str = "sig"  # TODO to str
 
-    def make_noise(self, mag: Tensor):
+    @cached_property
+    def window_fn(self) -> Callable[[Tensor], Tensor]:
+        return windows[self.window_fn_str]
+
+    def make_noise(self, mag: Tensor, training: bool):
         return (
             torch.where(
                 (mag > 0),
@@ -237,26 +242,27 @@ class GateFunctionConfig:
                 0,
             )
             * self.noise_mult
-            if self.training
+            if training
             else torch.zeros_like(mag)
         ).cuda()
 
 
-@dataclass
-class GateFunc:
-    tb_backward_config_thing: ThreshGateConfigThing
+class GatingConfig(SweepableConfig):
+    backward_cfg: ThreshGateConfigThing
     gate_cfg: GateFunctionConfig
 
     @cached_property
     def autograd_gate_fn(self):
         return make_threshgate_autograd_function(
-            self.tb_backward_config_thing, d_data=self.gate_cfg.dd
+            self.backward_cfg, d_data=self.gate_cfg.dd
         )
 
     def gate(
         self,
         mag: Tensor,
         gate_pres: list[Tensor],
+        leniency: float,
+        training: bool,
         penalty_fn=None,
     ):
         mag = mag.relu() if not self.gate_cfg.exp_mag else mag.exp()
@@ -270,7 +276,7 @@ class GateFunc:
                 gate_post=future_gate_post,
                 noise=noise_box,
                 mag=mag,
-                leniency=self.gate_cfg.leniency,
+                leniency=leniency,
             )
             for gate_pre in gate_pres
         ]
@@ -281,7 +287,7 @@ class GateFunc:
         future_gate_post.put(gate)
         assert gate.dtype is torch.bool
 
-        noise = self.gate_cfg.make_noise(mag)
+        noise = self.gate_cfg.make_noise(mag, training=training)
         off_noise_mask = torch.rand_like(mag) < self.gate_cfg.p_off_noise
 
         if self.gate_cfg.mag_scale_noise:
@@ -303,50 +309,15 @@ class GateFunc:
         return out
 
 
-def gate(
-    mag: Tensor,
-    gate_pres: list[Tensor],
-    cfg: GateFunctionConfig,
-    GT_fn,
-    penalty_fn=None,
-):
-    future_gate_post = torch.ones_like(mag)
-    mag = mag.relu() if not cfg.exp_mag else mag.exp()
-    gate = None
-    noise_mask = torch.rand_like(mag) < cfg.p_off_noise
-
-    noise = cfg.make_noise(mag)
-    for gate_pre in gate_pres:
-        g = GT_fn(gate_pre, future_gate_post, noise, mag, cfg.leniency)
-        if gate is None:
-            gate = g
-        else:
-            gate = gate * g
-    assert gate is not None
-    with torch.no_grad():
-        future_gate_post[:] = gate[:]
-        noise[:] = torch.where((gate > 0) | noise_mask, noise, 0)
-    if penalty_fn is not None:
-        penalty_fn(gate * mag.detach())
-    out = gate * mag + noise
-    return out
-
-
-import saeco.core as cl
-from saeco.components.features import FeaturesParam
-from saeco.initializer import Initializer
-
-
 class Config(SweepableConfig):
+    gate_cfg: GatingConfig
+    #
     pre_bias: bool = False
-    uniform_noise: bool = True
-    noise_mult: float = 0.1
-    exp_mag: bool = True
     mag_weights: bool = False
     window_fn: str = "sig"
     decay_l1: bool = True
     leniency_targeting: bool = False
-    leniency: float = 1
+    initial_leniency: float = 1
 
 
 class BinaryEncoder(cl.Module):
@@ -366,7 +337,7 @@ class BinaryEncoder(cl.Module):
         self.gate = init.encoder
         self.targeting = L0Targeting(
             init.l0_target,
-            scale=cfg.leniency,
+            scale=cfg.initial_leniency,
             increment=0.0002 if cfg.leniency_targeting else 0.0,
         )
         self.GT_fn = ThreshgateAutogradFunction
@@ -386,19 +357,18 @@ class BinaryEncoder(cl.Module):
         mag = self.mag.unsqueeze(0).expand(x.shape[0], -1)
         cfg = GateFunctionConfig(
             exp_mag=not self.signed_mag,
-            training=self.training,
             uniform_noise=self.cfg.uniform_noise,
             noise_mult=self.cfg.noise_mult,
-            leniency=(
-                self.targeting.value
-                * (
-                    1
-                    if not cache._ancestor.has.trainer
-                    else cache._ancestor.trainer.cfg.schedule.lr_scale(
-                        cache._ancestor.trainstep
-                    )
-                )
-            ),
+            # leniency=(
+            #     self.targeting.value
+            #     * (
+            #         1
+            #         if not cache._ancestor.has.trainer
+            #         else cache._ancestor.trainer.cfg.schedule.lr_scale(
+            #             cache._ancestor.trainstep
+            #         )
+            #     )
+            # ),
         )
 
         out = gate(
@@ -428,7 +398,7 @@ class GTTest(cl.Module):
         self.gate.weight.grad
         self.targeting = L0Targeting(
             init.l0_target,
-            scale=cfg.leniency,
+            scale=cfg.initial_leniency,
             increment=0.0001 if cfg.leniency_targeting else 0.0,
         )
         self.GT_fn = ThreshgateAutogradFunction
@@ -438,11 +408,10 @@ class GTTest(cl.Module):
         cache.leniency = self.targeting.value
         gate_fn_cfg = GateFunctionConfig(
             exp_mag=self.cfg.exp_mag,
-            training=self.training,
             uniform_noise=self.cfg.uniform_noise,
             noise_mult=self.cfg.noise_mult,
-            leniency=self.targeting.value,
         )
+        # leniency=self.targeting.value,
 
         out = gate(
             self.mag(x),
@@ -474,7 +443,7 @@ class GTMulti(cl.Module):
         self.gate = init.encoder
         self.targeting = L0Targeting(
             init.l0_target,
-            scale=cfg.leniency,
+            scale=cfg.initial_leniency,
             increment=0.0001 if cfg.leniency_targeting else 0.0,
         )
         self.GT_fn = ThreshgateAutogradFunction
@@ -490,11 +459,10 @@ class GTMulti(cl.Module):
             self.targeting.value = cache._ancestor.trainstep / 5000
         cfg = GateFunctionConfig(
             exp_mag=True,
-            training=self.training,
             uniform_noise=self.cfg.uniform_noise,
             noise_mult=self.cfg.noise_mult,
-            leniency=self.targeting.value,
         )
+        # leniency=self.targeting.value,
         out = gate(
             self.mag.unsqueeze(0).expand(x.shape[0], -1),
             [self.gate(x)],
