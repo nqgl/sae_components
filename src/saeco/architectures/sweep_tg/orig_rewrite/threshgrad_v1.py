@@ -316,162 +316,76 @@ class Config(SweepableConfig):
     mag_weights: bool = False
     window_fn: str = "sig"
     decay_l1: bool = True
-    leniency_targeting: bool = False
+    leniency_targeting: float | None = None
     initial_leniency: float = 1
+    signed_mag: bool = False
 
 
-class BinaryEncoder(cl.Module):
-    def __init__(
-        self,
-        cfg: Config,
-        init: Initializer,
-        penalty=None,
-        apply_targeting_externally=False,
-        signed_mag: bool = False,
-    ):
+class Mag(cl.Module):
+    def __init__(self, cfg: Config, init: Initializer):
         super().__init__()
-        self.cfg = cfg
         self.mag = init._encoder.new_bias()
         self.mag.data -= 1
-        # self.mag.data += 2
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        mag = self.mag.unsqueeze(0).expand(x.shape[0], -1)
+        return mag
+
+
+class ThreshGate(cl.Module):
+    def __init__(self, cfg: Config, init: Initializer):
+        super().__init__()
+        self.cfg = cfg
+        if not (self.cfg.mag_weights or self.cfg.gate_cfg.gate_cfg.exp_mag):
+            raise ValueError("mag_weights or exp_mag should be True")
+        self.mag = (
+            nn.Linear(init.d_data, init.d_dict)
+            if self.cfg.mag_weights
+            else Mag(cfg, init)
+        )
         self.gate = init.encoder
         self.targeting = L0Targeting(
             init.l0_target,
             scale=cfg.initial_leniency,
-            increment=0.0002 if cfg.leniency_targeting else 0.0,
+            increment=cfg.leniency_targeting or 0.0,
         )
-        self.GT_fn = ThreshgateAutogradFunction
-        self.apply_targeting_externally = apply_targeting_externally
-        self.signed_mag = signed_mag
-        self.penalty = penalty
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        cache.leniency = ...
-        cache.leniency = self.targeting.value
         if (
             (not self.cfg.leniency_targeting)
             and cache._ancestor.has.trainstep
             and cache._ancestor.trainstep <= 5000
         ):
-            self.targeting.value = cache._ancestor.trainstep / 5000
-        mag = self.mag.unsqueeze(0).expand(x.shape[0], -1)
-        cfg = GateFunctionConfig(
-            exp_mag=not self.signed_mag,
-            uniform_noise=self.cfg.uniform_noise,
-            noise_mult=self.cfg.noise_mult,
-            # leniency=(
-            #     self.targeting.value
-            #     * (
-            #         1
-            #         if not cache._ancestor.has.trainer
-            #         else cache._ancestor.trainer.cfg.schedule.lr_scale(
-            #             cache._ancestor.trainstep
-            #         )
-            #     )
-            # ),
-        )
+            self.targeting.value = self.cfg.initial_leniency * (
+                cache._ancestor.trainstep / 5000
+            )
+        cache.leniency = ...
+        cache.leniency = self.targeting.value
 
-        out = gate(
-            mag.abs() if self.signed_mag else mag,
-            [self.gate(x)],
-            GT_fn=self.GT_fn,
-            cfg=cfg,
+        mag = self.mag(x)
+        assert isinstance(mag, Tensor)
+
+        out = self.cfg.gate_cfg.gate(
+            mag.abs() if self.cfg.signed_mag else mag,
+            gate_pres=[self.gate(x)],
+            leniency=cache.leniency,
+            training=self.training,
             penalty_fn=cache(self).penalty if self.penalty is not None else None,
         )
         if not self.apply_targeting_externally:
             cache(self).targeting(out)
-        out = out * torch.sign(mag) if self.signed_mag else out
+        out = out * torch.sign(mag) if self.cfg.signed_mag else out
+
         return out
 
     @property
     def features(self):
-        return {"mag": FeaturesParam(self.mag, 0, "bias")}
-
-
-class GTTest(cl.Module):
-    def __init__(self, cfg: Config, init: Initializer, targeting=True):
-        super().__init__()
-        self.cfg = cfg
-        self.mag = nn.Linear(init.d_data, init.d_dict)
-        # self.mag.data += 2
-        self.gate = init.encoder
-        self.gate.weight.grad
-        self.targeting = L0Targeting(
-            init.l0_target,
-            scale=cfg.initial_leniency,
-            increment=0.0001 if cfg.leniency_targeting else 0.0,
-        )
-        self.GT_fn = ThreshgateAutogradFunction
-
-    def forward(self, x, *, cache: cl.Cache, **kwargs):
-        cache.leniency = ...
-        cache.leniency = self.targeting.value
-        gate_fn_cfg = GateFunctionConfig(
-            exp_mag=self.cfg.exp_mag,
-            uniform_noise=self.cfg.uniform_noise,
-            noise_mult=self.cfg.noise_mult,
-        )
-        # leniency=self.targeting.value,
-
-        out = gate(
-            self.mag(x),
-            gate_pres=[self.gate(x)],
-            GT_fn=self.GT_fn,
-            cfg=gate_fn_cfg,
-        )
-        cache(self).targeting(out)
-        return out
-
-    @property
-    def features(self):
-        return {
-            "mag": FeaturesParam(self.mag.weight, 0, "other"),
-            "mag_bias": FeaturesParam(self.mag.bias, 0, "bias"),
-        }
-
-
-class GTMulti(cl.Module):
-    def __init__(
-        self, cfg: Config, init: Initializer, d_in_override=None, targeting=True
-    ):
-        super().__init__()
-        self.cfg = cfg
-        if cfg.mag_weights:
-            self.mag = init._encoder.new_bias()
-            self.mag.data -= 1
-        # self.mag.data += 2
-        self.gate = init.encoder
-        self.targeting = L0Targeting(
-            init.l0_target,
-            scale=cfg.initial_leniency,
-            increment=0.0001 if cfg.leniency_targeting else 0.0,
-        )
-        self.GT_fn = ThreshgateAutogradFunction
-
-    def forward(self, x, *, cache: cl.Cache, **kwargs):
-        cache.leniency = ...
-        cache.leniency = self.targeting.value
-        if (
-            (not self.cfg.leniency_targeting)
-            and cache._ancestor.has.trainstep
-            and cache._ancestor.trainstep <= 5000
-        ):
-            self.targeting.value = cache._ancestor.trainstep / 5000
-        cfg = GateFunctionConfig(
-            exp_mag=True,
-            uniform_noise=self.cfg.uniform_noise,
-            noise_mult=self.cfg.noise_mult,
-        )
-        # leniency=self.targeting.value,
-        out = gate(
-            self.mag.unsqueeze(0).expand(x.shape[0], -1),
-            [self.gate(x)],
-            GT_fn=self.GT_fn,
-            cfg=cfg,
-        )
-        cache(self).targeting(out)
-        return out
-
-    @property
-    def features(self):
-        return {"mag": FeaturesParam(self.mag, 0, "bias")}
+        if self.cfg.mag_weights:
+            assert isinstance(self.mag, nn.Linear)
+            return {
+                "mag": FeaturesParam(self.mag.weight, 0, "other"),
+                "mag_bias": FeaturesParam(self.mag.bias, 0, "bias"),
+            }
+        else:
+            assert isinstance(self.mag, Mag)
+            return {"mag_bias": FeaturesParam(self.mag.mag, 0, "bias")}
