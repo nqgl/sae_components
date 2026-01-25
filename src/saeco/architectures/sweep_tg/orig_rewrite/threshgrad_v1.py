@@ -11,6 +11,7 @@ from torch.amp.autocast_mode import custom_bwd, custom_fwd
 import saeco.core as cl
 from saeco.components.features import FeaturesParam
 from saeco.components.penalties.l0targeter import L0Targeting
+from saeco.components.penalties.penalty import Penalty
 from saeco.initializer import Initializer
 from saeco.sweeps import SweepableConfig
 
@@ -107,8 +108,9 @@ class ThreshGateConfigThing(SweepableConfig):
     offgrad_mask_only_on_positive_noise: bool = True
     eps_0: float = 0.0
     fixed_off_leniency: float | None = None
-    out1_has_off_adjustment: bool = False
+    out1_has_off_adjustment: bool = True
     out1_has_on_adjustment: bool = False
+    out0_like_off_adj: bool = False
 
     def _modify_grad_output(self, grad_output: Tensor, *, gcx: GradCtx):
         if self.modify_grad_output:
@@ -128,10 +130,19 @@ class ThreshGateConfigThing(SweepableConfig):
         offgrad_mask = self._make_offgrad_mask(grad_output, gcx=gcx)
         adjustment = gcx.calculate_adjustment(-gcx.noise.get())
         off_adjustment = gcx.calculate_adjustment(
-            gcx.mag, leniency=self.fixed_off_leniency
+            gcx.mag,
+            leniency=self.fixed_off_leniency
+            if self.fixed_off_leniency is not None
+            else gcx.leniency,
         )
-
-        out0 = torch.where(grad_gate, grad_output + adjustment, 0)
+        if self.out0_like_off_adj:
+            out0 = torch.where(
+                gcx.gate_post.get() > 0,
+                grad_output + gcx.calculate_adjustment(-gcx.mag),
+                0,
+            )
+        else:
+            out0 = torch.where(grad_gate, grad_output + adjustment, 0)
         out1 = self._make_out1(
             grad_output=grad_output,
             offgrad_mask=offgrad_mask,
@@ -139,13 +150,9 @@ class ThreshGateConfigThing(SweepableConfig):
             off_adjustment=off_adjustment,
         )
         out = out0 + out1
-        return (
-            out * gcx.grad_window(gcx.gate_pre),
-            None,
-            None,
-            None,
-            None,
-        )
+        if self.modify_grad_output:
+            out = out * gcx.mag
+        return (out * gcx.grad_window(gcx.gate_pre), None, None, None, None, None)
 
     def _make_out1(
         self,
@@ -225,7 +232,7 @@ class GateFunctionConfig(SweepableConfig):
     gate_noise: bool = False
     scale_penalty: bool = True
     dd: int = 768  # TODO
-    p_off_noise: float = 0.2
+    p_off_noise: float = 0.0
     window_fn_str: str = "sig"  # TODO to str
 
     @cached_property
@@ -284,15 +291,14 @@ class GatingConfig(SweepableConfig):
         gate = gates[0]
         for g in gates[1:]:
             gate = gate * g
-        future_gate_post.put(gate)
-        assert gate.dtype is torch.bool
+        future_gate_post.put(gate.detach())  # detach prevents cycles
 
         noise = self.gate_cfg.make_noise(mag, training=training)
         off_noise_mask = torch.rand_like(mag) < self.gate_cfg.p_off_noise
 
         if self.gate_cfg.mag_scale_noise:
             noise *= mag
-        noise = torch.where(gate | off_noise_mask, noise, 0)
+        noise = torch.where((gate > 0) | off_noise_mask, noise, 0)
         noise_box.put(noise)
 
         if penalty_fn is not None:
@@ -309,20 +315,19 @@ class GatingConfig(SweepableConfig):
         return out
 
 
-class Config(SweepableConfig):
+class ThreshGateConfig(SweepableConfig):
     gate_cfg: GatingConfig
     #
-    pre_bias: bool = False
     mag_weights: bool = False
-    window_fn: str = "sig"
-    decay_l1: bool = True
+    window_fn: str = "sig"  # TODO this has no refs
     leniency_targeting: float | None = None
     initial_leniency: float = 1
     signed_mag: bool = False
+    deep_preprocessing: int | None = None
 
 
 class Mag(cl.Module):
-    def __init__(self, cfg: Config, init: Initializer):
+    def __init__(self, cfg: ThreshGateConfig, init: Initializer):
         super().__init__()
         self.mag = init._encoder.new_bias()
         self.mag.data -= 1
@@ -333,7 +338,13 @@ class Mag(cl.Module):
 
 
 class ThreshGate(cl.Module):
-    def __init__(self, cfg: Config, init: Initializer):
+    def __init__(
+        self,
+        cfg: ThreshGateConfig,
+        init: Initializer,
+        penalty: Penalty | None = None,
+        apply_targeting_externally: bool = False,
+    ):
         super().__init__()
         self.cfg = cfg
         if not (self.cfg.mag_weights or self.cfg.gate_cfg.gate_cfg.exp_mag):
@@ -343,31 +354,50 @@ class ThreshGate(cl.Module):
             if self.cfg.mag_weights
             else Mag(cfg, init)
         )
-        self.gate = init.encoder
+        import saeco.components as co
+        import saeco.core as cl
+
+        if self.cfg.deep_preprocessing is not None:
+            self.gate = cl.Seq(
+                res=cl.ResidualSeq(
+                    *[
+                        co.FeedForward(
+                            init.d_data, expansion_factor=8, nonlinearity=nn.GELU()
+                        )
+                        for _ in range(self.cfg.deep_preprocessing)
+                    ]
+                ),
+                enc=init.encoder,
+            )
+
+        else:
+            self.gate = init.encoder
         self.targeting = L0Targeting(
             init.l0_target,
             scale=cfg.initial_leniency,
             increment=cfg.leniency_targeting or 0.0,
         )
+        self.penalty = penalty
+        self.apply_targeting_externally = apply_targeting_externally
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        if (
-            (not self.cfg.leniency_targeting)
-            and cache._ancestor.has.trainstep
-            and cache._ancestor.trainstep <= 5000
-        ):
-            self.targeting.value = self.cfg.initial_leniency * (
-                cache._ancestor.trainstep / 5000
-            )
+        # if (
+        #     (not self.cfg.leniency_targeting)
+        #     and cache._ancestor.has.trainstep
+        #     and cache._ancestor.trainstep <= 500
+        # ):
+        #     self.targeting.value = self.cfg.initial_leniency * (
+        #         cache._ancestor.trainstep / 500
+        #     )
         cache.leniency = ...
         cache.leniency = self.targeting.value
 
-        mag = self.mag(x)
+        mag = cache(self).mag(x)
         assert isinstance(mag, Tensor)
 
         out = self.cfg.gate_cfg.gate(
             mag.abs() if self.cfg.signed_mag else mag,
-            gate_pres=[self.gate(x)],
+            gate_pres=[cache(self).gate(x)],
             leniency=cache.leniency,
             training=self.training,
             penalty_fn=cache(self).penalty if self.penalty is not None else None,
