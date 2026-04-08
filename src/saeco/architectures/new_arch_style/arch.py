@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.architecture import (
     SAE,
@@ -32,8 +32,12 @@ class Gated(Architecture[GatedConfig]):
     def setup(self):
         self.init._encoder.bias = False
         self.init._encoder.add_wrapper(ReuseForward)
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.NormFeatures
+        )
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
+        )
 
     @cached_property
     def enc_mag(self):

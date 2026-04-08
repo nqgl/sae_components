@@ -4,7 +4,7 @@ from saeco.architectures.threshgate_gradjust.other_lin import OtherLinear
 from saeco.architectures.threshgate_gradjust.threshgrad import BinaryEncoder, GTTest
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.core import Seq
@@ -35,9 +35,13 @@ def mlp_layer(
         proj_in.features["weight"].resampled = False
 
     if normalize:
-        proj_in = ft.NormFeatures(proj_in, index="weight", ord=2, max_only=True)
+        proj_in = saeco.components.hooks.feature_hooks.NormFeatures(
+            proj_in, index="weight", ord=2, max_only=True
+        )
 
-        proj_out = ft.NormFeatures(proj_out, index="weight", ord=2, max_only=True)
+        proj_out = saeco.components.hooks.feature_hooks.NormFeatures(
+            proj_out, index="weight", ord=2, max_only=True
+        )
 
     return Seq(proj_in=proj_in, nonlinearity=nonlinearity, proj_out=proj_out)
 
@@ -222,8 +226,8 @@ def deep_tg_grad_sae(
         **useif(cfg.deep_dec, deep=deep),
         **useif((not cfg.measure_in_gate) and cfg.penalize_after, penalty=penalty),
         deep_metrics=co.metrics.ActMetrics("deep_metrics"),
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 init.decoder.set_resampled(cfg.resample_dec),
             ),
         ).set_resampled(cfg.squeeze_channels == 1),

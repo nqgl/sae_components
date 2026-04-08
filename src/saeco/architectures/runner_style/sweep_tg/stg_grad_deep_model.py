@@ -4,7 +4,7 @@ from saeco.architectures.sweep_tg.mlp_layer import mlp_layer
 from saeco.architectures.sweep_tg.sthreshgrad import BinaryEncoder, GTTest
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.core import Seq
@@ -193,8 +193,8 @@ def deep_tg_grad_sae(
         **useif(cfg.deep_dec, deep=deep),
         **useif((not cfg.measure_in_gate) and cfg.penalize_after, penalty=penalty),
         deep_metrics=co.metrics.ActMetrics("deep_metrics"),
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 init.decoder.set_resampled(cfg.resample_dec),
             ),
         ).set_resampled(cfg.squeeze_channels == 1),

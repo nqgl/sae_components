@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -66,8 +66,10 @@ def gated_dg_sae(
         dg = SemgentedDG(init.d_dict, 4, bias=True)
     init._encoder.bias = False
     init._encoder.add_wrapper(ReuseForward)
-    init._decoder.add_wrapper(ft.NormFeatures)
-    init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+    init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
+    init._decoder.add_wrapper(
+        saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
+    )
     enc_mag = Seq(
         **useif(
             cfg.pre_bias,

@@ -3,6 +3,7 @@ import torch.nn as nn
 
 import saeco.components as co
 import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -69,8 +70,8 @@ def resid_deep_sae(
         L1=L1Penalty(),
         metrics=co.metrics.ActMetrics(),
         decoder=Seq(
-            weight=ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(
+            weight=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+                saeco.components.hooks.feature_hooks.NormFeatures(
                     ft.DecoderWeights(weight(d_dict, d_data)).resampled(),
                 )
             ),
@@ -119,8 +120,8 @@ def deep_sae(
         L1=L1Penalty(),
         metrics=co.metrics.ActMetrics(),
         decoder=Seq(
-            weight=ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(
+            weight=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+                saeco.components.hooks.feature_hooks.NormFeatures(
                     ft.DecoderWeights(weight(d_dict, d_data)).resampled(),
                 )
             ),

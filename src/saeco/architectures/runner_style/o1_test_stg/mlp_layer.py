@@ -1,7 +1,7 @@
 import torch.nn as nn
 from saeco.architectures.sweep_tg.other_lin import OtherLinear
 
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks as ft
 from saeco.core import Seq
 
 

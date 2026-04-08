@@ -25,7 +25,7 @@ class FeedForward(MLP):
         d_out=None,
         d_hidden=None,
         expansion_factor=None,
-        nonlinearity=nn.ReLU,
+        nonlinearity: nn.Module = nn.ReLU,
         bias=True,
     ):
         assert (d_hidden is None) != (expansion_factor is None)

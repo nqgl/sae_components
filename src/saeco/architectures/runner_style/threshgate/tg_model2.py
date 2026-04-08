@@ -6,6 +6,7 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 
 import saeco.components as co
 import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -22,6 +23,7 @@ from saeco.core import ReuseForward, Seq
 from saeco.initializer import Initializer, Tied
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
+from saeco.architecture import SAE
 
 
 def thresh_shrink(shrink_amount, eps, mult_by_shrank):
@@ -436,35 +438,40 @@ def multigate_sae(
         end_l1_penalty=cfg.end_l1_penalty,
         detach=cfg.detach,
     )
-    model = Seq(
-        **useif(
-            cfg.use_enc_bias == 1,
-            update_enc_bias=zero_normal_enc_bias_only_fn_factory(
-                init.encoder, init.d_dict
-            ),
-        ),
+
+    def unwrap_acts(module):
+        return Seq(
+            co.ops.Lambda(lambda x: x[2]),
+            module,
+        )
+
+    model = SAE(
         encoder=Seq(
+            **useif(
+                cfg.use_enc_bias == 1,
+                update_enc_bias=zero_normal_enc_bias_only_fn_factory(
+                    init.encoder, init.d_dict
+                ),
+            ),
             **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
             lin=init.encoder,
             split=co.ops.Lambda(lambda x: torch.split(x, init.d_dict, dim=-1)),
+            gate_x=cl.Parallel(
+                noise_gate=multigate.noised_mask,
+                acts=multigate,
+            ).reduce(
+                (lambda g, a: [torch.where(g, a, 0), torch.where(~g, a, 0)])
+                if cfg.detach
+                else (lambda g, a: [torch.zeros_like(a), a])
+            ),
         ),
-        gate_x=cl.Parallel(
-            noise_gate=multigate.noised_mask,
-            acts=multigate,
-        ).reduce(
-            (
-                lambda g, a: [
-                    torch.where(g, a, 0),
-                    torch.where(~g, a, 0),
-                ]
-            )
-            if cfg.detach
-            else (lambda g, a: [torch.zeros_like(a), a])
-        ),
-        dec_router=cl.Router(
+        act_metrics=cl.ops.Identity(),
+        freqs=None,
+        penalty=None,
+        decoder=cl.Router(
             det_dec=init._decoder.detached_no_bias,
-            decoder=ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(
+            decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+                saeco.components.hooks.feature_hooks.NormFeatures(
                     init.decoder,
                 ),
             ),
@@ -492,4 +499,4 @@ def run(cfg):
 if __name__ == "__main__":
     do_sweep(True)
 else:
-    pass
+    from saeco.architectures.runner_style.threshgate.tg2_config import cfg as cfg

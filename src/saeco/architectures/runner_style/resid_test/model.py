@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.autograd.function import Function
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import EMAFreqTracker, L1Penalty, L2Loss, SparsityPenaltyLoss
 from saeco.components.features.linear_type import LinDecoder, LinEncoder
@@ -312,7 +312,9 @@ def resid_sae(
     decoder = (
         penalizer.set_decoder(init.decoder.resampled())
         if cfg.anth_scale
-        else ft.OrthogonalizeFeatureGrads(ft.NormFeatures(init.decoder.resampled()))
+        else saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(init.decoder.resampled())
+        )
     )
     model_full = Seq(
         **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -101,8 +101,8 @@ def remax_sae(init: Initializer, remax_fn=None, basescale=50, **remax_kwargs):
                 metrics=co.metrics.ActMetrics(),
                 # null_penalty=LambdaPenalty(lambda x: 0),  # "no sparsity penalty"
                 sparsity_scale_penalty=LambdaPenalty(lambda x: torch.zeros(1)),
-                decoder=ft.OrthogonalizeFeatureGrads(
-                    ft.NormFeatures(
+                decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+                    saeco.components.hooks.feature_hooks.NormFeatures(
                         init.decoder,
                     ),
                 ),

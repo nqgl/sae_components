@@ -7,7 +7,6 @@ from saeco.architectures.prolu.prolu import (
 )
 
 import saeco.components as co
-import saeco.components.features.features as ft
 from saeco.components import (
     EMAFreqTracker,
     L1Penalty,
@@ -15,6 +14,7 @@ from saeco.components import (
     SparsityPenaltyLoss,
 )
 from saeco.components.hooks.clipgrad import ClipGrad
+import saeco.components.hooks.feature_hooks
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.core import Seq
 from saeco.data import DataConfig, ModelConfig
@@ -62,8 +62,10 @@ def sae(
 ):
     # init._encoder.add_wrapper(ReuseForward)
     if not cfg.anthropic_l1_mode:
-        init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
-        init._decoder.add_wrapper(ft.NormFeatures)
+        init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
+        )
+        init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
     dec_mul_l1 = L1PenaltyScaledByDecoderNorm(det_dec_norms=cfg.anthropic_l1_mode == 1)
     init._decoder.const_init_bias()
     init._encoder.const_init_bias(cfg.bias_init_value)

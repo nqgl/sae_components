@@ -3,6 +3,7 @@ import torch.nn as nn
 
 import saeco.components as co
 import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -81,8 +82,8 @@ def deep_resid_gated(
         )
 
     decoder = Seq(
-        weight=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        weight=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 ft.DecoderWeights(MatMul(weight(d_dict, d_data))).resampled()
             )
         ),
@@ -179,8 +180,8 @@ def deep_resid_gated2(
         )
 
     decoder = Seq(
-        weight=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        weight=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 ft.DecoderWeights(MatMul(weight(d_dict, d_data))).resampled()
             )
         ),

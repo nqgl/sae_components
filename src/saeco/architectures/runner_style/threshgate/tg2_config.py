@@ -8,16 +8,14 @@ from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
-
+from saeco.data.config.data_config_definitions import gpt_2_block
 from .tg_model2 import Config, HardSoftConfig
 
 PROJECT = "sae sweeps"
 
 cfg = RunConfig[Config](
     train_cfg=TrainConfig(
-        data_cfg=DataConfig(
-            model_cfg=ModelConfig(acts_cfg=ActsDataConfig(excl_first=True))
-        ),
+        data_cfg=gpt_2_block(7),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=50_000,
             resample_period=90_000,
@@ -30,7 +28,7 @@ cfg = RunConfig[Config](
         betas=(0.9, 0.997),
         #
         use_autocast=True,
-        use_lars=True,
+        use_lars=False,
         #
         l0_target=25,
         l0_target_adjustment_size=0.0003,

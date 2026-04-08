@@ -25,7 +25,14 @@ def sig_grad(x):
     return sig * (1 - sig)
 
 
-windows: dict[str, Callable[[Tensor], Tensor]] = {"sig": sig_grad}
+def one_everywhere(x):
+    return torch.ones_like(x)
+
+
+windows: dict[str, Callable[[Tensor], Tensor]] = {
+    "sig": sig_grad,
+    "one_everywhere": one_everywhere,
+}
 
 
 class WriteOnceBox[T]:
@@ -48,7 +55,6 @@ class GTCtxProto(Protocol):
     leniency: float
     d_data: int
     saved_tensors: tuple[Tensor, ...]
-    grad_window: Callable[[Tensor], Tensor]
 
     def save_for_backward(self, *tensors: Tensor): ...
 
@@ -62,7 +68,6 @@ class GradCtx:
     d_data: int
     leniency: float
     gate_post: WriteOnceBox[Tensor]
-    grad_window: Callable[[Tensor], Tensor]
 
     @classmethod
     def unpack(cls, ctx: GTCtxProto) -> Self:
@@ -76,7 +81,6 @@ class GradCtx:
             d_data=ctx.d_data,
             leniency=ctx.leniency,
             gate_post=ctx.gate_post,
-            grad_window=ctx.grad_window,
         )
 
     def pack_ctx_(
@@ -92,7 +96,6 @@ class GradCtx:
         ctx.gate_post = self.gate_post
         ctx.leniency = self.leniency
         ctx.d_data = self.d_data
-        ctx.grad_window = self.grad_window
 
     def calculate_adjustment(self, deviation: Tensor, leniency: float | None = None):
         return shrinkgrad_adjustment(
@@ -111,6 +114,12 @@ class ThreshGateConfigThing(SweepableConfig):
     out1_has_off_adjustment: bool = True
     out1_has_on_adjustment: bool = False
     out0_like_off_adj: bool = False
+    grad_window_str: str = "sig"
+    grad_window_size: float = 1.0
+
+    @cached_property
+    def grad_window(self) -> Callable[[Tensor], Tensor]:
+        return windows[self.grad_window_str]
 
     def _modify_grad_output(self, grad_output: Tensor, *, gcx: GradCtx):
         if self.modify_grad_output:
@@ -152,7 +161,14 @@ class ThreshGateConfigThing(SweepableConfig):
         out = out0 + out1
         if self.modify_grad_output:
             out = out * gcx.mag
-        return (out * gcx.grad_window(gcx.gate_pre), None, None, None, None, None)
+        return (
+            out * self.grad_window(gcx.gate_pre / self.grad_window_size),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
     def _make_out1(
         self,
@@ -182,7 +198,6 @@ def make_threshgate_autograd_function(tg_config: ThreshGateConfigThing, d_data: 
             noise: WriteOnceBox[Tensor],
             mag: Tensor,
             leniency: float,
-            grad_window: Callable[[Tensor], Tensor] = sig_grad,
         ):
             gate = gate_pre > 0
             GradCtx(
@@ -193,7 +208,6 @@ def make_threshgate_autograd_function(tg_config: ThreshGateConfigThing, d_data: 
                 leniency=leniency,
                 noise=noise,
                 gate_post=gate_post,
-                grad_window=grad_window,
             ).pack_ctx_(ctx)
 
             return gate.float()
@@ -211,11 +225,8 @@ def make_threshgate_autograd_function(tg_config: ThreshGateConfigThing, d_data: 
         noise: WriteOnceBox[Tensor],
         mag: Tensor,
         leniency: float,
-        grad_window: Callable[[Tensor], Tensor] = sig_grad,
     ) -> Tensor:
-        t = ThreshgateAutogradFunction.apply(
-            gate_pre, gate_post, noise, mag, leniency, grad_window
-        )
+        t = ThreshgateAutogradFunction.apply(gate_pre, gate_post, noise, mag, leniency)
         assert isinstance(t, Tensor)
         return t
 
@@ -324,6 +335,7 @@ class ThreshGateConfig(SweepableConfig):
     initial_leniency: float = 1
     signed_mag: bool = False
     deep_preprocessing: int | None = None
+    gate_bias_offset: float = 0.0
 
 
 class Mag(cl.Module):
@@ -335,6 +347,10 @@ class Mag(cl.Module):
     def forward(self, x, *, cache: cl.Cache, **kwargs):
         mag = self.mag.unsqueeze(0).expand(x.shape[0], -1)
         return mag
+
+    @property
+    def bias(self) -> nn.Parameter:
+        return self.mag
 
 
 class ThreshGate(cl.Module):
@@ -357,6 +373,10 @@ class ThreshGate(cl.Module):
         import saeco.components as co
         import saeco.core as cl
 
+        enc = init.encoder
+        with torch.no_grad():
+            enc.bias.data += self.cfg.gate_bias_offset
+
         if self.cfg.deep_preprocessing is not None:
             self.gate = cl.Seq(
                 res=cl.ResidualSeq(
@@ -367,11 +387,11 @@ class ThreshGate(cl.Module):
                         for _ in range(self.cfg.deep_preprocessing)
                     ]
                 ),
-                enc=init.encoder,
+                enc=enc,
             )
 
         else:
-            self.gate = init.encoder
+            self.gate = enc
         self.targeting = L0Targeting(
             init.l0_target,
             scale=cfg.initial_leniency,

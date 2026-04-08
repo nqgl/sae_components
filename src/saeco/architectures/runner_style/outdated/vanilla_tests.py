@@ -1,13 +1,13 @@
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
 from saeco.components import (
     EMAFreqTracker,
     L1Penalty,
     L2Loss,
     SparsityPenaltyLoss,
 )
+import saeco.components.hooks.feature_hooks
 from saeco.components.ops.fnlambda import Lambda
 from saeco.core import Seq
 
@@ -35,8 +35,8 @@ def basic_vanilla_sae_lin(init: Initializer):
         freqs=EMAFreqTracker(),
         L1=L1Penalty(),
         metrics=co.metrics.ActMetrics(),
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 init.decoder,
             ),
         ),
@@ -61,8 +61,8 @@ def classed_basic_vanilla_sae_lin(init: Initializer):
             nonlinearity=nn.ReLU(),
         ),
         penalty=L1Penalty(),
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 init.decoder,
             ),
         ),

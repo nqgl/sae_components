@@ -4,6 +4,7 @@ from pydantic import Field
 
 import saeco.components as co
 import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -188,8 +189,8 @@ def sae(
         penalty=LinearDecayL1Penalty(
             begin=0, end=5_000, end_scale=cfg.thresh_cfg.end_scale
         ),
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 init.decoder,
             ),
         ),

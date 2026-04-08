@@ -1,13 +1,13 @@
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
 from saeco.components import (
     EMAFreqTracker,
     L1Penalty,
     L2Loss,
     SparsityPenaltyLoss,
 )
+import saeco.components.hooks.feature_hooks
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
 from saeco.initializer import Initializer
@@ -30,8 +30,10 @@ def ln_sae(
 ):
     init._encoder.add_wrapper(ReuseForward)
     if cfg.untied:
-        init._decoder.add_wrapper(ft.NormFeatures)
-        init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
+        init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
+        )
     else:
         init._decoder.tie_weights(init._encoder)
     init._decoder._weight_tie = None

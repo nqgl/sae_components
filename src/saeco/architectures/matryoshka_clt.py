@@ -3,7 +3,7 @@ from functools import cached_property
 import torch
 import torch.nn as nn
 
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.architecture import SAE, Architecture, loss_prop, model_prop
 from saeco.components import Lambda, Loss, SparsityPenaltyLoss
@@ -52,7 +52,9 @@ def split_tensor(x, bounds, dim):
 
 
 class SplittableDecoder(
-    cl.Module, ft.OrthogonalizeFeatureGradsMixin, ft.NormFeaturesMixin
+    cl.Module,
+    saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin,
+    saeco.components.hooks.feature_hooks.NormFeaturesMixin,
 ):
     def __init__(self, d_dict, num_layers, d_data, num_nestings):
         super().__init__()

@@ -2,13 +2,13 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,
     LambdaPenalty,
     SparsityPenaltyLoss,
 )
+import saeco.components.hooks.feature_hooks
 from saeco.components.ops.fnlambda import Lambda
 from saeco.core import Seq
 
@@ -36,8 +36,8 @@ def topk_sae(init: Initializer):
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),
         null_penalty=LambdaPenalty(lambda x: torch.zeros(1)),  # "no sparsity penalty"
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 init.decoder,
             ),
         ),

@@ -2,13 +2,13 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
 from saeco.components.features.param_metadata import ParamMetadata
+import saeco.components.hooks.feature_hooks
 from saeco.components.jumprelu.jumprelu_fn import JumpReLU, L0Penalty
 from saeco.components.jumprelu.jumprelu_fn2 import modify_modified
 from saeco.components.jumprelu.kernels_fns import kernels
@@ -90,8 +90,8 @@ def jumprelu_sae(
                 modified_grad=(cfg.modified_thresh_grad, cfg.leniency, 768),
             ),
         ),
-        decoder=ft.OrthogonalizeFeatureGrads(
-            ft.NormFeatures(
+        decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
                 init.decoder,
             ),
         ),

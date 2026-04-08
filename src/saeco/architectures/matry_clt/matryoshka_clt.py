@@ -2,8 +2,8 @@ from functools import cached_property
 
 import einops
 import nnsight
-import saeco.components.features.features as ft
 
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 import torch
 import torch.nn as nn
@@ -161,7 +161,7 @@ def split_tensor(x, bounds, dim):
 
 
 class SplittableDecoder(
-    cl.Module, ft.OrthogonalizeFeatureGradsMixin, ft.NormFeaturesMixin
+    cl.Module, saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin, saeco.components.hooks.feature_hooks.NormFeaturesMixin
 ):
     def __init__(self, d_layer_dict, num_layers, d_layer_data, nesting_boundaries):
         super().__init__()

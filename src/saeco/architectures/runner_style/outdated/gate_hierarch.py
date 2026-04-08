@@ -1,9 +1,8 @@
-
 import torch.nn as nn
 from pydantic import Field
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -137,8 +136,10 @@ def get_hgates(
 ):
     init._encoder.add_wrapper(ReuseForward)
     if cfg.untied:
-        init._decoder.add_wrapper(ft.NormFeatures)
-        init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
+        init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
+        )
     else:
         init._decoder._weight_tie = None
         init._decoder.tie_weights(init._encoder)

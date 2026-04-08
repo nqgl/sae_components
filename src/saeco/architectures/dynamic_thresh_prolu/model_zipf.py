@@ -4,6 +4,7 @@ from pydantic import Field
 
 import saeco.components as co
 import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.architecture import (
     Architecture,
@@ -203,8 +204,8 @@ class DynamicZipfThreshSAE(Architecture[DynamicZipfThreshConfig]):
                 end=self.cfg.l1_decay_end,
                 end_scale=self.cfg.l1_end_scale,
             ),
-            decoder=ft.OrthogonalizeFeatureGrads(
-                ft.NormFeatures(
+            decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+                saeco.components.hooks.feature_hooks.NormFeatures(
                     self.init.decoder,
                 ),
             ),

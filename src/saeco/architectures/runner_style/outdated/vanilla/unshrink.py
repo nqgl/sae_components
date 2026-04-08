@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks as ft
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,

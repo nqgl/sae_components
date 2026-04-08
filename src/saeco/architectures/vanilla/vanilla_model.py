@@ -1,6 +1,6 @@
 import torch.nn as nn
 
-import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 from saeco.architecture import (
     SAE,
     Architecture,
@@ -28,8 +28,18 @@ class VanillaSAE(Architecture[VanillaConfig]):
         # these will add wrappers to the decoder that ensure:
         # 1. the features are normalized after each optimizer step to have unit norm
         # 2. the gradients of the features are orthogonalized after each backward pass before the optimizer step
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        # self.init._decoder.add_wrapper(
+        #     saeco.components.hooks.feature_hooks.NormFeatures
+        # )
+        # self.init._decoder.add_wrapper(
+        #     saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
+        # )
+        self.init._decoder.add_mixin_(
+            saeco.components.hooks.feature_hooks.NormFeaturesMixin
+        )
+        self.init._decoder.add_mixin_(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin
+        )
 
     # model_prop tells the Architecture class that this method
     # is the method that constructs the model.

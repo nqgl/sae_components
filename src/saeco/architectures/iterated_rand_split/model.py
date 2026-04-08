@@ -4,6 +4,7 @@ from pydantic import Field
 
 import saeco.components as co
 import saeco.components.features.features as ft
+import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.architecture import (
     SAE,
@@ -150,9 +151,13 @@ class Thresholder(cl.Module):
 
 class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
     def setup(self):
-        ft.OrthogonalizeFeatureGradsMixin
-        self.init._decoder.mixins.append(ft.OrthogonalizeFeatureGradsMixin)
-        self.init._decoder.mixins.append(ft.NormFeaturesMixin)
+        saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin
+        self.init._decoder.mixins.append(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin
+        )
+        self.init._decoder.mixins.append(
+            saeco.components.hooks.feature_hooks.NormFeaturesMixin
+        )
 
     @model_prop
     def model(self):
