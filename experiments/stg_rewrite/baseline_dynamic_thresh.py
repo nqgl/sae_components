@@ -73,7 +73,7 @@ cfg = RunConfig[DynamicThreshConfig](
 )
 arch = DynamicThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
-sweep_manager.rand_run_no_agent(project="nqgl/default-project")
+sweep_manager.rand_run_no_agent(project="default-project")
 
 
 # sweep_manager.initialize_sweep()

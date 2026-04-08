@@ -8,6 +8,7 @@ from typing import Protocol
 import wandb
 
 from saeco.sweeps.sweepable_config import SweepableConfig
+from saeco.trainer.trainer import mlog
 
 
 class SweepFile(Protocol):
@@ -86,13 +87,15 @@ class Sweeper:
             project=self.sweepfile.PROJECT,  # TODO change project to being from config maybe? or remove from config
         )
 
-    def rand_run_no_agent(self, init=False):
+    def rand_run_no_agent(self, init=True):
         basecfg: SweepableConfig = self.sweepfile.cfg
 
         cfg = basecfg.random_sweep_configuration()
         # wandb.init()
+
         if init:
-            wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
+            mlog.init()
+            # wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
         # wandb.config.update(cfg.model_dump())
         self.sweepfile.run(cfg)
         wandb.finish()

@@ -67,7 +67,7 @@ data_cfg = get_data_cfg(comlm_768_nodrop)
 # if __name__ == "__main__":
 #     from saeco.mlog import mlog
 
-#     mlog.init(project="nqgl/default-project")
+#     mlog.init(project="default-project")
 #     data_cfg.store_split(data_cfg.trainsplit)
 
 cfg = RunConfig[DynamicThreshConfig](
@@ -159,7 +159,7 @@ arch = DynamicThreshSAE(cfg)
 # piler.num_samples / 4096
 # piler.shapes["layers.6.output.0"]
 sweep_manager = arch.get_sweep_manager()
-sweep_manager.rand_run_no_agent(project="nqgl/default-project")
+sweep_manager.rand_run_no_agent(project="default-project")
 
 # sweep_manager.initialize_sweep()
 

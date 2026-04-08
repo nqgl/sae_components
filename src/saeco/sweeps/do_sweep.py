@@ -1,7 +1,7 @@
 def do_sweep(purge_after=True, in_cmd=None):
     import sys
 
-    from saeco.sweeps import Sweeper
+    from saeco.sweeps.sweeper import Sweeper
 
     swfpath = sys.argv[0]
     print("args:", sys.argv)

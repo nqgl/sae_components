@@ -1,4 +1,3 @@
-from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -10,8 +9,9 @@ from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from saeco.architectures.sweep_tg.symm_arch import TGArch, GateConfig
 
-cfg = RunConfig[VanillaConfig](
+cfg = RunConfig[GateConfig](
     train_cfg=TrainConfig(
         data_cfg=gpt_2_block(7),
         raw_schedule_cfg=RunSchedulingConfig(
@@ -23,9 +23,9 @@ cfg = RunConfig[VanillaConfig](
         batch_size=4096,
         optim="Adam",
         lr=2e-3,
-        betas=(0.9, 0.99),
+        betas=(0.9, 0.997),
         #
-        use_autocast=False,
+        use_autocast=True,
         use_lars=False,
         #
         l0_target=50,
@@ -43,12 +43,10 @@ cfg = RunConfig[VanillaConfig](
     ),
     #
     init_cfg=InitConfig(d_data=768, dict_mult=8),
-    arch_cfg=VanillaConfig(
-        pre_bias=True,
-    ),
+    arch_cfg=GateConfig(mag_weights=False, leniency_targeting=True),
 )
 
-arch = VanillaSAE(cfg)
+arch = TGArch(cfg)
 sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent(project="default-project")
 

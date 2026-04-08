@@ -75,7 +75,7 @@ cfg = RunConfig[DynamicThreshConfig](
         use_autocast=False,
         use_lars=Swept(False),
         #
-        l0_target=50,
+        l0_target=350,
         l0_target_adjustment_size=Swept(0.0003),
         coeffs={
             "sparsity_loss": Swept(0),
@@ -120,7 +120,7 @@ cfg = RunConfig[DynamicThreshConfig](
         dead_threshold=1e-6,
     ),
     #
-    init_cfg=InitConfig(d_data=512, dict_mult=128),
+    init_cfg=InitConfig(d_data=512, dict_mult=128 * 2),
     arch_cfg=DynamicThreshConfig(
         thresh_cfg=ThreshConfig(
             decay_toward_mean=s(0.0, 0.01, 0.03, 0.1, 0.3),
@@ -141,7 +141,7 @@ cfg = RunConfig[DynamicThreshConfig](
 cfg.to_swept_nodes().swept_combinations_count_including_vars()
 arch = DynamicThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
-sweep_manager.rand_run_no_agent(project="nqgl/default-project")
+sweep_manager.rand_run_no_agent(project="default-project")
 
 # sweep_manager.initialize_sweep()
 

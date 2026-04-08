@@ -29,19 +29,19 @@ cfg = RunConfig[TGSAEConfig](
             lr_warmup_length=2_000,
         ),
         #
-        batch_size=2048 * 2,
+        batch_size=2048,
         optim="AdamW",
-        lr=3e-4,
+        lr=1e-3,
         betas=(0.9, 0.99),
         #
         weight_decay=0.0,
-        use_autocast=False,
-        use_lars=True,
+        use_autocast=False,  # oh it behaves wrong when autocasted.
+        use_lars=False,
         #
         l0_target=50,
-        l0_target_adjustment_size=0.0000,
+        l0_target_adjustment_size=0.0003,
         coeffs={
-            "sparsity_loss": 1e-3,
+            "sparsity_loss": 3e-3,
             "L2_loss": 1,
         },
         #
@@ -53,21 +53,21 @@ cfg = RunConfig[TGSAEConfig](
         expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(d_data=768, dict_mult=8),
+    init_cfg=InitConfig(d_data=768, dict_mult=64),
     arch_cfg=TGSAEConfig(
         decay_l1_steps=None,
         penalize_in_gate=True,
         penalize_after_gate=False,
         thresh_gate_cfg=ThreshGateConfig(
-            deep_preprocessing=2,
+            deep_preprocessing=None,
             mag_weights=False,
-            leniency_targeting=0.0003,
+            leniency_targeting=0.0,
             initial_leniency=0.5,
             signed_mag=False,
             gate_cfg=GatingConfig(
                 gate_cfg=GateFunctionConfig(
                     uniform_noise=True,  # yeah kinda unsure on any of these
-                    noise_mult=0.5,  # wait this is kinda very high right?
+                    noise_mult=0.0,  # wait this is kinda very high right?
                     # no wait. it's maybe not so high. loss is MSE not L2 norm
                     # and normalized so each dim is about 1
                     # so.. yeah this is prob in the reasonable oom range
@@ -97,7 +97,7 @@ cfg = RunConfig[TGSAEConfig](
 )
 arch = TGArch(cfg)
 sweep_manager = arch.get_sweep_manager()
-sweep_manager.rand_run_no_agent(project="nqgl/default-project")
+sweep_manager.rand_run_no_agent(project="default-project")
 
 
 # sweep_manager.initialize_sweep()

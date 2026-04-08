@@ -3,32 +3,21 @@ from typing import TYPE_CHECKING
 
 from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 
-from .fns import NeptuneCustomLogger, NeptuneScaleLogger, WandbCustomLogger
+from .fns import WandbCustomLogger
 
 if TYPE_CHECKING:
     from saeco.sweeps.newsweeper import SweepData
 
-DEFAULT_LOGGER = os.environ.get("SAECO_DEFAULT_LOGGER", "neptune")
+DEFAULT_LOGGER = os.environ.get("SAECO_DEFAULT_LOGGER", "wandb")
 LOGGER_CLASSES = {
     "wandb": WandbCustomLogger,
-    "neptune": NeptuneCustomLogger,
-    "neptune_scale": NeptuneScaleLogger,
 }
 
-logger_class = LOGGER_CLASSES[DEFAULT_LOGGER]()
+_logger_instance = LOGGER_CLASSES[DEFAULT_LOGGER]()
 
 
 class mlog:
-    logger_instance: WandbCustomLogger | NeptuneCustomLogger | NeptuneScaleLogger = (
-        logger_class
-    )
-
-    @classmethod
-    def use_neptune_scale(cls):
-        if isinstance(cls.logger_instance, NeptuneScaleLogger):
-            return
-        assert cls.logger_instance is None or cls.logger_instance.run is None
-        cls.logger_instance = NeptuneScaleLogger()
+    logger_instance: WandbCustomLogger = _logger_instance
 
     @classmethod
     def init(cls, arch_ref=None, project=None, config=None, run_name=None):
