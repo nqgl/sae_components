@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.features as ft
 import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.components import (

@@ -1,7 +1,7 @@
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.features as ft
 from saeco.components import (
     EMAFreqTracker,
     L1Penalty,

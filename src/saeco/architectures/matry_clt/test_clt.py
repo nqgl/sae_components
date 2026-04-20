@@ -3,7 +3,7 @@ from functools import cached_property
 import torch
 import torch.nn as nn
 
-import saeco.components.hooks.feature_hooks
+import saeco.components.features as ft
 import saeco.core as cl
 from saeco.architecture import SAE, Architecture, loss_prop, model_prop
 from saeco.components import L2Loss, Lambda, SparsityPenaltyLoss
@@ -23,12 +23,8 @@ class CrossLayerTranscoder(Architecture[CrossLayerTranscoderConfig]):
         # 1. the features are normalized after each optimizer step to have unit norm
         # 2. the gradients of the features are orthogonalized after each backward pass before the optimizer step
 
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.NormFeatures
-        )
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-        )
+        self.init._decoder.add_wrapper(ft.NormFeatures)
+        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 
     # model_prop tells the Architecture class that this method
     # is the method that constructs the model.

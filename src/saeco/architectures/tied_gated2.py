@@ -3,7 +3,7 @@ import torch.nn as nn
 from saeco.architectures.prolu.prolu import PProLU, ProLUConfig, thresh_from_bwd
 
 import saeco.components as co
-import saeco.components.hooks.feature_hooks
+import saeco.components.features as ft
 import saeco.core as cl
 from saeco.components import (
     EMAFreqTracker,
@@ -143,16 +143,12 @@ class ShrinkGateSae(cl.Module):
         init._decoder.const_init_bias(0)
         init._encoder.const_init_bias(cfg.enc_bias_init_value)
         if cfg.constrain_D:
-            init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
-            init._decoder.add_wrapper(
-                saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-            )
+            init._decoder.add_wrapper(ft.NormFeatures)
+            init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
         if self.cfg.prolu_gate:
             init._encoder._bias = False
         if self.cfg.orth_enc_grads:
-            init._encoder.add_wrapper(
-                saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-            )
+            init._encoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
         # self.prolu = PProLU(cfg.prolu_cfg, init.d_dict)
         # self.det_prolu = DetProLu(cfg.det_prolu_cfg, self.prolu.bias)
         # self.magnitude_encoder = nn.Linear(

@@ -7,7 +7,6 @@ from saeco.components import (
     L2Loss,
     SparsityPenaltyLoss,
 )
-import saeco.components.hooks.feature_hooks
 from saeco.core import Seq
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import Initializer
@@ -29,10 +28,8 @@ def sae(
     cfg: Config,
 ):
     if cfg.untied:
-        init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
-        init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-        )
+        init._decoder.add_wrapper(ft.NormFeatures)
+        init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
     else:
         init._decoder.tie_weights(init._encoder)
 

@@ -3,7 +3,6 @@ from functools import cached_property
 import einops
 import nnsight
 
-import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 import torch
 import torch.nn as nn

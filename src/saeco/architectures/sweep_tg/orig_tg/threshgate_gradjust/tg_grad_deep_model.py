@@ -8,7 +8,7 @@ from saeco.architectures.threshgate_gradjust.threshgrad import (
     GTTest,
 )
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.features as ft
 import saeco.core as cl
 
 from saeco.initializer import Initializer
