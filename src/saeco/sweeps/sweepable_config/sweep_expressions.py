@@ -24,7 +24,7 @@ class ExpressionOpEnum(str, Enum):
 
     def evaluate(self, *args):
         ### non-binary ops
-        print("evaluating", self, args)
+        # print("evaluating", self, args)
         if self == ExpressionOpEnum.ADD:
             z = args[0]
             for arg in args[1:]:
@@ -138,8 +138,8 @@ class Op[T](SweepExpression[T]):
     values: list = []
 
     def evaluate(self, vars_dict: dict[str, Any]) -> T:
-        print(self)
-        print(vars_dict)
+        # print(self)
+        # print(vars_dict)
         result = self.op.evaluate(
             *[child.evaluate(vars_dict) for child in self.children]
         )
@@ -147,7 +147,7 @@ class Op[T](SweepExpression[T]):
 
         assert my_type is not None
         self.children[0].repr()
-        print(self.repr())
+        # print(self.repr())
         # if (
         #     isinstance(result, float)
         #     and my_type is int

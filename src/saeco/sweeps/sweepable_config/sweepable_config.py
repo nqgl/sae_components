@@ -309,7 +309,7 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
 
     def from_selective_sweep(self, sweep: dict[str, Any]) -> Self:
         sweep = sweep.copy()
-        print("sweep", sweep)
+        # print("sweep", sweep)
         self_copy = self.model_copy(deep=True)  # I think this is no longer needed
         p = _get_sweepvars(self_copy)
         var_data = sweep.pop("sweep_vars")
@@ -318,12 +318,12 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
             #     # for k, v in var_data.items():
             #     #     sv_dict[k].instantiated_value = v
             # else:
-            print("no sweep vars?")
-            print("self paths", self.to_swept_nodes().get_paths_to_sweep_expressions())
-            print(
-                "copy paths",
-                self_copy.to_swept_nodes().get_paths_to_sweep_expressions(),
-            )
+            # print("no sweep vars?")
+            # print("self paths", self.to_swept_nodes().get_paths_to_sweep_expressions())
+            # print(
+            #     "copy paths",
+            #     self_copy.to_swept_nodes().get_paths_to_sweep_expressions(),
+            # )
 
             assert "sweep_vars" not in sweep or sweep["sweep_vars"] == {}, (
                 self.to_swept_nodes().get_paths_to_sweep_expressions(),
@@ -343,17 +343,9 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
         return _get_sweep_expression_instantiations_dict(self, var_data)
 
     def random_sweep_inst_dict(self):
-        d = _to_randomly_selected_dict(self)
-        copy = self.model_copy(deep=True)
-        p = _get_sweepvars(copy)
-        import random
+        return self.to_swept_nodes().random_selection()
 
-        assert "sweep_vars" not in d
-        if p:
-            d["sweep_vars"] = {k.name: random.choice(k.values) for k in p}
-        return d
-
-    def random_sweep_configuration(self):
+    def random_sweep_configuration(self) -> Self:
         return self.from_selective_sweep(self.random_sweep_inst_dict())
 
     def select_instance_by_index(self, index: int):
