@@ -5,6 +5,7 @@ from warnings import deprecated
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.initializer import Initializer
 from saeco.trainer.normalizers import GeneralizedNormalizer
+from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 
 from .run_config import RunConfig
 from .saved_model_source_info import ModelReloadInfo
@@ -75,13 +76,14 @@ class TrainingRunner:
         self._trainable_loaded = True
         trainable = Trainable(
             self.models,
-            self.losses,
+            losses=self.losses,
             normalizer=self.normalizer,
             resampler=self.resampler,
         ).cuda()
         if self.state_dict is not None:
             load_result = trainable.load_state_dict(self.state_dict)
             print("loaded state dict into trainable:", load_result)
+
         return trainable
 
     @cached_property
@@ -94,18 +96,22 @@ class TrainingRunner:
 
     @cached_property
     def normalizer(self):
-        # normalizer = NORMALIZERS[self.cfg.sae_cfg.normalizer]()
-        normalizer = GeneralizedNormalizer(
+        normalizer = StaticInvertibleGeneralizedNormalizer(
             init=self.initializer, cfg=self.cfg.normalizer_cfg
-        )
+        ).to(device="cuda")
+
+        def data_gen():
+            for d in self.data:
+                yield d.cuda()
+
         if self.state_dict is None:
-            normalizer.prime_normalizer(self.data)
+            normalizer.prime_normalizer(data_gen())
         return normalizer
 
     # @normalizer.setter
-    def normalizer(self, value):
-        self._normalizer = value
-        self._normalizer.prime_normalizer(self.data)
+    # def normalizer(self, value):
+    #     self._normalizer = value
+    #     self._normalizer.prime_normalizer(self.data)
 
     @cached_property
     def trainer(self):
@@ -113,8 +119,9 @@ class TrainingRunner:
             self.cfg.train_cfg,
             run_cfg=self.cfg,
             model=self.trainable,
-            run_name=self.name,
-            reload_info=ModelReloadInfo.from_model_fn(self.model_fn),
+            # run_name=self.name,
+            recons_eval_fns={},
+            # reload_info=ModelReloadInfo.from_model_fn(self.model_fn),
         )
         # trainer.post_step()
         return trainer

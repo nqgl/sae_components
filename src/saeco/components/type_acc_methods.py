@@ -116,17 +116,6 @@ class typeacc_method[T, **P]:
         return {f: getattr(inst, f) for f in fields}
 
 
-class arch_prop_singular(typeacc_method):
-    COLLECTED_FIELD_SINGULAR = True
-
-    @classmethod
-    def get_from_fields(cls, inst: object) -> Callable:
-        fields = cls.get_fields(inst.__class__)
-        assert cls.COLLECTED_FIELD_SINGULAR
-        assert len(fields) == 1
-        return getattr(inst, fields[0])
-
-
 class PreForwardHook(typeacc_method): ...
 
 

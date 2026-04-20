@@ -64,7 +64,7 @@ class TrainConfig(SweepableConfig):
     kwargs: dict = Field(default_factory=dict)
     optim: str = "RAdam"
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
-    use_averaged_model: bool = True
+    use_averaged_model: bool = False
     checkpoint_period: int | None = None
     save_on_complete: bool = True
     weight_decay: float | None = None

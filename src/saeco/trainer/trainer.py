@@ -195,8 +195,7 @@ class Trainer:
         cache._watch(self.trainable.get_losses_and_metrics_names())
         cache.trainer = ...
         cache.trainer = self
-        if not eval_mode:
-            cache.trainstep = self.t
+        cache.trainstep = self.t
         return cache
 
     def train(

@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 
@@ -136,6 +135,11 @@ class LinearFactory:
             raise ValueError("Cannot add wrappers after linear has been created")
         self.wrappers.append(wrapper)
 
+    def add_mixin_(self, mixin):
+        if not self.unset:
+            raise ValueError("Cannot add mixins after linear has been created")
+        self.mixins.append(mixin)
+
     @property
     def linear_cls(self) -> type[nn.Linear]:
         if len(self.mixins) == 0:
@@ -178,7 +182,7 @@ class LinearFactory:
             self._linear = self.make_new()
         return self._linear
 
-    def new_bias(self) -> torch.Tensor:
+    def new_bias(self) -> nn.Parameter:
         class temp:
             weight = self.lin.weight
             bias = torch.zeros(self.d_out)
