@@ -10,6 +10,5 @@ attrs
 jaxtyping
 datasets
 transformers
-neptune
 zstd
 paramsight @ git+https://github.com/nqgl/paramsight.git
