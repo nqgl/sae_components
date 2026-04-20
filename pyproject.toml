@@ -47,3 +47,6 @@ pythonVersion = "3.13"
 testpaths = [
     "tests",
 ]
+
+[tool.uv.extra-build-dependencies]
+torchlars = ["torch"]
