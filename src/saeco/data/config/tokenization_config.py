@@ -33,7 +33,9 @@ class TokenizationConfig(SweepableConfig):
 
     map_batch_size: int = 1000
     map_num_proc: int | None = 4
-    min_doc_tokens: int = 8
+    # Drop any tokenized document whose length is below this threshold
+    # (applied per-document, before packing/padding/truncation).
+    min_seq_len: int = 8
 
     template_version_tag: str | None = None
 

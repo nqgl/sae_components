@@ -75,7 +75,7 @@ class OnTheFlyTokenizer:
             )
             for row in mapped:
                 ids = row["input_ids"]
-                if len(ids) >= tcfg.min_doc_tokens:
+                if len(ids) >= tcfg.min_seq_len:
                     yield list(ids)
             return
 
@@ -93,7 +93,7 @@ class OnTheFlyTokenizer:
                 ids = self.tokenizer.apply_chat_template(messages, **chat_kwargs)
                 if isinstance(ids, list) and ids and isinstance(ids[0], list):
                     ids = ids[0]
-                if len(ids) >= tcfg.min_doc_tokens:
+                if len(ids) >= tcfg.min_seq_len:
                     yield list(ids)
             return
 

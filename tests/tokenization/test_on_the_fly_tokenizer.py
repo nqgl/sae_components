@@ -71,7 +71,7 @@ def test_raw_text_truncate_drops_short(gpt2_tokenizer):
         mode=TokenizationMode.RAW_TEXT,
         packing=PackingMode.TRUNCATE,
         map_num_proc=None,
-        min_doc_tokens=0,
+        min_seq_len=0,
     )
     otf = OnTheFlyTokenizer(
         cfg=_make_cfg(hf, tcfg, seq_len=128),
@@ -171,3 +171,126 @@ def test_strip_historical_thinking_handles_list_content():
     assert types_first == {"text"}
     types_last = {c.get("type") for c in cleaned[2]["content"]}
     assert types_last == {"thinking", "text"}
+
+
+# Gemma-4 style chat template: same structure as google/gemma-*-it (role
+# mapping, <start_of_turn>/<end_of_turn> delimiters, add_generation_prompt
+# hook, optional enable_thinking channel).
+GEMMA_STYLE_TEMPLATE = (
+    "{% for message in messages %}"
+    "{{ '<start_of_turn>' + (message['role'] if message['role'] != 'assistant' else 'model') + '\n' }}"
+    "{{ message['content'] | trim + '<end_of_turn>\n' }}"
+    "{% endfor %}"
+    "{% if add_generation_prompt %}<start_of_turn>model\n"
+    "{% if enable_thinking %}<think>\n{% endif %}"
+    "{% endif %}"
+)
+
+
+def test_gemma_style_chat_template_roundtrip(gpt2_tokenizer):
+    """Verify our conversation-mode tokenization produces the Gemma control
+    structure (role mapping, turn delimiters) when the tokenizer's chat
+    template matches Gemma's."""
+    tokenizer = gpt2_tokenizer
+    tokenizer.chat_template = GEMMA_STYLE_TEMPLATE
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    convos = [
+        [
+            {"role": "user", "content": "what is 2+2?"},
+            {"role": "assistant", "content": "four"},
+        ]
+    ]
+    hf = datasets.Dataset.from_dict({"messages": convos})
+    tcfg = TokenizationConfig(
+        mode=TokenizationMode.CONVERSATION,
+        packing=PackingMode.PAD,
+        messages_column="messages",
+        # No generation prompt — we're tokenizing finished assistant turns.
+        chat_template_kwargs={"add_generation_prompt": False},
+    )
+    otf = OnTheFlyTokenizer(
+        cfg=_make_cfg(hf, tcfg, seq_len=64),
+        split=SplitConfig(),
+        tokenizer=tokenizer,
+    )
+    (batch,) = list(otf.iter_dict_batches(yield_rows_per_batch=4))
+    real_len = int(batch["attention_mask"][0].sum())
+    decoded = tokenizer.decode(batch["input_ids"][0, :real_len])
+
+    # Roles: Gemma calls the assistant "model" in its template — this is the
+    # rule we need to preserve for Gemma-4 correctness.
+    assert "<start_of_turn>user" in decoded
+    assert "<start_of_turn>model" in decoded
+    assert "<start_of_turn>assistant" not in decoded
+    assert decoded.count("<end_of_turn>") == 2
+    assert "what is 2+2?" in decoded
+    assert "four" in decoded
+
+
+def test_chat_template_kwargs_passed_through_enable_thinking(gpt2_tokenizer):
+    """Sanity-check that `enable_thinking` actually reaches the template, by
+    using a template that conditionally emits a <think> block when it's set."""
+    tokenizer = gpt2_tokenizer
+    tokenizer.chat_template = GEMMA_STYLE_TEMPLATE
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    convos = [[{"role": "user", "content": "hello"}]]
+    hf = datasets.Dataset.from_dict({"messages": convos})
+
+    def decode_one(chat_kwargs: dict):
+        tcfg = TokenizationConfig(
+            mode=TokenizationMode.CONVERSATION,
+            packing=PackingMode.PAD,
+            messages_column="messages",
+            chat_template_kwargs=chat_kwargs,
+        )
+        otf = OnTheFlyTokenizer(
+            cfg=_make_cfg(hf, tcfg, seq_len=64),
+            split=SplitConfig(),
+            tokenizer=tokenizer,
+        )
+        (batch,) = list(otf.iter_dict_batches(yield_rows_per_batch=4))
+        real_len = int(batch["attention_mask"][0].sum())
+        return tokenizer.decode(batch["input_ids"][0, :real_len])
+
+    with_think = decode_one(
+        {"add_generation_prompt": True, "enable_thinking": True}
+    )
+    without_think = decode_one(
+        {"add_generation_prompt": True, "enable_thinking": False}
+    )
+    assert "<think>" in with_think
+    assert "<think>" not in without_think
+
+
+def test_min_seq_len_drops_short_docs(gpt2_tokenizer):
+    """Newly-renamed min_seq_len should drop tokenized docs below the
+    threshold. PACK with min_seq_len=0 keeps everything; with a high
+    threshold, short rows disappear."""
+    texts = ["a", "b", "c"]  # each will tokenize to ~1-2 tokens
+    hf = datasets.Dataset.from_dict({"text": texts})
+
+    def run(min_seq_len: int):
+        tcfg = TokenizationConfig(
+            mode=TokenizationMode.RAW_TEXT,
+            packing=PackingMode.PACK,
+            map_num_proc=None,
+            min_seq_len=min_seq_len,
+        )
+        otf = OnTheFlyTokenizer(
+            cfg=_make_cfg(hf, tcfg, seq_len=16),
+            split=SplitConfig(),
+            tokenizer=gpt2_tokenizer,
+        )
+        total = sum(t.numel() for t in otf.iter_tensor_batches(yield_rows_per_batch=4))
+        # Also access the doc iterator directly to count kept docs cleanly.
+        kept = sum(1 for _ in otf._iter_doc_ids())
+        return total, kept
+
+    _, kept_all = run(min_seq_len=0)
+    _, kept_filtered = run(min_seq_len=100)
+    assert kept_all == len(texts)
+    assert kept_filtered == 0
