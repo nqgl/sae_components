@@ -1,14 +1,14 @@
-from saeco.trainer.run_config import RunConfig
-from .tg_grad_deep_model import DeepConfig
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig, Swept
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
+
+from .tg_grad_deep_model import DeepConfig
 
 PROJECT = "binarize"
 

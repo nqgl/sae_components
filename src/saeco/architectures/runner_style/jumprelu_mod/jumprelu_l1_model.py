@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
+import saeco.components.hooks.feature_hooks
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,
     SparsityPenaltyLoss,
 )
-import saeco.components.hooks.feature_hooks
 from saeco.components.jumprelu.jumprelu_fn import JumpReLU, L0Penalty
 from saeco.components.jumprelu.kernels_fns import kernels
 from saeco.components.penalties.l1_penalizer import (

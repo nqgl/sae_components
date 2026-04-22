@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import itertools
 import random
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import cached_property
 from pathlib import Path
 from typing import (
-    Literal,
     cast,
-    overload,
 )
 
 import torch

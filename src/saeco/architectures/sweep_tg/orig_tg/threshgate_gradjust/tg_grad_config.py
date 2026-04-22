@@ -1,14 +1,15 @@
-from saeco.trainer.run_config import RunConfig
-from .tg_grad_model import Config
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
 from saeco.data import ActsDataConfig, DataConfig, ModelConfig
-from saeco.sweeps import SweepableConfig, Swept
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.train_config import TrainConfig
 from saeco.initializer import InitConfig
+from saeco.sweeps import Swept
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
+
+from .tg_grad_model import Config
 
 PROJECT = "sae sweeps"
 

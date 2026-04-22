@@ -1,10 +1,12 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
 
 # port of sweep_tg/sthreshgrad.py
 from torch.amp import custom_bwd, custom_fwd
 from torch.cuda.amp import custom_bwd, custom_fwd
-from typing import Any
+
 import saeco
 import saeco.components as co
 import saeco.components.hooks.feature_hooks

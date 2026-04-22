@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
-from saeco.sweeps import SweepableConfig
+
 from saeco.components.penalties.l0targeter import L0Targeting
+from saeco.sweeps import SweepableConfig
 
 
 def shrinkgrad_adjustment(errors, leniency, dd, b):
@@ -153,8 +154,8 @@ def gate(
 
 
 import saeco.core as cl
-from saeco.initializer import Initializer
 from saeco.components.features import FeaturesParam
+from saeco.initializer import Initializer
 
 
 class Config(SweepableConfig):

@@ -1,10 +1,8 @@
+import torch
 from torch.optim.optimizer import Optimizer as Optimizer
+
 import saeco.components.features as ft
 from saeco.misc import lazycall
-
-
-import torch.nn as nn
-import torch
 
 
 class RandResampledFP(ft.FeaturesParam):

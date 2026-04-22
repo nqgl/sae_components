@@ -7,7 +7,10 @@ import tqdm
 from attrs import define
 
 from saeco.data.config.split_config import SplitConfig
+from saeco.data.config.tokenization_config import PackingMode, TokenizationMode
 from saeco.data.piler import Piler
+from saeco.data.piler.dict_piler import DictPiler
+from saeco.data.training_data.on_the_fly_tokenizer import OnTheFlyTokenizer
 from saeco.data.training_data.tokens_data_interface import TokensDataInterface
 
 if TYPE_CHECKING:
@@ -60,7 +63,14 @@ class TokensData(TokensDataInterface[torch.Tensor]):
             raise ValueError(
                 f"Document length {self.dataset_document_length} is less than the requested sequence length {self.seq_len}"
             )
-        if self.cfg.set_bos:
+        # Only force first-token BOS for the pretokenized path. When tokenizing
+        # on-the-fly, the tokenizer (or chat template) already injects BOS
+        # where appropriate — overwriting here would produce double-BOS or
+        # clobber the first real token of a packed sequence.
+        if (
+            self.cfg.set_bos
+            and self.cfg.tokenization.mode == TokenizationMode.PRETOKENIZED
+        ):
             docs[:, 0] = self.cfg.model_cfg.tokenizer.bos_token_id
         return docs
 
@@ -87,7 +97,34 @@ class TokensData(TokensDataInterface[torch.Tensor]):
             self.cfg._tokens_piles_path(self.split),
         )
 
+    def _tokens_dict_piler(self, write: bool, num_tokens: int | None = None) -> DictPiler:
+        path = self.cfg._tokens_piles_path(self.split)
+        if write:
+            assert num_tokens is not None
+            return DictPiler.create(
+                path,
+                dtypes={"input_ids": torch.int64, "attention_mask": torch.bool},
+                fixed_shapes={
+                    "input_ids": [self.seq_len],
+                    "attention_mask": [self.seq_len],
+                },
+                num_piles=(
+                    1 + num_tokens // self.cfg.generation_config.tokens_per_pile
+                ),
+            )
+        return DictPiler.open(path)
+
     def _store_split(self, split: SplitConfig):
+        mode = self.cfg.tokenization.mode
+        packing = self.cfg.tokenization.packing
+        if mode == TokenizationMode.PRETOKENIZED:
+            self._store_split_pretokenized(split)
+        elif packing == PackingMode.PAD:
+            self._store_split_on_the_fly_pad(split)
+        else:
+            self._store_split_on_the_fly_tensor(split)
+
+    def _store_split_pretokenized(self, split: SplitConfig):
         tqdm.tqdm.write(f"Storing tokens for {split.split}")
         piler = self.tokens_piler(write=True, num_tokens=self.num_tokens)
         tqdm.tqdm.write("Distributing tokens to piles")
@@ -102,6 +139,41 @@ class TokensData(TokensDataInterface[torch.Tensor]):
         ):
             piler.distribute(self.documents[i : i + doc_dist_batch_size])
         piler.shuffle_piles()
+
+    def _on_the_fly_tokenizer(self) -> OnTheFlyTokenizer:
+        return OnTheFlyTokenizer(
+            cfg=self.cfg,
+            split=self.split,
+            tokenizer=self.cfg.model_cfg.model_load_cfg.tokenizer,
+        )
+
+    def _on_the_fly_yield_rows(self) -> int:
+        # Tie yield batch size to the tokenization map batch size; this governs
+        # how many rows are buffered in memory before a piler.distribute call.
+        return max(1, self.cfg.tokenization.map_batch_size)
+
+    def _store_split_on_the_fly_tensor(self, split: SplitConfig):
+        tqdm.tqdm.write(
+            f"Tokenizing on the fly ({self.cfg.tokenization.mode.value},"
+            f" {self.cfg.tokenization.packing.value}) for {split.split}"
+        )
+        otf = self._on_the_fly_tokenizer()
+        num_tokens_estimate = otf.estimate_num_tokens()
+        piler = self.tokens_piler(write=True, num_tokens=num_tokens_estimate)
+        for batch in otf.iter_tensor_batches(self._on_the_fly_yield_rows()):
+            piler.distribute(batch)
+        piler.shuffle_piles()
+
+    def _store_split_on_the_fly_pad(self, split: SplitConfig):
+        tqdm.tqdm.write(
+            f"Tokenizing on the fly (pad) for {split.split}"
+        )
+        otf = self._on_the_fly_tokenizer()
+        num_tokens_estimate = otf.estimate_num_tokens()
+        dict_piler = self._tokens_dict_piler(write=True, num_tokens=num_tokens_estimate)
+        for batch in otf.iter_dict_batches(self._on_the_fly_yield_rows()):
+            dict_piler.distribute(batch)
+        dict_piler.shuffle_piles()
 
     def get_tokens(self, num_tokens: int | None = None) -> torch.Tensor:
         if not self.cfg._tokens_piles_path(self.split).exists():

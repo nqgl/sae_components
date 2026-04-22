@@ -1443,7 +1443,16 @@ class DictBatchShape:
     def __getitem__(self, key: Literal[0]) -> int: ...
     @overload
     def __getitem__(self, key: int) -> dict[str, int]: ...
-    def __getitem__(self, key: str | int) -> tuple[int, ...] | int | dict[str, int]:
+    @overload
+    def __getitem__(self, key: slice) -> tuple[int, ...]: ...
+    def __getitem__(
+        self, key: str | int | slice
+    ) -> tuple[int, ...] | int | dict[str, int]:
+        if isinstance(key, slice):
+            s = {v[key] for v in self.shapes.values()}
+            if len(s) != 1:
+                raise ValueError("inconsistent shapes from sliced items")
+            return s.pop()
         if key == 0:
             return self.batch_size
         if isinstance(key, str):

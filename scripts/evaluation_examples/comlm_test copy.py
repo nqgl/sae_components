@@ -1,5 +1,4 @@
 # %%
-from collections.abc import Callable
 
 import torch
 from comlm.datasource.training_batch import NoisedBatch
@@ -9,11 +8,8 @@ from torch import Tensor
 
 from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
-from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
-
 from saeco.evaluation.eval_components.perturbation_analysis import MetadataValueMap
-
+from saeco.evaluation.evaluation import Evaluation
 
 NoisedBatch
 root: Evaluation[XRNoisedBatch] = root_eval

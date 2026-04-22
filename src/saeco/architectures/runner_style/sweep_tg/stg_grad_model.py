@@ -1,8 +1,8 @@
 from saeco.architectures.sweep_tg.sthreshgrad import BinaryEncoder, Config, GTTest
 
 import saeco.components as co
-from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 import saeco.components.hooks.feature_hooks
+from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif

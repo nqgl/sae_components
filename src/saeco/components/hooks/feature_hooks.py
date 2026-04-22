@@ -3,7 +3,7 @@ from warnings import deprecated
 
 import torch
 
-from saeco.components.features import HasFeatures
+from saeco.components.features.features import HasFeatures
 from saeco.components.features.features_param import FeaturesParam
 from saeco.components.type_acc_methods import post_backward_hook, post_step_hook
 from saeco.components.wrap import WrapsModule

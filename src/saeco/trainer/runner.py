@@ -4,7 +4,6 @@ from warnings import deprecated
 
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.initializer import Initializer
-from saeco.trainer.normalizers import GeneralizedNormalizer
 from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 
 from .run_config import RunConfig

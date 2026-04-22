@@ -1,24 +1,20 @@
 # port of sweep_tg/sthreshgrad.py
+from typing import Any
+
 import torch
 import torch.nn as nn
 from torch.amp import custom_bwd, custom_fwd
 
-from saeco.components.penalties.l0targeter import L0Targeting
-from saeco.sweeps import SweepableConfig
-
-
-from saeco.architecture import Architecture, model_prop, loss_prop, SAE
-
-from saeco.core import Seq
-
+import saeco
 import saeco.components as co
-from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 import saeco.components.hooks.feature_hooks
+from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
+from saeco.components.penalties.l0targeter import L0Targeting
 from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
-from typing import Any
-import saeco
+from saeco.sweeps import SweepableConfig
 
 
 def shrinkgrad_adjustment(errors, leniency, dd, b):
@@ -155,7 +151,6 @@ def gate(
 
 import saeco.core as cl
 from saeco.components.features import FeaturesParam
-from saeco.initializer import Initializer
 
 
 class GateConfig(SweepableConfig):
@@ -317,12 +312,7 @@ class GTMulti(cl.Module):
         return {"mag": FeaturesParam(self.mag, 0, "bias")}
 
 
-import saeco.components as co
-from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
-import saeco.components.hooks.feature_hooks
-from saeco.core import Seq
 from saeco.initializer import Initializer
-from saeco.misc import useif
 
 
 def tg_grad_sae(

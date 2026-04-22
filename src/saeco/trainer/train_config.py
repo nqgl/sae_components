@@ -1,5 +1,4 @@
 from functools import cached_property
-from typing import Any
 
 from pydantic import Field
 
@@ -13,7 +12,6 @@ from .schedule_cfg import RunSchedulingConfig
 
 
 class EarlyStoppingBounds(SweepableConfig):
-    # check_timestamps: list[int] = Field(default_factory=list[int])
     min_values: dict[str, dict[int, float]]
     max_values: dict[str, dict[int, float]]
 
@@ -31,7 +29,6 @@ class EarlyStoppingBounds(SweepableConfig):
     def should_stop(self, cache: SAECache, t: int):
         if t not in self.check_timestamps:
             return False
-        print("getfields", cache._getfields())
         for k, v in self.min_values.items():
             if t not in v:
                 continue
@@ -51,7 +48,6 @@ class TrainConfig(SweepableConfig):
     data_cfg: DataConfig = Field(default_factory=DataConfig)
     wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
     coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
-    # coeffs: Coeffs = Field(default_factory=Coeffs)
     l0_targeter_type: str = "gentle_basic"
     l0_target: float | None = None
     l0_targeting_enabled: bool = True

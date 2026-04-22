@@ -1,3 +1,10 @@
+from saeco.components.hooks.feature_hooks import (
+    NormFeatures,
+    NormFeaturesMixin,
+    OrthogonalizeFeatureGrads,
+    OrthogonalizeFeatureGradsMixin,
+)
+
 from .features import EncoderBias, Resamplable, ResampledWeight
 from .features_param import (
     FeaturesParam,
@@ -6,9 +13,3 @@ from .features_param import (
     get_resampled_params,
 )
 from .linear_type import LinDecoder, LinEncoder
-from saeco.components.hooks.feature_hooks import (
-    OrthogonalizeFeatureGradsMixin,
-    OrthogonalizeFeatureGrads,
-    NormFeatures,
-    NormFeaturesMixin,
-)

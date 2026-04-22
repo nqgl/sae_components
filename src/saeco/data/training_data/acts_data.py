@@ -103,10 +103,27 @@ class ActsDataCreator:
                     # }
                     model = self.model
                     d = {}
+                    chunk = tx_inputs[i : i + llm_batch_size]
+                    extra_kwargs = dict(self.cfg.model_cfg.model_kwargs)
+                    # Vanilla DictBatch (on-the-fly PAD output) → plain tokens
+                    # tensor using the configured column name, plus the
+                    # attention_mask injected into HF's forward kwargs. The
+                    # HF-side kwarg name "attention_mask" is HF's forward API
+                    # contract, not a dataset column choice. Model-specific
+                    # batch types (ComLM XRNoisedBatch, etc.) are DictBatch
+                    # subclasses and are handled by their own unpack_model_inputs.
+                    if type(chunk) is DictBatch:
+                        if self.cfg.attention_mask_column_name is not None:
+                            mask = chunk.get(self.cfg.attention_mask_column_name)
+                            if mask is not None:
+                                extra_kwargs["attention_mask"] = mask.to(
+                                    dtype=torch.long
+                                )
+                        chunk = chunk[self.cfg.tokens_column_name]
                     args, kwargs = (
                         self.cfg.model_cfg.model_load_cfg.unpack_model_inputs(
-                            tx_inputs[i : i + llm_batch_size],
-                            extra_kwargs=self.cfg.model_cfg.model_kwargs,
+                            chunk,
+                            extra_kwargs=extra_kwargs,
                         )
                     )
                     assert len(args) > 0, (
@@ -121,13 +138,12 @@ class ActsDataCreator:
                     for site in self.cfg.model_cfg.acts_cfg.sites:
                         acts_dict[site].append(d[site])
 
-        acts = {}
-
-        for site in self.cfg.model_cfg.acts_cfg.sites:
-            acts[site] = torch.cat(acts_dict[site], dim=0)
-
-        acts = DictBatch(data=acts)
-
+        acts = DictBatch(
+            data={
+                site: torch.cat(acts_dict[site], dim=0)
+                for site in self.cfg.model_cfg.acts_cfg.sites
+            }
+        )
         if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
             acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
         # TODO Generate and use mask from custom
@@ -135,21 +151,34 @@ class ActsDataCreator:
         flatten_pattern = "batch seq ... -> (batch seq) ..."
 
         acts = acts[:, : self.cfg.seq_len]
-        if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
-            acts = acts[:, 1:]
-            # toks_re = toks_re[:, 1:]
         mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
             tx_inputs, self.cfg.seq_len
         )
+        input_tokens = (
+            tx_inputs[self.cfg.tokens_column_name]
+            if isinstance(tx_inputs, DictBatch)
+            else tx_inputs
+        )
 
-        # if isinstance(toks_re, DictBatch):
-        #     toks_re = toks_re.einops_rearrange(flatten_pattern)
-        # else:
-        #     toks_re = einops.rearrange(
-        #         toks_re,
-        #         flatten_pattern,
-        #     )
-        # toks_re = toks_re[mask]
+        attention_mask = True
+        if self.cfg.attention_mask_column_name is not None:
+            assert isinstance(tx_inputs, DictBatch)
+            attention_mask = tx_inputs[self.cfg.attention_mask_column_name]
+
+            if mask is not None:
+                mask = mask & attention_mask
+            else:
+                mask = attention_mask
+
+        all_same_bos = (input_tokens[:, 0] == input_tokens[0, 0]).all()
+        if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
+            assert all_same_bos
+            if mask is not None:
+                assert mask.shape == acts.shape[:2]
+                mask = mask[:, 1:]
+            acts = acts[:, 1:]
+        else:
+            assert not all_same_bos
         if not rearrange:
             assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
             return acts

@@ -1,9 +1,10 @@
 # %%
-import wandb
 import wandb.apis
 import wandb.data_types
 import wandb.util
 import wandb.wandb_run
+
+import wandb
 
 api = wandb.Api()
 

@@ -1,8 +1,8 @@
 import torch.nn as nn
-import saeco.components.hooks.feature_hooks
 from saeco.components.model import Architecture
 
 import saeco.components as co
+import saeco.components.hooks.feature_hooks
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,

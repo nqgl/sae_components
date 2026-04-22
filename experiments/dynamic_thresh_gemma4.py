@@ -1,5 +1,3 @@
-from comlm.storage import ComposerModelName
-
 from saeco.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshConfig,
     DynamicThreshSAE,
@@ -9,6 +7,9 @@ from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
+from saeco.data.config.data_config_definitions import (
+    gemma_4_lmsys_chat,
+)
 from saeco.initializer import InitConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
@@ -17,68 +18,24 @@ from saeco.trainer.train_config import EarlyStoppingBounds, TrainConfig
 
 
 def s(x, *a):
-    return x
     return Swept(x / 10, x / 3, x, x * 3, x * 10, *a)
 
 
-model = ComposerModelName.from_str("1762986288-acoustic-asp")
-
-model = ComposerModelName.from_str("1767399915-fragrant-cuttlefish")
-
-# data_cfg = DataConfig[ComlmModelConfig](
-#     override_token_dictpiler_path_str="/home/g/markov/sample_data_comlm",
-#     dataset="custom",
-#     model_cfg=ModelConfig[ComlmModelConfig](
-#         model_load_cfg=ComlmModelConfig(
-#             chk_ident=model.get_latest_downloaded_checkpoint()
-#         ),
-#         acts_cfg=ActsDataConfig(
-#             filter_pad=False,
-#             excl_first=False,
-#             d_data=512,
-#             sites=["layers.6.output.0"],  # .0 unpacks the tuple of (output, kv cache)
-#             storage_dtype_str="float32",
-#             autocast_dtype_str=None,
-#         ),
-#         torch_dtype_str="bfloat16",
-#     ),
-#     trainsplit=SplitConfig(start=0, end=80, tokens_from_split=None),
-#     generation_config=DataGenerationProcessConfig(
-#         # tokens_per_pile=2**25,
-#         acts_per_pile=2**18,
-#         meta_batch_size=2**18,
-#         llm_batch_size=2**13,
-#     ),
-#     seq_len=1024,
-# )
-
-from saeco.data.config._comlm_data_config_definitions import (
-    comlm_768_nodrop,
-    get_data_cfg,
-)
-
-data_cfg = get_data_cfg(comlm_768_nodrop)
-# if __name__ == "__main__":
-#     from saeco.mlog import mlog
-
-#     mlog.init(project="default-project")
-#     data_cfg.store_split(data_cfg.trainsplit)
-
 cfg = RunConfig[DynamicThreshConfig](
     train_cfg=TrainConfig(
-        save_on_complete=True,
-        data_cfg=data_cfg,
+        save_on_complete=False,
+        data_cfg=gemma_4_lmsys_chat(),
         raw_schedule_cfg=RunSchedulingConfig(
-            run_length=23_000,
-            resample_period=100_000_000,
+            run_length=4_500 * 4,
+            resample_period=10_000,
             lr_warmup_length=600,
         ),
         #
-        batch_size=4096,
-        optim=Swept("ScheduleFree"),
+        batch_size=1024,
+        optim=Swept("Adam"),
         lr=s(2e-3),
         weight_decay=Swept[float | None](None),
-        betas=(0.9, 0.95),  # Swept((0.8, 0.9), (0.9, 0.9), (0.9, 0.95)),
+        betas=Swept((0.8, 0.9), (0.9, 0.9), (0.9, 0.95)),
         #
         use_autocast=False,
         use_lars=Swept(False),
@@ -86,11 +43,11 @@ cfg = RunConfig[DynamicThreshConfig](
         l0_target=50,
         l0_target_adjustment_size=Swept(0.0003),
         coeffs={
-            "sparsity_loss": Swept(0),
+            "sparsity_loss": Swept(3e-5),
             "L2_loss": 1,
         },
         #
-        intermittent_metric_freq=100_000_000,
+        intermittent_metric_freq=5000,
         early_stopping_bounds=EarlyStoppingBounds(
             min_values={
                 "L0": {
@@ -123,35 +80,28 @@ cfg = RunConfig[DynamicThreshConfig](
     resampler_config=AnthResamplerConfig(
         optim_reset_cfg=OptimResetValuesConfig(),
         expected_biases=2,
-        bias_reset_value=-3.0,
-        # freq_balance=25,
-        dead_threshold=1e-6,
     ),
     #
-    init_cfg=InitConfig(d_data=768, dict_mult=16),
+    init_cfg=InitConfig(d_data=1536, dict_mult=128),
     arch_cfg=DynamicThreshConfig(
         thresh_cfg=ThreshConfig(
-            decay_toward_mean=0,
-            momentum=Swept(0.5),
+            decay_toward_mean=s(0.03),
+            momentum=Swept(0.0),
             l0_diff_mult=30,
-            lr=0.3,
-            warmup_len=400,
-            initial_value=2.0,
+            lr=s(0.3),
+            warmup_len=100,
+            initial_value=0.5,
             stepclamp=s(1e-1),
             log_diff=False,
             # warmup_len=s(100),
         ),  # Swept(1.5, 2.0, 1.0, 0.7, 3.0),
-        l1_end_scale=0.1,
-        l1_decay_end=3_000,
-        l1_decay_start=1_00,
+        l1_end_scale=0.0,
+        l1_decay_end=2_000,
+        l1_decay_start=1_000,
     ),
 )
-cfg.to_swept_nodes().swept_combinations_count_including_vars()
-arch = DynamicThreshSAE(cfg)
 
-# piler = data_cfg.acts_piler(data_cfg.trainsplit)
-# piler.num_samples / 4096
-# piler.shapes["layers.6.output.0"]
+arch = DynamicThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent(project="default-project")
 

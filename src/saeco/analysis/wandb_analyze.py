@@ -6,7 +6,6 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import wandb
 import wandb.apis
 import wandb.apis.public as wapublic
 import wandb.data_types
@@ -16,6 +15,7 @@ import wandb.util
 # from wandb.wandb_run import Run
 from wandb.apis.public import Run, Sweep
 
+import wandb
 from saeco.analysis.run_history import RunHistories
 
 r: Run

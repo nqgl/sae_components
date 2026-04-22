@@ -8,7 +8,6 @@ from comlm.datasource import FinalizedStorageBatch
 from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank import XRArch, XRNoisedBatch
 from comlm.exprank.xr_composer_model import XRComposerMaskedLM
-from comlm.exprank.xr_transformer import XRTransformer
 from comlm.storage import ModelCheckpointIdentifier
 from nnsight import NNsight
 from paramsight import get_resolved_typevars_for_base, takes_alias

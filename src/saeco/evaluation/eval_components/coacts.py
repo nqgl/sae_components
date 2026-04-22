@@ -180,7 +180,7 @@ class Coactivity:
         )
 
     def act_coacts2(
-        self: "Evaluation",
+        self: Evaluation,
         out_device: torch.device | str | None = None,
         f_chunk_i: int | None = None,
         f_chunk_j: int | None = None,
@@ -209,7 +209,7 @@ class Coactivity:
 
     @torch.inference_mode()
     def activation_cosims(
-        self: "Evaluation",
+        self: Evaluation,
         out_device: torch.device | str | None = None,
         blocks_per_dim: int = 1,
     ):
@@ -241,7 +241,7 @@ class Coactivity:
         # assert prod < 1.001 and prod > 0.999
         return mat
 
-    def masked_activation_cosims(self: "Evaluation"):
+    def masked_activation_cosims(self: Evaluation):
         """
         Returns the masked cosine similarities matrix.
         Indexes are like: [masking feature, masked feature]
@@ -269,7 +269,7 @@ class Coactivity:
         assert prod < 1.001 and prod > 0.999
         return mat
 
-    def coactivations(self: "Evaluation", doc_agg: float | int | str | None = None):
+    def coactivations(self: Evaluation, doc_agg: float | int | str | None = None):
         sims = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
         coact_counts = torch.zeros(self.d_dict, self.d_dict).to(self.cuda)
         fa_sq_sum = torch.zeros(self.d_dict).to(self.cuda)
@@ -293,7 +293,7 @@ class Coactivity:
         assert prod > 0.999
         return coact_counts, sims
 
-    def top_coactivating_features(self: "Evaluation", feature_id, top_n=10, mode="seq"):
+    def top_coactivating_features(self: Evaluation, feature_id, top_n=10, mode="seq"):
         """
         mode: "seq" or "doc"
         """
@@ -314,7 +314,7 @@ class Coactivity:
         i = i[i != feature_id][:top_n]
         return i, v
 
-    def doc_level_co_occurrence(self: "Evaluation", pooling="mean"):
+    def doc_level_co_occurrence(self: Evaluation, pooling="mean"):
         """
         Pooling: "mean", "max" or "binary"
         this could be done at sequence level if we want
@@ -346,7 +346,7 @@ class Coactivity:
         return mat
 
     def sequelize(
-        self: "Evaluation",
+        self: Evaluation,
         acts: Tensor,
         doc_agg: float | int | str | None = None,
     ):
@@ -364,10 +364,10 @@ class Coactivity:
         else:
             return einops.rearrange(acts, "doc seq feat -> feat (doc seq)")
 
-    def cosims(self: "Evaluation", doc_agg=None):
+    def cosims(self: Evaluation, doc_agg=None):
         return self.coactivations(doc_agg=doc_agg)[1]
 
-    def coactivity(self: "Evaluation", doc_agg=None):
+    def coactivity(self: Evaluation, doc_agg=None):
         res = self.coactivations(doc_agg=doc_agg)
         self.artifacts[f"cosims({(doc_agg,)}, {{}})"] = res[1]
         return res[0]

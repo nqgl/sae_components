@@ -12,6 +12,11 @@ from saeco.data.config.locations import DATA_DIRS
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 from saeco.data.config.split_config import SplitConfig
+from saeco.data.config.tokenization_config import (
+    PackingMode,
+    TokenizationConfig,
+    TokenizationMode,
+)
 from saeco.data.piler.dict_piler import DictBatch, DictPiler
 from saeco.data.training_data.acts_data import (
     ActsDataCreator,
@@ -55,8 +60,10 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     load_from_disk: bool = False  # tok
     set_bos: bool = True  # tok
     tokens_column_name: str = "input_ids"  # tok
+    attention_mask_column_name: str | None = "attention_mask"
     perm_all: bool = False  # tok
     seq_len: int | None = 128
+    tokenization: TokenizationConfig = Field(default_factory=TokenizationConfig)
     generation_config: DataGenerationProcessConfig = Field(
         default_factory=DataGenerationProcessConfig
     )
@@ -84,6 +91,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
             if self.model_cfg.model_kwargs
             else ""
         )
+        extra_strs += self.tokenization.idstr_fragment()
         return f"{self.dataset.replace('/', '_')}_{extra_strs}_{self.set_bos}"
 
     def _get_tokens_split_path(self, split: SplitConfig):
@@ -255,7 +263,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
                     cache_dir=DATA_DIRS.CACHE_DIR,
                 )
 
-        if to_torch:
+        if to_torch and self.tokenization.mode == TokenizationMode.PRETOKENIZED:
             dataset.set_format(
                 type="torch", columns=[self.tokens_column_name], output_all_columns=True
             )
@@ -267,24 +275,24 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     def tokens_data(
         self, split: SplitConfig | str = "train"
     ) -> TokensDataInterface[torch.Tensor] | TokensDataInterface[DictBatch]:
+        split_cfg = (
+            split if isinstance(split, SplitConfig) else getattr(self, f"{split}split")
+        )
         if self.override_token_dictpiler_path_str is not None:
             return DictPiledTokensData(
                 cfg=self,
                 piler_path=Path(self.override_token_dictpiler_path_str),
-                split=(
-                    split
-                    if isinstance(split, SplitConfig)
-                    else getattr(self, f"{split}split")
-                ),
+                split=split_cfg,
             )
-        return TokensData(
-            cfg=self,
-            split=(
-                split
-                if isinstance(split, SplitConfig)
-                else getattr(self, f"{split}split")
-            ),
-        )
+        if (
+            self.tokenization.mode != TokenizationMode.PRETOKENIZED
+            and self.tokenization.packing == PackingMode.PAD
+        ):
+            piles_path = self._tokens_piles_path(split_cfg)
+            if not piles_path.exists():
+                TokensData(cfg=self, split=split_cfg)._store_split(split_cfg)
+            return DictPiledTokensData(cfg=self, piler_path=piles_path, split=split_cfg)
+        return TokensData(cfg=self, split=split_cfg)
 
     def get_split_tokens(self, split, num_tokens=None):
         return self.tokens_data(split).get_tokens(

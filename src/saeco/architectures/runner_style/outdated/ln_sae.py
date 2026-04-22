@@ -1,13 +1,13 @@
 import torch.nn as nn
 
 import saeco.components as co
+import saeco.components.hooks.feature_hooks
 from saeco.components import (
     EMAFreqTracker,
     L1Penalty,
     L2Loss,
     SparsityPenaltyLoss,
 )
-import saeco.components.hooks.feature_hooks
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
 from saeco.initializer import Initializer

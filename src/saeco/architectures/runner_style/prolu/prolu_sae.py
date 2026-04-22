@@ -7,6 +7,7 @@ from saeco.architectures.prolu.prolu import (
 )
 
 import saeco.components as co
+import saeco.components.hooks.feature_hooks
 from saeco.components import (
     EMAFreqTracker,
     L1Penalty,
@@ -14,7 +15,6 @@ from saeco.components import (
     SparsityPenaltyLoss,
 )
 from saeco.components.hooks.clipgrad import ClipGrad
-import saeco.components.hooks.feature_hooks
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
 from saeco.core import Seq
 from saeco.data import DataConfig, ModelConfig

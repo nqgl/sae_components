@@ -476,18 +476,13 @@ def GT2(grad_window: GradWindowFn = sigmoid_grad_window):
     return apply_fn
 
 
-from saeco.architecture import Architecture, model_prop, loss_prop, SAE
-
-from saeco.core import Seq
-
-import saeco.components as co
-from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
-import saeco.components.hooks.feature_hooks
-from saeco.core import Seq
-from saeco.initializer import Initializer
-from saeco.misc import useif
-
 import saeco
+import saeco.components as co
+import saeco.components.hooks.feature_hooks
+from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
+from saeco.core import Seq
+from saeco.misc import useif
 
 
 # useif
