@@ -162,8 +162,7 @@ class WandbCustomLogger:
         for key, value in data.items():
             ks = key.split("/")
             new_key = "/".join(ks[:-1] + [f"{ks[-1]}_"])
-            transformed[new_key] = self.wandb.util.json_friendly(value)
-
+            transformed[new_key] = value
         if step is not None:
             self.wandb.log(transformed, step=step)
         else:
