@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import ContextManager, Protocol
 
-from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
+from saeco.data.config.data_cfg import DataConfig
 from saeco.trainer.trainable import Trainable
 
 
@@ -11,7 +11,7 @@ class ReconstructionEvaluatorFunctionProtocol(Protocol):
         llm,
         sae: Trainable,
         tokens,
-        cfg: ActsDataConfig,
+        data_cfg: DataConfig,
         cast_fn: Callable[[], ContextManager] = ...,
         num_batches=10,
         batch_size=1,

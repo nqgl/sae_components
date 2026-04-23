@@ -262,9 +262,6 @@ class Trainer:
             cache.destruct()
             if self.cfg.use_averaged_model:
                 self.averaged_model.update_parameters(self.trainable)
-            if self.t % self.cfg.intermittent_metric_freq == 0:
-                with self.evaluate():
-                    self.do_intermittent_metrics()
             if (
                 self.cfg.checkpoint_period is not None
                 and self.t % self.cfg.checkpoint_period == 0
@@ -275,6 +272,9 @@ class Trainer:
                     data_source=buffer, optimizer=self.optim, model=self.trainable
                 )
                 self.post_step()
+            if self.t % self.cfg.intermittent_metric_freq == 0:
+                with self.evaluate():
+                    self.do_intermittent_metrics()
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
                 print("hit end in train()")
                 break
@@ -341,20 +341,21 @@ class Trainer:
         self.log_recons()
 
     def log_recons(self, num_batches=20):
-        for eval_name, fn in self.recons_eval_fns.items():
-            self.log(
-                {
-                    (eval_name + k): v
-                    for k, v in fn(
-                        self.subject_model,
-                        self.trainable,
-                        tokens=self.llm_val_tokens,
-                        cfg=self.cfg.data_cfg.model_cfg.acts_cfg,
-                        num_batches=num_batches,
-                        cast_fn=self.cast,
-                    ).items()
-                }
-            )
+        with self.cfg.data_cfg.model_cfg.model_on_cuda() as subj:
+            for eval_name, fn in self.recons_eval_fns.items():
+                self.log(
+                    {
+                        (eval_name + k): v
+                        for k, v in fn(
+                            subj,
+                            sae=self.trainable,
+                            tokens=self.llm_val_tokens,
+                            data_cfg=self.cfg.data_cfg,
+                            num_batches=num_batches,
+                            cast_fn=self.cast,
+                        ).items()
+                    }
+                )
 
     def full_log(self, cache: Cache):
         if self.t % self.log_freq != 0:  # and self.t % 23000 > 100:

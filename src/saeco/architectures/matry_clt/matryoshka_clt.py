@@ -18,7 +18,8 @@ from saeco.components.sae_cache import SAECache
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
 
-from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
+from saeco.data.config.data_cfg import DataConfig
+from saeco.data.subject_model_inputs import SubjectBatchInputs, prepare_subject_batch
 from saeco.initializer.initializer import Initializer
 from saeco.misc import useif
 from saeco.misc.nnsite import getsite, setsite
@@ -33,13 +34,11 @@ class MatryoshkaCLTConfig(SweepableConfig):
     n_nestings: int = 3
 
 
-def with_sae_runner(
-    model: nnsight.LanguageModel, encoder: Trainable, cfg: ActsDataConfig
-):
-    def saerunner(tokens):
+def with_sae_runner(model: nnsight.LanguageModel, encoder: Trainable, cfg):
+    def saerunner(prepared: SubjectBatchInputs):
         mlp_inputs = []
 
-        with model.trace(tokens):
+        with model.trace(*prepared.args, **prepared.kwargs):
             for i in range(12):
                 mlp_input_site = f"transformer.h.{i}.input"
                 mlp_output_site = f"transformer.h.{i}.output"
@@ -64,9 +63,9 @@ def with_sae_runner(
     return saerunner
 
 
-def zero_ablated_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig):
-    def zrunner(tokens):
-        with model.trace(tokens) as tracer:
+def zero_ablated_runner(model: nnsight.LanguageModel, cfg):
+    def zrunner(prepared: SubjectBatchInputs):
+        with model.trace(*prepared.args, **prepared.kwargs):
             for site in cfg.sites:
                 if "input" in site:
                     lm_acts = getsite(model, site)
@@ -80,9 +79,9 @@ def zero_ablated_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig):
     return zrunner
 
 
-def normal_runner(model: nnsight.LanguageModel, cfg: ActsDataConfig):
-    def nrunner(tokens):
-        with model.trace(tokens):
+def normal_runner(model: nnsight.LanguageModel, cfg):
+    def nrunner(prepared: SubjectBatchInputs):
+        with model.trace(*prepared.args, **prepared.kwargs):
             out = model.output.logits.save()
         return out
 
@@ -95,23 +94,26 @@ def get_multisite_recons_loss(
     sae: Trainable,
     tokens=None,
     num_batches=10,
-    cfg: ActsDataConfig = None,
+    data_cfg: DataConfig = None,
     batch_size=1,
     cast_fn=...,
 ):
-    cfg = cfg or sae.cfg
+    assert data_cfg is not None
+    acts_cfg = data_cfg.model_cfg.acts_cfg
     loss_list = []
 
-    with_sae = to_losses(with_sae_runner(llm, sae, cfg))
-    zero = to_losses(zero_ablated_runner(llm, cfg))
-    normal = to_losses(normal_runner(llm, cfg))
+    with_sae = to_losses(with_sae_runner(llm, sae, acts_cfg))
+    zero = to_losses(zero_ablated_runner(llm, acts_cfg))
+    normal = to_losses(normal_runner(llm, acts_cfg))
     rand_tokens = tokens[torch.randperm(len(tokens))]
     with cast_fn():
         for i in range(num_batches):
-            batch_tokens = rand_tokens[i * batch_size : (i + 1) * batch_size].cuda()
-            zeroed = zero(batch_tokens)
-            re = with_sae(batch_tokens)
-            loss = normal(batch_tokens)
+            raw_batch = rand_tokens[i * batch_size : (i + 1) * batch_size]
+            raw_batch = raw_batch.cuda() if hasattr(raw_batch, "cuda") else raw_batch
+            prepared = prepare_subject_batch(data_cfg, raw_batch)
+            zeroed = zero(prepared)
+            re = with_sae(prepared)
+            loss = normal(prepared)
             loss_list.append((loss, re, zeroed))
     losses = torch.tensor(loss_list)
     loss, recons_loss, zero_abl_loss = losses.mean(0).tolist()

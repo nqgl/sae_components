@@ -1,4 +1,4 @@
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from functools import cached_property
 from typing import Any
 
@@ -17,7 +17,7 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBa
 ):
     model_load_cfg: ModelLoadT
     acts_cfg: ActsDataConfig = Field(default_factory=ActsDataConfig)
-    _device: str = "cuda"
+    device: str = "cuda"
     # no_processing: bool = False
     torch_dtype_str: str | None = None
     model_kwargs: dict = Field(default_factory=dict)
@@ -61,7 +61,7 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBa
         if self._raw_model is None:
             self._raw_model = self.model_load_cfg._make_raw_model(
                 load_as_dtype=self.torch_dtype,
-                device=self._device,
+                device=self.device,
             )
         return self._raw_model
 
@@ -76,6 +76,15 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBa
     @property
     def modelstring(self) -> str:
         return f"{self.model_name}_{self.torch_dtype_str}_{self.acts_cfg.actstring}"
+
+    @contextmanager
+    def model_on_cuda(self):
+        orig_device = self.model.device or self.device
+        self.model.cuda()
+        try:
+            yield self.model
+        finally:
+            self.model.to(orig_device)
 
     def autocast_context(self):
         if self.acts_cfg.autocast_dtype is False:

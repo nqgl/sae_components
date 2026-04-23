@@ -10,6 +10,7 @@ from nnsight import LanguageModel, NNsight
 
 from saeco.data.config.split_config import SplitConfig
 from saeco.data.dict_batch import DictBatch
+from saeco.data.subject_model_inputs import prepare_subject_chunk
 from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.misc.nnsite import getsite
 
@@ -98,38 +99,15 @@ class ActsDataCreator:
                 trng = tqdm.trange(0, batch_size, llm_batch_size, leave=False)
                 trng.set_description(f"Tracing {batch_size}")
                 for i in trng:
-                    # batch_kwargs = {
-                    #     k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
-                    # }
                     model = self.model
                     d = {}
-                    chunk = tx_inputs[i : i + llm_batch_size]
-                    extra_kwargs = dict(self.cfg.model_cfg.model_kwargs)
-                    # Vanilla DictBatch (on-the-fly PAD output) → plain tokens
-                    # tensor using the configured column name, plus the
-                    # attention_mask injected into HF's forward kwargs. The
-                    # HF-side kwarg name "attention_mask" is HF's forward API
-                    # contract, not a dataset column choice. Model-specific
-                    # batch types (ComLM XRNoisedBatch, etc.) are DictBatch
-                    # subclasses and are handled by their own unpack_model_inputs.
-                    if type(chunk) is DictBatch:
-                        if self.cfg.attention_mask_column_name is not None:
-                            mask = chunk.get(self.cfg.attention_mask_column_name)
-                            if mask is not None:
-                                extra_kwargs["attention_mask"] = mask.to(
-                                    dtype=torch.long
-                                )
-                        chunk = chunk[self.cfg.tokens_column_name]
-                    args, kwargs = (
-                        self.cfg.model_cfg.model_load_cfg.unpack_model_inputs(
-                            chunk,
-                            extra_kwargs=extra_kwargs,
-                        )
+                    prepared = prepare_subject_chunk(
+                        self.cfg, tx_inputs[i : i + llm_batch_size]
                     )
-                    assert len(args) > 0, (
+                    assert len(prepared.args) > 0, (
                         "nnsight needs there to be a nonzero number of args"
-                    )
-                    with model.trace(*args, **kwargs):
+                    )  # TODO this may have been addressed in 0.6
+                    with model.trace(*prepared.args, **prepared.kwargs):
                         for site in self.cfg.model_cfg.acts_cfg.sites:
                             acts_module = getsite(model, site)
                             acts = acts_module.save()
@@ -151,24 +129,16 @@ class ActsDataCreator:
         flatten_pattern = "batch seq ... -> (batch seq) ..."
 
         acts = acts[:, : self.cfg.seq_len]
-        mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
-            tx_inputs, self.cfg.seq_len
+        # Reuse the shared helper to pull the tokens tensor + combined mask
+        # (model-specific create_acts_mask AND attention_mask column). We
+        # only use .tokens and .mask here — args/kwargs were already spent in
+        # the chunked trace loop above.
+        prepared_full = prepare_subject_chunk(
+            self.cfg, tx_inputs, seq_len=self.cfg.seq_len
         )
-        input_tokens = (
-            tx_inputs[self.cfg.tokens_column_name]
-            if isinstance(tx_inputs, DictBatch)
-            else tx_inputs
-        )
-
-        attention_mask = True
-        if self.cfg.attention_mask_column_name is not None:
-            assert isinstance(tx_inputs, DictBatch)
-            attention_mask = tx_inputs[self.cfg.attention_mask_column_name]
-
-            if mask is not None:
-                mask = mask & attention_mask
-            else:
-                mask = attention_mask
+        input_tokens = prepared_full.tokens
+        mask = prepared_full.mask
+        assert input_tokens is not None
 
         all_same_bos = (input_tokens[:, 0] == input_tokens[0, 0]).all()
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
@@ -210,14 +180,11 @@ class ActsDataCreator:
         force_not_skip_padding=False,
     ) -> DictBatch:
         d = {}
+        prepared = prepare_subject_chunk(self.cfg, tx_inputs, seq_len=self.cfg.seq_len)
         with self.cfg.model_cfg.autocast_context():
             with torch.inference_mode():  # is this ok with nnsight?
                 model = self.model
-                args, kwargs = self.cfg.model_cfg.model_load_cfg.unpack_model_inputs(
-                    tx_inputs,
-                    extra_kwargs=self.cfg.model_cfg.model_kwargs,
-                )
-                with model.trace(*args, **kwargs):
+                with model.trace(*prepared.args, **prepared.kwargs):
                     for site in self.cfg.model_cfg.acts_cfg.sites:
                         acts_module = getsite(model, site)
                         acts = acts_module.save()
@@ -233,9 +200,7 @@ class ActsDataCreator:
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
             # toks_re = toks_re[:, 1:]
-        mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
-            tx_inputs, self.cfg.seq_len
-        )
+        mask = prepared.mask
 
         if not rearrange:
             assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad

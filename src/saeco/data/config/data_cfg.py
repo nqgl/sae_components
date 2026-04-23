@@ -212,7 +212,8 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     ):
         model = None
         if not self._acts_piles_path(self.trainsplit).exists():
-            self.store_split(self.trainsplit)
+            with self.model_cfg.model_on_cuda():
+                self.store_split(self.trainsplit)
         ds = self._train_dataset(
             model,
             batch_size=batch_size,
@@ -224,10 +225,6 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
         )
 
         return dl
-
-    def store_split(self, split: SplitConfig):
-        ActsDataCreator(cfg=self, model=self.model_cfg.model)._store_split(split)
-        assert self._acts_piles_path(split).exists()
 
     def getsplit(self, split: str):
         return getattr(self, f"{split}split")
@@ -268,6 +265,10 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
                 type="torch", columns=[self.tokens_column_name], output_all_columns=True
             )
         return dataset
+
+    def store_split(self, split: SplitConfig):
+        self.acts_data_creator()._store_split(split)
+        assert self._acts_piles_path(split).exists()
 
     def acts_data_creator(self) -> "ActsDataCreator":
         return ActsDataCreator(cfg=self, model=self.model_cfg.model)

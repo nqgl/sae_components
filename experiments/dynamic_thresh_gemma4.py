@@ -24,7 +24,7 @@ def s(x, *a):
 cfg = RunConfig[DynamicThreshConfig](
     train_cfg=TrainConfig(
         save_on_complete=False,
-        data_cfg=gemma_4_lmsys_chat(),
+        data_cfg=gemma_4_lmsys_chat(15, num_train_tokens=5_000_000),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=4_500 * 4,
             resample_period=10_000,
@@ -47,7 +47,7 @@ cfg = RunConfig[DynamicThreshConfig](
             "L2_loss": 1,
         },
         #
-        intermittent_metric_freq=5000,
+        intermittent_metric_freq=500,
         early_stopping_bounds=EarlyStoppingBounds(
             min_values={
                 "L0": {
@@ -100,7 +100,6 @@ cfg = RunConfig[DynamicThreshConfig](
         l1_decay_start=1_000,
     ),
 )
-
 arch = DynamicThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent(project="default-project")

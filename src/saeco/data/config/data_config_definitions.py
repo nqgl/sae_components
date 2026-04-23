@@ -1,9 +1,11 @@
+from collections.abc import Sequence
 from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
 from saeco.data.config.tokenization_config import (
     PackingMode,
     TokenizationConfig,
     TokenizationMode,
 )
+from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 from .data_cfg import DataConfig, DataGenerationProcessConfig, SplitConfig
 from .model_config.acts_data_cfg import ActsDataConfig
@@ -286,10 +288,51 @@ def gemma_4_openwebtext_bf16(
     # len(model.model.language_model.layers)
 
 
+class ModelDataSpec(SweepableConfig):
+    model_name: str
+    layers_name: str
+    model_dim: int = 0
+    mlp_expansion_factor: int = 0
+    default_device: str = "cuda"
+
+    def get_layer_names(self, *layers: int, suffixes: Sequence[str] = ("input",)):
+        return [
+            f"{self.layers_name}.{layer}.{suffix}"
+            for suffix in suffixes
+            for layer in layers
+        ]
+
+    def get_config_for_layers(self, *layers: int, suffixes: Sequence[str] = ("input",)):
+        return ModelConfig(
+            model_load_cfg=HuggingFaceModelConfig(
+                model_name=self.model_name,
+            ),
+            acts_cfg=ActsDataConfig(
+                excl_first=True,
+                d_data=self.model_dim,
+                sites=self.get_layer_names(*layers, suffixes=suffixes),
+                storage_dtype_str="bfloat16",
+                autocast_dtype_str="bfloat16",
+                filter_pad=False,
+            ),
+            torch_dtype_str="bfloat16",
+            device=self.default_device,
+        )
+
+
+gemma_4 = ModelDataSpec(
+    model_name=GEMMA_4_DEFAULT_MODEL_IT, layers_name="model.language_model.layers"
+)
+
+gemma_4_it = ModelDataSpec(
+    model_name=GEMMA_4_DEFAULT_MODEL, layers_name="model.language_model.layers"
+)
+
+
 def gemma_4_lmsys_chat(
-    layer: int = 5,
-    model_name: str = GEMMA_4_DEFAULT_MODEL_IT,
-    d_data: int = GEMMA_4_DEFAULT_D_DATA,
+    *layers: int,
+    model_conf: ModelDataSpec = gemma_4_it,
+    num_train_tokens: int = 50_000_000,
 ):
     """Gemma-4 applied to user conversation data (lmsys-chat-1m).
 
@@ -298,19 +341,8 @@ def gemma_4_lmsys_chat(
     """
     return DataConfig[HuggingFaceModelConfig](
         dataset="lmsys/lmsys-chat-1m",
-        model_cfg=ModelConfig(
-            model_load_cfg=HuggingFaceModelConfig(model_name=model_name),
-            acts_cfg=ActsDataConfig(
-                excl_first=True,
-                d_data=d_data,
-                sites=[f"model.language_model.{layer}.input"],
-                storage_dtype_str="bfloat16",
-                autocast_dtype_str="bfloat16",
-                filter_pad=False,
-            ),
-            torch_dtype_str="bfloat16",
-        ),
-        trainsplit=SplitConfig(start=0, end=90, tokens_from_split=50_000_000),
+        model_cfg=model_conf.get_config_for_layers(*layers),
+        trainsplit=SplitConfig(start=0, end=90, tokens_from_split=num_train_tokens),
         valsplit=SplitConfig(start=90, end=100, tokens_from_split=1_000_000),
         tokenization=TokenizationConfig(
             mode=TokenizationMode.CONVERSATION,

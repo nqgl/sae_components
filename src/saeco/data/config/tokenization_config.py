@@ -35,7 +35,7 @@ class TokenizationConfig(SweepableConfig):
     map_num_proc: int | None = 4
     # Drop any tokenized document whose length is below this threshold
     # (applied per-document, before packing/padding/truncation).
-    min_seq_len: int = 8
+    min_seq_len: int = 256
 
     template_version_tag: str | None = None
 
