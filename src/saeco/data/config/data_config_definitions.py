@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+
 from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
 from saeco.data.config.tokenization_config import (
     PackingMode,
@@ -291,8 +292,8 @@ def gemma_4_openwebtext_bf16(
 class ModelDataSpec(SweepableConfig):
     model_name: str
     layers_name: str
-    model_dim: int = 0
-    mlp_expansion_factor: int = 0
+    model_dim: int
+    # mlp_expansion_factor: int = 0
     default_device: str = "cuda"
 
     def get_layer_names(self, *layers: int, suffixes: Sequence[str] = ("input",)):
@@ -321,11 +322,16 @@ class ModelDataSpec(SweepableConfig):
 
 
 gemma_4 = ModelDataSpec(
-    model_name=GEMMA_4_DEFAULT_MODEL_IT, layers_name="model.language_model.layers"
+    model_name=GEMMA_4_DEFAULT_MODEL,
+    layers_name="model.language_model.layers",
+    model_dim=GEMMA_4_DEFAULT_D_DATA,
 )
 
 gemma_4_it = ModelDataSpec(
-    model_name=GEMMA_4_DEFAULT_MODEL, layers_name="model.language_model.layers"
+    model_name=GEMMA_4_DEFAULT_MODEL_IT,
+    layers_name="model.language_model.layers",
+    default_device="cpu",
+    model_dim=GEMMA_4_DEFAULT_D_DATA,
 )
 
 
@@ -333,6 +339,8 @@ def gemma_4_lmsys_chat(
     *layers: int,
     model_conf: ModelDataSpec = gemma_4_it,
     num_train_tokens: int = 50_000_000,
+    seq_len: int = 2048,
+    min_seq_len: int = 1024,
 ):
     """Gemma-4 applied to user conversation data (lmsys-chat-1m).
 
@@ -352,6 +360,7 @@ def gemma_4_lmsys_chat(
                 "add_generation_prompt": False,
                 "enable_thinking": False,
             },
+            min_seq_len=min_seq_len,
         ),
         set_bos=False,
         generation_config=DataGenerationProcessConfig(
@@ -359,7 +368,8 @@ def gemma_4_lmsys_chat(
             meta_batch_size=2**16,
             llm_batch_size=2**13,
         ),
-        seq_len=1024,
+        seq_len=seq_len,
+        recons_loss_skip_first_n_targets=256,
     )
 
 

@@ -24,7 +24,7 @@ def s(x, *a):
 cfg = RunConfig[DynamicThreshConfig](
     train_cfg=TrainConfig(
         save_on_complete=False,
-        data_cfg=gemma_4_lmsys_chat(15, num_train_tokens=5_000_000),
+        data_cfg=gemma_4_lmsys_chat(14, num_train_tokens=1_000_000),
         raw_schedule_cfg=RunSchedulingConfig(
             run_length=4_500 * 4,
             resample_period=10_000,
@@ -82,7 +82,7 @@ cfg = RunConfig[DynamicThreshConfig](
         expected_biases=2,
     ),
     #
-    init_cfg=InitConfig(d_data=1536, dict_mult=128),
+    init_cfg=InitConfig(d_data=1536, dict_mult=32),  # 128),
     arch_cfg=DynamicThreshConfig(
         thresh_cfg=ThreshConfig(
             decay_toward_mean=s(0.03),

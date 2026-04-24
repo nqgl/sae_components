@@ -63,6 +63,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     attention_mask_column_name: str | None = "attention_mask"
     perm_all: bool = False  # tok
     seq_len: int | None = 128
+    recons_loss_skip_first_n_targets: int = 0
     tokenization: TokenizationConfig = Field(default_factory=TokenizationConfig)
     generation_config: DataGenerationProcessConfig = Field(
         default_factory=DataGenerationProcessConfig

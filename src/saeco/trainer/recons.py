@@ -65,13 +65,20 @@ def get_recons_loss(
     loss_list = []
 
     with_sae = to_losses(
-        with_sae_runner(llm, sae, acts_cfg, skip_first=not bos_processed_with_hook)
+        with_sae_runner(llm, sae, acts_cfg, skip_first=not bos_processed_with_hook),
+        data_cfg,
     )
     zero = to_losses(
-        zero_ablated_runner(llm, acts_cfg, skip_first=not bos_processed_with_hook)
+        zero_ablated_runner(llm, acts_cfg, skip_first=not bos_processed_with_hook),
+        data_cfg,
+    )
+    neg = to_losses(
+        neg_ablated_runner(llm, acts_cfg, skip_first=not bos_processed_with_hook),
+        data_cfg,
     )
     normal = to_losses(
-        normal_runner(llm, acts_cfg, skip_first=not bos_processed_with_hook)
+        normal_runner(llm, acts_cfg, skip_first=not bos_processed_with_hook),
+        data_cfg,
     )
     rand_tokens = tokens[torch.randperm(len(tokens))]
     with cast_fn():
@@ -82,17 +89,26 @@ def get_recons_loss(
             re = with_sae(prepared).mean(0, keepdim=True)
             zeroed = zero(prepared).mean(0, keepdim=True)
             loss = normal(prepared).mean(0, keepdim=True)
-            loss_list.append((loss, re, zeroed))
+            neg_loss = neg(prepared).mean(0, keepdim=True)
+            loss_list.append((loss, re, zeroed, neg_loss))
     losses = torch.tensor(loss_list)
-    loss, recons_loss, zero_abl_loss = losses.mean(0).tolist()
-    print(loss, recons_loss, zero_abl_loss)
-    score = (zero_abl_loss - recons_loss) / (abs(zero_abl_loss - loss) + 1e-9)
-    print(f"{score:.2%}")
-    try:
+    loss, recons_loss, zero_abl_loss, neg_loss = losses.mean(0).tolist()
+
+    print(
+        f"""
+    bos with hook: {bos_processed_with_hook}
+    loss: {loss}
+    recons_loss: {recons_loss}
+    zero_abl_loss: {zero_abl_loss}
+    neg_loss: {neg_loss}
+          """
+    )
+    denom = zero_abl_loss - loss
+    if denom < 0:
+        score = float("nan")
+    else:
         score = (zero_abl_loss - recons_loss) / (zero_abl_loss - loss)
-        print(f"s2: {score:.2%}")
-    except:
-        pass
+    print(f"{score:.2%}")
     return {
         "recons_score": score,
         "nats_lost": recons_loss - loss,
@@ -113,7 +129,7 @@ def with_sae_runner(model: nnsight.LanguageModel, encoder, cfg, skip_first=False
                 else:
                     patch_in = acts_re
                 setsite(model, site, patch_in)
-                out = model.output.logits.save()
+            out = model.output.logits.save()
 
         return out
 
@@ -137,6 +153,23 @@ def zero_ablated_runner(model: nnsight.LanguageModel, cfg, skip_first=False):
     return zrunner
 
 
+def neg_ablated_runner(model: nnsight.LanguageModel, cfg, skip_first=False):
+    def zrunner(prepared: SubjectBatchInputs):
+        with model.trace(*prepared.args, **prepared.kwargs):
+            for site in cfg.sites:
+                lm_acts = getsite(model, site)
+                acts_re = -lm_acts + torch.rand_like(lm_acts) * lm_acts.mean()
+                if skip_first:
+                    patch_in = torch.cat([lm_acts[:, :1], acts_re[:, 1:]], dim=1)
+                else:
+                    patch_in = acts_re
+                setsite(model, site, patch_in)
+            out = model.output.logits.save()
+        return out
+
+    return zrunner
+
+
 def normal_runner(model: nnsight.LanguageModel, cfg, skip_first=False):
     def nrunner(prepared: SubjectBatchInputs):
         with model.trace(*prepared.args, **prepared.kwargs):
@@ -146,13 +179,15 @@ def normal_runner(model: nnsight.LanguageModel, cfg, skip_first=False):
     return nrunner
 
 
-def to_losses(model_callable):
+def to_losses(model_callable, data_cfg: DataConfig):
     """Wrap a model runner so it returns cross-entropy loss averaged over
     real (non-pad) positions.
 
     Logits at position t predict token at position t+1; we teacher-force and
     apply the batch's attention-style mask at the *target* positions (the
     shifted mask) so padding doesn't contaminate the recons score."""
+
+    skip_n = data_cfg.recons_loss_skip_first_n_targets
 
     def runner(prepared: SubjectBatchInputs):
         out = model_callable(prepared)
@@ -162,13 +197,15 @@ def to_losses(model_callable):
         targets = tokens[:, 1:]
         if prepared.mask is not None:
             target_mask = prepared.mask[:, 1:]
-            logits_flat = logits[target_mask]
-            targets_flat = targets[target_mask]
         else:
-            logits_flat = logits.reshape(-1, logits.shape[-1])
-            targets_flat = targets.reshape(-1)
-        logits_flat = logits_flat.cuda()
-        targets_flat = targets_flat.cuda()
+            target_mask = torch.ones(
+                targets.shape, dtype=torch.bool, device=targets.device
+            )
+        if skip_n > 0:
+            target_mask = target_mask.clone()
+            target_mask[:, :skip_n] = False
+        logits_flat = logits[target_mask].cuda()
+        targets_flat = targets[target_mask].cuda()
         loss = torch.nn.functional.cross_entropy(logits_flat, targets_flat)
         return loss
 

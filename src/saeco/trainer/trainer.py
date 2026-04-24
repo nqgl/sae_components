@@ -273,6 +273,7 @@ class Trainer:
                 )
                 self.post_step()
             if self.t % self.cfg.intermittent_metric_freq == 0:
+                self.optim.zero_grad()  # reduces mem use during recons
                 with self.evaluate():
                     self.do_intermittent_metrics()
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
