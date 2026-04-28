@@ -9,7 +9,7 @@ import torch
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from .architecture import Architecture
+    from .architecture import ArchitectureBase
 from saeco.sweeps import SweepableConfig
 
 MODEL_WEIGHTS_PATH_EXT = ".weights.safetensors"
@@ -30,7 +30,7 @@ class ArchClassRef(BaseModel):
     source_backup: str | None = None
 
     @classmethod
-    def from_arch(cls, arch: "Architecture[Any]") -> "ArchClassRef":
+    def from_arch(cls, arch: "ArchitectureBase[Any]") -> "ArchClassRef":
         return cls(
             module=arch.__class__.__module__,
             cls_name=arch.__class__.__name__,
@@ -40,11 +40,9 @@ class ArchClassRef(BaseModel):
     def get_arch_class(self, assert_unchanged: bool = False):
         module = importlib.import_module(self.module)
         arch_cls = getattr(module, self.cls_name)
-        from .architecture import Architecture, ArchitectureBase
+        from .architecture import ArchitectureBase
 
-        assert issubclass(arch_cls, Architecture) or issubclass(
-            arch_cls, ArchitectureBase
-        )
+        assert issubclass(arch_cls, ArchitectureBase)
         if get_src(arch_cls) != self.source_backup:
             print(
                 """
@@ -65,7 +63,9 @@ class ArchRef[T: SweepableConfig](BaseModel):
     config: T = Field()
 
     @classmethod
-    def open(cls, path: Path, xcls: "Architecture[Any] | None" = None) -> Self:
+    def open(
+        cls, path: Path, xcls: "type[ArchitectureBase[Any]] | None" = None
+    ) -> Self:
         try:
             bases = get_original_bases(cls)
             if hasattr(bases[0], "__args__") and bases[0].__args__[0] is not T:
@@ -75,7 +75,9 @@ class ArchRef[T: SweepableConfig](BaseModel):
         return cls.from_json(json.loads(path.read_text()), xcls=xcls)
 
     @classmethod
-    def from_json(cls, d: dict, xcls: "Architecture[Any] | None" = None):
+    def from_json(
+        cls, d: dict, xcls: "type[ArchitectureBase[Any]] | None" = None
+    ):
         arch = ArchClassRef.model_validate(d["class_ref"]).get_arch_class()
 
         if xcls is not None and arch in xcls.mro():
@@ -86,7 +88,10 @@ class ArchRef[T: SweepableConfig](BaseModel):
         return archref_cls.model_validate(d)
 
     def load_arch(
-        self, state_dict=None, device="cuda", xcls: "Architecture[Any] | None" = None
+        self,
+        state_dict=None,
+        device="cuda",
+        xcls: "type[ArchitectureBase[Any]] | None" = None,
     ):
         arch_cls = self.class_ref.get_arch_class()
         if xcls is not None:
@@ -97,7 +102,7 @@ class ArchRef[T: SweepableConfig](BaseModel):
         return arch_cls(self.config, state_dict=state_dict, device=device)
 
     @classmethod
-    def from_arch(cls, arch: "Architecture[T]") -> "ArchRef[T]":
+    def from_arch(cls, arch: "ArchitectureBase[T]") -> "ArchRef[T]":
         return cls(
             class_ref=ArchClassRef.from_arch(arch),
             config=arch.run_cfg,
@@ -143,7 +148,7 @@ class ArchStoragePaths(BaseModel):
         device: str | torch.device = "cuda",
         state_dict: dict[str, Any] | None = None,
         xcls=None,
-    ) -> "Architecture[Any]":
+    ) -> "ArchitectureBase[Any]":
         from .arch_reload_info import ArchRef
 
         assert load_weights or not averaged_weights

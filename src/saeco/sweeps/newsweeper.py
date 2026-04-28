@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 from attrs import define, field
 from pydantic import BaseModel
 
-from saeco.architecture import Architecture
+from saeco.architecture import ArchitectureBase
 from saeco.architecture.arch_reload_info import ArchRef
 from saeco.mlog import mlog
 from saeco.sweeps.sweepable_config import SweepableConfig
@@ -29,7 +29,7 @@ class SweepData(BaseModel, Generic[T]):
 
     @classmethod
     def from_arch_and_id(
-        cls, arch: Architecture, sweep_id: str, project: str | None = None
+        cls, arch: ArchitectureBase, sweep_id: str, project: str | None = None
     ) -> "SweepData":
         arch_ref = ArchRef.from_arch(arch)
         return cls[arch_ref.class_ref.get_arch_class().get_config_class()](
@@ -40,7 +40,7 @@ class SweepData(BaseModel, Generic[T]):
 
     @classmethod
     def from_arch_make_sweep(
-        cls, arch: Architecture, project: str | None = None
+        cls, arch: ArchitectureBase, project: str | None = None
     ) -> "SweepData":
         arch_ref = ArchRef.from_arch(arch)
         sweep_id = mlog.create_sweep(arch_ref.config.to_swept_nodes(), project=project)
@@ -83,7 +83,7 @@ class SweepData(BaseModel, Generic[T]):
 
 @define
 class SweepManager:
-    arch: Architecture
+    arch: ArchitectureBase
     sweep_data: SweepData | None = field(default=None)
     sweep_data_path: Path | None = field(default=None)
     ezpod_group: str | None = field(default=None)

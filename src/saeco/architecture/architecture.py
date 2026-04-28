@@ -2,7 +2,6 @@ import typing
 from abc import abstractmethod
 from functools import cached_property
 from pathlib import Path
-from types import get_original_bases
 from typing import Any, Literal, overload
 
 import torch
@@ -147,18 +146,31 @@ class SAE(cl.Seq):
 # ARCH_CLASS_REF_PATH_EXT = ".arch_ref"
 
 
-class Architecture[ArchConfigT: SweepableConfig]:
+class BaseRunConfig[ArchConfigT: SweepableConfig](SweepableConfig):
+    arch_cfg: ArchConfigT
+
+
+class WithConfig[ArchConfigT: SweepableConfig]:
+    cfg: ArchConfigT
+
+
+class ArchitectureBase[ArchConfigT: SweepableConfig]:
+    """Base architecture protocol for sweepable run configs.
+
+    This class intentionally owns only config instantiation, reload/save metadata,
+    and sweep orchestration. Training/model semantics belong in subclasses.
+    """
+
     def __init__(
         self,
-        run_cfg: "RunConfig[ArchConfigT]",
+        run_cfg: BaseRunConfig[ArchConfigT],
         state_dict: dict[str, Any] | None = None,
         device: torch.device | str = "cuda",
     ):
-        self.run_cfg: RunConfig[ArchConfigT] = run_cfg
+        self.run_cfg: BaseRunConfig[ArchConfigT] = run_cfg
         self.state_dict: dict[str, Any] | None = state_dict
         self._instantiated: bool = False
         self._setup_complete: bool = False
-        self._trainable: Trainable | None = None
         self.device: torch.device | str = device
 
     @property
@@ -177,6 +189,132 @@ class Architecture[ArchConfigT: SweepableConfig]:
         assert self._instantiated
         self.setup()
         self._setup_complete = True
+
+    @abstractmethod
+    def setup(self): ...
+
+    @takes_alias
+    @classmethod
+    def get_arch_config_class(cls) -> type[ArchConfigT]:
+        if cls is ArchitectureBase:
+            raise ValueError(
+                "Architecture class must not be generic to get config class"
+            )
+        config_class = get_resolved_typevars_for_base(cls, ArchitectureBase)[0]
+        if isinstance(config_class, typing.TypeVar):
+            raise ValueError(
+                "Architecture class must not be generic to get config class"
+            )
+        return config_class
+
+    @takes_alias
+    @classmethod
+    def get_config_class(cls) -> type[BaseRunConfig[ArchConfigT]]:
+        return BaseRunConfig[cls.get_arch_config_class()]
+
+    def _save_weights_by_default(self) -> bool:
+        return False
+
+    def _state_dict_for_save(self) -> dict[str, Any]:
+        raise ValueError(f"{type(self).__name__} does not support saving weights")
+
+    def save_to_path(
+        self,
+        path: Path | ArchStoragePaths,
+        save_weights: bool = ...,
+        averaged_weights: bool | None = None,
+    ):
+        if isinstance(path, Path):
+            path = ArchStoragePaths.from_path(path)
+        path.path.parent.mkdir(parents=True, exist_ok=True)
+
+        if path.exists():
+            self.save_to_path(
+                path.path.with_name(f"{path.path.name}_1"),
+                save_weights=save_weights,
+                averaged_weights=averaged_weights,
+            )
+            raise ValueError(
+                f"file already existed at {path}, wrote to {path.path.name}_1"
+            )
+
+        from .arch_reload_info import ArchRef
+
+        arch_ref = ArchRef.from_arch(self)
+
+        path.arch_ref.write_text(arch_ref.model_dump_json())
+        should_save_weights = (
+            self._save_weights_by_default() if save_weights is ... else save_weights
+        )
+        if should_save_weights:
+            torch.save(self._state_dict_for_save(), path.model_weights)  # type: ignore
+        if averaged_weights is not None:
+            torch.save(averaged_weights, path.averaged_weights)  # type: ignore
+        return path
+
+    @classmethod
+    def load(
+        cls,
+        path: Path | ArchStoragePaths,
+        load_weights: bool | None = None,
+        averaged_weights: bool | None = False,
+    ) -> "ArchitectureBase":
+        return ArchStoragePaths.from_path(path).load_arch(
+            load_weights=load_weights, averaged_weights=averaged_weights, xcls=cls
+        )
+
+    @abstractmethod
+    def run_training(self): ...
+
+    def get_sweep_manager(self, ezpod_group=None):
+        from saeco.sweeps.newsweeper import SweepManager
+
+        return SweepManager(self, ezpod_group=ezpod_group)
+
+    def save_sweepref_and_get_py_commands(
+        self,
+        project: str,
+        gpus_per_run: int,
+        clivars: str = 'TORCH_LOGS="graph_breaks,recompiles"  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True ',
+        pre_commands: str = "",
+        pyname: str | None = None,
+    ) -> list[str]:
+        sm = self.get_sweep_manager()
+        sm.initialize_sweep(project=project)
+
+        commands = (
+            sm.get_worker_run_commands_for_manual_sweep(suffix="--distributed-skip-log")
+            if gpus_per_run > 1
+            else sm.get_worker_run_commands_for_manual_sweep()
+        )
+        return to_py_cmd(
+            commands,
+            pyname=pyname
+            or ("python3" if gpus_per_run == 1 else f"composer -n {gpus_per_run}"),
+            challenge_file=None,
+            prefix_vars=pre_commands + clivars,
+        )
+
+
+class Architecture[ArchConfigT: SweepableConfig](ArchitectureBase[ArchConfigT]):
+    def __init__(
+        self,
+        run_cfg: "RunConfig[ArchConfigT]",
+        state_dict: dict[str, Any] | None = None,
+        device: torch.device | str = "cuda",
+    ):
+        super().__init__(run_cfg, state_dict=state_dict, device=device)
+        self.run_cfg: RunConfig[ArchConfigT] = run_cfg
+        self._trainable: Trainable | None = None
+
+    @takes_alias(patch_super=True)
+    @classmethod
+    def get_arch_config_class(cls):
+        if cls is Architecture:
+            raise ValueError(
+                "Architecture class must not be generic to get config class"
+            )
+        return super().get_arch_config_class()
 
     @cached_property
     def _core_model(self) -> SAE:
@@ -209,9 +347,6 @@ class Architecture[ArchConfigT: SweepableConfig]:
             #         f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
             #     )
         return l
-
-    @abstractmethod
-    def setup(self): ...
 
     @property
     def trainable(self) -> Trainable:
@@ -274,100 +409,19 @@ class Architecture[ArchConfigT: SweepableConfig]:
 
     @takes_alias
     @classmethod
-    def get_arch_config_class(cls):
-        if cls is Architecture:
-            raise ValueError(
-                "Architecture class must not be generic to get config class"
-            )
-        bases = get_original_bases(cls)
-        assert len(bases) == 1
-        p = typing.get_args(bases[0])
-        assert len(p) == 1
-        return p[0]
-
-    @takes_alias
-    @classmethod
     def get_config_class(cls):
         return RunConfig[cls.get_arch_config_class()]
 
-    def save_to_path(
-        self,
-        path: Path | ArchStoragePaths,
-        save_weights: bool = ...,
-        averaged_weights: bool | None = None,
-    ):
-        if isinstance(path, Path):
-            path = ArchStoragePaths.from_path(path)
-        path.path.parent.mkdir(parents=True, exist_ok=True)
+    def _save_weights_by_default(self) -> bool:
+        return self._trainable is not None
 
-        if path.exists():
-            self.save_to_path(path.path.with_name(f"{path.path.name}_1"))
-            raise ValueError(
-                f"file already existed at {path}, wrote to {path.path.name}_1"
-            )
-
-        from .arch_reload_info import ArchRef
-
-        arch_ref = ArchRef.from_arch(self)
-
-        path.arch_ref.write_text(arch_ref.model_dump_json())
-        if save_weights is True or (
-            save_weights is ... and self._trainable is not None
-        ):
-            if self._trainable is None:
-                raise ValueError("trainable is None but attempted to save weights")
-            torch.save(self._trainable.state_dict(), path.model_weights)  # type: ignore
-        if averaged_weights is not None:
-            torch.save(averaged_weights, path.averaged_weights)  # type: ignore
-        return path
-
-    # @classmethod
-    # def load_from_path(cls, path: Path | ArchStoragePaths, load_weights=None):
-    #     from .arch_reload_info import ArchClassRef
-
-    #     path = ArchStoragePaths.from_path(path)
-    #     if cls is Architecture:
-    #         arch_ref = ArchClassRef.model_validate_json(path.arch_cls_ref.read_text())
-    #         arch_cls = arch_ref.get_arch_class()
-    #         return arch_cls.load_from_path(path, load_weights=load_weights)
-    #     cfg_cls = cls.get_config_class()
-    #     cfg = cfg_cls.model_validate_json(path.cfg.read_text())
-    #     state_dict = None
-    #     if path.model_weights.exists():
-    #         if load_weights is None:
-    #             raise ValueError(
-    #                 f"weights exist at {path.model_weights}, but load_weights is not set"
-    #             )
-    #         if load_weights:
-    #             state_dict = torch.load(path.model_weights)
-    #     else:
-    #         if load_weights:
-    #             raise ValueError(
-    #                 f"weights do not exist at {path.model_weights}, but load_weights is set"
-    #             )
-    #     inst = cls(cfg, state_dict=state_dict)
-    #     if cfg.is_concrete():
-    #         inst.instantiate()
-    #     return inst
-
-    @classmethod
-    def load(
-        cls,
-        path: Path | ArchStoragePaths,
-        load_weights: bool | None = None,
-        averaged_weights: bool | None = False,
-    ):
-        return ArchStoragePaths.from_path(path).load_arch(
-            load_weights=load_weights, averaged_weights=averaged_weights
-        )
+    def _state_dict_for_save(self) -> dict[str, Any]:
+        if self._trainable is None:
+            raise ValueError("trainable is None but attempted to save weights")
+        return self._trainable.state_dict()
 
     def run_training(self):
         self.trainer.train()
-
-    def get_sweep_manager(self, ezpod_group=None):
-        from saeco.sweeps.newsweeper import SweepManager
-
-        return SweepManager(self, ezpod_group=ezpod_group)
 
     def get_evaluation_functions(
         self,
@@ -381,176 +435,6 @@ class Architecture[ArchConfigT: SweepableConfig]:
             "recons/with_bos/": get_recons_loss_with_bos,
             "recons/no_bos/": get_recons_loss_no_bos,
         }
-
-
-class BaseRunConfig[ArchConfigT: SweepableConfig](SweepableConfig):
-    arch_cfg: ArchConfigT
-
-
-class WithConfig[ArchConfigT: SweepableConfig]:
-    cfg: ArchConfigT
-
-
-class ArchitectureBase[ArchConfigT: SweepableConfig]:
-    """ """
-
-    def __init__(
-        self,
-        run_cfg: BaseRunConfig[ArchConfigT],
-        state_dict: dict[str, Any] | None = None,
-        device: torch.device | str = "cuda",
-    ):
-        assert state_dict is None
-        self.run_cfg: BaseRunConfig[ArchConfigT] = run_cfg
-        # self.state_dict: dict[str, Any] | None = state_dict
-        self._instantiated: bool = False
-        self._setup_complete: bool = False
-        # self._trainable: Trainable | None = None
-        # self.device: torch.device | str = device
-
-    @property
-    def cfg(self) -> ArchConfigT:
-        return self.run_cfg.arch_cfg
-
-    def instantiate(self, inst_cfg: dict[str, Any] | None = None):
-        if inst_cfg:
-            self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
-        assert self.cfg.is_concrete() and self.run_cfg.is_concrete()
-        self._instantiated = True
-        self._setup()
-
-    def _setup(self):
-        assert self._instantiated
-        self.setup()
-        self._setup_complete = True
-
-    @cached_property
-    def _core_model(self) -> SAE:
-        return model_prop.get_from_fields(self)
-
-    @cached_property
-    def _losses(self) -> dict[str, Loss]:
-        return loss_prop.get_from_fields(self)
-
-    @cached_property
-    def _metrics(self) -> dict[str, nn.Module]:
-        return metric_prop.get_from_fields(self)
-
-    @cached_property
-    def aux_models(self) -> list[SAE]:
-        aux_models: dict[str, SAE] = aux_model_prop.get_from_fields(self)
-        l: list[SAE] = []
-        for name, e in aux_models.items():
-            # if isinstance(e, list):
-            #     # e: list[SAE]
-            #     for i, sae in enumerate(e):
-            #         sae.set_to_aux_model(f"{name}.{i}")
-            #         l.append(sae)
-            # elif isinstance(e, SAE):
-            e: SAE
-            e.set_to_aux_model(name)
-            l.append(e)
-            # else:
-            #     raise ValueError(
-            #         f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
-            #     )
-        return l
-
-    @abstractmethod
-    def setup(self): ...
-
-    @takes_alias
-    @classmethod
-    def get_arch_config_class(cls) -> type[ArchConfigT]:
-        if cls is ArchitectureBase:
-            raise ValueError(
-                "Architecture class must not be generic to get config class"
-            )
-        return get_resolved_typevars_for_base(cls, ArchitectureBase)[0]
-
-    @classmethod
-    @abstractmethod
-    def get_config_class(cls) -> type[BaseRunConfig[ArchConfigT]]: ...
-
-    # return BaseRunConfig[cls.get_arch_config_class()]
-
-    def save_to_path(
-        self,
-        path: Path | ArchStoragePaths,
-        save_weights: bool = ...,
-        averaged_weights: bool | None = None,
-    ):
-        if isinstance(path, Path):
-            path = ArchStoragePaths.from_path(path)
-        path.path.parent.mkdir(parents=True, exist_ok=True)
-
-        if path.exists():
-            self.save_to_path(
-                path.path.with_name(f"{path.path.name}_1"),
-                save_weights=save_weights,
-                averaged_weights=averaged_weights,
-            )
-            raise ValueError(
-                f"file already existed at {path}, wrote to {path.path.name}_1"
-            )
-
-        from .arch_reload_info import ArchRef
-
-        arch_ref = ArchRef.from_arch(self)
-
-        path.arch_ref.write_text(arch_ref.model_dump_json())
-        if save_weights is True or (
-            save_weights is ... and self._trainable is not None
-        ):
-            if self._trainable is None:
-                raise ValueError("trainable is None but attempted to save weights")
-            torch.save(self._trainable.state_dict(), path.model_weights)  # type: ignore
-        if averaged_weights is not None:
-            torch.save(averaged_weights, path.averaged_weights)  # type: ignore
-        return path
-
-    @classmethod
-    def load(
-        cls,
-        path: Path | ArchStoragePaths,
-        load_weights: bool | None = None,
-        averaged_weights: bool | None = False,
-    ) -> "ArchitectureBase":
-        return ArchStoragePaths.from_path(path).load_arch(
-            load_weights=load_weights, averaged_weights=averaged_weights, xcls=cls
-        )
-
-    @abstractmethod
-    def run_training(self): ...
-
-    def get_sweep_manager(self, ezpod_group=None):
-        from saeco.sweeps.newsweeper import SweepManager
-
-        return SweepManager(self, ezpod_group=ezpod_group)
-
-    def save_sweepref_and_get_py_commands(
-        self,
-        project: str,
-        gpus_per_run: int,
-        clivars: str = 'TORCH_LOGS="graph_breaks,recompiles"  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True ',
-        pre_commands: str = "",
-        pyname: str | None = None,
-    ) -> list[str]:
-        sm = self.get_sweep_manager()
-        sm.initialize_sweep(project=project)
-
-        commands = (
-            sm.get_worker_run_commands_for_manual_sweep(suffix="--distributed-skip-log")
-            if gpus_per_run > 1
-            else sm.get_worker_run_commands_for_manual_sweep()
-        )
-        return to_py_cmd(
-            commands,
-            pyname=pyname
-            or ("python3" if gpus_per_run == 1 else f"composer -n {gpus_per_run}"),
-            challenge_file=None,
-            prefix_vars=pre_commands + clivars,
-        )
 
 
 def to_py_cmd(  # Semi temporary code duplication of something that also exists in ezpod
