@@ -112,46 +112,9 @@ class SAE(cl.Seq):
     def set_to_aux_model(self, aux_name: str):
         self.acts.name = aux_name
 
-    # @cached_property
-    # def encode(self) -> cl.Seq:
-    #     return self[:"acts"]
-
-    # @cached_property
-    # def decode(self) -> cl.Seq:
-    #     return self["decoder":]
-
-    # # encode: cl.Module = NotImplemented
-    # @classmethod
-    # def build_model(
-    #     cls,
-    #     normalizer: StaticInvertibleGeneralizedNormalizer,
-    #     encoder_pre: cl.Module,
-    #     nonlinearity: cl.Module,
-    #     decoder: cl.Module,
-    # ):
-    #     return cls(
-    #         encoder_pre=encoder_pre,
-    #         nonlinearity=nonlinearity,
-    #         decoder=decoder,
-    #     )
-
-
-# class NormalizedModel(cl.Module):
-#     def __init__(self, normalizer, model: SAE) -> None:
-#         super().__init__()
-#         self.normalizer = normalizer
-
-
-# CFG_PATH_EXT = ".arch_cfg"
-# ARCH_CLASS_REF_PATH_EXT = ".arch_ref"
-
 
 class BaseRunConfig[ArchConfigT: SweepableConfig](SweepableConfig):
     arch_cfg: ArchConfigT
-
-
-class WithConfig[ArchConfigT: SweepableConfig]:
-    cfg: ArchConfigT
 
 
 class ArchitectureBase[ArchConfigT: SweepableConfig]:
@@ -191,7 +154,7 @@ class ArchitectureBase[ArchConfigT: SweepableConfig]:
         self._setup_complete = True
 
     @abstractmethod
-    def setup(self): ...
+    def setup(self) -> None: ...
 
     @takes_alias
     @classmethod
@@ -297,6 +260,8 @@ class ArchitectureBase[ArchConfigT: SweepableConfig]:
 
 
 class Architecture[ArchConfigT: SweepableConfig](ArchitectureBase[ArchConfigT]):
+    run_cfg: RunConfig[ArchConfigT]
+
     def __init__(
         self,
         run_cfg: "RunConfig[ArchConfigT]",
@@ -304,7 +269,7 @@ class Architecture[ArchConfigT: SweepableConfig](ArchitectureBase[ArchConfigT]):
         device: torch.device | str = "cuda",
     ):
         super().__init__(run_cfg, state_dict=state_dict, device=device)
-        self.run_cfg: RunConfig[ArchConfigT] = run_cfg
+        self.run_cfg = run_cfg
         self._trainable: Trainable | None = None
 
     @takes_alias(patch_super=True)
