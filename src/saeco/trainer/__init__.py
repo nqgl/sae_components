@@ -1,5 +1,5 @@
 from ..initializer.initializer_config import InitConfig
-from .run_config import RunConfig
+from .run_config import RunConfig, RunConfigBase
 from .runner import TrainingRunner
 from .schedule_cfg import RunSchedulingConfig
 from .train_config import TrainConfig

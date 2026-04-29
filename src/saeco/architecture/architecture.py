@@ -26,7 +26,7 @@ from saeco.misc.utils import useif
 from saeco.sweeps import SweepableConfig
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
 from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
-from saeco.trainer.run_config import RunConfig
+from saeco.trainer.run_config import RunConfig, RunConfigBase
 from saeco.trainer.trainable import Trainable
 from saeco.trainer.trainer import Trainer
 
@@ -113,11 +113,7 @@ class SAE(cl.Seq):
         self.acts.name = aux_name
 
 
-class BaseRunConfig[ArchConfigT: SweepableConfig](SweepableConfig):
-    arch_cfg: ArchConfigT
-
-
-class ArchitectureBase[ArchConfigT: SweepableConfig]:
+class ArchitectureBase[RunConfigT: RunConfigBase]:
     """Base architecture protocol for sweepable run configs.
 
     This class intentionally owns only config instantiation, reload/save metadata,
@@ -126,18 +122,18 @@ class ArchitectureBase[ArchConfigT: SweepableConfig]:
 
     def __init__(
         self,
-        run_cfg: BaseRunConfig[ArchConfigT],
+        run_cfg: RunConfigT,
         state_dict: dict[str, Any] | None = None,
         device: torch.device | str = "cuda",
     ):
-        self.run_cfg: BaseRunConfig[ArchConfigT] = run_cfg
+        self.run_cfg: RunConfigT = run_cfg
         self.state_dict: dict[str, Any] | None = state_dict
         self._instantiated: bool = False
         self._setup_complete: bool = False
         self.device: torch.device | str = device
 
     @property
-    def cfg(self) -> ArchConfigT:
+    def cfg(self) -> SweepableConfig:
         return self.run_cfg.arch_cfg
 
     def instantiate(self, inst_cfg: dict[str, Any] | None = None):
@@ -158,22 +154,17 @@ class ArchitectureBase[ArchConfigT: SweepableConfig]:
 
     @takes_alias
     @classmethod
-    def get_arch_config_class(cls) -> type[ArchConfigT]:
+    def get_config_class(cls) -> type[RunConfigT]:
         if cls is ArchitectureBase:
             raise ValueError(
-                "Architecture class must not be generic to get config class"
+                "ArchitectureBase class must not be generic to get config class"
             )
         config_class = get_resolved_typevars_for_base(cls, ArchitectureBase)[0]
         if isinstance(config_class, typing.TypeVar):
             raise ValueError(
-                "Architecture class must not be generic to get config class"
+                "ArchitectureBase class must not be generic to get config class"
             )
         return config_class
-
-    @takes_alias
-    @classmethod
-    def get_config_class(cls) -> type[BaseRunConfig[ArchConfigT]]:
-        return BaseRunConfig[cls.get_arch_config_class()]
 
     def _save_weights_by_default(self) -> bool:
         return False
@@ -259,12 +250,14 @@ class ArchitectureBase[ArchConfigT: SweepableConfig]:
         )
 
 
-class Architecture[ArchConfigT: SweepableConfig](ArchitectureBase[ArchConfigT]):
+class Architecture[ArchConfigT: SweepableConfig](
+    ArchitectureBase[RunConfig[ArchConfigT]]
+):
     run_cfg: RunConfig[ArchConfigT]
 
     def __init__(
         self,
-        run_cfg: "RunConfig[ArchConfigT]",
+        run_cfg: RunConfig[ArchConfigT],
         state_dict: dict[str, Any] | None = None,
         device: torch.device | str = "cuda",
     ):
@@ -272,14 +265,23 @@ class Architecture[ArchConfigT: SweepableConfig](ArchitectureBase[ArchConfigT]):
         self.run_cfg = run_cfg
         self._trainable: Trainable | None = None
 
-    @takes_alias(patch_super=True)
+    @property
+    def cfg(self) -> ArchConfigT:
+        return self.run_cfg.arch_cfg
+
+    @takes_alias
     @classmethod
     def get_arch_config_class(cls):
         if cls is Architecture:
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-        return super().get_arch_config_class()
+        config_class = get_resolved_typevars_for_base(cls, Architecture)[0]
+        if isinstance(config_class, typing.TypeVar):
+            raise ValueError(
+                "Architecture class must not be generic to get config class"
+            )
+        return config_class
 
     @cached_property
     def _core_model(self) -> SAE:
