@@ -1,5 +1,3 @@
-from typing import TypeVar
-
 import torch
 import torch.nn as nn
 
@@ -12,53 +10,48 @@ class ReuseCache(Cache):
     sparsity_penalty: float = ...
 
 
-def _reuse(*, x, keyobj, callable, cache: ReuseCache, **kwargs):
+def _reuse(*, x, keyobj, func, cache: ReuseCache, **kwargs):
     key = (id(keyobj), id(x))
     if not cache._ancestor.has.forward_reuse_dict:
         cache._ancestor.forward_reuse_dict = {}
     elif key in cache._ancestor.forward_reuse_dict:
-        # print("reuse cache hit")
         return cache._ancestor.forward_reuse_dict[key]
-    chk = callable
-    if isinstance(callable, torch._dynamo.eval_frame.OptimizedModule):
-        chk = callable._orig_mod
+    chk = func
+    if isinstance(func, torch._dynamo.eval_frame.OptimizedModule):
+        chk = func._orig_mod
     if isinstance(chk, Module):
-        output = callable(x, cache=cache, **kwargs)
+        output = func(x, cache=cache, **kwargs)
     else:
-        output = callable(x, **kwargs)
+        output = func(x, **kwargs)
     if cache._ancestor.has.forward_reuse_dict:
         cache._ancestor.forward_reuse_dict[key] = output
     else:
         print(
-            "Warning: cache does not have forward_reuse_dict, so no reuse is possible. This may lead to cache overwrite errors."
+            "Warning: cache does not have forward_reuse_dict, so no reuse is possible. "
+            "This may lead to cache overwrite errors."
         )
     return output
 
 
 def reuse_forward(*, x, module, cache: ReuseCache, **kwargs):
-    return _reuse(x=x, keyobj=module, callable=module, cache=cache, **kwargs)
+    return _reuse(x=x, keyobj=module, func=module, cache=cache, **kwargs)
 
 
 def reuse_method(mth):
     def wrapper(self, x: torch.Tensor, *, cache: ReuseCache, **kwargs):
-        print("re_method begin")
         re = _reuse(
             x=x,
             keyobj=(self, mth),
-            callable=lambda *a, **k: mth(self, *a, **k),
+            func=lambda *a, **k: mth(self, *a, **k),
             cache=cache,
             **kwargs,
         )
-        print("re_method end")
         return re
 
     return wrapper
 
 
-T = TypeVar("T", bound=nn.Module)
-
-
-class ReuseForward(Module):
+class ReuseForward[T: nn.Module](Module):
     def __init__(self, module: T):
         super().__init__()
         self.module: T = module

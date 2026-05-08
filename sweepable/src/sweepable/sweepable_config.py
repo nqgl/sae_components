@@ -5,7 +5,6 @@ from typing import (
     ClassVar,
     Literal,
     Self,
-    TypeVar,
     Union,
     dataclass_transform,
     get_args,
@@ -16,7 +15,6 @@ import pydantic._internal._model_construction as mc
 from paramsight.generic_restored_basemodel.generic_basemodel import GenericBaseModel
 from pydantic import (
     BaseModel,
-    ValidationError,
 )
 
 from sweepable.has_sweep import (
@@ -32,14 +30,6 @@ from sweepable.sweep_expressions import Op, SweepVar, Val
 from sweepable.swept import Swept
 from sweepable.swept_node import SweptNode
 
-# def generic_issubclass(t, cls):
-#     try:
-#         return issubclass(t, cls)
-#     except TypeError:
-#         pass
-#     if get_origin(t) is Union or isinstance(t, UnionType):
-#         return any([generic_issubclass(a, cls) for a in get_args(t)])
-
 
 def generic_isinstance(inst, cls, name=None):
     try:
@@ -47,7 +37,7 @@ def generic_isinstance(inst, cls, name=None):
     except TypeError:
         pass
     if get_origin(cls) is Union or isinstance(cls, UnionType):
-        return any([generic_isinstance(inst, a) for a in get_args(cls)])
+        return any(generic_isinstance(inst, a) for a in get_args(cls))
     if not isinstance(cls, GenericAlias):
         return False
     origin = get_origin(cls)
@@ -58,51 +48,27 @@ def generic_isinstance(inst, cls, name=None):
         if not len(args) == 1:
             return False
         t = args[0]
-        return all([generic_isinstance(i, t) for i in inst])
+        return all(generic_isinstance(i, t) for i in inst)
     if origin is dict:
         if not len(args) == 2:
             return False
         t_k, t_v = args
         return all(
-            [
-                all([generic_isinstance(k, t_k), generic_isinstance(v, t_v)])
-                for k, v in inst.items()
-            ]
+            generic_isinstance(k, t_k) and generic_isinstance(v, t_v)
+            for k, v in inst.items()
         )
     return False
-
-
-def SweptValidatorConverter(t, name=None):
-    def converter_validator(value: Any):
-        if isinstance(t, TypeVar):
-            return value
-        if generic_isinstance(value, t, name=name):
-            return value
-        # elif issubclass(type(value), t):
-        #     return value
-        options = [Op, SweepVar, Val, Swept]
-        if name == "batch_size":
-            print("options", options)
-        for option in options:
-            try:
-                return option.model_validate(value)
-            except ValidationError:
-                continue
-        return value
-        # raise TypeError(f"Validation Error: Invalid value for {t}: {value}")
-
-    return converter_validator
 
 
 NON_SWEPT_TYPES = (Literal, ClassVar)
 
 
-def Sweepable(t, name=None):
+def _to_sweepable(t, name=None):
     if t in NON_SWEPT_TYPES or get_origin(t) in NON_SWEPT_TYPES:
         return t
     if get_origin(t) is dict and get_args(t) and len(get_args(t)) == 2:
         key_type, value_type = get_args(t)
-        s_t = t | dict[key_type, Sweepable(value_type, name=name)]
+        s_t = t | dict[key_type, _to_sweepable(value_type, name=name)]
     else:
         s_t = t
     if t is ClassVar:
@@ -111,9 +77,6 @@ def Sweepable(t, name=None):
         "Swept type should not be wrapped in Sweepable or passed to SweepableConfig"
     )
 
-    # return Annotated[
-    #     Union[Swept[t], s_t], BeforeValidator(SweptValidatorConverter(t, name=name))
-    # ]
     from .sweep_expressions import Op
 
     return Union[Op[s_t], Swept[s_t], s_t]
@@ -135,7 +98,7 @@ class SweepableMeta(mc.ModelMetaclass):
     ) -> type:
         if "__annotations__" in namespace:
             namespace["__annotations__"] = {
-                name: Sweepable(annotation, name=name)
+                name: _to_sweepable(annotation, name=name)
                 for name, annotation in namespace["__annotations__"].items()
             }
         return super().__new__(
@@ -392,50 +355,3 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
         if hsh in self._legacy_hash_mappings:
             return self._legacy_hash_mappings[hsh]
         return hsh
-
-
-def add_dictlist(d1: dict[Any, list], d2: dict[Any, list]) -> dict[Any, list]:
-    out = {}
-    k1 = set(d1.keys())
-    k2 = set(d2.keys())
-    for k in k1 & k2:
-        out[k] = d1[k] + d2[k]
-    for k in k1 - k2:
-        out[k] = d1[k].copy()
-    for k in k2 - k1:
-        out[k] = d2[k].copy()
-    return out
-
-
-def test():
-    class Test(SweepableConfig):
-        x: int
-        y: int
-
-    class Nest(SweepableConfig):
-        t: Test
-        z: int
-        e: int
-
-    n = Nest(t=Test(x=1, y=Swept(2, 3)), z=3, e=Swept(1, 2))
-    print(n.sweep())
-    t = Test(x=Swept(1, 2), y=2)
-    print(t.sweep())
-
-    class SubclassOfSwept(Swept):
-        def blah(self):
-            pass
-
-    t2 = Test(x=SubclassOfSwept(1, 2), y=2)
-    print(t2.sweep())
-
-    sp = SweepVar(1, 2, 3, name="var1")
-    t3 = Test(
-        x=SweepExpression(sp, expr=lambda x: x),
-        y=SweepExpression(sp, expr=lambda x: x + 1),
-    )
-    print(t3.sweep())
-
-
-if __name__ == "__main__":
-    test()
