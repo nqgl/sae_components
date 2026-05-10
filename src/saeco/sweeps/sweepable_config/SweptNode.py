@@ -10,8 +10,6 @@ from saeco.sweeps.sweepable_config.Swept import Swept
 
 Location = list[str]
 
-T = TypeVar("T")
-
 
 class SweptNode(BaseModel):
     location: Location = Field(default_factory=list)
@@ -147,7 +145,7 @@ class SweptNode(BaseModel):
         }
 
     @classmethod
-    def consistent_sort(cls, d: T) -> T:
+    def consistent_sort[T](cls, d: T) -> T:
         if isinstance(d, dict):
             return cls.alphabetize_dict(d)
         elif isinstance(d, list):
@@ -156,7 +154,7 @@ class SweptNode(BaseModel):
             return d
 
     @classmethod
-    def alphabetize_dict(cls, d: dict[str, T]) -> dict[str, T]:
+    def alphabetize_dict[T](cls, d: dict[str, T]) -> dict[str, T]:
         return {k: v for k, v in sorted(d.items(), key=lambda x: x[0])}
 
     def select_instance_by_index(self, i, sweep_vars=None) -> dict[str, Any]:
@@ -204,28 +202,6 @@ class SweptNode(BaseModel):
         paths.extend([[k] for k in self.expressions.keys()])
         return paths
 
-    def _to_optuna_grid_search_space_params_only(self, values_only=True):
-        d = {
-            f"{k}/{child_k}": child_v
-            for k, v in self.children.items()
-            for child_k, child_v in v._to_optuna_grid_search_space_params_only(
-                values_only=values_only
-            ).items()
-        }
-        d.update(
-            {k: v.values if values_only else v for k, v in self.swept_fields.items()}
-        )
-        return d
-
-    def to_optuna_grid_search_space(self, values_only=True):
-        sweepvars = self.get_sweepvars()
-        d = self._to_optuna_grid_search_space_params_only()
-        sweepvars_d = {
-            f"sweep_vars/{sv.name}": sv.values if values_only else sv
-            for sv in sweepvars
-        }
-        return {**d, **sweepvars_d}
-
 
 def main():
     from saeco.sweeps.sweepable_config import (
@@ -250,7 +226,7 @@ if TYPE_CHECKING:
 
 
 def check_config_combinations(cfg: "SweepableConfig"):
-    nodes = cfg.to_swept_nodes()
+    nodes = cfg.sweep_info_tree
     l = []
     for i in range(nodes.swept_combinations_count_including_vars()):
         l.append(nodes.select_instance_by_index(i))
@@ -259,7 +235,7 @@ def check_config_combinations(cfg: "SweepableConfig"):
             if i == j:
                 continue
             assert l[i] != l[j]
-            assert l[i] == cfg.to_swept_nodes().select_instance_by_index(i)
+            assert l[i] == cfg.sweep_info_tree.select_instance_by_index(i)
     print("combination count:", nodes.swept_combinations_count_including_vars())
     print("vars:", nodes.get_sweepvars())
 

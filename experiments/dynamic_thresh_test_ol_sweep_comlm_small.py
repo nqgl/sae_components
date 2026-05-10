@@ -146,7 +146,7 @@ cfg = RunConfig[DynamicThreshConfig](
         l1_decay_start=1_00,
     ),
 )
-cfg.to_swept_nodes().swept_combinations_count_including_vars()
+cfg.sweep_info_tree.swept_combinations_count_including_vars()
 arch = DynamicThreshSAE(cfg)
 
 # piler = data_cfg.acts_piler(data_cfg.trainsplit)

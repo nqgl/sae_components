@@ -6,7 +6,7 @@ from saeco.mlog import mlog
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 if TYPE_CHECKING:
-    from saeco.sweeps.newsweeper import SweepData
+    from saeco.sweeps.sweep_data import SweepData
 
 
 @define
@@ -17,7 +17,7 @@ class SweepRunner:
 
     @property
     def run_name(self):
-        run_name = f"{self.sweep_data.root_arch_ref.class_ref.cls_name}"
+        run_name = f"{self.sweep_data.root_arch_ref.class_ref.obj_name}"
         if self.sweep_index is not None:
             run_name = f"{run_name}_{self.sweep_index}"
         return f"{self.sweep_data.sweep_id}:{run_name}"
@@ -54,7 +54,7 @@ class SweepRunner:
     def run_random_instance(self):
         arch = self.sweep_data.root_arch_ref.load_arch()
         cfg: SweepableConfig = self.sweep_data.root_arch_ref.config
-        arch.instantiate(cfg.to_swept_nodes().random_selection())
+        arch.instantiate(cfg.sweep_info_tree.random_selection())
         with mlog.enter(
             arch_ref=self.sweep_data.root_arch_ref,
             run_name=self.run_name,

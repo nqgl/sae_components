@@ -21,7 +21,7 @@ from .normalizers import (
 from .train_cache import TrainCache
 
 if TYPE_CHECKING:
-    from saeco.architecture.architecture import SAE
+    from saeco.architecture.sae import SAE
 
 from functools import wraps
 

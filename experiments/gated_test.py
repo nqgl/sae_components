@@ -62,7 +62,7 @@ g = Gated(cfg)
 sweep_manager = g.get_sweep_manager()
 sweep_manager.initialize_sweep(project="sweeping-test-gated", custom_sweep=True)
 sweep_manager.run_manual_sweep_with_monitoring(
-    cfg.to_swept_nodes().swept_combinations_count_including_vars(),
+    cfg.sweep_info_tree.swept_combinations_count_including_vars(),
     purge_after=True,
     setup_min=8,
     prefix_vars="USE_NEPTUNE=true ",

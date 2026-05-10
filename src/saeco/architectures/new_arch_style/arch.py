@@ -7,11 +7,11 @@ import saeco.components as co
 import saeco.components.features as ft
 import saeco.core as cl
 from saeco.architecture import (
-    SAE,
-    Architecture,
     aux_model_prop,
     model_prop,
 )
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,

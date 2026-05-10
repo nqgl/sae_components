@@ -138,7 +138,7 @@ cfg = RunConfig[DynamicThreshConfig](
         l1_decay_start=1_00,
     ),
 )
-cfg.to_swept_nodes().swept_combinations_count_including_vars()
+cfg.sweep_info_tree.swept_combinations_count_including_vars()
 arch = DynamicThreshSAE(cfg)
 sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent(project="default-project")

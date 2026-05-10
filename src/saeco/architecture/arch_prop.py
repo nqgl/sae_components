@@ -12,10 +12,8 @@ from typing import (
 )
 from warnings import deprecated
 
-if TYPE_CHECKING:
-    pass
+import torch.nn as nn
 
-# _T = TypeVar("_T")
 _fields_dict: dict[type, dict[type["arch_prop[Any]"], list[str]]] = defaultdict(
     dict
 )  # (cls -> (field_categ_name -> field_name/names))
@@ -117,9 +115,6 @@ class arch_prop[T](
                     f"{self.__class__}: Field names must be unique: duplicate name '{name}' on {owner}"
                 )
         else:
-            # if self.COLLECTED_FIELD_SINGULAR:
-            #     setfield(owner, self.__class__, name)
-            # else:
             setfield(owner, self.__class__, [name])
 
         return super().__set_name__(owner, name)
@@ -155,16 +150,6 @@ class arch_prop_singular[T](arch_prop[T]):
         assert cls.COLLECTED_FIELD_SINGULAR
         assert len(fields) == 1
         return getattr(inst, fields[0])
-
-
-import torch.nn as nn
-
-# Loss_T = TypeVar("Loss_T", bound=nn.Module)
-
-# from .architecture import SAE
-# from saeco.components.metrics.metrics import Metric
-
-# AuxModel_T = TypeVar("AuxModel_T", bound=nn.Module)
 
 
 class loss_prop[Loss_T: nn.Module](arch_prop[Loss_T]):

@@ -1,3 +1,4 @@
+from functools import cached_property
 from types import GenericAlias, UnionType
 from typing import (
     Any,
@@ -249,7 +250,7 @@ def set_path(obj: CouldHaveSweep, path: list[str], value):
 
 
 def _instantiate_sweepexpressions(target, obj: "SweepableConfig", swept_vars):
-    paths = obj.to_swept_nodes().get_paths_to_sweep_expressions()
+    paths = obj.sweep_info_tree.get_paths_to_sweep_expressions()
     for path in paths:
         t = acc_path(obj, path)
         assert isinstance(t, SweepExpression)
@@ -260,7 +261,7 @@ def _instantiate_sweepexpressions(target, obj: "SweepableConfig", swept_vars):
 def _get_sweep_expression_instantiations_dict(
     obj: "SweepableConfig", swept_vars
 ) -> dict:
-    paths = obj.to_swept_nodes().get_paths_to_sweep_expressions()
+    paths = obj.sweep_info_tree.get_paths_to_sweep_expressions()
     d = {}
     for path in paths:
         t = acc_path(obj, path)
@@ -282,6 +283,15 @@ def fix_paramize(d):
 class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
     _ignore_this: int = 0  # needs field due to being a dataclass
     _legacy_hash_mappings: ClassVar[dict[str, str]] = {}
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self.__dict__.pop("to_swept_nodes", None)
+        super().__setattr__(name, value)
+
+    def model_copy(self, *args, **kwargs) -> Self:
+        copy = super().model_copy(*args, **kwargs)
+        copy.__dict__.pop("to_swept_nodes", None)
+        return copy
 
     def is_concrete(self):
         return self._is_concrete(self)
@@ -319,15 +329,15 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
             #     #     sv_dict[k].instantiated_value = v
             # else:
             # print("no sweep vars?")
-            # print("self paths", self.to_swept_nodes().get_paths_to_sweep_expressions())
+            # print("self paths", self.to_swept_nodes.get_paths_to_sweep_expressions())
             # print(
             #     "copy paths",
-            #     self_copy.to_swept_nodes().get_paths_to_sweep_expressions(),
+            #     self_copy.to_swept_nodes.get_paths_to_sweep_expressions(),
             # )
 
             assert "sweep_vars" not in sweep or sweep["sweep_vars"] == {}, (
-                self.to_swept_nodes().get_paths_to_sweep_expressions(),
-                self_copy.to_swept_nodes().get_paths_to_sweep_expressions(),
+                self.sweep_info_tree.get_paths_to_sweep_expressions(),
+                self_copy.sweep_info_tree.get_paths_to_sweep_expressions(),
                 sweep["sweep_vars"],
             )
         instantiate_dump = self_copy.model_dump()
@@ -343,17 +353,18 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
         return _get_sweep_expression_instantiations_dict(self, var_data)
 
     def random_sweep_inst_dict(self):
-        return self.to_swept_nodes().random_selection()
+        return self.sweep_info_tree.random_selection()
 
     def random_sweep_configuration(self) -> Self:
         return self.from_selective_sweep(self.random_sweep_inst_dict())
 
     def select_instance_by_index(self, index: int):
         return self.from_selective_sweep(
-            self.to_swept_nodes().select_instance_by_index(index)
+            self.sweep_info_tree.select_instance_by_index(index)
         )
 
-    def to_swept_nodes(self):
+    @cached_property
+    def sweep_info_tree(self) -> SweptNode:
         return SweptNode.from_sweepable(self)
 
     def get_hash(self) -> str:
@@ -365,24 +376,6 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
         if hsh in self._legacy_hash_mappings:
             return self._legacy_hash_mappings[hsh]
         return hsh
-
-    def from_optuna_trial(self, trial):
-        import optuna
-
-        trial: optuna.trial.Trial
-        search_space = self.to_swept_nodes().to_optuna_grid_search_space(
-            values_only=False
-        )
-        d = {}
-        for k, v in search_space.items():
-            self._build_from_optuna_trial(k, trial, d)
-
-    @classmethod
-    def _build_from_optuna_trial(cls, key: str, trial, d: dict, swept_obj: Swept):
-        import optuna
-
-        trial: optuna.trial.Trial
-        ...
 
 
 def add_dictlist(d1: dict[Any, list], d2: dict[Any, list]) -> dict[Any, list]:

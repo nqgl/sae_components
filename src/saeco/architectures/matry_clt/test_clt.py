@@ -5,7 +5,9 @@ import torch.nn as nn
 
 import saeco.components.features as ft
 import saeco.core as cl
-from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.architecture import loss_prop, model_prop
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 from saeco.components import L2Loss, Lambda, SparsityPenaltyLoss
 from saeco.core import Seq
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig

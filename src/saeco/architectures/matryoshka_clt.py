@@ -3,9 +3,11 @@ from functools import cached_property
 import torch
 import torch.nn as nn
 
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 import saeco.components.features as ft
 import saeco.core as cl
-from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.architecture import loss_prop, model_prop
 from saeco.components import Lambda, Loss, SparsityPenaltyLoss
 from saeco.components.features.features_param import FeaturesParam
 from saeco.components.ops import Indexer

@@ -3,13 +3,15 @@ from functools import cached_property
 import einops
 import nnsight
 
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 import saeco.core as cl
 import torch
 import torch.nn as nn
 
 import torch.nn.functional as F
 
-from saeco.architecture import Architecture, aux_model_prop, loss_prop, model_prop, SAE
+from saeco.architecture import aux_model_prop, loss_prop, model_prop
 
 from saeco.components import L2Loss, Lambda, Loss, SparsityPenaltyLoss
 from saeco.components.features.features_param import FeaturesParam

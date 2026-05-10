@@ -11,7 +11,7 @@ from attrs import define
 from jaxtyping import Int
 from torch import Tensor
 
-from saeco.architecture.architecture import Architecture
+from saeco.architecture.sae_architecture import Architecture
 from saeco.data.dict_batch.dict_batch import DictBatch, batch_size_targeter
 from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from saeco.data.training_data import ActsDataCreator

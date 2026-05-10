@@ -2,10 +2,12 @@
 
 
 import saeco
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
 import saeco.core as cl
-from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.architecture import loss_prop, model_prop
 from saeco.architectures.sweep_tg.orig_rewrite.threshgrad_v1 import (
     ThreshGate,
     ThreshGateConfig,

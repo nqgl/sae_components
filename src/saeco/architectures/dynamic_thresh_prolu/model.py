@@ -7,11 +7,11 @@ import saeco.components.features as ft
 import saeco.components.hooks.feature_hooks
 import saeco.core as cl
 from saeco.architecture import (
-    SAE,
-    Architecture,
     loss_prop,
     model_prop,
 )
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,
@@ -25,8 +25,6 @@ from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.sweeps.sweepable_config.Swept import Swept
-
-# torch.backends.cudnn.benchmark = True
 
 
 class ThreshConfig(SweepableConfig):

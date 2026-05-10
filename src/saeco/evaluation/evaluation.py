@@ -10,7 +10,7 @@ from paramsight import get_resolved_typevars_for_base, takes_alias
 from torch import Tensor
 from transformers import PreTrainedTokenizerFast
 
-from saeco.architecture.architecture import Architecture
+from saeco.architecture.sae_architecture import Architecture
 from saeco.data.dict_batch import DictBatch
 from saeco.evaluation.eval_components.perturbation_analysis import (
     PerturbationAnalysis,

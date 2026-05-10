@@ -19,6 +19,8 @@ import torch.nn as nn
 from torch import Tensor
 from torch.amp.autocast_mode import custom_bwd, custom_fwd
 
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 import saeco.core as cl
 from saeco.components.features import FeaturesParam
 from saeco.components.penalties.l0targeter import L0Targeting
@@ -479,7 +481,7 @@ def GT2(grad_window: GradWindowFn = sigmoid_grad_window):
 import saeco
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
-from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.architecture import loss_prop, model_prop
 from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.core import Seq
 from saeco.misc import useif

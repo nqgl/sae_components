@@ -1,123 +1,27 @@
 import typing
 from abc import abstractmethod
-from functools import cached_property
 from pathlib import Path
-from typing import Any, Literal, overload
+from typing import Any, overload
 
 import torch
 from paramsight import get_resolved_typevars_for_base, takes_alias
-from torch import nn
 
-import saeco.components as co
-import saeco.core as cl
-from saeco.architecture.arch_prop import (
-    aux_model_prop,
-    loss_prop,
-    metric_prop,
-    model_prop,
-)
-from saeco.architecture.arch_reload_info import ArchStoragePaths
-from saeco.components.losses import Loss
-from saeco.components.metrics.metrics import ActMetrics, PreActMetrics
-from saeco.components.resampling.anthropic_resampling import AnthResampler
-from saeco.components.resampling.freq_tracker.ema import EMAFreqTracker
-from saeco.initializer.initializer import Initializer
-from saeco.misc.utils import useif
+from saeco.architecture.arch_storage_paths import ArchStoragePaths
 from saeco.sweeps import SweepableConfig
-from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
-from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
-from saeco.trainer.run_config import RunConfig, RunConfigBase
-from saeco.trainer.trainable import Trainable
-from saeco.trainer.trainer import Trainer
 
 
-class SAE(cl.Seq):
-    encoder_pre: cl.Module
-    preacts: PreActMetrics
-    nonlinearity: cl.Module
-    encoder: cl.Module
-    decoder: cl.Module
-    acts: ActMetrics
-    freqs: EMAFreqTracker | None
-    penalty: co.Penalty | None
-    losses: list[Loss]
-
-    @overload
-    def __init__(
-        self,
-        *,
-        encoder_pre: Literal[None] = None,
-        nonlinearity: Literal[None] = None,
-        encoder: nn.Module,
-        decoder: nn.Module,
-        act_metrics: ActMetrics | None = None,
-        preacts: PreActMetrics | None = None,
-        penalty: co.Penalty | None = ...,
-        freqs: EMAFreqTracker | None = ...,
-    ): ...
-
-    @overload
-    def __init__(
-        self,
-        *,
-        encoder_pre: nn.Module,
-        nonlinearity: nn.Module,
-        encoder: Literal[None] = None,
-        decoder: nn.Module,
-        act_metrics: ActMetrics | None = None,
-        preacts: PreActMetrics | None = None,
-        penalty: co.Penalty | None = ...,
-        freqs: EMAFreqTracker | None = ...,
-    ): ...
-    def __init__(
-        self,
-        *,
-        encoder_pre: nn.Module | None = None,
-        nonlinearity: nn.Module | None = None,
-        encoder: nn.Module | None = None,
-        decoder: nn.Module | None = None,
-        act_metrics: ActMetrics | None = None,
-        preacts: PreActMetrics | None = None,
-        penalty: co.Penalty | None = ...,
-        freqs: EMAFreqTracker | None = ...,
-    ):
-        penalty = co.L1Penalty() if penalty is ... else penalty
-        freqs = EMAFreqTracker() if freqs is ... else freqs
-        act_metrics = ActMetrics() if act_metrics is None else act_metrics
-        # we could seek a preactmetrics on the encoder in the future
-        assert (encoder_pre is None) == (nonlinearity is None)
-        assert (encoder is None) != (nonlinearity is None)
-        if encoder is None:
-            preacts = PreActMetrics() if preacts is None else preacts
-            encoder = cl.Seq(
-                encoder_pre=encoder_pre,
-                preacts=preacts,
-                nonlinearity=nonlinearity,
-            )
-        else:
-            assert preacts is None
-        super().__init__(
-            # normalizer=normalizer,
-            # encoder_pre=encoder_pre,
-            # preacts=preacts,
-            # nonlinearity=nonlinearity,
-            encoder=encoder,
-            acts=act_metrics,
-            **useif(freqs is not None, freqs=freqs),
-            **useif(penalty is not None, penalty=penalty),
-            decoder=decoder,
-            # denormalizer=...
-        )
-
-    def set_to_aux_model(self, aux_name: str):
-        self.acts.name = aux_name
-
-
-class ArchitectureBase[RunConfigT: RunConfigBase]:
+class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
     """Base architecture protocol for sweepable run configs.
 
     This class intentionally owns only config instantiation, reload/save metadata,
     and sweep orchestration. Training/model semantics belong in subclasses.
+
+    special methods to override:
+    - setup()
+    - _save_weights_by_default()
+    - _state_dict_for_save()
+    - run_training()
+
     """
 
     def __init__(
@@ -132,14 +36,9 @@ class ArchitectureBase[RunConfigT: RunConfigBase]:
         self._setup_complete: bool = False
         self.device: torch.device | str = device
 
-    @property
-    def cfg(self) -> SweepableConfig:
-        return self.run_cfg.arch_cfg
-
     def instantiate(self, inst_cfg: dict[str, Any] | None = None):
         if inst_cfg:
             self.run_cfg = self.run_cfg.from_selective_sweep(inst_cfg)
-        assert self.cfg.is_concrete()
         assert self.run_cfg.is_concrete()
         self._instantiated = True
         self._setup()
@@ -159,7 +58,10 @@ class ArchitectureBase[RunConfigT: RunConfigBase]:
             raise ValueError(
                 "ArchitectureBase class must not be generic to get config class"
             )
-        config_class = get_resolved_typevars_for_base(cls, ArchitectureBase)[0]
+        try:
+            (config_class,) = get_resolved_typevars_for_base(cls, ArchitectureBase)
+        except Exception as e:
+            raise ValueError("Failed in config class lookup") from e
         if isinstance(config_class, typing.TypeVar):
             raise ValueError(
                 "ArchitectureBase class must not be generic to get config class"
@@ -175,7 +77,7 @@ class ArchitectureBase[RunConfigT: RunConfigBase]:
     def save_to_path(
         self,
         path: Path | ArchStoragePaths,
-        save_weights: bool = ...,
+        save_weights: bool | None = None,
         averaged_weights: bool | None = None,
     ):
         if isinstance(path, Path):
@@ -198,7 +100,7 @@ class ArchitectureBase[RunConfigT: RunConfigBase]:
 
         path.arch_ref.write_text(arch_ref.model_dump_json())
         should_save_weights = (
-            self._save_weights_by_default() if save_weights is ... else save_weights
+            self._save_weights_by_default() if save_weights is None else save_weights
         )
         if should_save_weights:
             torch.save(self._state_dict_for_save(), path.model_weights)  # type: ignore
@@ -250,166 +152,26 @@ class ArchitectureBase[RunConfigT: RunConfigBase]:
         )
 
 
-class Architecture[ArchConfigT: SweepableConfig](
-    ArchitectureBase[RunConfig[ArchConfigT]]
-):
-    run_cfg: RunConfig[ArchConfigT]
-
-    def __init__(
-        self,
-        run_cfg: RunConfig[ArchConfigT],
-        state_dict: dict[str, Any] | None = None,
-        device: torch.device | str = "cuda",
-    ):
-        super().__init__(run_cfg, state_dict=state_dict, device=device)
-        self.run_cfg = run_cfg
-        self._trainable: Trainable | None = None
-
-    @property
-    def cfg(self) -> ArchConfigT:
-        return self.run_cfg.arch_cfg
-
-    @takes_alias
-    @classmethod
-    def get_arch_config_class(cls):
-        if cls is Architecture:
-            raise ValueError(
-                "Architecture class must not be generic to get config class"
-            )
-        config_class = get_resolved_typevars_for_base(cls, Architecture)[0]
-        if isinstance(config_class, typing.TypeVar):
-            raise ValueError(
-                "Architecture class must not be generic to get config class"
-            )
-        return config_class
-
-    @cached_property
-    def _core_model(self) -> SAE:
-        return model_prop.get_from_fields(self)
-
-    @cached_property
-    def _losses(self) -> dict[str, Loss]:
-        return loss_prop.get_from_fields(self)
-
-    @cached_property
-    def _metrics(self) -> dict[str, nn.Module]:
-        return metric_prop.get_from_fields(self)
-
-    @cached_property
-    def aux_models(self) -> list[SAE]:
-        aux_models: dict[str, SAE] = aux_model_prop.get_from_fields(self)
-        l: list[SAE] = []
-        for name, e in aux_models.items():
-            # if isinstance(e, list):
-            #     # e: list[SAE]
-            #     for i, sae in enumerate(e):
-            #         sae.set_to_aux_model(f"{name}.{i}")
-            #         l.append(sae)
-            # elif isinstance(e, SAE):
-            e: SAE
-            e.set_to_aux_model(name)
-            l.append(e)
-            # else:
-            #     raise ValueError(
-            #         f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
-            #     )
-        return l
-
-    @property
-    def trainable(self) -> Trainable:
-        if self._trainable is None:
-            self._trainable = self.make_trainable().to(device=self.device)
-        return self._trainable
-
-    def make_trainable(self):
-        if not self._instantiated:
-            self.instantiate()
-        trainable = Trainable(
-            [self._core_model, *self.aux_models],
-            losses=self._losses,
-            normalizer=self.normalizer,
-            resampler=self.make_resampler(),
-        )
-        if self.state_dict is not None:
-            load_result = trainable.load_state_dict(self.state_dict)
-            print("loaded state dict into trainable:", load_result)
-        return trainable
-
-    def make_resampler(self):
-        resampler = AnthResampler(self.run_cfg.resampler_config)
-        resampler.assign_model(self._core_model)
-        return resampler
-
-    @cached_property
-    def init(self) -> Initializer:
-        return Initializer(
-            self.run_cfg.init_cfg.d_data,
-            dict_mult=self.run_cfg.init_cfg.dict_mult,
-            l0_target=self.run_cfg.train_cfg.l0_target,
-        )
-
-    @cached_property
-    def data(
-        self,
-    ):  # TODO maybe this should be called dataloader and return dataloader, unless important to not reuse datapoints
-        return iter(self.run_cfg.train_cfg.get_databuffer())
-
-    @cached_property
-    def normalizer(self) -> StaticInvertibleGeneralizedNormalizer:
-        normalizer = StaticInvertibleGeneralizedNormalizer(
-            init=self.init, cfg=self.run_cfg.normalizer_cfg
-        ).to(device=self.device)
-        if self.state_dict is None:
-            normalizer.prime_normalizer(self.data)
-        return normalizer
-
-    @cached_property
-    def trainer(self):
-        trainer = Trainer(
-            self.run_cfg.train_cfg,
-            run_cfg=self.run_cfg,
-            model=self.trainable,
-            save_callback=self.save_to_path,
-            recons_eval_fns=self.get_evaluation_functions(),
-        )
-        return trainer
-
-    @takes_alias
-    @classmethod
-    def get_config_class(cls):
-        return RunConfig[cls.get_arch_config_class()]
-
-    def _save_weights_by_default(self) -> bool:
-        return self._trainable is not None
-
-    def _state_dict_for_save(self) -> dict[str, Any]:
-        if self._trainable is None:
-            raise ValueError("trainable is None but attempted to save weights")
-        return self._trainable.state_dict()
-
-    def run_training(self):
-        self.trainer.train()
-
-    def get_evaluation_functions(
-        self,
-    ) -> dict[str, ReconstructionEvaluatorFunctionProtocol]:
-        from saeco.trainer.recons import (
-            get_recons_loss_no_bos,
-            get_recons_loss_with_bos,
-        )
-
-        return {
-            "recons/with_bos/": get_recons_loss_with_bos,
-            "recons/no_bos/": get_recons_loss_no_bos,
-        }
-
-
+@overload
+def to_py_cmd(
+    cmd: str,
+    pyname: str,
+    challenge_file: str | None = None,
+    prefix_vars: str | None = None,
+) -> str: ...
+@overload
+def to_py_cmd(
+    cmd: list[str],
+    pyname: str,
+    challenge_file: str | None = None,
+    prefix_vars: str | None = None,
+) -> list[str]: ...
 def to_py_cmd(  # Semi temporary code duplication of something that also exists in ezpod
     cmd: str | list[str],
     pyname: str,
     challenge_file: str | None = None,
     prefix_vars: str | None = None,
-):
+) -> str | list[str]:
     if isinstance(cmd, list):
         return [
             to_py_cmd(

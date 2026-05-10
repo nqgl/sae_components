@@ -8,9 +8,11 @@ from torch.amp import custom_bwd, custom_fwd
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 import saeco
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
-from saeco.architecture import SAE, Architecture, loss_prop, model_prop
+from saeco.architecture import loss_prop, model_prop
 from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.components.penalties.l0targeter import L0Targeting
 from saeco.core import Seq

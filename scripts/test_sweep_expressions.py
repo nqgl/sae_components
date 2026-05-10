@@ -45,5 +45,5 @@ d = cfg.model_dump_json()
 
 cfg = Cfg.model_validate_json(d)
 
-for i in range(cfg.to_swept_nodes().swept_combinations_count_including_vars()):
-    print(cfg.to_swept_nodes().select_instance_by_index(i))
+for i in range(cfg.sweep_info_tree.swept_combinations_count_including_vars()):
+    print(cfg.sweep_info_tree.select_instance_by_index(i))

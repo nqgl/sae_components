@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from saeco.sweeps.newsweeper import SweepData
+    from saeco.sweeps.sweep_data import SweepData
 from attrs import define, field
 
 from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
@@ -48,7 +48,7 @@ class CustomSweeper:
     ):
         self.root_config: SweepableConfig = sweep_data.root_arch_ref.config
         selective_instance_sweep_dict = (
-            self.root_config.to_swept_nodes().select_instance_by_index(sweep_index)
+            self.root_config.sweep_info_tree.select_instance_by_index(sweep_index)
         )
         cfg: SweepableConfig = self.root_config.from_selective_sweep(
             selective_instance_sweep_dict
@@ -56,10 +56,10 @@ class CustomSweeper:
         if cfg.get_hash() != sweep_hash:
             wow_match_weird = None
             for i in range(
-                self.root_config.to_swept_nodes().swept_combinations_count_including_vars()
+                self.root_config.sweep_info_tree.swept_combinations_count_including_vars()
             ):
                 h = self.root_config.from_selective_sweep(
-                    self.root_config.to_swept_nodes().select_instance_by_index(i)
+                    self.root_config.sweep_info_tree.select_instance_by_index(i)
                 ).get_hash()
                 if h == sweep_hash:
                     wow_match_weird = i
@@ -255,17 +255,17 @@ class WandbCustomLogger:
     ):
         self.root_config = sweep_data.root_arch_ref.config
         selective_instance_sweep_dict = (
-            self.root_config.to_swept_nodes().select_instance_by_index(sweep_index)
+            self.root_config.sweep_info_tree.select_instance_by_index(sweep_index)
         )
         cfg = self.root_config.from_selective_sweep(selective_instance_sweep_dict)
 
         if cfg.get_hash() != sweep_hash:
             wow_match_weird = None
             for i in range(
-                self.root_config.to_swept_nodes().swept_combinations_count_including_vars()
+                self.root_config.sweep_info_tree.swept_combinations_count_including_vars()
             ):
                 h = self.root_config.from_selective_sweep(
-                    self.root_config.to_swept_nodes().select_instance_by_index(i)
+                    self.root_config.sweep_info_tree.select_instance_by_index(i)
                 ).get_hash()
                 if h == sweep_hash:
                     wow_match_weird = i
@@ -396,7 +396,7 @@ class BaseLogger[RunT]:
     ):
         self.root_config: SweepableConfig = sweep_data.root_arch_ref.config
         selective_instance_sweep_dict = (
-            self.root_config.to_swept_nodes().select_instance_by_index(sweep_index)
+            self.root_config.sweep_info_tree.select_instance_by_index(sweep_index)
         )
         cfg: SweepableConfig = self.root_config.from_selective_sweep(
             selective_instance_sweep_dict
@@ -404,10 +404,10 @@ class BaseLogger[RunT]:
         if cfg.get_hash() != sweep_hash:
             wow_match_weird = None
             for i in range(
-                self.root_config.to_swept_nodes().swept_combinations_count_including_vars()
+                self.root_config.sweep_info_tree.swept_combinations_count_including_vars()
             ):
                 h = self.root_config.from_selective_sweep(
-                    self.root_config.to_swept_nodes().select_instance_by_index(i)
+                    self.root_config.sweep_info_tree.select_instance_by_index(i)
                 ).get_hash()
                 if h == sweep_hash:
                     wow_match_weird = i

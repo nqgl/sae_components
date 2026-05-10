@@ -7,12 +7,11 @@ from saeco.trainer.normalizers import GNConfig
 from saeco.trainer.train_config import TrainConfig
 
 
-class RunConfigBase(SweepableConfig):
-    arch_cfg: SweepableConfig
-
-
-class RunConfig[ArchCfgT: SweepableConfig](RunConfigBase):
+class RunConfigBase[ArchCfgT: SweepableConfig](SweepableConfig):
     arch_cfg: ArchCfgT
+
+
+class RunConfig[ArchCfgT: SweepableConfig](RunConfigBase[ArchCfgT]):
     train_cfg: TrainConfig
     normalizer_cfg: GNConfig = Field(default_factory=GNConfig)
     resampler_config: AnthResamplerConfig = Field(default_factory=AnthResamplerConfig)

@@ -6,7 +6,7 @@ from saeco.sweeps.sweepable_config.SweptNode import SweptNode
 from .fns import WandbCustomLogger
 
 if TYPE_CHECKING:
-    from saeco.sweeps.newsweeper import SweepData
+    from saeco.sweeps.sweep_data import SweepData
 
 DEFAULT_LOGGER = os.environ.get("SAECO_DEFAULT_LOGGER", "wandb")
 LOGGER_CLASSES = {

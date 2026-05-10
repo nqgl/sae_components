@@ -8,7 +8,7 @@ import saeco.components as co
 import saeco.components.features as ft
 import saeco.components.hooks.feature_hooks
 import saeco.core as cl
-from saeco.architecture import SAE
+from saeco.architecture.sae import SAE
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,
