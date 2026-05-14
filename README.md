@@ -1,56 +1,74 @@
 # saeco
 
-## Installation
+[![CI](https://github.com/nqgl/sae_components/actions/workflows/ci.yml/badge.svg)](https://github.com/nqgl/sae_components/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 
-Depends on ezpod.
+A modular library for training and analyzing sparse autoencoders (SAEs) for
+mechanistic interpretability. You compose architectures from small building
+blocks; the library handles training, data caching, resampling, L0 targeting,
+sweeping, and remote orchestration.
+
+## Why saeco?
+
+- **Architectures as code**, not config — write a small Python class that
+  declares its model, losses, and aux losses. Get save/load, sweep
+  enumeration, and resampling automatically.
+- **Sweeping is a first-class config feature.** Any field on a
+  `SweepableConfig` can be a `Swept([a, b, c])` or a `SweepExpression(...)`
+  — the trainer enumerates the combinations for you.
+- **Composable training.** Wrappers like `NormFeatures` and
+  `OrthogonalizeFeatureGrads` are added to layers declaratively and
+  participate in the standard training loop.
+
+## Installation
 
 ```bash
 pip install -e .
 ```
 
+Optional extras:
 
-## What this does
+```bash
+pip install -e ".[wandb]"      # logging integration
+pip install -e ".[analysis]"   # plotting + GUI tools
+pip install -e ".[remote]"     # remote sweep orchestration (ezpod)
+pip install -e ".[api]"        # evaluation API serving
+pip install -e ".[dev]"        # pytest, ruff, pre-commit
+```
 
-This is a library for training sparse autoencoders. You use components from the library, and then you get a bunch of the functionality taken care of for you.
-- training pipeline
-    - data generation and caching
-- resampling "for free"
-- L0Targeting
-- remote orchestration for running large sweeps
-- logging
-- sweeping as a first class feature of configs
-- other nice stuff
+> Note: `paramsight` is currently a `git+https` dependency; this requires
+> `git` to be available during install.
 
+## Quickstart: Vanilla SAE
 
-
-## Examples
-
-
-### Vanilla SAE
-
-Check out [the vanilla SAE Architecture](src/saeco/architectures/vanilla/vanilla_model.py) for an example of how the library is used to define a model architecture.
+The full reference implementation lives at
+[`src/saeco/architectures/vanilla/vanilla_model.py`](src/saeco/architectures/vanilla/vanilla_model.py).
 
 ```python
+import torch.nn as nn
+
+import saeco.components.features as ft
+from saeco import SAE, Architecture, SweepableConfig, loss_prop, model_prop
+from saeco.components import L2Loss, SparsityPenaltyLoss
+from saeco.core import Seq
+from saeco.misc import useif
+
 
 class VanillaConfig(SweepableConfig):
-    # SweepableConfig is a subclass of pydantic BaseModel
+    # SweepableConfig is a subclass of pydantic BaseModel.
+    # Each field is implicitly `T | Swept[T] | SweepExpression`.
     pre_bias: bool = False
-    # this is implicitly bool | Swept | SweepExpression due to being a SweepableConfig
 
 
 class VanillaSAE(Architecture[VanillaConfig]):
-    # setup is called before models are constructed
     def setup(self):
-        # these will add wrappers to the decoder that ensure:
-        # 1. the features are normalized after each optimizer step to have unit norm
-        # 2. the gradients of the features are orthogonalized after each backward pass before the optimizer step
+        # Wrappers added during setup participate in the training loop:
+        # 1. features are normalized to unit norm after each optimizer step
+        # 2. feature gradients are orthogonalized before each step
         self.init._decoder.add_wrapper(ft.NormFeatures)
         self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 
-    # model_prop tells the Architecture class that this method
-    # is the method that constructs the model.
-    # model_prop is a subclass of cached_property, so self.model will always
-    # refer to the same instance of the model
     @model_prop
     def model(self):
         return SAE(
@@ -62,7 +80,6 @@ class VanillaSAE(Architecture[VanillaConfig]):
             decoder=self.init.decoder,
         )
 
-    # loss_prop designates a Loss that will be used in training
     @loss_prop
     def L2_loss(self):
         return L2Loss(self.model)
@@ -72,15 +89,30 @@ class VanillaSAE(Architecture[VanillaConfig]):
         return SparsityPenaltyLoss(self.model)
 ```
 
-Then see how simple it is [run the grid search on the VanillaSAE](experiments/vanilla_example_training.py).
+For a runnable example that wires this up to a sweep and a training run, see
+[`research/experiments/vanilla_example_training.py`](research/experiments/vanilla_example_training.py).
 
-### Gated SAE
+## A more involved architecture: Gated SAE
 
-For an example of a more complex Architecture, here's a quick implementation of a GatedSAE:
-
-
+The Gated SAE shows the rest of the library: parallel paths, auxiliary
+models with their own losses, conditional setup based on config flags, and
+detached gradients across paths.
 
 ```python
+from functools import cached_property
+
+import torch
+import torch.nn as nn
+
+import saeco.components as co
+import saeco.components.features as ft
+import saeco.core as cl
+from saeco import SAE, Architecture, SweepableConfig, aux_model_prop, model_prop
+from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
+from saeco.core import Seq
+from saeco.core.reused_forward import ReuseForward
+from saeco.misc import useif
+
 
 class GatedConfig(SweepableConfig):
     pre_bias: bool = False
@@ -136,9 +168,7 @@ class Gated(Architecture[GatedConfig]):
             encoder=cl.Parallel(
                 magnitude=self.enc_mag,
                 gate=co.ops.Thresh(self.enc_gate),
-            ).reduce(
-                lambda x, y: x * y,
-            ),
+            ).reduce(lambda x, y: x * y),
             decoder=self.init.decoder,
             penalty=None,
         )
@@ -159,10 +189,50 @@ class Gated(Architecture[GatedConfig]):
     sparsity_loss = model_aux.add_loss(SparsityPenaltyLoss)
 ```
 
+## Repository layout
 
+```
+src/saeco/                  # the library — public API
+├── architecture/           # Architecture, SAE, *_prop decorators
+├── architectures/          # reference architectures (vanilla, gated)
+├── components/             # losses, penalties, ops, features, resampling
+├── core/                   # Seq, Parallel, MulParallel, Cache, …
+├── data/                   # dataset config, tokenization, activation caches
+├── evaluation/             # post-training analysis / inspection
+├── initializer/            # parameter initialization (incl. geometric median)
+├── sweeps/                 # SweepableConfig, Swept, SweepExpression, runner
+└── trainer/                # Trainer, RunConfig, scheduling, normalizers
 
-## Future
+research/                   # in-flight scratch — not packaged with saeco
+├── pyproject.toml          # installs as a separate `saeco-research` package
+├── src/saeco_research/
+│   └── architectures/      # exploratory architectures, no API guarantees
+├── experiments/            # runnable training/sweep scripts
+└── scripts/                # exploration and one-off analyses
 
-This is still a work in progress, there's more to come (both for the library and this README).
+examples/                   # curated standalone demos
+tests/                      # library tests
+```
 
-Feel free to contact me if you have any questions!
+The split between `saeco` and `saeco-research` exists so that the library
+can have an API contract while in-progress architecture work still lives in
+VCS. To use both:
+
+```bash
+pip install -e .          # the library
+pip install -e research   # the research scratch package
+```
+
+## Status
+
+This is an active research-driven project. The library is stable enough to
+build on, and the reference architectures (`vanilla`, `gated`) work
+end-to-end. A few things are still in flight — most notably the migration
+of the logging system away from W&B (`saeco.mlog`) — see commit history
+for the latest.
+
+Feel free to open an issue or contact me if you have questions.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
