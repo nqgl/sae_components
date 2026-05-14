@@ -5,33 +5,68 @@ build-backend = "hatchling.build"
 [project]
 name = "saeco"
 version = "0.1.0"
-description = "SAE modular components."
+description = "A modular library for training and analyzing sparse autoencoders."
 readme = "README.md"
 requires-python = ">=3.13"
+license = {file = "LICENSE"}
 authors = [
     {name = "Glen Taggart", email = "glenmtaggart@gmail.com"}
 ]
-keywords = []
+keywords = ["sparse-autoencoder", "interpretability", "mechanistic-interpretability", "pytorch"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 dependencies = [
+    "attrs",
+    "datasets",
+    "einops",
+    "jaxtyping",
+    "nnsight",
+    "numpy",
+    "pandas",
+    "paramsight @ git+https://github.com/nqgl/paramsight.git",
     "pydantic>=2.12.3",
+    "safetensors",
+    "schedulefree",
+    "torch>=2.4.1",
+    "tqdm",
+    "transformers",
+    "zstd",
 ]
+
+[project.urls]
+Repository = "https://github.com/nqgl/sae_components"
 
 [project.scripts]
 sweeprunner = "saeco.sweeps.sweeprunner_cli:main"
 
 [project.optional-dependencies]
+# Logging backend (currently being phased out)
+wandb = ["wandb"]
+# Analysis tools (UI + plotting)
+analysis = ["nicegui", "plotly", "matplotlib", "scipy"]
+# Evaluation API serving
+api = ["fastapi", "modal"]
+# Remote orchestration for distributed sweeps
+remote = ["ezpod"]
+# Development tools
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.14.3",
+    "pre-commit>=3.7",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/saeco"]
+
+[tool.hatch.metadata]
+# Required because `paramsight` is currently a git+https dep, not on PyPI.
+allow-direct-references = true
 
 
 [tool.ruff]
@@ -46,7 +81,7 @@ unfixable = ["B"]
 [tool.pyright]
 pythonVersion = "3.13"
 
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = [
     "tests",
 ]
