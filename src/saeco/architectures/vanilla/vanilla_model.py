@@ -1,12 +1,12 @@
 import torch.nn as nn
 
-from saeco.architecture.sae import SAE
-from saeco.architecture.sae_architecture import Architecture
 import saeco.components.features as ft
 from saeco.architecture import (
     loss_prop,
     model_prop,
 )
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 from saeco.components import (
     L2Loss,
     SparsityPenaltyLoss,

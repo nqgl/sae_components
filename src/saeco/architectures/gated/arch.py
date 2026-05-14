@@ -2,7 +2,6 @@ from functools import cached_property
 
 import torch
 import torch.nn as nn
-from saeco.architecture.sae import SAE
 
 import saeco.components as co
 import saeco.components.features as ft
@@ -12,6 +11,7 @@ from saeco.architecture import (
     loss_prop,
     model_prop,
 )
+from saeco.architecture.sae import SAE
 from saeco.architecture.sae_architecture import Architecture
 from saeco.components import (
     EMAFreqTracker,

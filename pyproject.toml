@@ -30,6 +30,9 @@ dev = [
     "ruff>=0.14.3",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/saeco"]
+
 
 [tool.ruff]
 target-version = "py313"
