@@ -1,17 +1,49 @@
-wandb/
-ssh*.json
+# Python
 __pycache__/
-*.pt
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Editor / OS
+.vscode/*
+!.vscode/launch.json
+.idea/
+.DS_Store
+*.swp
+
+# Project-specific run state and large artifacts
+wandb/
+.neptune/
+ssh*.json
 nqgl/sae/models/
 notes/
 models-from-remote/
-*.egg-info
+*.pt
 *.bin
 *.metadata
-*.json
 *.safetensors
 testdata/
-.vscode/
-.neptune/
+
+# Sweep run artifacts (configs/state, not source)
 sweeprefs/
+**/sweep_id.txt
+
+# Misc agent/codex artifacts
 .codex

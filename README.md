@@ -9,16 +9,6 @@ pip install -e .
 ```
 
 
-## Disclaimer 
-
-This project is in the midst of a few transitions.
-
-The system for defining Architectures has been recently overhauled.
-
-The logging system used to depend on Weights and Biases, but is in the middle of transitioning away. This transition is currently in progress so some functionality is broken and the current state of the code around logging is well below my standards. 
-
-This codebase has been mainly used by me personally, so currently most of the code is not documented. I'm beginning to change that, but at the moment I wouldn't advise building on this codebase unless you can ask me questions.
-
 ## What this does
 
 This is a library for training sparse autoencoders. You use components from the library, and then you get a bunch of the functionality taken care of for you.
