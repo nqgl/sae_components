@@ -15,7 +15,7 @@ sweeping, and remote orchestration.
   declares its model, losses, and aux losses. Get save/load, sweep
   enumeration, and resampling automatically.
 - **Sweeping is a first-class config feature.** Any field on a
-  `SweepableConfig` can be a `Swept([a, b, c])` or a `SweepExpression(...)`
+  `SweepableConfig` can be a `Swept(a, b, c)` or a `SweepExpression(...)`
   — the trainer enumerates the combinations for you.
 - **Composable training.** Wrappers like `NormFeatures` and
   `OrthogonalizeFeatureGrads` are added to layers declaratively and
@@ -34,10 +34,7 @@ pip install -e .
 Optional extras:
 
 ```bash
-pip install -e ".[wandb]"      # logging integration
-pip install -e ".[analysis]"   # plotting + GUI tools
 pip install -e ".[remote]"     # remote sweep orchestration (ezpod)
-pip install -e ".[api]"        # evaluation API serving
 pip install -e ".[dev]"        # pytest, ruff, pre-commit
 ```
 
@@ -202,8 +199,8 @@ src/saeco/                  # the library — public API
 ├── components/             # losses, penalties, ops, features, resampling
 ├── core/                   # Seq, Parallel, MulParallel, Cache, …
 ├── data/                   # dataset config, tokenization, activation caches
-├── evaluation/             # post-training analysis / inspection
 ├── initializer/            # parameter initialization (incl. geometric median)
+├── mlog/                   # logging (currently W&B-backed)
 ├── sweeps/                 # do_sweep + thin re-exports of sweepable's DSL
 └── trainer/                # Trainer, RunConfig, scheduling, normalizers
 
@@ -215,9 +212,13 @@ sweepable/                  # standalone subrepo — Pydantic + sweep DSL
 research/                   # in-flight scratch — not packaged with saeco
 ├── pyproject.toml          # installs as `saeco-research`
 ├── src/saeco_research/
-│   └── architectures/      # exploratory architectures, no API guarantees
+│   ├── architectures/      # exploratory architectures, no API guarantees
+│   ├── analysis/           # post-hoc plotting + GUI tools (less polished)
+│   ├── comlm/              # comlm-specific data/model configs
+│   └── evaluation/         # post-training analysis / inspection API
 ├── experiments/            # runnable training/sweep scripts
-└── scripts/                # exploration and one-off analyses
+├── scripts/                # exploration and one-off analyses
+└── tests/
 
 examples/                   # curated standalone demos
 tests/                      # library tests

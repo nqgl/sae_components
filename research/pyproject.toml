@@ -18,6 +18,14 @@ classifiers = [
 
 dependencies = [
     "saeco",
+    # evaluation/api_components
+    "fastapi",
+    "modal",
+    # analysis/ (GUI + plotting + stats)
+    "matplotlib",
+    "nicegui",
+    "plotly",
+    "scipy",
 ]
 
 [tool.hatch.build.targets.wheel]

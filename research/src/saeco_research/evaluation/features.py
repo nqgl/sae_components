@@ -9,7 +9,7 @@ import torch
 from attrs import define
 from torch import Tensor
 
-from ..data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
+from saeco.data.storage.sparse_growing_disk_tensor import SparseGrowingDiskTensor
 from .filtered import Filter, FilteredTensor
 from .named_filter import NamedFilter
 

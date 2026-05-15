@@ -3,9 +3,8 @@
 import nnsight
 import torch
 from jaxtyping import Int
+from saeco_research.evaluation.evaluation import Evaluation
 from torch import Tensor
-
-from saeco.evaluation.evaluation import Evaluation
 
 # ec = Evaluation.from_model_name(
 #     "L0Targeting/(lars)anth_update_model0.001[30.0]-101/50000"

@@ -6,11 +6,11 @@ from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank import XRNoisedBatch
 from load_comlm_tahoe import root_eval
 from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
+from saeco_research.evaluation.evaluation import Evaluation
+from saeco_research.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 from torch import Tensor
 
 from saeco.data.config.model_config.model_cfg import ModelConfig
-from saeco.evaluation.evaluation import Evaluation
-from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 
 NoisedBatch
 root: Evaluation[XRNoisedBatch] = root_eval
@@ -293,7 +293,7 @@ def score_enrichment(
 
 
 # %%
-import saeco.evaluation.return_objects as enr
+import saeco_research.evaluation.return_objects as enr
 
 # %%
 enr.score_enrichment = score_enrichment
@@ -558,7 +558,9 @@ sim = sims.triu(diagonal=1)
 
 ralimetinib = "Ralimetinib dimesylate"
 
-from saeco.evaluation.eval_components.perturbation_analysis import MetadataValueMap
+from saeco_research.evaluation.eval_components.perturbation_analysis import (
+    MetadataValueMap,
+)
 
 
 def print_from_sim(sim: Tensor, metadata_map: MetadataValueMap):

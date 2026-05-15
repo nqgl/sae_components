@@ -12,7 +12,7 @@ from safetensors.torch import load_file, save_file
 from saeco.data.dict_batch import DictBatch
 from saeco.misc.utils import chill_issubclass
 
-from ...data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
+from saeco.data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from ..filtered import Filter, FilteredTensor
 from ..named_filter import NamedFilter
 from .cache_config import CacheConfig

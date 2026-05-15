@@ -3,9 +3,8 @@ from typing import TYPE_CHECKING
 import einops
 import torch
 import tqdm
-
-from saeco.evaluation.cache_version import cache_version
-from saeco.evaluation.fastapi_models.families_draft import (
+from saeco_research.evaluation.cache_version import cache_version
+from saeco_research.evaluation.fastapi_models.families_draft import (
     Family,
     FamilyLevel,
     FamilyRef,
@@ -13,7 +12,7 @@ from saeco.evaluation.fastapi_models.families_draft import (
     ScoredFamilyRef,
     ScoredFeature,
 )
-from saeco.evaluation.fastapi_models.Feature import LabeledFeature
+from saeco_research.evaluation.fastapi_models.Feature import LabeledFeature
 
 if TYPE_CHECKING:
     from ..evaluation import Evaluation

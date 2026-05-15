@@ -3,7 +3,7 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 
-from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
+from saeco_research.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 
 from .filtered_query import FilterableQuery
 

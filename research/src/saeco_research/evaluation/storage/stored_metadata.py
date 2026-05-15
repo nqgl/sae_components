@@ -5,12 +5,11 @@ from pathlib import Path
 import torch
 from attrs import define, field
 from pydantic import BaseModel
+from saeco_research.evaluation.storage.cache_config import CacheConfig
 from torch import Tensor
 
-from saeco.evaluation.storage.cache_config import CacheConfig
-
-from ...data.storage.disk_tensor import DiskTensor
-from ...data.storage.disk_tensor_collection import DiskTensorCollection
+from saeco.data.storage.disk_tensor import DiskTensor
+from saeco.data.storage.disk_tensor_collection import DiskTensorCollection
 from ..named_filter import NamedFilter
 
 

@@ -3,9 +3,9 @@
 import nnsight
 import torch
 from load import root_eval
+from saeco_research.evaluation.evaluation import Evaluation
 from torch import Tensor
 
-from saeco.evaluation.evaluation import Evaluation
 from saeco.misc.nnsite import tlsite_to_nnsite
 
 # from transformers import GPT2LMHeadModel

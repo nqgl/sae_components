@@ -9,6 +9,8 @@ import torch
 import tqdm
 from attrs import define
 from jaxtyping import Int
+from saeco_research.evaluation.storage.cache_config import CacheConfig
+from saeco_research.evaluation.storage.chunk import Chunk
 from sweepable.sweepable_config import SweepableConfig
 from torch import Tensor
 
@@ -19,8 +21,6 @@ from saeco.data.training_data import ActsDataCreator
 from saeco.data.training_data.dictpiled_tokens_data import DictPiledTokensData
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.data.training_data.tokens_data import PermutedDocs
-from saeco.evaluation.storage.cache_config import CacheConfig
-from saeco.evaluation.storage.chunk import Chunk
 
 
 @define(slots=True)

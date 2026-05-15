@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
+from saeco_research.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 
 from .filtered_query import FilterableQuery
 

@@ -8,7 +8,7 @@ import torch
 from saeco.data.dict_batch import DictBatch
 
 if TYPE_CHECKING:
-    from saeco.evaluation.evaluation import Evaluation
+    from saeco_research.evaluation.evaluation import Evaluation
 
 
 class ModelEvalAdapter[BatchT, OutputT](ABC):

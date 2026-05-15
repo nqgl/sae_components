@@ -8,13 +8,13 @@ import nnsight
 import torch
 import torch.autograd.forward_ad as fwAD
 import tqdm
+from saeco_research.evaluation.utils import fwad_safe_sdp
 
 from saeco.data.dict_batch import DictBatch
-from saeco.evaluation.utils import fwad_safe_sdp
 from saeco.misc.nnsite import getsite, setsite
 
 if TYPE_CHECKING:
-    from saeco.evaluation.evaluation import Evaluation
+    from saeco_research.evaluation.evaluation import Evaluation
 
 
 class Patching:

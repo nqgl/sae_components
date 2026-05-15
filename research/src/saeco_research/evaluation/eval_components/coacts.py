@@ -9,7 +9,7 @@ import tqdm
 from torch import Tensor
 
 if TYPE_CHECKING:
-    from saeco.evaluation.evaluation import Evaluation
+    from saeco_research.evaluation.evaluation import Evaluation
 
 
 def f2sum_fn_default(acts: Tensor) -> Tensor:

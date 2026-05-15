@@ -49,7 +49,7 @@ fff = [
     root_eval.cached_call._get_feature_family_treesz(),
     root_eval.cached_call._get_feature_family_treesz(freq_bounds=(0, 0.1)),
 ]
-from saeco.evaluation.mst import Families
+from saeco_research.evaluation.mst import Families
 
 famss = [[Families.from_tree(f) for f in fam] for fam in fff]
 [[len([r for r in f.roots if len(r) > 10]) for f in fam if len(f) > 5] for fam in famss]

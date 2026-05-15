@@ -1,6 +1,5 @@
 import torch
-
-from saeco.evaluation import Evaluation
+from saeco_research.evaluation import Evaluation
 
 MODEL_NAME = "sae sweeps/dynamic_thresh_sae0.001[50.0]-10384/50001"  # relative path from ~/workspace/saved_models/ to the SAE, minus the extensions
 STORAGE_NAME = "stored_acts"

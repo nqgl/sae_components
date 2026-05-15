@@ -8,13 +8,12 @@ from typing import TYPE_CHECKING, Literal
 import torch
 import tqdm
 from pydantic import BaseModel
+from saeco_research.evaluation.cache_version import cache_version
+from saeco_research.evaluation.storage.chunk import Chunk
 from torch import Tensor
 
-from saeco.evaluation.cache_version import cache_version
-from saeco.evaluation.storage.chunk import Chunk
-
 if TYPE_CHECKING:
-    from saeco.evaluation.evaluation import Evaluation
+    from saeco_research.evaluation.evaluation import Evaluation
 
 
 Pooling = Literal["max", "mean", "sum", "count", "any"]

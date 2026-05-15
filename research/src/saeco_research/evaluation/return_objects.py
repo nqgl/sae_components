@@ -9,12 +9,12 @@ from attrs import define, field
 from torch import Tensor
 
 from saeco.data.dict_batch import DictBatch
-from saeco.evaluation.eval_components.enrichment import score_enrichment
-from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
+from saeco_research.evaluation.eval_components.enrichment import score_enrichment
+from saeco_research.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 
 if TYPE_CHECKING:
-    from saeco.evaluation.evaluation import Evaluation
-    from saeco.evaluation.filtered import FilteredTensor
+    from saeco_research.evaluation.evaluation import Evaluation
+    from saeco_research.evaluation.filtered import FilteredTensor
 
 
 def _pk_to_k(p: float | None, k: int | None, quantity: int) -> int:

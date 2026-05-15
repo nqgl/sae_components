@@ -56,7 +56,7 @@ tr.trainable.eval()
 import time
 
 # %%
-from saeco.evaluation.acts_cacher import ActsCacher
+from saeco_research.evaluation.acts_cacher import ActsCacher
 
 
 @timed
@@ -127,7 +127,7 @@ path_big = Path.home() / "workspace" / "cached_sae_acts" / "feat_store"
 # %%
 # c = Chunk.load_chunks_from_dir(path, load_sparse_only=True)
 # print(len(c))
-from saeco.evaluation.storage.saved_acts import SavedActs
+from saeco_research.evaluation.storage.saved_acts import SavedActs
 
 tr.trainable.model.model.module.freqs.freqs
 

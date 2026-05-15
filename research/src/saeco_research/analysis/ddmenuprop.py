@@ -1,4 +1,4 @@
-# from saeco.analysis.update_render import render_update_list, update_render
+# from saeco_research.analysis.update_render import render_update_list, update_render
 
 
 from nicegui import ui

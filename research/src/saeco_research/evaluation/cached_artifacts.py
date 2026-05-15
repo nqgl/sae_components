@@ -15,7 +15,7 @@ from .cache_keys import call_cache_key
 from .filtered import FilteredTensor
 
 if TYPE_CHECKING:
-    from saeco.evaluation.evaluation import Evaluation
+    from saeco_research.evaluation.evaluation import Evaluation
 
 
 def _is_subclass_safe(t: Any, base: type) -> bool:

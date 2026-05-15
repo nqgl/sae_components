@@ -3,11 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import torch
+from saeco_research.evaluation.filtered import FilteredTensor
+from saeco_research.evaluation.named_filter import NamedFilter
+from saeco_research.evaluation.storage.chunk import Chunk
 from torch import Tensor
-
-from saeco.evaluation.filtered import FilteredTensor
-from saeco.evaluation.named_filter import NamedFilter
-from saeco.evaluation.storage.chunk import Chunk
 
 
 class MetadataBuilder:

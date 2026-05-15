@@ -39,7 +39,11 @@ jobs:
           # from the in-tree path first so saeco's `sweepable>=0.1.0` resolves.
           pip install -e ./sweepable
           pip install -e ".[dev]"
+          # research extends saeco and contains tests for some moved-out modules.
+          pip install -e ./research
       - name: Run sweepable tests
         run: pytest sweepable/tests/ -v
       - name: Run saeco tests
         run: pytest tests/ -v
+      - name: Run research tests
+        run: pytest research/tests/ -v

@@ -12,16 +12,16 @@ from transformers import PreTrainedTokenizerFast
 
 from saeco.architecture.sae_architecture import Architecture
 from saeco.data.dict_batch import DictBatch
-from saeco.evaluation.eval_components.perturbation_analysis import (
+from saeco.trainer import RunConfig
+from saeco_research.evaluation.eval_components.perturbation_analysis import (
     PerturbationAnalysis,
     PerturbationConfig,
 )
-from saeco.evaluation.model_interface import (
+from saeco_research.evaluation.model_interface import (
     ComlmEvalAdapter,
     LanguageModelEvalAdapter,
     ModelEvalAdapter,
 )
-from saeco.trainer import RunConfig
 
 from .BMStorShelf import BMStorShelf
 from .cached_artifacts import CachedCalls
@@ -39,7 +39,7 @@ from .token_utils import extract_token_tensor
 from .views import MetadataView, TokenStringsView
 
 if TYPE_CHECKING:
-    from saeco.evaluation.features import Features
+    from saeco_research.evaluation.features import Features
 
 
 @define(slots=True)

@@ -1,9 +1,9 @@
 import pytest
 import torch
-from torch import Tensor
 
 # Adjust this import to match your actual module path
-from saeco.evaluation.filtered import Filter, FilteredTensor
+from saeco_research.evaluation.filtered import Filter, FilteredTensor
+from torch import Tensor
 
 
 def make_mask(N: int, true_idx: tuple[int, ...]) -> Tensor:

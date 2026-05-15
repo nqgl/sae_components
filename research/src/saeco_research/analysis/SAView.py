@@ -1,8 +1,7 @@
 
 from nicegui import ui
-
-from saeco.analysis.uiitem import UIE
-from saeco.analysis.wandb_analyze import (
+from saeco_research.analysis.uiitem import UIE
+from saeco_research.analysis.wandb_analyze import (
     Sweep,
     SweepAnalysis,
     SweepKeys,
