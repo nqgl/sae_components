@@ -45,6 +45,14 @@ class EarlyStoppingBounds(SweepableConfig):
 
 
 class TrainConfig(SweepableConfig):
+    """Training hyperparameters: data, schedule, optimizer, and losses.
+
+    Holds the data config, run schedule, optimizer settings, per-loss
+    coefficients (``coeffs``, keyed by ``loss_prop`` name), and the L0
+    targeting controls that auto-tune the sparsity coefficient toward a
+    target average L0.
+    """
+
     data_cfg: DataConfig = Field(default_factory=DataConfig)
     wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
     coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))

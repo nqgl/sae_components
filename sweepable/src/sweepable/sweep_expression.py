@@ -14,6 +14,14 @@ LITERALS = [int, float, str, bool]
 
 
 class SweepExpression[T](Swept[T]):
+    """A sweep value computed from arithmetic over ``SweepVar``s and ``Val``s.
+
+    Rarely constructed directly — it's the result of operators on
+    ``SweepVar`` / ``Val`` (e.g. ``bs_mult * Val(value=4096)``). Like
+    ``Swept``, it can be assigned to any ``SweepableConfig`` field, and
+    its value is resolved once the sweep variables are bound for a run.
+    """
+
     values: list = []
 
     def repr(self, level=0):

@@ -28,6 +28,36 @@ from saeco.trainer.trainer import Trainer
 class Architecture[ArchConfigT: SweepableConfig](
     ArchitectureBase[RunConfig[ArchConfigT]]
 ):
+    """Base class for an SAE architecture.
+
+    Subclass it, parameterized by your config type, and declare the model
+    and losses with the property decorators:
+
+      - ``@model_prop`` — the method that builds the core SAE
+      - ``@loss_prop`` — a training loss
+      - ``@aux_model_prop`` — an auxiliary model with its own losses
+      - ``setup()`` — optional hook to attach layer mixins before the
+        model is built
+
+    From those declarations you get the training pipeline, save/load,
+    sweep enumeration, and resampling for free::
+
+        class VanillaSAE(Architecture[VanillaConfig]):
+            @model_prop
+            def model(self):
+                return SAE(encoder=self.init.encoder, decoder=self.init.decoder)
+
+            @loss_prop
+            def L2_loss(self):
+                return L2Loss(self.model)
+
+        arch = VanillaSAE(run_cfg)
+        arch.run_training()
+
+    ``self.cfg`` is the architecture config; ``self.init`` is the
+    ``Initializer`` (parameter factories sized from ``init_cfg``).
+    """
+
     # run_cfg: RunConfig[ArchConfigT]
 
     def __init__(

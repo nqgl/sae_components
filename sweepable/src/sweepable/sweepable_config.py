@@ -27,8 +27,8 @@ from sweepable.has_sweep import (
     set_collection,
     to_items,
 )
-from sweepable.sweep_expressions import Op, SweepVar, Val
 from sweepable.sweep_expression import SweepExpression
+from sweepable.sweep_expressions import Op, SweepVar, Val
 from sweepable.swept import Swept
 from sweepable.swept_node import SweptNode
 
@@ -281,6 +281,22 @@ def fix_paramize(d):
 
 
 class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
+    """A pydantic model whose fields double as sweep specifications.
+
+    Every field's declared type ``T`` is implicitly widened to
+    ``T | Swept[T] | SweepExpression[T]``, so a sweep can be dropped in
+    anywhere a plain value is expected. ``is_concrete()`` reports whether
+    any sweep axes remain; ``sweep_info_tree`` describes the grid and the
+    runner enumerates it into concrete instances for individual runs::
+
+        class TrainCfg(SweepableConfig):
+            lr: float = 1e-3
+            pre_bias: bool = False
+
+        TrainCfg().is_concrete()                       # True
+        TrainCfg(lr=Swept(1e-3, 3e-4)).is_concrete()   # False
+    """
+
     _ignore_this: int = 0  # needs field due to being a dataclass
     _legacy_hash_mappings: ClassVar[dict[str, str]] = {}
 

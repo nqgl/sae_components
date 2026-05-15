@@ -28,6 +28,20 @@ class SweptCheckerMeta(mc.ModelMetaclass):
 
 
 class Swept[T](BaseModel, metaclass=SweptCheckerMeta):
+    """A sweep axis: one run per value.
+
+    Assign ``Swept(a, b, c)`` anywhere a plain ``T`` is expected on a
+    ``SweepableConfig`` (every field's type is implicitly widened to
+    ``T | Swept[T] | SweepExpression[T]``). The runner expands each
+    ``Swept`` field into the outer product of its values::
+
+        class Cfg(SweepableConfig):
+            lr: float = 1e-3
+            pre_bias: bool = False
+
+        Cfg(lr=Swept(1e-3, 3e-4), pre_bias=Swept(True, False))  # 4 runs
+    """
+
     values: list[T]
 
     def __init__(self, *values: T, **kwargs):

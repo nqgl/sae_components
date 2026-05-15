@@ -85,6 +85,19 @@ class ExpressionOpEnum(str, Enum):
 
 
 class SweepVar(SweepExpression[T]):
+    """A named sweep axis, shareable across fields.
+
+    Each value of the var produces one run regardless of how many fields
+    reference it — so several fields can vary together on a single axis
+    instead of forming an outer product::
+
+        bs = SweepVar(1, 2, 4, name="bs_mult")
+        Cfg(
+            batch_size=bs * Val(value=4096),
+            warmup=bs * Val(value=500),
+        )  # 3 runs, not 9 — batch_size and warmup move together
+    """
+
     values: list[T]
     name: str
     instantiated_value: T | None = None
@@ -185,6 +198,14 @@ class Op[T](SweepExpression[T]):
 class Val[T: str | float | int | bool | list | tuple | dict[Any, Any]](
     SweepExpression[T]
 ):
+    """A constant lifted into the sweep-expression algebra.
+
+    Wrap a literal so it can take part in expressions with ``SweepVar``s
+    (Python operators on a bare literal can't build a sweep expression)::
+
+        Val(value=4096) * my_sweep_var
+        Val(value=100) // my_sweep_var   # integer division keeps int fields int
+    """
     # maybe this doesn't even need to be a subtype of SweepExpression?
     # or maybe SE doesn't need to subclass Swept.
     # particularly the bit where swept has the values field --

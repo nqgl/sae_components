@@ -31,6 +31,15 @@ from .trainable import Trainable
 
 
 class Trainer:
+    """Drives the training loop for one concrete run.
+
+    Owns the optimizer, schedule, resampling, L0 targeting, metric
+    logging, and periodic reconstruction evaluation for a single
+    ``Trainable``. You normally don't construct this directly —
+    ``Architecture`` builds and exposes it (``arch.trainer`` /
+    ``arch.run_training()``).
+    """
+
     def __init__(
         self,
         cfg: TrainConfig,

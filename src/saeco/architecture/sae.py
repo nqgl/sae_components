@@ -11,6 +11,17 @@ from saeco.misc.utils import useif
 
 
 class SAE(cl.Seq):
+    """The core sparse autoencoder module: a configurable encode → nonlinearity
+    → decode sequence.
+
+    A composed ``Seq`` of named stages (``encoder_pre``, ``nonlinearity``,
+    ``encoder``, ``decoder``, plus activation metrics, an optional
+    frequency tracker, and an optional sparsity penalty). Construct it
+    inside an ``Architecture``'s ``@model_prop`` from the building blocks
+    in ``saeco.core`` / ``saeco.components`` and the parameter factories
+    on ``self.init``.
+    """
+
     encoder_pre: cl.Module
     preacts: PreActMetrics
     nonlinearity: cl.Module

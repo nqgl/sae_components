@@ -79,6 +79,16 @@ class SetupComplete(Protocol):
 class arch_prop[T](
     cached_property,
 ):
+    """Base class for the architecture property decorators.
+
+    A ``cached_property`` that also registers the decorated method as a
+    named, discoverable part of an ``Architecture`` (so the framework can
+    collect models, losses, etc. by field). Use the concrete subclasses
+    ``model_prop`` / ``loss_prop`` / ``aux_model_prop`` rather than this
+    directly. Like ``cached_property``, the method runs once and the
+    result is reused.
+    """
+
     COLLECTED_FIELD_SINGULAR = False
 
     def __init__(self, func: Callable[[Any], T]) -> None:
@@ -153,6 +163,13 @@ class arch_prop_singular[T](arch_prop[T]):
 
 
 class loss_prop[Loss_T: nn.Module](arch_prop[Loss_T]):
+    """Declares a training loss on an ``Architecture``.
+
+    Decorate a method that returns a ``Loss``. All ``loss_prop``s are
+    collected and optimized during training; their weights come from
+    ``train_cfg.coeffs`` keyed by the method name.
+    """
+
     @overload
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
 
@@ -210,6 +227,13 @@ class _model_prop_base[T](arch_prop[T]):
 
 
 class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):
+    """Declares the core model on an ``Architecture``.
+
+    Decorate the single method that builds and returns the main ``SAE``.
+    Exactly one ``model_prop`` is expected per architecture; it's what
+    gets trained and saved.
+    """
+
     COLLECTED_FIELD_SINGULAR = True
 
     @overload
@@ -227,6 +251,14 @@ class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[S
 
 
 class aux_model_prop[AuxModel_T: nn.Module](_model_prop_base[AuxModel_T]):
+    """Declares an auxiliary model on an ``Architecture``.
+
+    Decorate a method returning a secondary ``SAE`` (e.g. the gating
+    sub-model of a Gated SAE). Aux models run alongside the core model
+    and contribute their own ``loss_prop`` losses, but are not the saved
+    artifact. Any number may be declared.
+    """
+
     COLLECTED_FIELD_SINGULAR = False
 
     @overload

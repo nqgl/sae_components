@@ -25,6 +25,14 @@ def assert_wrapped(fn):
 
 
 class RunSchedulingConfig(SweepableConfig):
+    """Timeline for a run: length, resampling cadence, and LR schedule.
+
+    Controls total ``run_length`` (in steps), the resampling period and
+    its delay/finish phases, and learning-rate warmup/cooldown. Several
+    fields accept fractional values (e.g. a float in [0, 1]) that are
+    interpreted relative to ``run_length`` or the resample period.
+    """
+
     run_length: int | None = 50_000
 
     resample_period: int = 12_500

@@ -21,6 +21,8 @@ sweeping, and remote orchestration.
   `OrthogonalizeFeatureGradsMixin` attach to layers declaratively and
   participate in the standard training loop.
 
+See [DESIGN.md](DESIGN.md) for the rationale behind these choices.
+
 ## Installation
 
 `saeco` depends on the [`sweepable`](sweepable/) package which lives in

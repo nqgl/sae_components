@@ -1,4 +1,15 @@
 def do_sweep(purge_after=True, in_cmd=None):
+    """Entry point for a sweep script: prompt for and dispatch a run mode.
+
+    Call this at the bottom of a script that builds a (possibly swept)
+    ``RunConfig``. It asks (or takes ``in_cmd``) what to do:
+
+      - ``rand``  — run one randomly-sampled config locally
+      - ``run``   — start a sweep agent (pull configs and run them)
+      - ``sweep`` / ``yes`` — initialize the sweep and optionally spin up
+        remote pods (requires the ``remote`` extra) to run the grid
+      - ``new …`` — initialize a fresh sweep first, then do the above
+    """
     import sys
 
     from saeco.sweeps.sweeper import Sweeper
