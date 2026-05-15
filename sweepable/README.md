@@ -59,7 +59,6 @@ from sweepable import (
     SweepVar,          # named sweep axis, shareable across fields
     SweepExpression,   # compound expression (Op tree)
     Val,               # constant wrapped for use in expressions
-    SweptNode,         # tree representation of a config's sweep structure
 )
 ```
 
