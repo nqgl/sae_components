@@ -5,9 +5,9 @@ import torch
 from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank import XRNoisedBatch
 from load_comlm_tahoe import root_eval
+from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
 from torch import Tensor
 
-from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.evaluation.evaluation import Evaluation
 from saeco.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy

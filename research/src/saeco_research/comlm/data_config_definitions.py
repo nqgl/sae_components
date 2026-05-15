@@ -7,9 +7,9 @@ from saeco.architecture.arch_reload_info import ArchRef
 from saeco.data.config.data_cfg import DataConfig
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
-from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.split_config import SplitConfig
+from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
 
 saeco_tahoe_data_cfg = DataConfig[ComlmModelConfig](
     override_token_dictpiler_path_str="/home/g/workspace/tahoe_batches",

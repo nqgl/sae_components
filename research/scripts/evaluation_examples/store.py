@@ -2,12 +2,12 @@ from comlm.datasource.data_config_definitions import tahoe_data_config
 from comlm.exprank import XRNoisedBatch
 from comlm.storage import ComposerModelName
 from context import model_name
+from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
+from saeco_research.comlm.data_config_definitions import convert_to_tahoe
 
-from saeco.data.config._comlm_data_config_definitions import convert_to_tahoe
 from saeco.data.config.data_cfg import DataConfig
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
-from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.split_config import SplitConfig
 from saeco.evaluation.evaluation import Evaluation

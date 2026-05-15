@@ -9,6 +9,7 @@ import torch
 from comlm.utils import (
     ComposerModelName,
 )
+from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
 
 from saeco.data.config.data_cfg import (
     DataConfig,
@@ -16,7 +17,6 @@ from saeco.data.config.data_cfg import (
     SplitConfig,
 )
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
-from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.dict_batch.dict_batch import DictBatch
 from saeco.misc.nnsite import getsite

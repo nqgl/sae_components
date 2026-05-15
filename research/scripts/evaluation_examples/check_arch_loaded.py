@@ -2,8 +2,9 @@
 from functools import cached_property
 from typing import get_origin
 
+from saeco_research.comlm.data_config_definitions import saeco_tahoe_data_cfg
+
 from saeco.architecture.arch_prop import FieldsLoaded
-from saeco.data.config._comlm_data_config_definitions import saeco_tahoe_data_cfg
 
 # "trainable" in root_eval.architecture.__dict__
 

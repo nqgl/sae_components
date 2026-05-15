@@ -64,7 +64,7 @@ class Evaluation[InputsT: torch.Tensor | DictBatch](
 
     def _model_adapter_default(self):
         try:
-            from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
+            from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
 
             if isinstance(
                 self.sae_cfg.train_cfg.data_cfg.model_cfg.model_load_cfg,

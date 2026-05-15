@@ -1,6 +1,7 @@
 from comlm.storage import (
     ComposerModelName,
 )
+from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
 
 from saeco.data.config.data_cfg import (
     DataConfig,
@@ -8,7 +9,6 @@ from saeco.data.config.data_cfg import (
     SplitConfig,
 )
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
-from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 
 model = "1761861357-rustling-mule"

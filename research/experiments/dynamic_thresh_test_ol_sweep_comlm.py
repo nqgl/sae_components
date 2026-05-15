@@ -4,6 +4,7 @@ from saeco_research.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshSAE,
     ThreshConfig,
 )
+from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
 
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -12,7 +13,6 @@ from saeco.components.resampling.anthropic_resampling import (
 from saeco.data.config.data_cfg import DataConfig
 from saeco.data.config.generation_config import DataGenerationProcessConfig
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
-from saeco.data.config.model_config.comlm_model_cfg import ComlmModelConfig
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.split_config import SplitConfig
 from saeco.initializer import InitConfig

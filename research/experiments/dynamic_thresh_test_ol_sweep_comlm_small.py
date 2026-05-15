@@ -52,7 +52,7 @@ model = ComposerModelName.from_str("1767399915-fragrant-cuttlefish")
 #     seq_len=1024,
 # )
 
-from saeco.data.config._comlm_data_config_definitions import (
+from saeco_research.comlm.data_config_definitions import (
     comlm_768_nodrop,
     get_data_cfg,
 )
