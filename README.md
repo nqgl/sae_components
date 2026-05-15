@@ -1,7 +1,7 @@
 # saeco
 
 [![CI](https://github.com/nqgl/sae_components/actions/workflows/ci.yml/badge.svg)](https://github.com/nqgl/sae_components/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
 
 A modular library for training and analyzing sparse autoencoders (SAEs) for
@@ -11,14 +11,14 @@ sweeping, and remote orchestration.
 
 ## Why saeco?
 
-- **Architectures as code**, not config — write a small Python class that
-  declares its model, losses, and aux losses. Get save/load, sweep
-  enumeration, and resampling automatically.
+- **Define an architecture as a Python class.** Declare its model,
+  losses, and aux losses; the library handles the training pipeline,
+  save/load, sweep enumeration, and resampling for you.
 - **Sweeping is a first-class config feature.** Any field on a
   `SweepableConfig` can be a `Swept(a, b, c)` or a `SweepExpression(...)`
   — the trainer enumerates the combinations for you.
-- **Composable training.** Wrappers like `NormFeatures` and
-  `OrthogonalizeFeatureGrads` are added to layers declaratively and
+- **Composable layers.** Mixins like `NormFeaturesMixin` and
+  `OrthogonalizeFeatureGradsMixin` attach to layers declaratively and
   participate in the standard training loop.
 
 ## Installation
@@ -37,9 +37,6 @@ Optional extras:
 pip install -e ".[remote]"     # remote sweep orchestration (ezpod)
 pip install -e ".[dev]"        # pytest, ruff, pre-commit
 ```
-
-> Note: `paramsight` is currently a `git+https` dependency; this requires
-> `git` to be available during install.
 
 ## Quickstart: Vanilla SAE
 
@@ -210,15 +207,7 @@ sweepable/                  # standalone subrepo — Pydantic + sweep DSL
 └── tests/
 
 research/                   # in-flight scratch — not packaged with saeco
-├── pyproject.toml          # installs as `saeco-research`
-├── src/saeco_research/
-│   ├── architectures/      # exploratory architectures, no API guarantees
-│   ├── analysis/           # post-hoc plotting + GUI tools (less polished)
-│   ├── comlm/              # comlm-specific data/model configs
-│   └── evaluation/         # post-training analysis / inspection API
-├── experiments/            # runnable training/sweep scripts
-├── scripts/                # exploration and one-off analyses
-└── tests/
+                            # installs as `saeco-research`; no API guarantees
 
 examples/                   # curated standalone demos
 tests/                      # library tests
@@ -233,10 +222,6 @@ pip install -e .              # the library
 pip install -e ./research     # the research scratch package
 ```
 
-`sweepable/` is structured to be **git-subtree-ready** — `git subtree
-split --prefix=sweepable -b sweepable-only` produces a clean linear
-history that can be pushed to a standalone GitHub repo.
-
 ## Status
 
 This is an active research-driven project. The library is stable enough to
@@ -249,4 +234,4 @@ Feel free to open an issue or contact me if you have questions.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
