@@ -3,10 +3,10 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel, Field
 
-from saeco.sweeps.sweepable_config.has_sweep import CouldHaveSweep, has_sweep, to_items
-from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
-from saeco.sweeps.sweepable_config.Swept import Swept
+from sweepable.has_sweep import CouldHaveSweep, has_sweep, to_items
+from sweepable.sweep_expressions import SweepVar
+from sweepable.SweepExpression import SweepExpression
+from sweepable.Swept import Swept
 
 Location = list[str]
 
@@ -204,7 +204,7 @@ class SweptNode(BaseModel):
 
 
 def main():
-    from saeco.sweeps.sweepable_config import (
+    from sweepable import (
         SweepableConfig,
         SweepVar,
         Swept,
@@ -222,7 +222,7 @@ def main():
 
 
 if TYPE_CHECKING:
-    from saeco.sweeps.sweepable_config import SweepableConfig
+    from sweepable import SweepableConfig
 
 
 def check_config_combinations(cfg: "SweepableConfig"):

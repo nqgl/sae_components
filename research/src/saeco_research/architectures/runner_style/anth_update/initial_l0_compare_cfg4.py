@@ -1,3 +1,5 @@
+from sweepable.Swept import Swept
+
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -6,7 +8,6 @@ from saeco.data.config.data_config_definitions import (
     gemma_2_2b_openwebtext,
 )
 from saeco.initializer import InitConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig, TrainingRunner
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig

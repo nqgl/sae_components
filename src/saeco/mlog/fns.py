@@ -3,8 +3,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from saeco.sweeps.sweep_data import SweepData
 from attrs import define, field
-
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
+from sweepable.sweepable_config import SweepableConfig
 
 
 @define

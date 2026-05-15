@@ -10,7 +10,7 @@ from saeco.architecture import ArchitectureBase
 from saeco.architecture.arch_reload_info import ArchRef
 from saeco.mlog import mlog
 from saeco.sweeps.sweep_data import SweepData
-from saeco.sweeps.sweepable_config import SweepableConfig
+from sweepable import SweepableConfig
 
 from .SweepRunner import SweepRunner
 

@@ -3,7 +3,7 @@ from types import UnionType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
+    from sweepable.SweepExpression import SweepExpression
 
 LITERALS = [int, float, str, bool]
 
@@ -38,8 +38,8 @@ def shared_type[T](it: Iterable[T]) -> type[T] | UnionType:
 
 
 def convert_other(other):
-    from saeco.sweeps.sweepable_config.sweep_expressions import Val
-    from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
+    from sweepable.sweep_expressions import Val
+    from sweepable.SweepExpression import SweepExpression
 
     if isinstance(other, SweepExpression):
         return other

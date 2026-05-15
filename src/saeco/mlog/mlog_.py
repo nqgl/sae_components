@@ -1,7 +1,7 @@
 import os
 from typing import TYPE_CHECKING
 
-from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+from sweepable.SweptNode import SweptNode
 
 from .fns import WandbCustomLogger
 

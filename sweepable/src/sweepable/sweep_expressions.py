@@ -1,13 +1,13 @@
 from enum import Enum
 from typing import Any, TypeVar, Union
 
-from saeco.sweeps.sweepable_config.expressions_utils import (
+from sweepable.expressions_utils import (
     common_type,
     convert_other,
     shared_type,
 )
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
-from saeco.sweeps.sweepable_config.Swept import Swept
+from sweepable.SweepExpression import SweepExpression
+from sweepable.Swept import Swept
 
 T = TypeVar("T")
 

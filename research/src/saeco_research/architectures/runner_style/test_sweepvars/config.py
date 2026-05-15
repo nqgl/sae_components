@@ -1,5 +1,5 @@
-from saeco.sweeps.sweepable_config.sweep_expressions import SweepVar
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
+from sweepable.sweep_expressions import SweepVar
+from sweepable.SweepExpression import SweepExpression
 
 from .model import Config
 

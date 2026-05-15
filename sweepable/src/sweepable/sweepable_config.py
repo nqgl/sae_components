@@ -19,7 +19,7 @@ from pydantic import (
     ValidationError,
 )
 
-from saeco.sweeps.sweepable_config.has_sweep import (
+from sweepable.has_sweep import (
     CouldHaveSweep,
     has_sweep,
     index_collection,
@@ -27,10 +27,10 @@ from saeco.sweeps.sweepable_config.has_sweep import (
     set_collection,
     to_items,
 )
-from saeco.sweeps.sweepable_config.sweep_expressions import Op, SweepVar, Val
-from saeco.sweeps.sweepable_config.SweepExpression import SweepExpression
-from saeco.sweeps.sweepable_config.Swept import Swept
-from saeco.sweeps.sweepable_config.SweptNode import SweptNode
+from sweepable.sweep_expressions import Op, SweepVar, Val
+from sweepable.SweepExpression import SweepExpression
+from sweepable.Swept import Swept
+from sweepable.SweptNode import SweptNode
 
 # def generic_issubclass(t, cls):
 #     try:

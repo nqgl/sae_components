@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from sweepable.Swept import Swept
 
 import saeco.components as co
 import saeco.components.features as ft
@@ -16,7 +17,6 @@ from saeco.data import DataConfig, ModelConfig
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import Initializer
 from saeco.sweeps import SweepableConfig, do_sweep
-from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner

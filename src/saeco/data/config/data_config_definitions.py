@@ -1,12 +1,13 @@
 from collections.abc import Sequence
 
+from sweepable.sweepable_config import SweepableConfig
+
 from saeco.data.config.model_config.hf_model_cfg import HuggingFaceModelConfig
 from saeco.data.config.tokenization_config import (
     PackingMode,
     TokenizationConfig,
     TokenizationMode,
 )
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 from .data_cfg import DataConfig, DataGenerationProcessConfig, SplitConfig
 from .model_config.acts_data_cfg import ActsDataConfig

@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Protocol
 
 import wandb
-from saeco.sweeps.sweepable_config import SweepableConfig
 from saeco.trainer.trainer import mlog
+from sweepable import SweepableConfig
 
 
 class SweepFile(Protocol):

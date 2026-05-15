@@ -33,6 +33,7 @@ dependencies = [
     "pydantic>=2.12.3",
     "safetensors",
     "schedulefree",
+    "sweepable>=0.1.0",
     "torch>=2.4.1",
     "tqdm",
     "transformers",

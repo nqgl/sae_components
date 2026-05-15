@@ -1,11 +1,11 @@
 from typing import TYPE_CHECKING, Any, get_args, get_origin
 
-from saeco.sweeps.sweepable_config.expressions_utils import (
+from sweepable.expressions_utils import (
     common_type,
     convert_other,
     shared_type,
 )
-from saeco.sweeps.sweepable_config.Swept import Swept
+from sweepable.Swept import Swept
 
 if TYPE_CHECKING:
     pass
@@ -20,77 +20,77 @@ class SweepExpression[T](Swept[T]):
         return f"{self!r}"
 
     def __mul__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.MUL(self, other)
 
     def __rmul__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.MUL(other, self)
 
     def __add__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.ADD(self, other)
 
     def __radd__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.ADD(other, self)
 
     def __sub__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.SUB(self, other)
 
     def __rsub__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.SUB(other, self)
 
     def __truediv__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.FLOATDIV(self, other)
 
     def __rtruediv__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.FLOATDIV(other, self)
 
     def __floordiv__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.INTDIV(self, other)
 
     def __rfloordiv__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.INTDIV(other, self)
 
     def __pow__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.POW(self, other)
 
     def __rpow__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.POW(other, self)
 
     def __mod__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.MOD(self, other)
 
     def __rmod__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum
+        from sweepable.sweep_expressions import ExpressionOpEnum
 
         return ExpressionOpEnum.MOD(other, self)
 
     def __getitem__(self, other):
-        from saeco.sweeps.sweepable_config.sweep_expressions import ExpressionOpEnum, Op
+        from sweepable.sweep_expressions import ExpressionOpEnum, Op
 
         other = convert_other(other)
 

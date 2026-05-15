@@ -17,7 +17,7 @@ jobs:
       - name: Install ruff
         run: pip install "ruff>=0.14.3"
       - name: ruff check
-        run: ruff check src tests
+        run: ruff check src tests sweepable/src sweepable/tests
 
   test:
     name: Pytest (Python ${{ matrix.python-version }})
@@ -32,9 +32,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install package + dev extras
+      - name: Install packages
         run: |
           python -m pip install --upgrade pip
+          # sweepable is required by saeco but not yet on PyPI; install it
+          # from the in-tree path first so saeco's `sweepable>=0.1.0` resolves.
+          pip install -e ./sweepable
           pip install -e ".[dev]"
-      - name: Run tests
+      - name: Run sweepable tests
+        run: pytest sweepable/tests/ -v
+      - name: Run saeco tests
         run: pytest tests/ -v

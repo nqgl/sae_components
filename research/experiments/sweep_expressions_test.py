@@ -1,4 +1,6 @@
 
+from sweepable.sweep_expressions import Val
+
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -10,7 +12,6 @@ from saeco.data.config.data_config_definitions import (
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import InitConfig
 from saeco.sweeps import SweepVar, Swept
-from saeco.sweeps.sweepable_config.sweep_expressions import Val
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig

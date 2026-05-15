@@ -14,10 +14,13 @@ Nothing in this package is API. Modules get renamed, deleted, refactored without
 
 ## Install
 
-From the repo root, after installing `saeco`:
+From the repo root, install the dependency chain (`sweepable` → `saeco`
+→ `saeco-research`):
 
 ```bash
-pip install -e research
+pip install -e ./sweepable
+pip install -e .
+pip install -e ./research
 ```
 
 Then `from saeco_research.architectures.<name> import ...` works alongside `from saeco.architectures.vanilla import ...`.

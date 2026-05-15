@@ -9,6 +9,7 @@ import torch
 import tqdm
 from attrs import define
 from jaxtyping import Int
+from sweepable.sweepable_config import SweepableConfig
 from torch import Tensor
 
 from saeco.architecture.sae_architecture import Architecture
@@ -20,7 +21,6 @@ from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.data.training_data.tokens_data import PermutedDocs
 from saeco.evaluation.storage.cache_config import CacheConfig
 from saeco.evaluation.storage.chunk import Chunk
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
 @define(slots=True)

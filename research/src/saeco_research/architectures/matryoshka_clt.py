@@ -2,6 +2,7 @@ from functools import cached_property
 
 import torch
 import torch.nn as nn
+from sweepable.sweepable_config import SweepableConfig
 
 import saeco.components.features as ft
 import saeco.core as cl
@@ -14,7 +15,6 @@ from saeco.components.ops import Indexer
 from saeco.components.sae_cache import SAECache
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
 
 
 class MatryoshkaCLTConfig(SweepableConfig):

@@ -23,7 +23,11 @@ sweeping, and remote orchestration.
 
 ## Installation
 
+`saeco` depends on the [`sweepable`](sweepable/) package which lives in
+this same repo and isn't on PyPI yet. Install it first:
+
 ```bash
+pip install -e ./sweepable
 pip install -e .
 ```
 
@@ -200,11 +204,16 @@ src/saeco/                  # the library — public API
 ├── data/                   # dataset config, tokenization, activation caches
 ├── evaluation/             # post-training analysis / inspection
 ├── initializer/            # parameter initialization (incl. geometric median)
-├── sweeps/                 # SweepableConfig, Swept, SweepExpression, runner
+├── sweeps/                 # do_sweep + thin re-exports of sweepable's DSL
 └── trainer/                # Trainer, RunConfig, scheduling, normalizers
 
+sweepable/                  # standalone subrepo — Pydantic + sweep DSL
+├── pyproject.toml          # installs as `sweepable` (no saeco deps)
+├── src/sweepable/          # SweepableConfig, Swept, SweepVar, Val, …
+└── tests/
+
 research/                   # in-flight scratch — not packaged with saeco
-├── pyproject.toml          # installs as a separate `saeco-research` package
+├── pyproject.toml          # installs as `saeco-research`
 ├── src/saeco_research/
 │   └── architectures/      # exploratory architectures, no API guarantees
 ├── experiments/            # runnable training/sweep scripts
@@ -214,14 +223,18 @@ examples/                   # curated standalone demos
 tests/                      # library tests
 ```
 
-The split between `saeco` and `saeco-research` exists so that the library
-can have an API contract while in-progress architecture work still lives in
-VCS. To use both:
+This repo is a "monorepo of three packages" (`sweepable` → `saeco` →
+`saeco-research`). To use them all:
 
 ```bash
-pip install -e .          # the library
-pip install -e research   # the research scratch package
+pip install -e ./sweepable    # the sweep DSL (used by saeco)
+pip install -e .              # the library
+pip install -e ./research     # the research scratch package
 ```
+
+`sweepable/` is structured to be **git-subtree-ready** — `git subtree
+split --prefix=sweepable -b sweepable-only` produces a clean linear
+history that can be pushed to a standalone GitHub repo.
 
 ## Status
 

@@ -1,4 +1,4 @@
-from saeco.sweeps.sweepable_config import SweepableConfig, SweepVar, Swept
+from sweepable import SweepableConfig, SweepVar, Swept
 
 
 class LeafConfig(SweepableConfig):

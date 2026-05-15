@@ -1,4 +1,5 @@
 import torch.nn as nn
+from sweepable.Swept import Swept
 
 import saeco.components as co
 from saeco.components import (
@@ -12,7 +13,6 @@ from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
 from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
 

@@ -1,3 +1,5 @@
+from sweepable.Swept import Swept
+
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -7,7 +9,6 @@ from saeco.data.config.data_config_definitions import (
     gpt_2_block,
 )
 from saeco.initializer import InitConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig

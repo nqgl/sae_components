@@ -3,6 +3,7 @@ from saeco_research.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshSAE,
     ThreshConfig,
 )
+from sweepable.Swept import Swept
 
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -12,7 +13,6 @@ from saeco.data.config.data_config_definitions import (
     gemma_4_lmsys_chat,
 )
 from saeco.initializer import InitConfig
-from saeco.sweeps.sweepable_config.Swept import Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import EarlyStoppingBounds, TrainConfig
