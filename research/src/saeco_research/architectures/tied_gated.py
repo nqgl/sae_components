@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.features as ft
@@ -26,6 +25,7 @@ from saeco_research.architectures.prolu.prolu import (
     ProLUConfig,
     thresh_from_bwd,
 )
+from sweepable import Swept
 
 
 class Config(SweepableConfig):

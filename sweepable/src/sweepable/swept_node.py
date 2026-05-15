@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from pydantic import BaseModel, Field
 
 from sweepable.has_sweep import CouldHaveSweep, has_sweep, to_items
-from sweepable.sweep_expressions import SweepVar
 from sweepable.sweep_expression import SweepExpression
+from sweepable.sweep_expressions import SweepVar
 from sweepable.swept import Swept
 
 Location = list[str]

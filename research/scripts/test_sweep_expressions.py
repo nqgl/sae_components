@@ -1,6 +1,4 @@
-from sweepable import SweepVar, Val
-
-from sweepable import SweepableConfig
+from sweepable import SweepableConfig, SweepVar, Val
 
 
 class Cfg(SweepableConfig):

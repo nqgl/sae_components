@@ -1,6 +1,5 @@
 import torch.nn as nn
 from saeco.components.model import Architecture
-from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -23,6 +22,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_config import TrainConfig
+from sweepable import Swept
 
 from .model import Config
 

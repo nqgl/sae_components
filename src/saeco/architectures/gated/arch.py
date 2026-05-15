@@ -2,7 +2,6 @@ from functools import cached_property
 
 import torch
 import torch.nn as nn
-from sweepable import SweepableConfig
 
 import saeco.components as co
 import saeco.components.features as ft
@@ -22,6 +21,7 @@ from saeco.components import (
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
 from saeco.misc import useif
+from sweepable import SweepableConfig
 
 
 class GatedConfig(SweepableConfig):

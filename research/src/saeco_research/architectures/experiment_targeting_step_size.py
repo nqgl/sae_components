@@ -1,5 +1,4 @@
 import torch.nn as nn
-from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.features as ft
@@ -16,6 +15,7 @@ from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from sweepable import Swept
 
 
 class Config(SweepableConfig):

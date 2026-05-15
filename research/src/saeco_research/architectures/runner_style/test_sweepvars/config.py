@@ -1,5 +1,4 @@
-from sweepable import SweepVar
-from sweepable import SweepExpression
+from sweepable import SweepExpression, SweepVar
 
 from .model import Config
 

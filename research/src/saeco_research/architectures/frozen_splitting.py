@@ -1,6 +1,5 @@
 
 import torch.nn as nn
-from sweepable import Swept
 
 import saeco.components as co
 import saeco.core as cl
@@ -21,6 +20,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_config import TrainConfig
+from sweepable import Swept
 
 
 class Config(SweepableConfig):

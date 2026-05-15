@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from pydantic import Field
-from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.features as ft
@@ -17,6 +16,7 @@ from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
+from sweepable import Swept
 
 # torch.backends.cudnn.benchmark = True
 

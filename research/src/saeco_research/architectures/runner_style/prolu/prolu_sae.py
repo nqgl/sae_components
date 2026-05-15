@@ -5,7 +5,6 @@ from saeco_research.architectures.prolu.prolu import (
     prolu_ste_from_thresh,
     thresh_from_bwd,
 )
-from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -27,6 +26,7 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_config import TrainConfig
+from sweepable import Swept
 
 
 class Config(SweepableConfig):

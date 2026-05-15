@@ -1,6 +1,4 @@
 
-from sweepable import Val
-
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -15,6 +13,7 @@ from saeco.sweeps import SweepVar, Swept
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from sweepable import Val
 
 PROJECT = "sae sweeps"
 

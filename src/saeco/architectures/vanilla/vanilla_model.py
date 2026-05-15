@@ -1,5 +1,4 @@
 import torch.nn as nn
-from sweepable import SweepableConfig
 
 import saeco.components.features as ft
 from saeco.architecture import (
@@ -14,6 +13,7 @@ from saeco.components import (
 )
 from saeco.core import Seq
 from saeco.misc import useif
+from sweepable import SweepableConfig
 
 
 class VanillaConfig(SweepableConfig):

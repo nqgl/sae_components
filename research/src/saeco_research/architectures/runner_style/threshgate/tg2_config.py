@@ -1,5 +1,3 @@
-from sweepable import Swept
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -8,6 +6,7 @@ from saeco.data.config.data_config_definitions import gpt_2_block
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from sweepable import Swept
 
 from .tg_model2 import Config, HardSoftConfig
 

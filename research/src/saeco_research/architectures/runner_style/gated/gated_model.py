@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -15,6 +14,7 @@ from saeco.core import ReuseForward, Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
+from sweepable import Swept
 
 
 class Config(SweepableConfig):

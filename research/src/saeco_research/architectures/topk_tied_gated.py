@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from sweepable import Swept
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 import saeco.components as co
@@ -23,6 +22,7 @@ from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_config import TrainConfig
 from saeco_research.architectures.prolu.prolu import PProLU, ProLUConfig
+from sweepable import Swept
 
 
 class TopKThresh(torch.autograd.Function):

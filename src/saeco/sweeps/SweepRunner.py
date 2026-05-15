@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
 
 from attrs import define, field
-from sweepable import SweepableConfig
 
 from saeco.mlog import mlog
+from sweepable import SweepableConfig
 
 if TYPE_CHECKING:
     from saeco.sweeps.sweep_data import SweepData

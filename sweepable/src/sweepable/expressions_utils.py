@@ -38,8 +38,8 @@ def shared_type[T](it: Iterable[T]) -> type[T] | UnionType:
 
 
 def convert_other(other):
-    from sweepable.sweep_expressions import Val
     from sweepable.sweep_expression import SweepExpression
+    from sweepable.sweep_expressions import Val
 
     if isinstance(other, SweepExpression):
         return other

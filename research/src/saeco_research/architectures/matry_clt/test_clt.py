@@ -2,7 +2,6 @@ from functools import cached_property
 
 import torch
 import torch.nn as nn
-from sweepable import SweepableConfig
 
 import saeco.components.features as ft
 import saeco.core as cl
@@ -11,6 +10,7 @@ from saeco.architecture.sae import SAE
 from saeco.architecture.sae_architecture import Architecture
 from saeco.components import L2Loss, Lambda, SparsityPenaltyLoss
 from saeco.core import Seq
+from sweepable import SweepableConfig
 
 
 class CrossLayerTranscoderConfig(SweepableConfig):

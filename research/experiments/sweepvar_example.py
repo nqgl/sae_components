@@ -1,6 +1,3 @@
-from sweepable import SweepVar, Val
-from sweepable import Swept
-
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -13,6 +10,7 @@ from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from sweepable import SweepVar, Swept, Val
 
 batch_size_mult_var = SweepVar(1, 2, 3, name="batch_size_mult")
 cfg = RunConfig[VanillaConfig](

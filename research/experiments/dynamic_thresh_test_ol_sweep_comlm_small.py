@@ -4,7 +4,6 @@ from saeco_research.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshSAE,
     ThreshConfig,
 )
-from sweepable import Swept
 
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -14,6 +13,7 @@ from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import EarlyStoppingBounds, TrainConfig
+from sweepable import Swept
 
 
 def s(x, *a):
