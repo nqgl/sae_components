@@ -10,6 +10,7 @@ from torch import Tensor
 
 from saeco.data.storage.disk_tensor import DiskTensor
 from saeco.data.storage.disk_tensor_collection import DiskTensorCollection
+
 from ..named_filter import NamedFilter
 
 

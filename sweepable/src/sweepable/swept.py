@@ -5,8 +5,6 @@ from typing import Any, Literal, TypeVar
 import pydantic._internal._model_construction as mc
 from pydantic import BaseModel
 
-T = TypeVar("T")
-
 
 class SweptCheckerMeta(mc.ModelMetaclass):
     def __instancecheck__(self, instance: Any) -> bool:

@@ -5,7 +5,7 @@ from saeco_research.architectures.prolu.prolu import (
     prolu_ste_from_thresh,
     thresh_from_bwd,
 )
-from sweepable.Swept import Swept
+from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks

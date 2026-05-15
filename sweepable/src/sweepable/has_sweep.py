@@ -3,7 +3,7 @@ from typing import Any, TypeAlias
 
 from pydantic import BaseModel
 
-from sweepable.Swept import Swept
+from sweepable.swept import Swept
 
 CouldHaveSweep: TypeAlias = BaseModel | dict | list
 

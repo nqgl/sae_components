@@ -25,7 +25,7 @@ from saeco.data.subject_model_inputs import SubjectBatchInputs, prepare_subject_
 from saeco.initializer.initializer import Initializer
 from saeco.misc import useif
 from saeco.misc.nnsite import getsite, setsite
-from sweepable.sweepable_config import SweepableConfig
+from sweepable import SweepableConfig
 from saeco.trainer.evaluation_protocol import ReconstructionEvaluatorFunctionProtocol
 from saeco.trainer.recons import to_losses
 from saeco.trainer.trainable import Trainable

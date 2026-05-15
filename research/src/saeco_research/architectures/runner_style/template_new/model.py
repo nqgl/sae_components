@@ -1,6 +1,6 @@
 import torch.nn as nn
 from saeco.components.model import Architecture
-from sweepable.Swept import Swept
+from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks

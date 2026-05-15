@@ -28,9 +28,9 @@ from sweepable.has_sweep import (
     to_items,
 )
 from sweepable.sweep_expressions import Op, SweepVar, Val
-from sweepable.SweepExpression import SweepExpression
-from sweepable.Swept import Swept
-from sweepable.SweptNode import SweptNode
+from sweepable.sweep_expression import SweepExpression
+from sweepable.swept import Swept
+from sweepable.swept_node import SweptNode
 
 # def generic_issubclass(t, cls):
 #     try:

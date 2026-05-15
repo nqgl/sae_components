@@ -11,7 +11,7 @@ from attrs import define
 from jaxtyping import Int
 from saeco_research.evaluation.storage.cache_config import CacheConfig
 from saeco_research.evaluation.storage.chunk import Chunk
-from sweepable.sweepable_config import SweepableConfig
+from sweepable import SweepableConfig
 from torch import Tensor
 
 from saeco.architecture.sae_architecture import Architecture

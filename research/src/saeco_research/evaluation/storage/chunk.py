@@ -10,9 +10,9 @@ from paramsight import get_resolved_typevars_for_base, takes_alias
 from safetensors.torch import load_file, save_file
 
 from saeco.data.dict_batch import DictBatch
+from saeco.data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from saeco.misc.utils import chill_issubclass
 
-from saeco.data.storage.sparse_safetensors import load_sparse_tensor, save_sparse_tensor
 from ..filtered import Filter, FilteredTensor
 from ..named_filter import NamedFilter
 from .cache_config import CacheConfig

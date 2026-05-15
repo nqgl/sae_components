@@ -1,5 +1,5 @@
 import torch.nn as nn
-from sweepable.sweepable_config import SweepableConfig
+from sweepable import SweepableConfig
 
 import saeco.components.features as ft
 from saeco.architecture import (

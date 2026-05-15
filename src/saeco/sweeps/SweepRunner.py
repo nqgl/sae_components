@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from attrs import define, field
-from sweepable.sweepable_config import SweepableConfig
+from sweepable import SweepableConfig
 
 from saeco.mlog import mlog
 

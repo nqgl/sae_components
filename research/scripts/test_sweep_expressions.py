@@ -1,7 +1,4 @@
-from sweepable.sweep_expressions import (
-    SweepVar,
-    Val,
-)
+from sweepable import SweepVar, Val
 
 from sweepable import SweepableConfig
 

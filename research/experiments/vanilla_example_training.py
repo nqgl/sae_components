@@ -1,4 +1,4 @@
-from sweepable.Swept import Swept
+from sweepable import Swept
 
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
@@ -58,5 +58,5 @@ sweep_manager = arch.get_sweep_manager()
 sweep_manager.rand_run_no_agent()
 # sweep_manager.initialize_sweep()
 
-# # this will create 6 remote pods and begin running the grid search on them
+# # this will create 6 remote pods and begin running the grid search on them:
 # sweep_manager.run_manual_sweep_with_monitoring(new_pods=6)

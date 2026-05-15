@@ -6,8 +6,8 @@ from sweepable.expressions_utils import (
     convert_other,
     shared_type,
 )
-from sweepable.SweepExpression import SweepExpression
-from sweepable.Swept import Swept
+from sweepable.sweep_expression import SweepExpression
+from sweepable.swept import Swept
 
 T = TypeVar("T")
 

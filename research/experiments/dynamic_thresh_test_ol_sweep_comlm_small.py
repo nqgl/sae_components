@@ -4,7 +4,7 @@ from saeco_research.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshSAE,
     ThreshConfig,
 )
-from sweepable.Swept import Swept
+from sweepable import Swept
 
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,

@@ -1,5 +1,5 @@
 import torch.nn as nn
-from sweepable.Swept import Swept
+from sweepable import Swept
 
 import saeco.components as co
 import saeco.components.features as ft

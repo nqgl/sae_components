@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 
 from sweepable.has_sweep import CouldHaveSweep, has_sweep, to_items
 from sweepable.sweep_expressions import SweepVar
-from sweepable.SweepExpression import SweepExpression
-from sweepable.Swept import Swept
+from sweepable.sweep_expression import SweepExpression
+from sweepable.swept import Swept
 
 Location = list[str]
 

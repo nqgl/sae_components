@@ -1,4 +1,4 @@
-from sweepable.Swept import Swept
+from sweepable import Swept
 
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,

@@ -1,5 +1,5 @@
 
-from sweepable.sweep_expressions import Val
+from sweepable import Val
 
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (

@@ -1,4 +1,4 @@
-from sweepable.Swept import Swept
+from sweepable import Swept
 
 from saeco.architectures.gated.arch import Gated, GatedConfig
 from saeco.components.resampling.anthropic_resampling import (

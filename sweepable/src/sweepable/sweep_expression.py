@@ -5,7 +5,7 @@ from sweepable.expressions_utils import (
     convert_other,
     shared_type,
 )
-from sweepable.Swept import Swept
+from sweepable.swept import Swept
 
 if TYPE_CHECKING:
     pass

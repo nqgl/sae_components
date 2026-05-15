@@ -2,8 +2,8 @@
 
 from .sweep_expressions import SweepVar, Val
 from .sweepable_config import SweepableConfig
-from .SweepExpression import SweepExpression
-from .Swept import Swept
+from .sweep_expression import SweepExpression
+from .swept import Swept
 
 __all__ = [
     "SweepExpression",

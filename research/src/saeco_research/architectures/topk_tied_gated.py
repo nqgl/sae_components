@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from sweepable.Swept import Swept
+from sweepable import Swept
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 import saeco.components as co
