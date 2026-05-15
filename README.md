@@ -63,11 +63,11 @@ class VanillaConfig(SweepableConfig):
 
 class VanillaSAE(Architecture[VanillaConfig]):
     def setup(self):
-        # Wrappers added during setup participate in the training loop:
+        # Mixins added during setup participate in the training loop:
         # 1. features are normalized to unit norm after each optimizer step
         # 2. feature gradients are orthogonalized before each step
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
+        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
 
     @model_prop
     def model(self):
@@ -123,8 +123,8 @@ class Gated(Architecture[GatedConfig]):
     def setup(self):
         self.init._encoder.bias = False
         self.init._encoder.add_wrapper(ReuseForward)
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
+        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
 
     @cached_property
     def enc_mag(self):
