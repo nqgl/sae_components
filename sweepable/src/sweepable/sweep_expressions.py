@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import StrEnum
 from typing import Any, TypeVar, Union
 
 from sweepable.expressions_utils import (
@@ -12,7 +12,7 @@ from sweepable.swept import Swept
 T = TypeVar("T")
 
 
-class ExpressionOpEnum(str, Enum):
+class ExpressionOpEnum(StrEnum):
     ADD = "+"
     SUB = "-"
     MUL = "*"
@@ -64,7 +64,8 @@ class ExpressionOpEnum(str, Enum):
         children = [convert_other(c) for c in children]
         t = common_type(children)
         assert self != ExpressionOpEnum.INDEX
-        # below is what I was going to do for INDEX, but it should be handled externally (in ExpressionOpEnum.__call__):
+        # below is what I was going to do for INDEX, but it should be
+        # handled externally (in ExpressionOpEnum.__call__):
         #    container_type = children[0].generic_type
         #    contained_type = Any
         #    args = get_args(container_type)
@@ -115,7 +116,7 @@ class SweepVar(SweepExpression[T]):
     def generic_type(self):
         try:  # take explicitly designated type if one is given
             t = super().generic_type
-        except:
+        except Exception:
             t = None
         if t is not None:
             return t
@@ -130,7 +131,7 @@ class SweepVar(SweepExpression[T]):
         return t
 
     def get_sweepvars(self):
-        return set([self])
+        return {self}
 
     def evaluate(self, vars_dict: dict[str, Any]):
         return vars_dict[self.name]

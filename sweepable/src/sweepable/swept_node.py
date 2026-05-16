@@ -22,8 +22,9 @@ class SweptNode(BaseModel):
     def from_sweepable(
         cls,
         target: CouldHaveSweep,
-        location: Location = [],
+        location: Location | None = None,
     ) -> "SweptNode":
+        location = location or []
         inst = cls(location=location)
         for name, attr in to_items(target):
             if isinstance(attr, SweepExpression):
@@ -42,9 +43,9 @@ class SweptNode(BaseModel):
 
     def get_sweepvars(self) -> set[SweepVar]:
         s = set()
-        for k, v in self.expressions.items():
+        for v in self.expressions.values():
             s |= v.get_sweepvars()
-        for k, v in self.children.items():
+        for v in self.children.values():
             s |= v.get_sweepvars()
         return s
 
@@ -69,20 +70,23 @@ class SweptNode(BaseModel):
             self._swept_combinations_count_vars_only()
             * self._swept_combinations_count_excluding_vars()
         )
-        assert 0 < v and isinstance(v, int), (
-            f"swept_combinations_count should be positive. Got {self._swept_combinations_count_vars_only()} * {self._swept_combinations_count_excluding_vars()} = {v}"
+        assert isinstance(v, int), f"swept_combinations_count should be an int. Got {v}"
+        assert 0 < v, (
+            "swept_combinations_count should be positive. Got "
+            f"{self._swept_combinations_count_vars_only()} * "
+            f"{self._swept_combinations_count_excluding_vars()} = {v}"
         )
         return v
 
     def _swept_combinations_count_children_count(self):
         n = 1
-        for k, v in self.children.items():
+        for v in self.children.values():
             n *= v._swept_combinations_count_excluding_vars()
         return n
 
     def _swept_combinations_count_directly_contained_swept_fields_count(self):
         n = 1
-        for k, v in self.swept_fields.items():
+        for v in self.swept_fields.values():
             n *= len(v.values)
         return n
 
@@ -91,17 +95,17 @@ class SweptNode(BaseModel):
         this is the number of directly contained
         """
         n = 1
-        for k, v in self.swept_fields.items():
+        for v in self.swept_fields.values():
             n *= len(v.values)
-        for k, v in self.children.items():
+        for v in self.children.values():
             n *= v._swept_combinations_count_excluding_vars()
         return n
 
     def swept_options_sum(self):
         n = 0
-        for k, v in self.swept_fields.items():
+        for v in self.swept_fields.values():
             n += len(v.values)
-        for k, v in self.children.items():
+        for v in self.children.values():
             n += v.swept_options_sum()
         return n
 
@@ -132,8 +136,8 @@ class SweptNode(BaseModel):
 
     def random_selection(self, sweep_vars=None):
         if sweep_vars is None:
-            vars = self.get_sweepvars()
-            var_values = {var.name: random.choice(var.values) for var in vars}
+            sweepvars = self.get_sweepvars()
+            var_values = {var.name: random.choice(var.values) for var in sweepvars}
             return {
                 **self.random_selection(var_values),
                 "sweep_vars": var_values,
@@ -155,18 +159,20 @@ class SweptNode(BaseModel):
 
     @classmethod
     def alphabetize_dict[T](cls, d: dict[str, T]) -> dict[str, T]:
-        return {k: v for k, v in sorted(d.items(), key=lambda x: x[0])}
+        return dict(sorted(d.items(), key=lambda x: x[0]))
 
     def select_instance_by_index(self, i, sweep_vars=None) -> dict[str, Any]:
         if not 0 <= i < self.swept_combinations_count_including_vars():
             raise IndexError(
-                f"i should be less than the number of children combinations. Got i={i} with {self.swept_combinations_count_including_vars()} combos. At {self.location}"
+                f"i should be less than the number of children combinations. Got i={i} "
+                f"with {self.swept_combinations_count_including_vars()} combos. "
+                f"At {self.location}"
             )
         if sweep_vars is None:
             i_vars = i // self._swept_combinations_count_excluding_vars()
             i_children = i % self._swept_combinations_count_excluding_vars()
             var_values = {}
-            for k, v in self.consistent_sort(self.get_vars_dict()).items():
+            for v in self.consistent_sort(self.get_vars_dict()).values():
                 var_values[v.name] = v.values[i_vars % len(v.values)]
                 i_vars //= len(v.values)
             assert i_vars == 0, "i_vars should be 0"
@@ -183,7 +189,9 @@ class SweptNode(BaseModel):
             d[k] = v.values[i % len(v.values)]
             i //= len(v.values)
         assert i < self._swept_combinations_count_children_count(), (
-            f"i should be less than the number of children combinations. Got i={i} with {self._swept_combinations_count_children_count()} combos. At {self.location}"
+            f"i should be less than the number of children combinations. Got i={i} "
+            f"with {self._swept_combinations_count_children_count()} combos. "
+            f"At {self.location}"
         )
         for k, v in self.consistent_sort(self.children).items():
             assert k not in d

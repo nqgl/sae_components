@@ -26,7 +26,7 @@ from sweepable.has_sweep import (
     to_items,
 )
 from sweepable.sweep_expression import SweepExpression
-from sweepable.sweep_expressions import Op, SweepVar, Val
+from sweepable.sweep_expressions import SweepVar
 from sweepable.swept import Swept
 from sweepable.swept_node import SweptNode
 
@@ -79,7 +79,7 @@ def _to_sweepable(t, name=None):
 
     from .sweep_expressions import Op
 
-    return Union[Op[s_t], Swept[s_t], s_t]
+    return Op[s_t] | Swept[s_t] | s_t
 
 
 @dataclass_transform(
@@ -127,7 +127,7 @@ def _to_swept_selective_dict(
         elif isinstance(attr, Swept):
             subdict = attr.model_dump()
         elif isinstance(attr, BaseModel | dict) and has_sweep(attr):
-            subdict = dict(parameters=_to_swept_selective_dict(attr, sweep_params))
+            subdict = {"parameters": _to_swept_selective_dict(attr, sweep_params)}
         elif isinstance(attr, dict):
             print("dict at", name, attr)
             continue
@@ -140,7 +140,7 @@ def _to_swept_selective_dict(
 def _get_sweepvars(target: CouldHaveSweep, sweepvars: set["SweepVar"] | None = None):
     if sweepvars is None:
         sweepvars = set()
-    for name, attr in to_items(target):
+    for _name, attr in to_items(target):
         if isinstance(attr, SweepExpression):
             sweepvars |= attr.get_sweepvars()
             continue
@@ -279,7 +279,7 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
 
     @classmethod
     def _is_concrete(cls, search_target: BaseModel):
-        for name, field in search_target.model_fields.items():
+        for name, _ in search_target.__class__.model_fields.items():
             attr = getattr(search_target, name)
             if isinstance(attr, Swept):
                 return False

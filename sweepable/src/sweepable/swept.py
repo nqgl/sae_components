@@ -14,15 +14,15 @@ class SweptCheckerMeta(mc.ModelMetaclass):
             return False
         if not isinstance(instance, Swept):
             return False
-        iT = instance.__pydantic_generic_metadata__["args"]
-        sT = self.__pydantic_generic_metadata__["args"]
-        if len(iT) == len(sT) == 1:
+        i_args = instance.__pydantic_generic_metadata__["args"]
+        s_args = self.__pydantic_generic_metadata__["args"]
+        if len(i_args) == len(s_args) == 1:
             try:
-                if issubclass(iT[0], sT[0]):
+                if issubclass(i_args[0], s_args[0]):
                     return True
             except TypeError:
                 pass
-        if len(sT) == 1 and all(isinstance(v, sT) for v in instance.values):
+        if len(s_args) == 1 and all(isinstance(v, s_args) for v in instance.values):
             return True
         return False
 
@@ -50,7 +50,7 @@ class Swept[T](BaseModel, metaclass=SweptCheckerMeta):
         """
         if values:
             if "values" in kwargs:
-                raise Exception("two sources of values in Swept initialization!")
+                raise ValueError("two sources of values in Swept initialization!")
             kwargs["values"] = values
         return super().__init__(**kwargs)
 

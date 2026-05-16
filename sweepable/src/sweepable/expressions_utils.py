@@ -43,7 +43,7 @@ def convert_other(other):
 
     if isinstance(other, SweepExpression):
         return other
-    if any([isinstance(other, l) for l in LITERALS]):
+    if any(isinstance(other, lit) for lit in LITERALS):
         return Val[type(other)](value=other)
     # if isinstance(other, SweepVar):
     #     return Var(name=other.name, sweep_var=other)

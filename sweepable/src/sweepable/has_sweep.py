@@ -1,25 +1,27 @@
 from collections.abc import Iterable
-from typing import Any, TypeAlias
+from typing import Any
 
 from pydantic import BaseModel
 
 from sweepable.swept import Swept
 
-CouldHaveSweep: TypeAlias = BaseModel | dict | list
+CouldHaveSweep = BaseModel | dict | list
 
 
 def to_items(target: CouldHaveSweep) -> Iterable[tuple[str, Any]]:
     if isinstance(target, BaseModel):
-        return [(k, getattr(target, k)) for (k, v) in target.model_fields.items()]
+        return [
+            (k, getattr(target, k)) for (k, v) in target.__class__.model_fields.items()
+        ]
     elif isinstance(target, list):
-        return map(lambda x: (str(x[0]), x[1]), enumerate(target))
+        return [(str(i), x) for i, x in enumerate(target)]
     else:
         assert isinstance(target, dict)
         return target.items()
 
 
 def has_sweep(target: CouldHaveSweep):
-    for name, attr in to_items(target):
+    for _, attr in to_items(target):
         if isinstance(attr, Swept):
             return True
         elif isinstance(attr, CouldHaveSweep):

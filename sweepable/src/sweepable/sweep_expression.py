@@ -114,13 +114,13 @@ class SweepExpression[T](Swept[T]):
             print(dtype)
             try:
                 t = get_args(dtype)[1]
-            except:
-                if dtype in [list, tuple]:
+            except (IndexError, TypeError) as err:
+                if dtype in (list, tuple):
                     t = shared_type(self.values)
                 elif dtype is dict:
-                    t = common_type([v for v in self.values.values()])
+                    t = common_type(list(self.values.values()))
                 else:
-                    raise ValueError(f"Cannot index {dtype}")
+                    raise ValueError(f"Cannot index {dtype}") from err
         # else:
         #     t = get_args(self.generic_type)[1]
         return Op[t](op=ExpressionOpEnum.INDEX, children=[self, other])
