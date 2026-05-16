@@ -1,5 +1,3 @@
-
-
 from saeco.architectures.vanilla.vanilla_model import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 import pydantic._internal._model_construction as mc
 from pydantic import BaseModel

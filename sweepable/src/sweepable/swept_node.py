@@ -1,5 +1,5 @@
 import random
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 

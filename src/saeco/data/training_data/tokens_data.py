@@ -97,7 +97,9 @@ class TokensData(TokensDataInterface[torch.Tensor]):
             self.cfg._tokens_piles_path(self.split),
         )
 
-    def _tokens_dict_piler(self, write: bool, num_tokens: int | None = None) -> DictPiler:
+    def _tokens_dict_piler(
+        self, write: bool, num_tokens: int | None = None
+    ) -> DictPiler:
         path = self.cfg._tokens_piles_path(self.split)
         if write:
             assert num_tokens is not None
@@ -165,9 +167,7 @@ class TokensData(TokensDataInterface[torch.Tensor]):
         piler.shuffle_piles()
 
     def _store_split_on_the_fly_pad(self, split: SplitConfig):
-        tqdm.tqdm.write(
-            f"Tokenizing on the fly (pad) for {split.split}"
-        )
+        tqdm.tqdm.write(f"Tokenizing on the fly (pad) for {split.split}")
         otf = self._on_the_fly_tokenizer()
         num_tokens_estimate = otf.estimate_num_tokens()
         dict_piler = self._tokens_dict_piler(write=True, num_tokens=num_tokens_estimate)

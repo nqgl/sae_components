@@ -35,7 +35,9 @@ def _strip_historical_thinking(messages: list[dict[str, Any]]) -> list[dict[str,
         content = cleaned.get("content")
         if isinstance(content, list):
             cleaned["content"] = [
-                c for c in content if not (isinstance(c, dict) and c.get("type") == "thinking")
+                c
+                for c in content
+                if not (isinstance(c, dict) and c.get("type") == "thinking")
             ]
         out.append(cleaned)
     return out
@@ -185,5 +187,7 @@ class OnTheFlyTokenizer:
         dataset = self.cfg.load_dataset_from_split(self.split, to_torch=False)
         nrows = len(dataset)
         tcfg = self.cfg.tokenization
-        avg_tokens_per_row = 4096 if tcfg.mode == TokenizationMode.CONVERSATION else 1024
+        avg_tokens_per_row = (
+            4096 if tcfg.mode == TokenizationMode.CONVERSATION else 1024
+        )
         return nrows * avg_tokens_per_row

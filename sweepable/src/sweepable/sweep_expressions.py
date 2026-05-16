@@ -208,6 +208,7 @@ class Val[T: str | float | int | bool | list | tuple | dict[Any, Any]](
         Val(value=4096) * my_sweep_var
         Val(value=100) // my_sweep_var   # integer division keeps int fields int
     """
+
     # maybe this doesn't even need to be a subtype of SweepExpression?
     # or maybe SE doesn't need to subclass Swept.
     # particularly the bit where swept has the values field --

@@ -88,9 +88,7 @@ def test_conversation_pad(gpt2_tokenizer):
     # locally without a gated model.
     tokenizer = gpt2_tokenizer
     tokenizer.chat_template = (
-        "{% for m in messages %}"
-        "<|{{m['role']}}|>{{m['content']}}<|end|>"
-        "{% endfor %}"
+        "{% for m in messages %}<|{{m['role']}}|>{{m['content']}}<|end|>{% endfor %}"
     )
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -256,9 +254,7 @@ def test_chat_template_kwargs_passed_through_enable_thinking(gpt2_tokenizer):
         real_len = int(batch["attention_mask"][0].sum())
         return tokenizer.decode(batch["input_ids"][0, :real_len])
 
-    with_think = decode_one(
-        {"add_generation_prompt": True, "enable_thinking": True}
-    )
+    with_think = decode_one({"add_generation_prompt": True, "enable_thinking": True})
     without_think = decode_one(
         {"add_generation_prompt": True, "enable_thinking": False}
     )

@@ -1,6 +1,5 @@
 # %%
 #
-from transformers import Gemma4ForConditionalGeneration, Gemma4TextModel
 
 from saeco.data.config.data_config_definitions import gemma_4_lmsys_chat
 

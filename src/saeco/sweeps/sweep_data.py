@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
-from typing import Generic
 
-from paramsight import takes_alias
 from pydantic import BaseModel
 
 from saeco.architecture import ArchitectureBase

@@ -1,4 +1,3 @@
-
 from nicegui import ui
 from saeco_research.analysis.uiitem import UIE
 from saeco_research.analysis.wandb_analyze import (

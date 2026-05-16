@@ -1,5 +1,3 @@
-
-
 from saeco_research.architectures.threshgate_gradjust.threshgrad import (
     BinaryEncoder,
     Config,

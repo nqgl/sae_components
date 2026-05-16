@@ -203,7 +203,6 @@ class BinaryEncoder(cl.Module):
             and cache._ancestor.has.trainstep
             and cache._ancestor.trainstep <= 5000
         ):
-
             self.targeting.value = cache._ancestor.trainstep / 5000
         mag = self.mag.unsqueeze(0).expand(x.shape[0], -1)
         out = gate(

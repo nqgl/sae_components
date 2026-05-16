@@ -51,7 +51,6 @@ if TYPE_CHECKING:
     from saeco.trainer.schedule_cfg import RunSchedulingConfig
 
 
-
 def deannotate(annotation):
     if get_origin(annotation) is Annotated:
         return deannotate(get_args(annotation)[0])

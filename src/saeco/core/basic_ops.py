@@ -77,5 +77,3 @@ class MatMul(Parallel):
             _support_parameters=True,
         )
         self.reduce(lambda input, weight: input @ weight)
-
-

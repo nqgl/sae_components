@@ -23,7 +23,9 @@ class NamedFilter:
         if not isinstance(value, Tensor):
             raise TypeError("NamedFilter.filter must be a torch.Tensor")
         if value.dtype is not torch.bool:
-            raise TypeError(f"NamedFilter.filter must have dtype bool, got {value.dtype}")
+            raise TypeError(
+                f"NamedFilter.filter must have dtype bool, got {value.dtype}"
+            )
         if value.ndim != 1:
             raise ValueError("NamedFilter.filter must be 1D over tokens")
 
@@ -47,5 +49,7 @@ class NamedFilter:
         return path
 
     @classmethod
-    def _filtered_dir_from_root_and_name(cls, root_path: Path, filter_name: str) -> Path:
+    def _filtered_dir_from_root_and_name(
+        cls, root_path: Path, filter_name: str
+    ) -> Path:
         return root_path / "filtered" / filter_name

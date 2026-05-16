@@ -31,8 +31,12 @@ def show(label: str, cfg: SweepableConfig) -> None:
     print(f"\n{label}\n{bar}")
     tree = cfg.sweep_info_tree
     print(f"  is_concrete:                       {cfg.is_concrete()}")
-    print(f"  swept_combinations (excl. vars):   {tree._swept_combinations_count_excluding_vars()}")
-    print(f"  swept_combinations (incl. vars):   {tree.swept_combinations_count_including_vars()}")
+    print(
+        f"  swept_combinations (excl. vars):   {tree._swept_combinations_count_excluding_vars()}"
+    )
+    print(
+        f"  swept_combinations (incl. vars):   {tree.swept_combinations_count_including_vars()}"
+    )
     if not cfg.is_concrete():
         sample = cfg.random_sweep_configuration()
         print(f"  random concrete sample:            {sample.model_dump()}")

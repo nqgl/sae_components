@@ -1,8 +1,3 @@
-
-
-
-
-
 from saeco.sweeps import SweepableConfig
 
 

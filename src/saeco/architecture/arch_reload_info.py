@@ -3,7 +3,7 @@ import inspect
 import json
 from pathlib import Path
 from types import get_original_bases
-from typing import TYPE_CHECKING, Any, Self
+from typing import Any, Self
 
 from paramsight.generic_restored_basemodel.typeref import ObjRef
 from pydantic import BaseModel, Field

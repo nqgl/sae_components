@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from contextlib import contextmanager
 from functools import cached_property
+from typing import cast
 
 import torch
 import torch.utils
@@ -337,13 +338,13 @@ class Trainer:
 
     def eval_step(self, x, y=None):
         if self.cfg.use_averaged_model:
-            model = self.averaged_model.module
+            model = cast(Trainable, self.averaged_model.module)
         else:
             model = self.trainable
         cache = self.make_cache(eval_mode=True)
         with torch.no_grad():
             with self.cast():
-                loss = model.loss(x, cache=cache, y=y, coeffs=self.coeffs())
+                _ = model.loss(x, cache=cache, y=y, coeffs=self.coeffs())
         self.eval_log(cache)
         cache.destruct()
 

@@ -50,7 +50,11 @@ class Features:
                 # Prefer deterministic ordering.
                 candidates = sorted(
                     (p for p in feat_dir.iterdir() if p.name.startswith("feature")),
-                    key=lambda p: int(p.name.removeprefix("feature")) if p.name.removeprefix("feature").isdigit() else p.name,
+                    key=lambda p: (
+                        int(p.name.removeprefix("feature"))
+                        if p.name.removeprefix("feature").isdigit()
+                        else p.name
+                    ),
                 )
                 return tuple(SparseGrowingDiskTensor.open(path=p) for p in candidates)
             except FileNotFoundError:
@@ -62,7 +66,9 @@ class Features:
     def __len__(self) -> int:
         return len(self.feature_tensors)
 
-    def get_active(self, key: int | Tensor | Sequence[int]) -> FilteredTensor | list[FilteredTensor]:
+    def get_active(
+        self, key: int | Tensor | Sequence[int]
+    ) -> FilteredTensor | list[FilteredTensor]:
         """
         Convenience: return feature(s) with inactive tokens removed.
         """
@@ -76,7 +82,9 @@ class Features:
     @overload
     def __getitem__(self, key: int) -> FilteredTensor: ...
 
-    def __getitem__(self, key: int | Tensor | Sequence[int]) -> FilteredTensor | list[FilteredTensor]:
+    def __getitem__(
+        self, key: int | Tensor | Sequence[int]
+    ) -> FilteredTensor | list[FilteredTensor]:
         if isinstance(key, Tensor) or not isinstance(key, int):
             if isinstance(key, Tensor):
                 if key.dtype != torch.long:

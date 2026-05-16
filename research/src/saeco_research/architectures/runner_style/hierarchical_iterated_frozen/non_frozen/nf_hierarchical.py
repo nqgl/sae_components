@@ -121,8 +121,6 @@ class HSAELayer(cl.Module):
         return acts
 
 
-
-
 class HSAE(cl.Module):
     def __init__(self, init: Initializer, cfg: HSAEConfig):
         super().__init__()

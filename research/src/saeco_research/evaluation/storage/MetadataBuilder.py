@@ -42,7 +42,9 @@ class MetadataBuilder:
             return
         if not all(self._chunks_done):
             missing = [i for i, ok in enumerate(self._chunks_done) if not ok]
-            raise RuntimeError(f"MetadataBuilder not finished; missing chunks: {missing}")
+            raise RuntimeError(
+                f"MetadataBuilder not finished; missing chunks: {missing}"
+            )
         self._done = True
 
     def __iter__(self) -> Iterator[Chunk]:
@@ -71,7 +73,9 @@ class MetadataBuilder:
     def takestrl(self, v: list[str]) -> None:
         if self._value.dtype != torch.long:
             raise TypeError("takestrl requires a long dtype target")
-        ids = torch.tensor([self.getlabel(s) for s in v], dtype=torch.long, device=self._value.device)
+        ids = torch.tensor(
+            [self.getlabel(s) for s in v], dtype=torch.long, device=self._value.device
+        )
         self << ids
 
     def getlabel(self, s: str) -> int:
@@ -131,14 +135,18 @@ class FilteredBuilder:
     def value(self) -> FilteredTensor:
         self.finish()
         # Wrap final tensor with filter
-        return FilteredTensor.from_unmasked_value(self._value, filter_obj=self._filter, presliced=False)
+        return FilteredTensor.from_unmasked_value(
+            self._value, filter_obj=self._filter, presliced=False
+        )
 
     def finish(self) -> None:
         if self._done:
             return
         if not all(self._chunks_done):
             missing = [i for i, ok in enumerate(self._chunks_done) if not ok]
-            raise RuntimeError(f"FilteredBuilder not finished; missing chunks: {missing}")
+            raise RuntimeError(
+                f"FilteredBuilder not finished; missing chunks: {missing}"
+            )
         self._done = True
 
     def __iter__(self) -> Iterator[Chunk]:
@@ -166,7 +174,9 @@ class FilteredBuilder:
     def takestrl(self, v: list[str]) -> None:
         if self._value.dtype != torch.long:
             raise TypeError("takestrl requires a long dtype target")
-        ids = torch.tensor([self.getlabel(s) for s in v], dtype=torch.long, device=self._value.device)
+        ids = torch.tensor(
+            [self.getlabel(s) for s in v], dtype=torch.long, device=self._value.device
+        )
         self << ids
 
     def getlabel(self, s: str) -> int:
