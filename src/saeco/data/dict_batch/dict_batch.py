@@ -779,7 +779,10 @@ class DictBatch(dict):
         return cls(data, **other)
 
     def _construct_with_copied_other_data(self, data: dict[str, Any]) -> Self:
-        return self.cast_convert(data, **self._get_other_dict())
+        # `data` already has the correct (possibly nested) structure — going
+        # through cast_convert would flatten nested DictBatch values and, for
+        # untyped DictBatch, fail to re-nest them. Construct directly instead.
+        return self.construct_with_other_data(data, self._get_other_dict())
 
     # -- simple rule: enjoy equal extras or keep first; can customise in subclass
     @classmethod
@@ -953,6 +956,21 @@ class DictBatch(dict):
         cls.FIELD_DEFAULTS = merged_tensor_defaults
         cls.OTHER_FIELD_DEFAULTS = merged_other_defaults
 
+        # A tensor field declared with a default (e.g. `a: Tensor =
+        # dictbatch_field(...)` or `c: Tensor | None = None`) leaves that
+        # default as a class attribute, which shadows __getattr__ so
+        # `batch.a` returns the raw default instead of the stored tensor.
+        # The default is already captured in FIELD_DEFAULTS, so drop the
+        # class attribute and let attribute access fall through to the dict.
+        for name in merged_tensor:
+            if name in cls.__dict__:
+                attr = cls.__dict__[name]
+                if isinstance(attr, (property, cached_property)):
+                    continue
+                if callable(attr) and not isinstance(attr, type):
+                    continue
+                delattr(cls, name)
+
         return cls
 
     def float(self):
@@ -977,7 +995,19 @@ class DictBatch(dict):
         return self.apply_func(gather)
 
     def apply_func(self, func: Callable[[Tensor], Tensor]) -> Self:
-        return self._construct_with_copied_other_data(self._apply(func, pass_none=True))
+        new_data: dict[str, Any] = {}
+        for k, v in self.items():
+            if v is None:
+                new_data[k] = None
+            elif isinstance(v, Tensor):
+                new_data[k] = func(v)
+            elif isinstance(v, DictBatch):
+                # Recurse so nested batches keep their structure (and type)
+                # instead of being flattened into dotted keys.
+                new_data[k] = v.apply_func(func)
+            else:
+                raise TypeError(f"Unexpected value type in DictBatch: {type(v)}")
+        return self._construct_with_copied_other_data(new_data)
 
     @overload
     def _apply[T](

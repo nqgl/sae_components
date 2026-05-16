@@ -50,6 +50,8 @@ def test_raw_text_pack(gpt2_tokenizer, tmp_path):
         packing=PackingMode.PACK,
         map_num_proc=None,
         map_batch_size=2,
+        # These are tiny smoke-test inputs; don't drop them on length.
+        min_seq_len=0,
     )
     otf = OnTheFlyTokenizer(
         cfg=_make_cfg(hf, tcfg, seq_len=16),
@@ -108,6 +110,8 @@ def test_conversation_pad(gpt2_tokenizer):
         mode=TokenizationMode.CONVERSATION,
         packing=PackingMode.PAD,
         messages_column="messages",
+        # These are tiny smoke-test inputs; don't drop them on length.
+        min_seq_len=0,
     )
     otf = OnTheFlyTokenizer(
         cfg=_make_cfg(hf, tcfg, seq_len=32),
@@ -207,6 +211,8 @@ def test_gemma_style_chat_template_roundtrip(gpt2_tokenizer):
         messages_column="messages",
         # No generation prompt — we're tokenizing finished assistant turns.
         chat_template_kwargs={"add_generation_prompt": False},
+        # These are tiny smoke-test inputs; don't drop them on length.
+        min_seq_len=0,
     )
     otf = OnTheFlyTokenizer(
         cfg=_make_cfg(hf, tcfg, seq_len=64),
@@ -244,6 +250,8 @@ def test_chat_template_kwargs_passed_through_enable_thinking(gpt2_tokenizer):
             packing=PackingMode.PAD,
             messages_column="messages",
             chat_template_kwargs=chat_kwargs,
+            # These are tiny smoke-test inputs; don't drop them on length.
+            min_seq_len=0,
         )
         otf = OnTheFlyTokenizer(
             cfg=_make_cfg(hf, tcfg, seq_len=64),
