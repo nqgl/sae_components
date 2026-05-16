@@ -307,6 +307,4 @@ class HasFeaturesProperty(Protocol):
     def features(self) -> dict[str, FeaturesParam]: ...
 
 
-HasFeatures: TypeAlias = (
-    HasFeaturesProperty | HasFeaturesCachedProperty | HasFeaturesAttr
-)
+type HasFeatures = HasFeaturesProperty | HasFeaturesCachedProperty | HasFeaturesAttr

@@ -13,7 +13,6 @@ def bufferized_iter(it, queue_size=32, getnext=next):
                 queue.append(getnext(it))
         except StopIteration:
             print("buffer depleted")
-        for x in queue:
-            yield x
+        yield from queue
 
     return qbuf()
