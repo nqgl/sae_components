@@ -21,7 +21,7 @@ sweeping, and remote orchestration.
   `OrthogonalizeFeatureGradsMixin` attach to layers declaratively and
   participate in the standard training loop.
 
-See [DESIGN.md](DESIGN.md) for the rationale behind these choices.
+See [docs/architecture.md](docs/architecture.md) for the rationale behind these choices.
 
 ## Installation
 
