@@ -78,9 +78,10 @@ class GrowingDiskTensor[
 
     @property
     def valid_tensor(self):
-        written_slice = [slice(None)] * self.cat_axis + [
-            slice(None, self.metadata.shape[self.cat_axis])
-        ]
+        written_slice = tuple(
+            [slice(None)] * self.cat_axis
+            + [slice(None, self.metadata.shape[self.cat_axis])]
+        )
         return self.tensor[written_slice]
 
     def finalize(self):

@@ -121,9 +121,14 @@ def _sparse_row_mask(v: Tensor, mask: Tensor) -> Tensor:
     new_idx = torch.cat([new_rows.unsqueeze(0), idx[1:, keep]], dim=0)
 
     new_size = (n_selected,) + tuple(v.shape[1:])
-    return torch.sparse_coo_tensor(
-        new_idx, vals[keep], new_size, device=v.device, dtype=v.dtype
-    ).coalesce()
+    # Indices are valid by construction (remapped from an already-coalesced
+    # sparse tensor, bounded by `n_selected`/`v.shape`), and this runs over
+    # large sparse activation tensors, so explicitly opt out of the invariant
+    # check rather than relying on the (warned-about) implicit global default.
+    with torch.sparse.check_sparse_tensor_invariants(False):
+        return torch.sparse_coo_tensor(
+            new_idx, vals[keep], new_size, device=v.device, dtype=v.dtype
+        ).coalesce()
 
 
 def _device_of(x: Indexable) -> torch.device:
