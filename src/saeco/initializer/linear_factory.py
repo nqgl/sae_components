@@ -172,7 +172,6 @@ class LinearFactory:
         assert self.d_out % bf == 0
 
         lin = nn.Linear(self.d_in, self.d_out // bf, bias=True)
-        ll = self.raw.weight.data
         # v = einops.rearrange(ll, "(i bf) q -> i bf q", bf=bf).sum(dim=-2)
         # v = einops.rearrange(ll, "(bf i) q -> bf i q", bf=bf).sum(dim=0)
         # lin.weight.data[:] = v * (ll.std() / v.std(dim=0, keepdim=True))

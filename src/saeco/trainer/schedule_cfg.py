@@ -1,14 +1,11 @@
-# %%
 from collections.abc import Callable
 from functools import wraps
 from typing import Optional
 
 from saeco.sweeps import SweepableConfig
+from saeco.trainer.tosteps_wrapper import ResFloat, RunFloat, tosteps_wrapper
 
 AmbiguousTypes = [Optional[int | float], int | float]
-# Run length
-# ", resample period
-from saeco.trainer.tosteps_wrapper import ResFloat, RunFloat, tosteps_wrapper
 
 
 def assert_wrapped(fn):
@@ -46,7 +43,8 @@ class RunSchedulingConfig(SweepableConfig):
     targeting_warmup_length: int | RunFloat = 0.15
     targeting_pre_deflation: float | None = None
 
-    ### lr scheduler # this is not quite the continuous pretraining scheduler, seems fine though
+    ### lr scheduler
+    # this is not quite the continuous pretraining scheduler, seems fine though
     lr_warmup_length: int | RunFloat = 2_000
     lr_end_plateau_length: int | RunFloat = 0
     lr_cooldown_length: int | RunFloat = 0.2
@@ -56,7 +54,6 @@ class RunSchedulingConfig(SweepableConfig):
     lr_resample_warmup_factor: float = 0.1
     lr_geometric_rescale: bool = True
 
-    # def model_post_init(self):
     @property
     def step_scheduler(self) -> "RunSchedulingConfig":
         return tosteps_wrapper(self.__class__)(_raw=self)
@@ -133,7 +130,6 @@ class RunSchedulingConfig(SweepableConfig):
     @assert_wrapped
     def _lr_scale2(self, t: int, interpolator: Callable) -> float:
         re_lr = 1
-        endmin = 1
         if self.lr_resample_warmup_length and (resample_t := self.resample_t(t)) != -1:
             re_lr = interpolator(
                 min(resample_t / self.lr_resample_warmup_length, 1),

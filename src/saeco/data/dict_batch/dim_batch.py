@@ -702,7 +702,6 @@ from typing import (
     Any,
     ClassVar,
     get_args,
-    get_origin,
 )
 
 import torch
@@ -954,7 +953,6 @@ def _parse_shape_spec_from_hint(hint, cls) -> list[AxisSpec] | None:
     Returns None if we can't find a shape spec (fallback later).
     """
     try:
-        origin = get_origin(hint)
         args = get_args(hint)
         # jaxtyping-like: Int[Tensor, <shape>]
         if args and len(args) >= 2:
@@ -1082,7 +1080,7 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
                             pass
                     else:
                         # if none known, try to set exactly one by size matching
-                        matches = [
+                        _matches = [
                             d
                             for d in ax.union
                             if (d._const_len or t.shape[i])

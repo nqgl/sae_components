@@ -152,7 +152,7 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         self.index = index
 
     def post_backward_hook(self):
-        g = self.orthogonalize_feature_grads()
+        self.orthogonalize_feature_grads()
 
     @torch.no_grad()
     def orthogonalize_feature_grads(self):

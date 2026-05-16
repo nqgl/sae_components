@@ -161,7 +161,7 @@ class SweepManager:
     ):
         with self.created_pods(new_pods, keep=keep_after, setup_min=setup_min) as pods:
             print("running on remotes")
-            task = pods.runpy_with_monitor(
+            pods.runpy_with_monitor(
                 self.get_worker_run_command(),
                 purge_after=purge_after,
                 challenge_file=challenge_file,
@@ -180,7 +180,7 @@ class SweepManager:
             total_pods, create_n=new_pods, keep=keep_after, setup_min=setup_min
         ) as pods:
             print("running on remotes")
-            task = pods.runpy_with_monitor(
+            pods.runpy_with_monitor(
                 self.get_worker_run_commands_for_manual_sweep(),
                 purge_after=purge_after,
                 challenge_file=None,

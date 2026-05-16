@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Protocol, TypeAlias, overload, runtime_checkable
+from typing import Protocol, overload, runtime_checkable
 
 import torch
 import torch.nn as nn

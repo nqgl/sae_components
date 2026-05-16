@@ -43,7 +43,6 @@ def inv2(x: torch.Tensor) -> torch.Tensor:
 
 
 def inv(x: torch.Tensor) -> torch.Tensor:
-    h = 1
     r = 1.5
     ri = r - 1
     a = 2

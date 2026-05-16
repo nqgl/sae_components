@@ -29,7 +29,7 @@ def modified_H2(n):
             thresh_grad = -1 / eps * kernel((z - thresh) / eps) * grad_output
             b = z.shape[0]
 
-            adjustment = shrinkgrad_adjustment(
+            _adjustment = shrinkgrad_adjustment(
                 torch.where((~(z > thresh)) & (z > 0), z, 0),
                 leniency=leniency,
                 dd=dd,

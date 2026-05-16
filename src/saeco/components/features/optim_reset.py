@@ -45,11 +45,6 @@ class ResetToDirections(OptimFieldResetValue):
         feat_mask,
         new_directions,
     ):
-        if (feat_mask).all():
-            other = ft_optim_field_state[:]
-        else:
-            other = ft_optim_field_state[~feat_mask]
-        # mean_len = other.norm(dim=-1).mean()
         return (
             new_directions
             / new_directions.norm(dim=1, keepdim=True)

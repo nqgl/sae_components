@@ -5,7 +5,6 @@ import torch
 
 from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.growing_disk_tensor import (
-    SAECO_MIN_GDT_INITIAL_BYTES,
     GrowingDiskTensor,
 )
 
@@ -84,7 +83,6 @@ class TestGrowingDiskTensorCreate:
             dtype=torch.float32,
         )
 
-        expected_initial_nnz = SAECO_MIN_GDT_INITIAL_BYTES // torch.float32.itemsize
         assert gdt.storage_len > 0
 
 

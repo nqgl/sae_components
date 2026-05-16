@@ -540,7 +540,6 @@ def main():
     class TC(Cache):
         tf = ...
 
-    c = Cache()
     tc = TC()
     tc2 = TC()
 
