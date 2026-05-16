@@ -21,6 +21,7 @@ from saeco import SweepableConfig, SweepVar, Swept, Val
 class TrainCfg(SweepableConfig):
     lr: float = 1e-3
     batch_size: int = 4096
+    num_steps: int = 50_000
     pre_bias: bool = False
     l0_target: int = 50
 
@@ -57,29 +58,35 @@ show("2) Gridded with two Swept axes", gridded)
 
 # ---------------------------------------------------------------------------
 # 3) A `SweepVar` is a *named* sweep axis that can be referenced from
-#    multiple fields. Each value of the var produces one run, regardless
-#    of how many fields the var feeds into.
+#    multiple fields. Each value of the var produces one run regardless
+#    of how many fields it feeds into, so coupled fields move *together*
+#    on one axis instead of forming a cross-product.
+#
+#    Example: a compute-allocation equivalence sweep. Hold the total
+#    token budget fixed (512 * 2**16) while varying batch size, to check
+#    whether results are invariant to how a fixed budget is allocated
+#    between batch size and step count.
 # ---------------------------------------------------------------------------
-batch_size_mult = SweepVar(1, 2, 4, name="batch_size_mult")
+batch_size_weight = SweepVar(1, 2, 4, 8, 16, name="batch_size_weight")
 
-with_var = TrainCfg(
-    lr=1e-3,
-    # The same SweepVar feeds two fields. The grid still has 3 runs
-    # (not 9), because it's one axis.
-    batch_size=batch_size_mult * 4096,
-    l0_target=batch_size_mult * 25,  # vary l0_target proportionally
+flop_equiv = TrainCfg(
+    batch_size=Val(value=512) * batch_size_weight,
+    num_steps=Val(value=2**16) // batch_size_weight,
 )
-show("3) Single SweepVar feeding two fields", with_var)
+# 5 runs (one per var value), not 25 — batch_size and num_steps are
+# locked to a single axis, and batch_size * num_steps stays ~constant.
+show("3) SweepVar: fixed-budget allocation sweep", flop_equiv)
 
 
 # ---------------------------------------------------------------------------
 # 4) Combine: a Swept axis + a SweepVar axis -> outer product.
-#    2 * 3 = 6 runs; lr varies on one axis, batch_size_mult on the other.
+#    2 * 5 = 10 runs; lr varies on one axis, the budget allocation on
+#    the other.
 # ---------------------------------------------------------------------------
 combined = TrainCfg(
     lr=Swept(1e-3, 3e-4),
-    batch_size=batch_size_mult * 4096,
-    l0_target=batch_size_mult * 25,
+    batch_size=Val(value=512) * batch_size_weight,
+    num_steps=Val(value=2**16) // batch_size_weight,
 )
 show("4) Combined Swept + SweepVar", combined)
 

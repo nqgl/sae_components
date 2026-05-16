@@ -24,6 +24,7 @@ from sweepable import SweepableConfig, SweepVar, Swept, Val
 class TrainCfg(SweepableConfig):
     lr: float = 1e-3
     batch_size: int = 4096
+    num_steps: int = 50_000
     pre_bias: bool = False
 
 
@@ -40,14 +41,16 @@ print(grid.sweep_info_tree.swept_combinations_count_including_vars())  # 6
 print(grid.random_sweep_configuration())  # one randomly-selected concrete config
 
 # A SweepVar is a *named* sweep axis that can be referenced from
-# multiple fields. Each value of the var produces one run, regardless
-# of how many fields it feeds into.
-batch_mult = SweepVar(1, 2, 4, name="batch_mult")
-shared_axis = TrainCfg(
-    batch_size=Val(value=4096) * batch_mult,
-    # ...could put another field that also depends on batch_mult here.
+# multiple fields. Each value produces one run regardless of how many
+# fields it feeds into, so coupled fields move together on one axis.
+# Here: hold the token budget (512 * 2**16) fixed while varying batch
+# size — a compute-allocation equivalence sweep.
+w = SweepVar(1, 2, 4, 8, 16, name="batch_size_weight")
+budget = TrainCfg(
+    batch_size=Val(value=512) * w,
+    num_steps=Val(value=2**16) // w,
 )
-print(shared_axis.sweep_info_tree.swept_combinations_count_including_vars())  # 3
+print(budget.sweep_info_tree.swept_combinations_count_including_vars())  # 5
 ```
 
 ## Public API

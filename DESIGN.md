@@ -1,7 +1,6 @@
 # Design notes
 
-> Draft. This documents the *why* behind saeco's structure — the
-> engineering decisions, not the SAE math. Feedback/edits welcome.
+> Draft.
 
 ## The problem
 
@@ -51,8 +50,10 @@ the introspectability that config files are usually chosen for.
 
 The cost: there's framework magic (metaclass-ish field collection) a
 reader has to learn once. The bet is that "learn one pattern, then every
-architecture is ~30 lines" beats "no magic, but every architecture
-re-implements the training wiring."
+architecture is ~30-300 lines" beats "no magic, but every architecture
+re-implements the training wiring." Enabling fast research iteration
+weights values towards speed of implementation and standardization (for the sake of easy comparison)
+versus readability and low magic. # todo wording on this 
 
 ## Sweeping is a property of the config, not a separate system
 
@@ -73,8 +74,9 @@ RunConfig[VanillaConfig](
 a config plus a sweep YAML that references config paths by string —
 means the sweep spec can silently drift from the config schema. Making
 the sweep live *in* the config keeps it type-checked against the same
-model, lets a `SweepVar` couple several fields onto one axis (vary
-`batch_size` and `warmup` together, not as a cross-product), and means
+model, lets a `SweepVar` couple several fields onto one axis (e.g.
+hold a compute budget fixed while varying batch size, not as a
+cross-product), and means
 "a sweep" and "a run" are the same type — `is_concrete()` is the only
 distinction. The sweep machinery is also the lowest-dependency part of
 the codebase, which is why it could be extracted (see below).
@@ -96,9 +98,9 @@ to PyPI on its own. `saeco` is the polished, API-stable surface.
 — exploratory architectures, the evaluation API, analysis GUIs.
 
 **Why the split?** It lets the library have an API contract without
-throwing away in-progress work or pretending everything is stable. A
-reviewer (or user) can tell at a glance what's load-bearing
-(`src/saeco/`) versus what's a research notebook (`research/`). The
+throwing away in-progress work or pretending everything is stable.
+What's load-bearing (`src/saeco/`) versus a research notebook
+(`research/`) is obvious at a glance. The
 dependency arrows only point one way, so nothing in the stable layer
 reaches into scratch code. The boundary is enforced mechanically:
 packaging only ships `src/saeco`, CI lints/tests each layer, and a
@@ -127,16 +129,11 @@ bespoke training loop.
 - **No plugin/registry layer.** Architectures are imported and used
   directly; there's no string-keyed registry. Fewer indirections,
   easier to follow.
-- **No backwards-compat shims across the research boundary.** Moving a
-  module out of the library replaces the old path with a tombstone that
-  raises with migration instructions, rather than a silent forwarding
-  shim. Loud beats subtly-wrong.
 - **Logging is W&B-backed today.** A backend-agnostic logging layer
   (`saeco.mlog`) exists and is being migrated to; the abstraction is
   intentionally thin until the second backend justifies more.
 - **Python 3.13 only.** The architecture-config typing uses PEP 695
-  generics; supporting older Pythons would mean a meaningfully worse
-  type story for a small audience-size gain.
+  generics; these are too nice to give up.
 
 ## Map
 

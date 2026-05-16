@@ -88,14 +88,16 @@ class SweepVar(SweepExpression[T]):
     """A named sweep axis, shareable across fields.
 
     Each value of the var produces one run regardless of how many fields
-    reference it — so several fields can vary together on a single axis
-    instead of forming an outer product::
+    reference it, so coupled fields move *together* on a single axis
+    instead of forming an outer product. Handy for equivalence sweeps
+    that hold a budget fixed while changing its allocation::
 
-        bs = SweepVar(1, 2, 4, name="bs_mult")
+        # constant token budget (512 * 2**16), varied batch size
+        w = SweepVar(1, 2, 4, 8, 16, name="batch_size_weight")
         Cfg(
-            batch_size=bs * Val(value=4096),
-            warmup=bs * Val(value=500),
-        )  # 3 runs, not 9 — batch_size and warmup move together
+            batch_size=Val(value=512) * w,
+            num_steps=Val(value=2**16) // w,
+        )  # 5 runs, not 25 — batch_size and num_steps share one axis
     """
 
     values: list[T]
