@@ -69,7 +69,8 @@ class CustomSweeper:
                     f"{cfg.get_hash()} != {sweep_hash} but {wow_match_weird} matches"
                 )
             raise ValueError(
-                f"{cfg.get_hash()} != {sweep_hash}, and didn't match other options either"
+                f"{cfg.get_hash()} != {sweep_hash}, "
+                "and didn't match other options either"
             )
         self._sweep_inst_config = selective_instance_sweep_dict
         if project:
@@ -93,8 +94,10 @@ class CustomSweeper:
                 "sweep_id": sweep_data.sweep_id,
                 "sweep_index": sweep_index,
                 "sweep_hash": sweep_hash,
-                "sweep_expressions": self.root_config.get_sweepexpression_instantiations(
-                    selective_instance_sweep_dict
+                "sweep_expressions": (
+                    self.root_config.get_sweepexpression_instantiations(
+                        selective_instance_sweep_dict
+                    )
                 ),
             },
         )
@@ -275,7 +278,8 @@ class WandbCustomLogger:
                     f"{cfg.get_hash()} != {sweep_hash} but {wow_match_weird} matches"
                 )
             raise ValueError(
-                f"{cfg.get_hash()} != {sweep_hash}, and didn't match other options either"
+                f"{cfg.get_hash()} != {sweep_hash}, "
+                "and didn't match other options either"
             )
 
         self._sweep_inst_config = selective_instance_sweep_dict
@@ -417,7 +421,8 @@ class BaseLogger[RunT]:
                     f"{cfg.get_hash()} != {sweep_hash} but {wow_match_weird} matches"
                 )
             raise ValueError(
-                f"{cfg.get_hash()} != {sweep_hash}, and didn't match other options either"
+                f"{cfg.get_hash()} != {sweep_hash}, "
+                "and didn't match other options either"
             )
         self._sweep_inst_config = selective_instance_sweep_dict
         if project:
@@ -438,8 +443,10 @@ class BaseLogger[RunT]:
                 "sweep_id": sweep_data.sweep_id,
                 "sweep_index": sweep_index,
                 "sweep_hash": sweep_hash,
-                "sweep_expressions": self.root_config.get_sweepexpression_instantiations(
-                    selective_instance_sweep_dict
+                "sweep_expressions": (
+                    self.root_config.get_sweepexpression_instantiations(
+                        selective_instance_sweep_dict
+                    )
                 ),
             },
         )

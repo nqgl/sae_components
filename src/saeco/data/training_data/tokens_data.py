@@ -33,7 +33,9 @@ class TokensData(TokensDataInterface[torch.Tensor]):
         dataset_document_length = data.shape[1]
         if dataset_document_length % self.seq_len != 0:
             tqdm.tqdm.write(
-                f"Document length {dataset_document_length} is not a multiple of the requested sequence length {self.seq_len}, truncating documents"
+                f"Document length {dataset_document_length} is not a "
+                f"multiple of the requested sequence length {self.seq_len}, "
+                "truncating documents"
             )
             input("Press enter to continue and acknowledge this warning")
             data = data[:, : self.seq_len * (dataset_document_length // self.seq_len)]
@@ -61,7 +63,8 @@ class TokensData(TokensDataInterface[torch.Tensor]):
             docs = self.src_dataset_data
         if self.dataset_document_length < self.seq_len:
             raise ValueError(
-                f"Document length {self.dataset_document_length} is less than the requested sequence length {self.seq_len}"
+                f"Document length {self.dataset_document_length} is less "
+                f"than the requested sequence length {self.seq_len}"
             )
         # Only force first-token BOS for the pretokenized path. When tokenizing
         # on-the-fly, the tokenizer (or chat template) already injects BOS
@@ -187,7 +190,8 @@ class TokensData(TokensDataInterface[torch.Tensor]):
             // self.cfg.generation_config.tokens_per_pile
         )
         assert num_piles <= piler.metadata.num_piles, (
-            f"{num_tokens}, {self.cfg.generation_config.tokens_per_pile}, {piler.num_piles}"
+            f"{num_tokens}, {self.cfg.generation_config.tokens_per_pile}, "
+            f"{piler.num_piles}"
         )
         tokens = piler[0:num_piles]
         assert (
@@ -219,11 +223,14 @@ class PermutedDocs:
         if self.cfg.seq_len:
             if seq_len < self.cfg.seq_len:
                 raise ValueError(
-                    f"Document length {seq_len} is less than the requested sequence length {self.cfg.seq_len}"
+                    f"Document length {seq_len} is less than the "
+                    f"requested sequence length {self.cfg.seq_len}"
                 )
             elif seq_len != self.cfg.seq_len:
                 input(
-                    f"Warning: document lengths {seq_len} is longer than seq_len, so documents will be truncated. Press enter to continue"
+                    f"Warning: document lengths {seq_len} is longer than "
+                    "seq_len, so documents will be truncated. "
+                    "Press enter to continue"
                 )
         return dataset
 
