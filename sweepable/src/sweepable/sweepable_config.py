@@ -264,12 +264,14 @@ class SweepableConfig(GenericBaseModel, metaclass=SweepableMeta):
     _legacy_hash_mappings: ClassVar[dict[str, str]] = {}
 
     def __setattr__(self, name: str, value: Any) -> None:
-        self.__dict__.pop("to_swept_nodes", None)
+        # Derive the cache key from the descriptor so renaming the
+        # cached_property can't silently desync invalidation.
+        self.__dict__.pop(self.__class__.sweep_info_tree.attrname, None)
         super().__setattr__(name, value)
 
     def model_copy(self, *args, **kwargs) -> Self:
         copy = super().model_copy(*args, **kwargs)
-        copy.__dict__.pop("to_swept_nodes", None)
+        copy.__dict__.pop(self.__class__.sweep_info_tree.attrname, None)
         return copy
 
     def is_concrete(self):
