@@ -19,7 +19,7 @@ train_cfg = TrainConfig(
     },
     lr=1e-3,
     use_autocast=True,
-    wandb_cfg=dict(project=PROJECT),
+    wandb_cfg={"project": PROJECT},
     l0_target_adjustment_size=0.0003,
     batch_size=4096,
     use_lars=True,

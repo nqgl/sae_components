@@ -71,9 +71,10 @@ class Collection(Module):
             raise ValueError(
                 "key.start and key.stop must be of the same type (int or str)"
             )
-        assert "_support_parameters" not in items and "_support_modules" not in items
+        assert "_support_parameters" not in items
+        assert "_support_modules" not in items
         return self.__class__(
             _support_parameters=self._support_parameters,
             _support_modules=self._support_modules,
-            **{k: v for k, v in items},
+            **dict(items),
         )

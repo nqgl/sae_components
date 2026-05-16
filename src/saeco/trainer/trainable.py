@@ -196,7 +196,7 @@ class Trainable(cl.Module):
                 normal.append(param)
         groups = [{"name": "normal", "params": normal}]
         for kvs, params in has_metadata.items():
-            groups.append({"params": params, **{k: v for k, v in kvs}})
+            groups.append({"params": params, **dict(kvs)})
         assert sum(len(g["params"]) for g in groups) == len(list(self.parameters())), (
             "param_groups did not cover all parameters"
         )

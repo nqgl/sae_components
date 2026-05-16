@@ -107,7 +107,8 @@ class RunSchedulingConfig(SweepableConfig):
         assert 0 <= n
         if isinstance(n, int):
             return n
-        assert isinstance(n, float) and n <= 1
+        assert isinstance(n, float)
+        assert n <= 1
         period = period or self.run_length
         return n * period
 
@@ -116,13 +117,15 @@ class RunSchedulingConfig(SweepableConfig):
         if self.lr_geometric_rescale:
 
             def interpolate(scale, factor):
-                assert 0 < factor <= 1 and 0 <= scale <= 1
+                assert 0 < factor <= 1
+                assert 0 <= scale <= 1
                 return factor ** (1 - scale)
 
         else:
 
             def interpolate(scale, factor):
-                assert 0 <= factor <= 1 and 0 <= scale <= 1
+                assert 0 <= factor <= 1
+                assert 0 <= scale <= 1
                 return max(scale, factor)
 
         return self._lr_scale2(t, interpolate)

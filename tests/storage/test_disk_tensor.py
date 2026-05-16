@@ -28,7 +28,7 @@ class TestDiskTensorMetadata:
         assert meta.dtype == torch.int64
 
     @pytest.mark.parametrize(
-        "dtype_str,expected",
+        ("dtype_str", "expected"),
         [
             ("torch.float32", torch.float32),
             ("torch.int64", torch.int64),
@@ -44,7 +44,7 @@ class TestDiskTensorMetadata:
 
 class TestNumelFromShape:
     @pytest.mark.parametrize(
-        "shape,expected",
+        ("shape", "expected"),
         [
             ([10], 10),
             ([10, 10], 100),

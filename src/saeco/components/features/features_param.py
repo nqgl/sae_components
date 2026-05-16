@@ -32,7 +32,7 @@ class OptimFieldFeatures:
     def __getitem__(self, i: str) -> Mapping[IndexType, Tensor]: ...
 
     def parse_index_field(self, i):
-        if isinstance(i, tuple) and any([isinstance(el, str) for el in i]):
+        if isinstance(i, tuple) and any(isinstance(el, str) for el in i):
             assert len(i) == 2
             if isinstance(i[0], str):
                 field, index = i

@@ -110,7 +110,7 @@ class L1(Metric):
 class ActMetrics(Metrics):
     def __init__(self, name=None, globalize_cache=True, **kwargs):
         self.name = name
-        d = dict(L1=L1(), L0=L0())
+        d = {"L1": L1(), "L0": L0()}
         if "acts" in kwargs:
             raise ValueError("acts is a reserved keyword")
         super().__init__(**d, **kwargs, acts=cl.ops.Identity())

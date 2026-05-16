@@ -118,7 +118,7 @@ def main():
     www.apply(do_post_backward)
     print(www.wrapped)
     print(www.wrapped.wrapped.wrapped)
-    print([p for p in www.named_parameters()])
+    print(list(www.named_parameters()))
     # print(model1)
 
 

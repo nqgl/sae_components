@@ -445,7 +445,7 @@ class Cache:
         return a
 
     def destruct(self):
-        for k, cache in [i for i in self._subcaches.items()]:
+        for k, cache in list(self._subcaches.items()):
             cache.destruct()
             del self._subcaches[k]
             del cache

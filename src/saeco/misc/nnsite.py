@@ -44,7 +44,7 @@ ROOT = "transformer"
 
 
 def tlsite_to_nnsite(tl_name):
-    while any([k in tl_name for k in translations.keys()]):
+    while any(k in tl_name for k in translations.keys()):
         for k, v in translations.items():
             tl_name = tl_name.replace(k, v)
     return f"{ROOT}.{tl_name}"

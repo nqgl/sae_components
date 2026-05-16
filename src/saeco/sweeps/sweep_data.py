@@ -58,7 +58,7 @@ class SweepData[T: SweepableConfig = SweepableConfig](BaseModel):
     def save(self, path: Path | None):
         if self.sweep_id is None:
             self.sweep_id = self.get_sweep_number()
-        elif not any([c.isnumeric() for c in self.sweep_id]):
+        elif not any(c.isnumeric() for c in self.sweep_id):
             self.sweep_id += str(self.get_sweep_number(self.sweep_id))
         if path is None:
             path = Path(f"./sweeprefs/{self.project}/{self.sweep_id}.sweepdata")

@@ -2,7 +2,7 @@
 
 # %%
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -82,7 +82,8 @@ class ResetToAxisMean(OptimFieldResetValue):
         if (feat_mask).all():
             v = ft_optim_field_state[:].mean(0) * self.num
         v = ft_optim_field_state[~feat_mask].mean(0) * self.num
-        assert v.ndim == 1 and v.shape == param.features[0].shape
+        assert v.ndim == 1
+        assert v.shape == param.features[0].shape
         return v
 
 
@@ -97,7 +98,8 @@ class OptimFieldResetSqMeanFeatAx(OptimFieldResetValue):
         if (feat_mask).all():
             v = ft_optim_field_state[:].pow(2).mean(0).sqrt() * self.num
         v = ft_optim_field_state[~feat_mask].pow(2).mean(0).sqrt() * self.num
-        assert v.ndim == 1 and v.shape == param.features[0].shape
+        assert v.ndim == 1
+        assert v.shape == param.features[0].shape
         return v
 
 
@@ -114,7 +116,7 @@ class OptimFieldResetSqMean(OptimFieldResetValue):
         return ft_optim_field_state[~feat_mask].pow(2).mean(0).sqrt() * self.num
 
 
-class FeatureParamType(str, Enum):
+class FeatureParamType(StrEnum):
     bias = "bias"
     dec = "dec"
     enc = "enc"
@@ -123,12 +125,12 @@ class FeatureParamType(str, Enum):
 
 from saeco.sweeps import SweepableConfig
 
-b2_techniques = dict(
-    mean=ResetToMean,
-    sq=OptimFieldResetSqMean,
-    axsq=OptimFieldResetSqMeanFeatAx,
-    axmean=ResetToAxisMean,
-)
+b2_techniques = {
+    "mean": ResetToMean,
+    "sq": OptimFieldResetSqMean,
+    "axsq": OptimFieldResetSqMeanFeatAx,
+    "axmean": ResetToAxisMean,
+}
 
 
 class OptimResetValuesConfig(SweepableConfig):
@@ -143,7 +145,7 @@ class OptimResetValues:
     def __init__(
         self,
         cfg: OptimResetValuesConfig,
-        skips=set(["step", "z"]),
+        skips={"step", "z"},
         # handles: dict[str, OptimFieldResetValue] = None,
         # type_overrides: dict[
         #     FeatureParamType,
@@ -152,17 +154,17 @@ class OptimResetValues:
     ):
         self.skips = skips
 
-        self.handlers = dict(
-            momentum_buffer=ResetToConst(cfg.bias_momentum),
-            exp_avg=ResetToDirections(cfg.optim_momentum),
-            exp_avg_sq=b2_techniques[cfg.b2_technique](cfg.b2_scale),
-            mu_product=ResetToConst(0),
-        )
+        self.handlers = {
+            "momentum_buffer": ResetToConst(cfg.bias_momentum),
+            "exp_avg": ResetToDirections(cfg.optim_momentum),
+            "exp_avg_sq": b2_techniques[cfg.b2_technique](cfg.b2_scale),
+            "mu_product": ResetToConst(0),
+        }
 
-        self.type_overrides = dict(
-            bias=dict(exp_avg=ResetToConst()),
-            dec=dict() if cfg.dec_momentum else dict(exp_avg=ResetToConst(0)),
-        )
+        self.type_overrides = {
+            "bias": {"exp_avg": ResetToConst()},
+            "dec": {} if cfg.dec_momentum else {"exp_avg": ResetToConst(0)},
+        }
 
     def get_value(self, field, param, ft_optim_field_state, feat_mask, new_directions):
         if (

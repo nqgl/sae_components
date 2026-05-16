@@ -40,7 +40,7 @@ class Model(nn.Module):
         return self.extra(self.m(x), "extra", akwarg="akwarg")
 
 
-[m for m in model.named_modules()]
+list(model.named_modules())
 
 
 exmodel = Model(model)

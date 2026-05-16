@@ -234,7 +234,7 @@ class ActsDataReader:
         input_sites: list[str] | None = None,
     ):
         assert self.cfg._acts_piles_path(split).exists()
-        if not (id == nw == None or id is not None and nw is not None):
+        if not (id == nw is None or id is not None and nw is not None):
             raise ValueError("id and nw must be either both None or both not None")
         id = id or 0
         nw = nw or 1

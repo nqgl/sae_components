@@ -206,10 +206,10 @@ class JumpReLU(cl.Module):
 
     @property
     def features(self):
-        return dict(
-            thresh=FeaturesParam(
+        return {
+            "thresh": FeaturesParam(
                 self.thresh,
                 feature_index=0,
                 feature_parameter_type="bias",
             )
-        )
+        }

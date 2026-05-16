@@ -67,17 +67,17 @@ class mlog:
 
     @classmethod
     def _get_pod_info(cls):
-        return dict(
-            id=os.environ.get("RUNPOD_POD_ID", "local"),
-            hostname=os.environ.get("RUNPOD_POD_HOSTNAME", None),
-            gpu_count=os.environ.get("RUNPOD_GPU_COUNT", None),
-            cpu_count=os.environ.get("RUNPOD_CPU_COUNT", None),
-            public_ip=os.environ.get("RUNPOD_PUBLIC_IP", None),
-            datacenter_id=os.environ.get("RUNPOD_DC_ID", None),
-            volume_id=os.environ.get("RUNPOD_VOLUME_ID", None),
-            cuda_version=os.environ.get("CUDA_VERSION", None),
-            pytorch_version=os.environ.get("PYTORCH_VERSION", None),
-        )
+        return {
+            "id": os.environ.get("RUNPOD_POD_ID", "local"),
+            "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", None),
+            "gpu_count": os.environ.get("RUNPOD_GPU_COUNT", None),
+            "cpu_count": os.environ.get("RUNPOD_CPU_COUNT", None),
+            "public_ip": os.environ.get("RUNPOD_PUBLIC_IP", None),
+            "datacenter_id": os.environ.get("RUNPOD_DC_ID", None),
+            "volume_id": os.environ.get("RUNPOD_VOLUME_ID", None),
+            "cuda_version": os.environ.get("CUDA_VERSION", None),
+            "pytorch_version": os.environ.get("PYTORCH_VERSION", None),
+        }
 
     @classmethod
     def log_sweep(

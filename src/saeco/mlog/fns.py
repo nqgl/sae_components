@@ -358,7 +358,7 @@ class BaseLogger[RunT]:
         if isinstance(item, dict):
             return {k: cls.neptune_config_fix(v) for k, v in item.items()}
         elif isinstance(item, list) or isinstance(item, tuple):
-            return {i: v for i, v in enumerate(item)}
+            return dict(enumerate(item))
         return item
 
     @classmethod

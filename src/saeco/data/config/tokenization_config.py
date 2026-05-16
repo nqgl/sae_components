@@ -1,6 +1,6 @@
 import hashlib
 import json
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import Field
@@ -8,13 +8,13 @@ from pydantic import Field
 from saeco.sweeps import SweepableConfig
 
 
-class TokenizationMode(str, Enum):
+class TokenizationMode(StrEnum):
     PRETOKENIZED = "pretokenized"
     RAW_TEXT = "raw_text"
     CONVERSATION = "conversation"
 
 
-class PackingMode(str, Enum):
+class PackingMode(StrEnum):
     PACK = "pack"
     PAD = "pad"
     TRUNCATE = "truncate"

@@ -28,7 +28,8 @@ class TrainingRunner:
 
     @state_dict.setter
     def state_dict(self, value):
-        assert self._state_dict is None and self._trainable_loaded is False
+        assert self._state_dict is None
+        assert self._trainable_loaded is False
         self._state_dict = value
 
     @cached_property

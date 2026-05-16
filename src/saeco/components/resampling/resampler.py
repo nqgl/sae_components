@@ -211,7 +211,10 @@ class Resampler(ABC):
                     d = next(datasrc)
                     model(d)
                 target_freq = target_l0 / self.freq_tracker.freqs.shape[0]
-                fn = lambda x: x
+
+                def fn(x):
+                    return x
+
                 freqs = self.freq_tracker.freqs[indices]
                 if self.cfg.freq_balance_strat == "mean":
                     freqs = freqs.mean() * 0.99 + freqs * 0.01
@@ -272,7 +275,10 @@ class Resampler(ABC):
                         continue
                     model(d)
                 target_freq = target_l0 / self.freq_tracker.freqs.shape[0]
-                fn = lambda x: x
+
+                def fn(x):
+                    return x
+
                 freqs = self.freq_tracker.freqs[indices]
                 if self.cfg.freq_balance_strat == "mean":
                     freqs = freqs.mean() * 0.99 + freqs * 0.01

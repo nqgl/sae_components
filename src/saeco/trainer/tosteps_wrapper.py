@@ -14,7 +14,9 @@ def tosteps(n: int | float, period: int | None = None) -> int:
     assert 0 <= n
     if isinstance(n, int):
         return n
-    assert isinstance(n, float) and n <= 1 and isinstance(period, int)
+    assert isinstance(n, float)
+    assert n <= 1
+    assert isinstance(period, int)
     return int(n * period)
 
 
@@ -83,7 +85,7 @@ def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
                 return getattr(self.raw, name)
 
     update_wrapper(Class2.__init__, cls.__init__)
-    mfi = {k: v for k, v in cls.model_fields.items()}
+    mfi = dict(cls.model_fields.items())
 
     def get_replacements(name, t):
         @property

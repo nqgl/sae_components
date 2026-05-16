@@ -52,17 +52,17 @@ def inv(x: torch.Tensor) -> torch.Tensor:
     return q / ((x.abs() * k + a).pow(r))
 
 
-kernels = dict(
-    rect=rect,
-    tri=tri,
-    exp=exp,
-    trap=trap,
-    gauss=gauss,
-    bimodal=bimodal,
-    softtrap=softtrap,
-    inv2=inv2,
-    inv=inv,
-)
+kernels = {
+    "rect": rect,
+    "tri": tri,
+    "exp": exp,
+    "trap": trap,
+    "gauss": gauss,
+    "bimodal": bimodal,
+    "softtrap": softtrap,
+    "inv2": inv2,
+    "inv": inv,
+}
 
 
 class Kernel(Protocol):
@@ -76,13 +76,19 @@ def integrate(kernel: Kernel, range=10, samples=8192):
 
 
 def centrality(kernel, centrality_measure=gauss):
-    f = lambda x: centrality_measure(x) * kernel(x)
+    def f(x):
+        return centrality_measure(x) * kernel(x)
+
     return integrate(f)
 
 
 def check(kernel: Kernel, range=10, samples=8192):
-    f2 = lambda x: x * kernel(x)
-    f3 = lambda x: x**2 * kernel(x)
+    def f2(x):
+        return x * kernel(x)
+
+    def f3(x):
+        return x**2 * kernel(x)
+
     # print(f"kernel.__name__)
     v1 = integrate(kernel, range, samples)
     v2 = integrate(f2, range, samples).abs()

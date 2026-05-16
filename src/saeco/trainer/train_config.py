@@ -54,8 +54,8 @@ class TrainConfig(SweepableConfig):
     """
 
     data_cfg: DataConfig = Field(default_factory=DataConfig)
-    wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
-    coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
+    wandb_cfg: dict = Field(default_factory=lambda: {"project": "sae sweeps"})
+    coeffs: dict[str, float] = Field(default_factory=lambda: {"sparsity_loss": 1e-3})
     l0_targeter_type: str = "gentle_basic"
     l0_target: float | None = None
     l0_targeting_enabled: bool = True

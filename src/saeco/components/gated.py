@@ -7,20 +7,30 @@ import saeco.core as cl
 from saeco.initializer import Initializer
 from saeco.misc import useif
 
-SOFT_CLS = lambda x: cl.Seq(x, nn.Sigmoid())
-SOFT_CLS = lambda module: cl.Seq(
-    module, co.Lambda(lambda x: x + torch.randn_like(x) * 0.05), nn.Sigmoid()
-)
-SOFT_CLS = lambda module: cl.Seq(
-    module,
-    co.Lambda(
-        lambda x: torch.where(
-            torch.rand_like(x) > 0.2,
-            torch.sigmoid(x) + torch.randn_like(x) * 0.05,
-            (x > 0).float(),
-        )
-    ),
-)
+
+def SOFT_CLS(x):
+    return cl.Seq(x, nn.Sigmoid())
+
+
+def SOFT_CLS(module):
+    return cl.Seq(
+        module, co.Lambda(lambda x: x + torch.randn_like(x) * 0.05), nn.Sigmoid()
+    )
+
+
+def SOFT_CLS(module):
+    return cl.Seq(
+        module,
+        co.Lambda(
+            lambda x: torch.where(
+                torch.rand_like(x) > 0.2,
+                torch.sigmoid(x) + torch.randn_like(x) * 0.05,
+                (x > 0).float(),
+            )
+        ),
+    )
+
+
 # SOFT_CLS = lambda module: cl.Seq(module, nn.Sigmoid())
 
 

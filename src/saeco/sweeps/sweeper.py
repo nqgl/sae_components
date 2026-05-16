@@ -57,23 +57,23 @@ class Sweeper:
         basecfg: SweepableConfig = self.sweepfile.cfg
 
         cfg = basecfg.from_selective_sweep(dict(wandb.config))
-        pod_info = dict(
-            id=os.environ.get("RUNPOD_POD_ID", "local"),
-            hostname=os.environ.get("RUNPOD_POD_HOSTNAME", None),
-            gpu_count=os.environ.get("RUNPOD_GPU_COUNT", None),
-            cpu_count=os.environ.get("RUNPOD_CPU_COUNT", None),
-            public_ip=os.environ.get("RUNPOD_PUBLIC_IP", None),
-            datacenter_id=os.environ.get("RUNPOD_DC_ID", None),
-            volume_id=os.environ.get("RUNPOD_VOLUME_ID", None),
-            cuda_version=os.environ.get("CUDA_VERSION", None),
-            pytorch_version=os.environ.get("PYTORCH_VERSION", None),
-        )
+        pod_info = {
+            "id": os.environ.get("RUNPOD_POD_ID", "local"),
+            "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", None),
+            "gpu_count": os.environ.get("RUNPOD_GPU_COUNT", None),
+            "cpu_count": os.environ.get("RUNPOD_CPU_COUNT", None),
+            "public_ip": os.environ.get("RUNPOD_PUBLIC_IP", None),
+            "datacenter_id": os.environ.get("RUNPOD_DC_ID", None),
+            "volume_id": os.environ.get("RUNPOD_VOLUME_ID", None),
+            "cuda_version": os.environ.get("CUDA_VERSION", None),
+            "pytorch_version": os.environ.get("PYTORCH_VERSION", None),
+        }
 
         wandb.config.update(
-            dict(
-                full_cfg=cfg.model_dump(),
-                pod_info=pod_info,
-            )
+            {
+                "full_cfg": cfg.model_dump(),
+                "pod_info": pod_info,
+            }
         )
         print(dict(wandb.config))
         self.sweepfile.run(cfg)

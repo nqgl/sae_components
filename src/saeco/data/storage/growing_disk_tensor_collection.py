@@ -91,7 +91,7 @@ class GrowingDiskTensorCollection(DiskTensorCollection[GrowingDiskTensor]):
     async def _async_shuffle_then_finalize(
         self, perms: dict[str, torch.Tensor] | None = None
     ):
-        if any([(f := self.get(name)).finalized for name in self.keys()]):
+        if any((f := self.get(name)).finalized for name in self.keys()):
             raise ValueError(
                 f"Cannot shuffle finalized tensors: tensor {f} is finalized"
             )

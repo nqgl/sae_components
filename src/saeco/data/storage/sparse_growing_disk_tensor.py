@@ -79,7 +79,8 @@ class SparseGrowingDiskTensor:
         if indices.numel() == 0:
             return
         for i, idx in enumerate(self.shape):
-            assert indices[i].max() < idx and indices[i].min() >= 0
+            assert indices[i].max() < idx
+            assert indices[i].min() >= 0
         self.indices.append(indices)
         self.values.append(tensor.values())
         assert (
@@ -97,7 +98,8 @@ class SparseGrowingDiskTensor:
 
     @property
     def tensor(self):
-        assert self.indices.finalized and self.values.finalized
+        assert self.indices.finalized
+        assert self.values.finalized
         return torch.sparse_coo_tensor(
             self.indices.tensor,
             self.values.tensor,
@@ -106,7 +108,8 @@ class SparseGrowingDiskTensor:
 
     @property
     def tensor_uncoalesced(self):
-        assert self.indices.finalized and self.values.finalized
+        assert self.indices.finalized
+        assert self.values.finalized
         return torch.sparse_coo_tensor(
             self.indices.tensor,
             self.values.tensor,
