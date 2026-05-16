@@ -24,8 +24,9 @@ def iter_chunk_ranges(start, stop, chunk_size):  # TODO double check me
 
 
 def iter_chunk_ranges_tqdm(  # TODO double check me
-    start, stop, chunk_size, measure_chunks=True, tqdm_kwargs={}
+    start, stop, chunk_size, measure_chunks=True, tqdm_kwargs=None
 ):
+    tqdm_kwargs = tqdm_kwargs if tqdm_kwargs is not None else {}
     if measure_chunks:
         for i in tqdm.trange(start, stop, chunk_size, **tqdm_kwargs):
             yield i, min(i + chunk_size, stop)
@@ -41,8 +42,9 @@ def iter_chunk_ranges_tqdm(  # TODO double check me
 
 
 def iter_chunk_qty_tqdm(
-    start, stop, chunk_size, measure_chunks=True, tqdm_kwargs={}
+    start, stop, chunk_size, measure_chunks=True, tqdm_kwargs=None
 ):  # TODO double check me
+    tqdm_kwargs = tqdm_kwargs if tqdm_kwargs is not None else {}
     if measure_chunks:
         for i in tqdm.trange(start, stop, chunk_size, **tqdm_kwargs):
             yield min(i + chunk_size, stop) - i

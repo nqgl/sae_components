@@ -145,14 +145,14 @@ class OptimResetValues:
     def __init__(
         self,
         cfg: OptimResetValuesConfig,
-        skips={"step", "z"},
+        skips=None,
         # handles: dict[str, OptimFieldResetValue] = None,
         # type_overrides: dict[
         #     FeatureParamType,
         #     dict[str, OptimFieldResetValue],
         # ] = None,
     ):
-        self.skips = skips
+        self.skips = skips if skips is not None else {"step", "z"}
 
         self.handlers = {
             "momentum_buffer": ResetToConst(cfg.bias_momentum),

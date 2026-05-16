@@ -102,14 +102,16 @@ class Tied:
 
 
 class LinearFactory:
-    def __init__(self, d_in, d_out, bias=True, wrappers=[], mixins: list = []):
+    def __init__(
+        self, d_in, d_out, bias=True, wrappers=None, mixins: list | None = None
+    ):
         self.d_in = d_in
         self.d_out = d_out
         self._bias = bias
         self._linear = None
         self._linear_raw = None
-        self.wrappers = wrappers
-        self.mixins = mixins
+        self.wrappers = wrappers if wrappers is not None else []
+        self.mixins = mixins if mixins is not None else []
         self._weight_tie: Tied | None = None
         self._bias_tie: Tied | None = None
 

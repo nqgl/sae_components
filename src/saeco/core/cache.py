@@ -343,10 +343,12 @@ class Cache:
     def logdict(
         self,
         name="cache",
-        excluded: list[str] = [],
-        exclude_contains: list[str] = [],
+        excluded: list[str] | None = None,
+        exclude_contains: list[str] | None = None,
         itemize=True,
     ):
+        excluded = excluded if excluded is not None else []
+        exclude_contains = exclude_contains if exclude_contains is not None else []
         _, vals = self._getfields()
         for ex in excluded:
             if ex in vals:

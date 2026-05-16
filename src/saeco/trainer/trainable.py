@@ -120,7 +120,7 @@ class Trainable(cl.Module):
     def losses_d(self) -> dict[str, Loss]:
         return cast(dict[str, Loss], self.losses)
 
-    def loss(self, x, *, cache: Cache, y=None, coeffs: dict[str, float] = {}):
+    def loss(self, x, *, cache: Cache, y=None, coeffs: dict[str, float] | None = None):
         if isinstance(x, SAETrainBatch):
             batch = x
             x = batch.input
@@ -130,7 +130,7 @@ class Trainable(cl.Module):
                 raise ValueError(
                     "x was SAETrainBatch, y was provided, and target_sites was not None -- unexpected input combination"
                 )
-        coeffs = dict(coeffs)
+        coeffs = dict(coeffs) if coeffs is not None else {}
         loss = 0
         for key, loss_fn in self.losses_d.items():
             m = loss_fn(x, y=y, cache=cache[key])

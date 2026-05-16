@@ -242,8 +242,8 @@ class PermutedDocs:
     #         col: ds[col] for col in columns
     #     }
 
-    def iter_docs_and_columns(self, batch_size, columns=[]):
-        # cols =
+    def iter_docs_and_columns(self, batch_size, columns=None):
+        columns = columns if columns is not None else []
         for i in range(0, len(self.perm) // batch_size * batch_size, batch_size):
             ds = self.dataset[self.perm[i : i + batch_size]]
             yield (
