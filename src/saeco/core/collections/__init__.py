@@ -8,3 +8,14 @@ from saeco.core.collections.propagator import Propagator
 from saeco.core.collections.router import Router
 
 from .seq import ResidualSeq, Seq
+
+__all__ = [
+    "AddParallel",
+    "Collection",
+    "MulParallel",
+    "Parallel",
+    "Propagator",
+    "ResidualSeq",
+    "Router",
+    "Seq",
+]

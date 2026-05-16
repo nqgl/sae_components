@@ -4,3 +4,10 @@ from saeco.components.losses.losses import (
     Loss,
     SparsityPenaltyLoss,
 )
+
+__all__ = [
+    "CosineSimilarityLoss",
+    "L2Loss",
+    "Loss",
+    "SparsityPenaltyLoss",
+]

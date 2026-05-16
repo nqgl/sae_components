@@ -3,3 +3,10 @@ from saeco.components.ops.fnlambda import Lambda
 from saeco.components.ops.indexer import Indexer
 
 # from saeco.components.ops.detach import Detached
+
+__all__ = [
+    "Detached",
+    "Indexer",
+    "Lambda",
+    "Thresh",
+]
