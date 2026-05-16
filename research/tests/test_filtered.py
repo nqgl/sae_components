@@ -385,23 +385,18 @@ def test_shape_and_is_sparse_properties():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="FilteredTensor.to_sparse() assumes the underlying value is already sparse."
-)
-def test_to_sparse_from_dense_not_yet_implemented():
-    """
-    This currently fails because FilteredTensor.to_sparse() calls .indices()
-    and .values() on a dense tensor.
-
-    Once to_sparse() is fixed to handle dense inputs, this test can be turned
-    into a normal passing test.
-    """
+def test_to_sparse_from_dense():
+    """to_sparse() converts a dense underlying value to a sparse one while
+    preserving the filter and round-tripping back to the same dense value."""
     base = torch.arange(12.0).reshape(4, 3)
     mask = torch.tensor([True, False, True, False], dtype=torch.bool)
     ft = FilteredTensor.from_unmasked_value(value=base, filter_obj=mask)
 
-    # This currently raises AttributeError (no .indices on dense tensor)
-    _ = ft.to_sparse()
+    sparse = ft.to_sparse()
+
+    assert sparse.is_sparse
+    assert not ft.is_sparse
+    assert torch.equal(sparse.to_dense().value, ft.value)
 
 
 if __name__ == "__main__":
