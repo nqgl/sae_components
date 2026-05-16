@@ -81,7 +81,7 @@ class Initializer:
         if split_d_data:
             assert self.d_data % bf == 0
         l = []
-        for i in range(bf):
+        for _i in range(bf):
             new = Initializer(
                 d_data=self.d_data // bf if split_d_data else self.d_data,
                 d_dict=self.d_dict // bf,
@@ -99,7 +99,7 @@ class Initializer:
     ) -> list["Initializer"]:
         assert self.d_dict % bf == 0
         l = []
-        for i in range(bf):
+        for _i in range(bf):
             new = Initializer(
                 d_data=self.d_data // bf if split_d_data else self.d_data,
                 d_dict=self.d_dict // bf,

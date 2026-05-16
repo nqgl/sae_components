@@ -138,7 +138,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
                 {site: [self.model_cfg.acts_cfg.d_data] for site in sites}
                 if not self.model_cfg.acts_cfg.site_d_datas
                 else {
-                    k: [v] for k, v in zip(sites, self.model_cfg.acts_cfg.site_d_datas)
+                    k: [v] for k, v in zip(sites, self.model_cfg.acts_cfg.site_d_datas, strict=False)
                 }
             )
             return DictPiler.create(

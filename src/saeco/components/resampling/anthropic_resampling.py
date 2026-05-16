@@ -150,7 +150,7 @@ class AResampler(Resampler):
         enc_inputs = []
         enc_module = self.get_encoder_containing_module(model.model)
         inputs = []
-        for i in range(10):
+        for _i in range(10):
             data = next(data_source)
             res = get_modules_io(model, modules=[enc_module], data=data)
             enc_inputs_list = res.inputs[enc_module]

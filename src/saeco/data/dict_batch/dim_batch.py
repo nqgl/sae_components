@@ -1245,7 +1245,7 @@ def enable_virtual_dims(cls: type[DictBatch]) -> type[DictBatch]:
                 continue
             # make each tensor compatible (broadcast axes expanded)
             to_cat: list[Tensor] = []
-            for b, env in zip(batches, envs):
+            for b, env in zip(batches, envs, strict=False):
                 t = b[key]
                 # expand broadcast dims to env lengths
                 tt = t

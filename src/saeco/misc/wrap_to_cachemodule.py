@@ -71,7 +71,7 @@ model.__repr__
 def modify(model: nn.Module):
     model.modules()
     modified = {}
-    for m in model.modules():
+    for _m in model.modules():
         ...
 
 

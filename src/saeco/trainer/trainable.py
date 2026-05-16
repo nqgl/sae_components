@@ -182,7 +182,7 @@ class Trainable(cl.Module):
 
         normal = []
         has_metadata = {}
-        for name, param in self.named_parameters():
+        for _name, param in self.named_parameters():
             if isinstance(param, MetaDataParam):
                 md = param._param_metadata
                 if not md.has_param_group_values():

@@ -143,7 +143,7 @@ class LinWeightsMixin:
         return self.bias
 
     def set_resampled(self, resample=True) -> Self:
-        for k, fp in self.features.items():
+        for _k, fp in self.features.items():
             fp.resampled = resample
         return self
 

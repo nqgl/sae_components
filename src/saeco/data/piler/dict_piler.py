@@ -183,7 +183,7 @@ class DictPiler:
         catlens = {k: piler.piles.get(k).cat_len for k in piler.piles.keys()}
 
         perms = {k: torch.randperm(catlen) for k, catlen in catlens.items()}
-        for k, p in self.pilers.items():
+        for _k, p in self.pilers.items():
             p.shuffle_piles(perms)
 
     def __getitem__(self, i) -> DictBatch:

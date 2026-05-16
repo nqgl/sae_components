@@ -240,7 +240,7 @@ def main():
     testdata.mkdir(parents=True, exist_ok=True)
 
     p = Piler.create(testdata / "piler_test", torch.int64, [16], 4)
-    for i in range(400):
+    for _i in range(400):
         t = torch.arange(32000).reshape(-1, 16)
         p.distribute(t)
         print()

@@ -11,7 +11,7 @@ class MLP(cl.Seq):
                 item
                 for pair in [
                     (nn.Linear(in_features, out_features, bias=bias), nonlinearity)
-                    for in_features, out_features in zip(dims, dims[1:])
+                    for in_features, out_features in zip(dims, dims[1:], strict=False)
                 ]
                 for item in pair
             ][:-1]

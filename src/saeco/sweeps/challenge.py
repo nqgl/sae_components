@@ -72,7 +72,7 @@ optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 data = arch.data
 
 for _ in range(3):
-    for i in tqdm.trange(100):
+    for _i in tqdm.trange(100):
         x = next(data).cuda()
         y = model(x)
         l = (y - x).pow(2).mean()
@@ -83,7 +83,7 @@ with torch.no_grad():
     q = 0
     print("disk + sum task")
     for _ in range(3):
-        for i in tqdm.trange(101):
+        for _i in tqdm.trange(101):
             x = next(data)
             q += x
 
@@ -91,7 +91,7 @@ data = arch.trainer.get_databuffer(num_workers=16, queue_size=128)
 
 
 for _ in range(8):
-    for i in tqdm.trange(100):
+    for _i in tqdm.trange(100):
         x = next(data).cuda()
         y = model(x)
         l = (y - x).pow(2).mean()
@@ -102,7 +102,7 @@ with torch.no_grad():
     q = 0
     print("disk + sum task")
     for _ in range(15):
-        for i in tqdm.trange(101):
+        for _i in tqdm.trange(101):
             x = next(data)
             q += x
 
