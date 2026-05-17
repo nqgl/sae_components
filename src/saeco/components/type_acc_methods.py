@@ -13,42 +13,42 @@ _fields_dict: dict[type, dict[type["typeacc_method"], list[str]]] = defaultdict(
 _missing_name: set["typeacc_method"] = set()
 
 
-def _getfields(cls: type, FIELD_NAME: type["typeacc_method"]) -> list[str]:
+def _getfields(cls: type, field_name: type["typeacc_method"]) -> list[str]:
     if not isinstance(cls, type):
         cls = cls.__class__
     cls_d = _fields_dict[cls]
-    if FIELD_NAME not in cls_d:
+    if field_name not in cls_d:
         for c in cls.__mro__:
             if c == cls or c is object:
                 continue
             try:
-                return _getfields(c, FIELD_NAME)
+                return _getfields(c, field_name)
             except AttributeError:
                 pass
-        raise AttributeError(FIELD_NAME)
-    return cls_d[FIELD_NAME]
+        raise AttributeError(field_name)
+    return cls_d[field_name]
 
 
-def getfields(cls: type, FIELD_NAME: type["typeacc_method"]) -> list[str]:
+def getfields(cls: type, field_name: type["typeacc_method"]) -> list[str]:
     try:
-        return _getfields(cls, FIELD_NAME)
+        return _getfields(cls, field_name)
     except AttributeError:
         return []
 
 
-def setfield(cls: type, FIELD_NAME: type["typeacc_method"], value: list[str]):
+def setfield(cls: type, field_name: type["typeacc_method"], value: list[str]):
     assert isinstance(cls, type)
     if cls not in _fields_dict:
         _fields_dict[cls] = {}
     cls_d = _fields_dict[cls]
-    cls_d[FIELD_NAME] = value
+    cls_d[field_name] = value
 
 
-def hasfield(cls: type, FIELD_NAME: type["typeacc_method"]):
+def hasfield(cls: type, field_name: type["typeacc_method"]):
     if cls not in _fields_dict:
         return False
     cls_d = _fields_dict[cls]
-    return FIELD_NAME in cls_d
+    return field_name in cls_d
 
 
 class NonSingular(Protocol):

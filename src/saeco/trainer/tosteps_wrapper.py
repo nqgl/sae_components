@@ -21,7 +21,7 @@ def tosteps(n: int | float, period: int | None = None) -> int:
 
 
 class FloatCheckMeta(type):
-    def __instancecheck__(self, __instance: Any) -> bool:
+    def __instancecheck__(cls, __instance: Any) -> bool:
         if isinstance(__instance, float):
             return True
         return super().__instancecheck__(__instance)

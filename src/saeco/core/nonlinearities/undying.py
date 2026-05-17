@@ -1,7 +1,7 @@
 # by Glen Taggart @nqgl
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812  # standard torch convention
 
 
 class PositiveGradthruIdentityFunction(torch.autograd.Function):
