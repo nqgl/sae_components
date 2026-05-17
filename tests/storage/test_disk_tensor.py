@@ -322,7 +322,7 @@ class TestDiskTensorEdgeCases:
 
     def test_empty_tensor(self, tmp_tensor_path: Path):
         dt = DiskTensor.create(tmp_tensor_path, (0,), torch.float32)
-        dt.tensor  # trigger creation
+        _ = dt.tensor  # trigger creation
         dt.finalize()
 
         dt2 = DiskTensor.open(tmp_tensor_path)

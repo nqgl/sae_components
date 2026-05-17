@@ -1,11 +1,10 @@
 from collections.abc import Callable
 from functools import wraps
-from typing import Optional
 
 from saeco.sweeps import SweepableConfig
 from saeco.trainer.tosteps_wrapper import ResFloat, RunFloat, tosteps_wrapper
 
-AmbiguousTypes = [Optional[int | float], int | float]
+AmbiguousTypes = [int | float | None, int | float]
 
 
 def assert_wrapped(fn):

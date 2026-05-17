@@ -210,7 +210,9 @@ class DictPiler:
         yield_final_spare: bool = False,
     ):
         if worker_id is None != nw is None:
-            raise ValueError("worker_id and nw must be either both None or both not None")
+            raise ValueError(
+                "worker_id and nw must be either both None or both not None"
+            )
         worker_id = worker_id or 0
         nw = nw or 1
         if num_epochs is not None:

@@ -1,5 +1,6 @@
 from collections.abc import Callable
-from typing import ContextManager, Protocol
+from contextlib import AbstractContextManager
+from typing import Protocol
 
 from saeco.data.config.data_cfg import DataConfig
 from saeco.trainer.trainable import Trainable
@@ -12,7 +13,7 @@ class ReconstructionEvaluatorFunctionProtocol(Protocol):
         sae: Trainable,
         tokens,
         data_cfg: DataConfig,
-        cast_fn: Callable[[], ContextManager] = ...,
+        cast_fn: Callable[[], AbstractContextManager] = ...,
         num_batches=10,
         batch_size=1,
     ) -> dict[str, float]: ...
