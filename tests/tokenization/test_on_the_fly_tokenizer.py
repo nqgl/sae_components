@@ -180,7 +180,9 @@ def test_strip_historical_thinking_handles_list_content():
 # hook, optional enable_thinking channel).
 GEMMA_STYLE_TEMPLATE = (
     "{% for message in messages %}"
-    "{{ '<start_of_turn>' + (message['role'] if message['role'] != 'assistant' else 'model') + '\n' }}"
+    "{{ '<start_of_turn>' + (message['role'] "
+    "if message['role'] != 'assistant' else 'model') + "
+    "'\n' }}"
     "{{ message['content'] | trim + '<end_of_turn>\n' }}"
     "{% endfor %}"
     "{% if add_generation_prompt %}<start_of_turn>model\n"

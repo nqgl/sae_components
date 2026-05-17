@@ -89,9 +89,9 @@ class TrainingRunner:
     @cached_property
     def resampler(self) -> AnthResampler:
         res = AnthResampler(self.cfg.resampler_config)
-        res.assign_model(
-            self.models[0]
-        )  # TODO not a big fan of this. maybe just remove the assigning model part of resample class
+        # TODO not a big fan of this. maybe just remove the assigning
+        # model part of resample class
+        res.assign_model(self.models[0])
         return res
 
     @cached_property

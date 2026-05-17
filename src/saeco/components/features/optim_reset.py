@@ -355,7 +355,9 @@ class OptimResetValues:
 #                 field_state.shape == self.param.shape
 #             ), f"{field}: {field_state.shape} != {self.param.shape}"
 #             feat_field_state = self.features_transform(field_state)
-#             feat_field_state[feat_mask] = self.field_handlers.handlers[field].get_value(
+#             feat_field_state[feat_mask] = self.field_handlers.handlers[
+#                 field
+#             ].get_value(
 #                 param_state=param_state,
 #                 param=self,
 #                 ft_optim_field_state=feat_field_state,

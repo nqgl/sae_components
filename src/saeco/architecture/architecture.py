@@ -131,7 +131,10 @@ class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
         self,
         project: str,
         gpus_per_run: int,
-        clivars: str = 'TORCH_LOGS="graph_breaks,recompiles"  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True ',
+        clivars: str = (
+            'TORCH_LOGS="graph_breaks,recompiles"  '
+            "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True "
+        ),
         pre_commands: str = "",
         pyname: str | None = None,
     ) -> list[str]:

@@ -80,7 +80,9 @@ class Tied:
                 dst_param.data.shape == src_param.data.transpose(-2, -1).shape
             ):
                 print(
-                    "WARNING: Tied initialization weights are the same shape. Ambiguous whether to transpose. Defaulting to transposing"
+                    "WARNING: Tied initialization weights are the same "
+                    "shape. Ambiguous whether to transpose. Defaulting to "
+                    "transposing"
                 )
                 dst_param.data[:] = src_param.data.transpose(-2, -1)
 
@@ -230,7 +232,8 @@ class LinearFactory:
         assert self._bias_tie is None
         self._bias_tie = Tied(torch.zeros(self.d_out) + const, Tied.TO_VALUE, "bias")
         # assert (self.lin.weight.data.shape == other.lin.weight.data.shape) ^ (
-        #     self.lin.weight.data.shape == other.lin.weight.data.transpose(-2, -1).shape
+        #     self.lin.weight.data.shape
+        #     == other.lin.weight.data.transpose(-2, -1).shape
         # )
         # if self.lin.weight.data.shape == other.lin.weight.data.shape:
         #     self.lin.weight.data[:] = other.lin.weight.data

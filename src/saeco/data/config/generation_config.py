@@ -4,8 +4,11 @@ from saeco.sweeps import SweepableConfig
 class DataGenerationProcessConfig(SweepableConfig):
     """
     Nothing in here matters wrt training behavior.
-    This just changes the data generation process in ways that effect efficiency and file size.
-    It should be fine to not touch these parameters, unless you're running out of memory, in which case you should try reducing the batch sizes.
+    This just changes the data generation process in ways that effect
+    efficiency and file size.
+    It should be fine to not touch these parameters, unless you're
+    running out of memory, in which case you should try reducing the
+    batch sizes.
     """
 
     tokens_per_pile: int = 2**26  # ~100m tokens * 8 bytes = ~1gb/pile

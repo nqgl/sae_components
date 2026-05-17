@@ -34,7 +34,8 @@ class ModelReloadInfo(BaseModel):
         if get_src(model_fn) != self.source_backup:
             print(
                 """
-                warning: loaded model source code appears to have changed since the model was saved. 
+                warning: loaded model source code appears to have changed
+                since the model was saved.
                 This may cause issues.
                 (but not necessarily)
                 """

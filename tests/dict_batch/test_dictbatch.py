@@ -250,9 +250,9 @@ def test_set_split_and_recombine_roundtrip(mybatch: MyBatch) -> None:
     assert set(split.a.keys()) == {"input_ids"}
     assert set(split.b.keys()) == {"attention_mask", "labels"}
     recombined = split.recombine()
-    assert isinstance(
-        recombined, DictBatch
-    )  # recombine uses cls stored in SplitDictBatch; your current code passes self.__class__
+    # recombine uses cls stored in SplitDictBatch; your current code
+    # passes self.__class__
+    assert isinstance(recombined, DictBatch)
     # If you want it to be MyBatch, you’ll adjust set_split() to preserve subclass; test
     # below is future-facing:
     # assert isinstance(recombined, MyBatch)

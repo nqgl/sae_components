@@ -65,7 +65,8 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBa
             )
         return self._raw_model
 
-    @property  # I have a vague memory that theres a reason this isn't a cached property?
+    # I have a vague memory that theres a reason this isn't a cached property?
+    @property
     def model(self) -> NNsight:
         return self.model_load_cfg.nnsight_wrap(self.raw_model)
 

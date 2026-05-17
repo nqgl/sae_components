@@ -133,7 +133,9 @@ class DictPiler:
         for piler in pilers.values():
             if first_piler.metadata.num_piles != piler.metadata.num_piles:
                 raise ValueError(
-                    f"Piler {piler.path} does not match first piler {first_piler.path}: {piler.metadata.num_piles} != {first_piler.metadata.num_piles}"
+                    f"Piler {piler.path} does not match first piler "
+                    f"{first_piler.path}: {piler.metadata.num_piles} != "
+                    f"{first_piler.metadata.num_piles}"
                 )
             if first_piler.shape[0] != piler.shape[0]:
                 raise ValueError(

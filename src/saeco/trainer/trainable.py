@@ -129,7 +129,8 @@ class Trainable(cl.Module):
                 y = batch.target
             elif batch.target_sites is not None:
                 raise ValueError(
-                    "x was SAETrainBatch, y was provided, and target_sites was not None -- unexpected input combination"
+                    "x was SAETrainBatch, y was provided, and target_sites "
+                    "was not None -- unexpected input combination"
                 )
         coeffs = dict(coeffs) if coeffs is not None else {}
         loss = 0

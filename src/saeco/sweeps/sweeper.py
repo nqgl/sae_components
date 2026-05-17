@@ -83,7 +83,8 @@ class Sweeper:
         wandb.agent(
             self.sweep_id,
             function=self.run,
-            project=self.sweepfile.PROJECT,  # TODO change project to being from config maybe? or remove from config
+            # TODO change project to being from config maybe? or remove from config
+            project=self.sweepfile.PROJECT,
         )
 
     def rand_run_no_agent(self, init=True):

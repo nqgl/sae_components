@@ -116,7 +116,8 @@ class Architecture[ArchConfigT: SweepableConfig](
             l.append(e)
             # else:
             #     raise ValueError(
-            #         f"aux_models must be a list of SAEs or lists of SAEs, got {type(e)}"
+            #         f"aux_models must be a list of SAEs or lists of "
+            #         f"SAEs, got {type(e)}"
             #     )
         return l
 
@@ -156,7 +157,9 @@ class Architecture[ArchConfigT: SweepableConfig](
     @cached_property
     def data(
         self,
-    ):  # TODO maybe this should be called dataloader and return dataloader, unless important to not reuse datapoints
+    ):
+        # TODO maybe this should be called dataloader and return
+        # dataloader, unless important to not reuse datapoints
         return iter(self.run_cfg.train_cfg.get_databuffer())
 
     @cached_property

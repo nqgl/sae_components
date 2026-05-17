@@ -168,7 +168,9 @@ class ActsDataCreator:
         #     assert isinstance(self.model.tokenizer.pad_token_id, int)
         #     mask = toks_re != self.model.tokenizer.pad_token_id
         #     if not mask.all():
-        #         print(f"removing {(~mask).sum()} activations from pad token locations")
+        #         print(
+        #             f"removing {(~mask).sum()} activations from pad token locations"
+        #         )
         #         acts = acts[mask]
         return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
 

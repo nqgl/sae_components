@@ -62,7 +62,8 @@ class ArchStoragePaths(BaseModel):
         else:
             if load_weights:
                 raise ValueError(
-                    f"weights do not exist at {self.model_weights}, but load_weights is set"
+                    f"weights do not exist at {self.model_weights}, "
+                    "but load_weights is set"
                 )
         arch_ref = ArchRef.open(self.arch_ref, xcls=xcls)
         arch_inst = arch_ref.load_arch(state_dict=state_dict, device=device, xcls=xcls)
