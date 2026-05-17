@@ -6,10 +6,10 @@ def shrinkgrad_adjustment(errors, leniency, dd, b):
     return errors * (leniency * 2 / dd / b)
 
 
-def modified_H2(n):
+def heaviside2(n):
     n, leniency, dd = n
 
-    class H_z_minus_thresh_modified_fn(torch.autograd.Function):
+    class H_z_minus_thresh_modified_fn(torch.autograd.Function):  # noqa: N801  # load-bearing mnemonic (H(z - thresh))
         @staticmethod
         @custom_fwd
         def forward(ctx, z, thresh, kernel, eps):
@@ -53,7 +53,7 @@ def modified_H2(n):
 def jumprelu_modified2(n):
     n, leniency, dd = n
 
-    class JumpReLU_Modified_fn(torch.autograd.Function):
+    class JumpReLUModifiedFn(torch.autograd.Function):
         @staticmethod
         @custom_fwd
         def forward(ctx, z, thresh, kernel, eps):
@@ -182,11 +182,11 @@ def jumprelu_modified2(n):
                     None,
                 )
 
-    return JumpReLU_Modified_fn.apply
+    return JumpReLUModifiedFn.apply
 
 
 def modify_modified():
     import saeco.components.jumprelu.jumprelu_fn as jumprelu_fn
 
     jumprelu_fn.jumprelu_modified = jumprelu_modified2
-    jumprelu_fn.modified_H = modified_H2
+    jumprelu_fn.heaviside = heaviside2

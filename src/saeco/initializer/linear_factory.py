@@ -186,13 +186,13 @@ class LinearFactory:
         return self._linear
 
     def new_bias(self) -> nn.Parameter:
-        class temp:
+        class _BiasProbe:
             weight = self.lin.weight
             bias = torch.zeros(self.d_out)
 
         if self._bias_tie is not None:
-            self._bias_tie(temp)
-        return nn.Parameter(temp.bias)
+            self._bias_tie(_BiasProbe)
+        return nn.Parameter(_BiasProbe.bias)
 
     @property
     def raw(self):
