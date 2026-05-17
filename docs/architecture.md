@@ -1,24 +1,22 @@
-# Design notes
-
-> Draft.
+# Architecture Design
 
 ## The problem
 
-Training sparse autoencoders for interpretability is mostly *not* the
-autoencoder. A single experiment drags along: activation capture and
-caching from a subject model, a training loop with resampling and
-learning-rate scheduling, sparsity/L0 targeting, metric logging, and —
-because nobody runs one config — sweep orchestration across many runs
-and often many machines.
+Training sparse autoencoders for interpretability involves much more than
+the autoencoder itself. A single experiment drags along activation capture
+and caching from a subject model, a training loop with resampling and
+learning-rate scheduling, sparsity/L0 targeting, metric logging, and
+sweep orchestration across many runs and often many machines.
 
 Most of that is identical across architectures. The interesting part —
 "what is the encoder/decoder, and what are the losses?" — is small. saeco
-is built around making that small part the only thing you write, and
-making everything else fall out of it.
+is built around making that architecture-specific part the code you write
+directly, while the common training, sweeping, saving, and evaluation
+machinery is assembled from it.
 
-## Architectures are Python classes, not config files
+## Architecture classes declare the trainable pieces
 
-An architecture is a class that declares its pieces with decorators:
+An architecture declares its model and losses as named properties:
 
 ```python
 class VanillaSAE(Architecture[VanillaConfig]):
@@ -41,21 +39,18 @@ the trainable, wire up losses (weighted by name from
 `train_cfg.coeffs`), run aux models, and serialize/reload — without the
 architecture author writing any of that glue.
 
-**Why not config files?** Architectures are *programs*: a Gated SAE has
-conditional structure (detached vs. non-detached paths), shared
-sub-modules, and parallel branches. Expressing that in YAML reinvents a
-worse Python. Keeping it as code means the full language — closures,
-conditionals, composition — is available, while the decorators preserve
-the introspectability that config files are usually chosen for.
+This keeps architecture definitions compact while still making their
+load-bearing parts discoverable by the framework. A Gated SAE can use
+conditional structure, shared submodules, and parallel branches directly
+in the model definition; the decorators give those pieces stable names
+for training, logging, serialization, and comparison across runs.
 
-The cost: there's framework magic (metaclass-ish field collection) a
-reader has to learn once. The bet is that "learn one pattern, then every
-architecture is ~30-300 lines" beats "no magic, but every architecture
-re-implements the training wiring." Enabling fast research iteration
-weights values towards speed of implementation and standardization (for the sake of easy comparison)
-versus readability and low magic. # todo wording on this 
+The cost is that a reader has to learn a small set of framework
+conventions. The benefit is that new architectures share a standard
+shape: the model and losses are easy to find, while common training
+glue stays in the library.
 
-## Sweeping is a property of the config, not a separate system
+## Sweeps live inside the same config objects
 
 Any field of a `SweepableConfig` can hold a concrete value, a
 `Swept(a, b, c)`, or a `SweepExpression` built from `SweepVar`s/`Val`s.
@@ -70,16 +65,13 @@ RunConfig[VanillaConfig](
 )  # a 6-run grid, described in the same object as a single run
 ```
 
-**Why this instead of a separate sweep file/format?** The usual split —
-a config plus a sweep YAML that references config paths by string —
-means the sweep spec can silently drift from the config schema. Making
-the sweep live *in* the config keeps it type-checked against the same
-model, lets a `SweepVar` couple several fields onto one axis (e.g.
-hold a compute budget fixed while varying batch size, not as a
-cross-product), and means
-"a sweep" and "a run" are the same type — `is_concrete()` is the only
-distinction. The sweep machinery is also the lowest-dependency part of
-the codebase, which is why it could be extracted (see below).
+Keeping sweep values inside the config keeps them attached to the same
+schema as single-run values. A `SweepVar` can couple several fields onto
+one sweep axis, such as holding a compute budget fixed while varying batch size
+and step count together. In practice, "a sweep" and "a run" are the same
+type; `is_concrete()` is the distinction. The sweep machinery is also the
+lowest-dependency part of the codebase, which is why it could be extracted
+(see below) into a standalone package.
 
 ## Three packages, one repo
 
@@ -92,17 +84,17 @@ saeco-research in-flight scratch: experimental archs, eval, analysis
 ```
 
 `sweepable` has no saeco-specific dependencies and is independently
-useful, so it's a standalone, separately-installable package. `saeco` is the polished, API-stable surface.
-`saeco-research` is the unstable exploratory regime - experimental architectures, evaluation code, analysis GUIs. Code in here may get be staled or incomplete.
+useful, so it is a standalone, separately-installable package. `saeco`
+is the stable library surface. `saeco-research` contains experimental
+architectures, evaluation code, analysis GUIs, and scripts that are useful
+as working references but do not have API guarantees.
 
-<!-- **Why the split?** It lets the library have a clearer API without
-throwing away in-progress work or pretending everything is stable.
-What's load-bearing (`src/saeco/`) versus a research notebook
-(`research/`) is obvious at a glance. The
-dependency arrows only point one way, so nothing in the stable layer
-reaches into scratch code. The boundary is enforced mechanically:
-packaging only ships `src/saeco`, CI lints/tests each layer, and a
-tombstone module fails loudly if old import paths are used after a move. -->
+**Why the split?** It lets the library have a clear public API without
+throwing away active research work or pretending every experiment is ready
+for reuse. The important boundary is easy to see: `src/saeco/` is the
+supported package; `research/` is an installable, unsupported extension
+space. The dependency arrows point one way, so the stable layer does not
+reach into research code.
 
 ## Composable layers via mixins
 
@@ -128,9 +120,10 @@ bespoke training loop.
   directly; there's no string-keyed registry. Fewer indirections,
   easier to follow.
 - **Logging is W&B-backed today.** A backend-agnostic logging layer
-  (`saeco.mlog`) exists and is being migrated to; the abstraction is
-  intentionally thin until the second backend justifies more.
-- **Python 3.13 only.** The architecture-config typing uses PEP 695
+  (`saeco.mlog`) centralizes logging calls, but W&B remains the default
+  backend in this iteration. The abstraction stays intentionally thin
+  until another backend is actually needed.
+- **Python 3.13+ only.** The architecture-config typing uses PEP 695
   generics; these are too nice to give up.
 
 ## Map
@@ -142,4 +135,4 @@ bespoke training loop.
 | Training | `saeco.trainer` | `Trainer`, `RunConfig`, schedule, normalizers |
 | Data | `saeco.data` | dataset config, tokenization, activation caches |
 | Sweep DSL | `sweepable` | standalone package |
-| Scratch | `research/` | experimental archs, eval API, analysis |
+| Research extensions | `research/` | experimental archs, eval API, analysis |

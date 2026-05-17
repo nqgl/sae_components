@@ -11,9 +11,9 @@ sweeping, and remote orchestration.
 
 ## Why saeco?
 
-- **Define an architecture as a Python class.** Declare its model,
-  losses, and aux losses; the library handles the training pipeline,
-  save/load, sweep enumeration, and resampling for you.
+- **Build architectures from small, named pieces.** Declare the model,
+  losses, and aux losses for an SAE; the library handles the training
+  pipeline, save/load, sweep enumeration, and resampling for you.
 - **Sweeping is a first-class config feature.** Any field on a
   `SweepableConfig` can be a `Swept(a, b, c)` or a `SweepExpression(...)`
   — the trainer enumerates the combinations for you.
@@ -26,18 +26,19 @@ See [docs/architecture.md](docs/architecture.md) for the rationale behind these 
 ## Installation
 
 `saeco` depends on the [`sweepable`](sweepable/) package which lives in
-this same repo and isn't on PyPI yet. Install it first:
+this same repo and is not on PyPI yet. From the repo root, install the
+dependency chain in editable mode:
 
 ```bash
-pip install -e ./sweepable
-pip install -e .
+python -m pip install -e ./sweepable
+python -m pip install -e .
 ```
 
 Optional extras:
 
 ```bash
-pip install -e ".[remote]"     # remote sweep orchestration (ezpod)
-pip install -e ".[dev]"        # pytest, ruff, pre-commit
+python -m pip install -e ".[remote]"     # remote sweep orchestration (ezpod)
+python -m pip install -e ".[dev]"        # pytest, ruff, pre-commit
 ```
 
 ## Quickstart: Vanilla SAE
@@ -212,7 +213,7 @@ sweepable/                  # standalone subrepo — Pydantic + sweep DSL
 ├── src/sweepable/          # SweepableConfig, Swept, SweepVar, Val, …
 └── tests/
 
-research/                   # in-flight scratch — not packaged with saeco
+research/                   # experimental extension package
                             # installs as `saeco-research`; no API guarantees
 
 examples/                   # curated standalone demos
@@ -223,18 +224,17 @@ This repo is a "monorepo of three packages" (`sweepable` → `saeco` →
 `saeco-research`). To use them all:
 
 ```bash
-pip install -e ./sweepable    # the sweep DSL (used by saeco)
-pip install -e .              # the library
-pip install -e ./research     # the research scratch package
+python -m pip install -e ./sweepable    # the sweep DSL (used by saeco)
+python -m pip install -e .              # the library
+python -m pip install -e ./research     # the research extension package
 ```
 
 ## Status
 
 This is an active research-driven project. The library is stable enough to
 build on, and the reference architectures (`vanilla`, `gated`) work
-end-to-end. A few things are still in flight — most notably the migration
-of the logging system away from W&B (`saeco.mlog`) — see commit history
-for the latest.
+end-to-end. Logging is W&B-backed by default in this iteration, with calls
+centralized through `saeco.mlog`.
 
 Feel free to open an issue or contact me if you have questions.
 
