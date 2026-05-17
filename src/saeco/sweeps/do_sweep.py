@@ -20,7 +20,6 @@ def do_sweep(purge_after=True, in_cmd=None):
     thispath = "/".join(swfpath.split("/")[:-1])
     filename = swfpath.split("/")[-1]
     thispath = thispath.split("/sae_components/")[-1]
-    # sw.start_agent()
     options = ["run", "rand", "sweep", "yes"]
     sweep_or_run = -1
     sw = Sweeper(thispath, module_name=filename)

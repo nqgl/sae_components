@@ -3,7 +3,7 @@ import importlib.util
 import os
 from functools import cached_property
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 import wandb
 from saeco.trainer.trainer import mlog
@@ -30,9 +30,11 @@ class Sweeper:
         spec = importlib.util.spec_from_file_location(
             self.full_name, str(self.path / f"{self.module_name}.py")
         )
+        assert spec is not None
+        assert spec.loader is not None
         sweepfile = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sweepfile)
-        return sweepfile
+        return cast(SweepFile, sweepfile)
 
     def initialize_sweep(self):
         dump = self.sweepfile.cfg.sweep()

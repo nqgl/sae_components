@@ -251,8 +251,8 @@ class Trainer:
             x: SAETrainBatch
             inp, target = x.input, x.target
             if not self.cfg.use_autocast:
-                inp = inp.float()  # TODO maybe cast other direction instead
-                target = target.float()  # TODO maybe cast other direction instead
+                inp = inp.float()
+                target = target.float()
             self.optim.zero_grad()
             if self.t % self.eval_step_freq == 0 or (
                 self.cfg.schedule.run_length

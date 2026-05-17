@@ -2,7 +2,7 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from attrs import define, field
 
@@ -16,9 +16,6 @@ from .sweep_runner import SweepRunner
 
 if TYPE_CHECKING:
     from ezpod import Pods
-
-
-T = TypeVar("T", default=SweepableConfig)
 
 
 @define
@@ -61,12 +58,14 @@ class SweepManager:
             self.initialize_sweep(
                 custom_sweep=True, run_type_str="rand", project=project
             )
+        assert self.sweep_data is not None
         sweeprunner = SweepRunner(self.sweep_data)
         return sweeprunner.run_random_instance()
 
     def run_local_inst_by_index(self, index: int):
         if not self.sweep_data:
             self.initialize_sweep(custom_sweep=True, run_type_str="indexed_single")
+        assert self.sweep_data is not None
 
         cfg: SweepableConfig = self.sweep_data.root_arch_ref.config
         cfg_nodes = cfg.sweep_info_tree
