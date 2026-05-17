@@ -7,18 +7,17 @@ import saeco.core as cl
 from saeco.initializer import Initializer
 from saeco.misc import useif
 
-
-def SOFT_CLS(x):
-    return cl.Seq(x, nn.Sigmoid())
-
-
-def SOFT_CLS(module):
-    return cl.Seq(
-        module, co.Lambda(lambda x: x + torch.randn_like(x) * 0.05), nn.Sigmoid()
-    )
+# def soft_cls(x):
+#     return cl.Seq(x, nn.Sigmoid())
 
 
-def SOFT_CLS(module):
+# def soft_cls(module):
+#     return cl.Seq(
+#         module, co.Lambda(lambda x: x + torch.randn_like(x) * 0.05), nn.Sigmoid()
+#     )
+
+
+def soft_cls(module):
     return cl.Seq(
         module,
         co.Lambda(
@@ -53,7 +52,7 @@ class Gated(cl.Parallel):
         return Gated(
             gate=self.gate_aux,
             mag=co.Lambda(lambda x: x.detach(), self.mag),
-            thresh_cls=SOFT_CLS,
+            thresh_cls=soft_cls,
         )
 
     def full(self, soft=False):
@@ -67,12 +66,12 @@ class Gated(cl.Parallel):
             return Gated(
                 gate=self.gate_aux,
                 mag=co.Lambda(lambda x: x.detach(), self.mag),
-                thresh_cls=SOFT_CLS,
+                thresh_cls=soft_cls,
             )
         return Gated(
             gate=self.gate_aux,
             mag=self.mag,
-            thresh_cls=SOFT_CLS,
+            thresh_cls=soft_cls,
         )
 
 
@@ -218,7 +217,7 @@ class HGated:
                 mag=self.ll.module.aux(i - 1, full_mode=full_mode, soft=soft),
                 **useif(
                     soft,
-                    thresh_cls=SOFT_CLS,
+                    thresh_cls=soft_cls,
                 ),
             )
         return self.ll.module.aux(i - 1, full_mode=full_mode, soft=soft)
@@ -235,5 +234,5 @@ class HGated:
         return Gated(
             gate=self.hl,
             mag=self.ll.module.full_soft(),
-            thresh_cls=SOFT_CLS,
+            thresh_cls=soft_cls,
         )
