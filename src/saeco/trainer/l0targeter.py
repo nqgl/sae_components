@@ -87,10 +87,13 @@ class MultiEma:
 
 
 def diffema(a, q, n=0.1):
-    assert 0 < q < 1 and 0 < a < 1 and 0 < n < 0.5, (a, q, n)
+    assert 0 < q < 1, (a, q, n)
+    assert 0 < a < 1, (a, q, n)
+    assert 0 < n < 0.5, (a, q, n)
     b = q * a
     c = (1 - (1 - n) * q) * a / n
-    assert 0 < b < 1 and 0 < c < 1, (a, b, c)
+    assert 0 < b < 1, (a, b, c)
+    assert 0 < c < 1, (a, b, c)
     assert c > a > b, (a, b, c)
     return (
         [a, b, c],
@@ -111,7 +114,8 @@ def lfema(a, n=0.1):
 def lfema2(a, c1, c2, x):
     w1 = (a**x - a * c2 ** (x - 1)) / (c1**x - c1 * c2 ** (x - 1))
     w2 = (a - w1 * c1) / c2
-    assert -1 < w1 < 1 and -1 < w2 < 1, (w1, w2)
+    assert -1 < w1 < 1, (w1, w2)
+    assert -1 < w2 < 1, (w1, w2)
     assert w1 + w2 < 1
 
     return MultiEma(

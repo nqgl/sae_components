@@ -73,7 +73,7 @@ class HuggingFaceModelConfig(ModelLoadingConfigBase[PreTrainedModel]):
     def nnsight_wrap(self, model: PreTrainedModel) -> NNsight:
         nnsight_model = NNsight(model)
         if not hasattr(nnsight_model, "tokenizer"):
-            setattr(nnsight_model, "tokenizer", self.tokenizer)
+            nnsight_model.tokenizer = self.tokenizer
         return nnsight_model
 
     def unpack_model_inputs(

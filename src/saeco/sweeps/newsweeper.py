@@ -79,7 +79,7 @@ class SweepManager:
         return sweeprunner.start_sweep_agent()  # is this right?
 
     def local_sweep(self):
-        assert False, "method needs update on sweeprunner init"
+        raise AssertionError("method needs update on sweeprunner init")
         arch_ref = ArchRef.from_arch(self.arch)
         sweeprunner = SweepRunner(arch_ref, self.sweep_data.sweep_id)
         return sweeprunner.start_sweep_agent()

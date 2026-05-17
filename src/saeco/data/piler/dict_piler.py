@@ -278,7 +278,7 @@ class DictPiler:
             if not 0 < len(final) < batch_size:
                 # just precautionary
                 print(f"final spare batch wrong size: {len(final)}")
-                assert False, "final spare batch wrong size"
+                raise AssertionError("final spare batch wrong size")
             yield final
 
     def sized_generator(

@@ -11,6 +11,8 @@ from .saved_model_source_info import ModelReloadInfo
 from .trainable import Trainable
 from .trainer import Trainer
 
+_DEFAULT_MODELS_DIR = Path.home() / "workspace/saved_models/"
+
 
 @deprecated("Deprecated as part of migration to Architecture")
 class TrainingRunner:
@@ -134,7 +136,7 @@ class TrainingRunner:
         name,
         modify_cfg_fn=lambda x: x,
         modify_state_dict_fn=lambda x: x,
-        models_dir: Path = Path.home() / "workspace/saved_models/",
+        models_dir: Path = _DEFAULT_MODELS_DIR,
     ) -> "TrainingRunner":
         import torch
 
@@ -158,7 +160,7 @@ class TrainingRunner:
         name,
         modify_cfg_fn=lambda x: x,
         modify_state_dict_fn=lambda x: x,
-        models_dir: Path = Path.home() / "workspace/saved_models/",
+        models_dir: Path = _DEFAULT_MODELS_DIR,
     ) -> "TrainingRunner":
         modelpath: Path = models_dir / (name + ".json")
         reload_info = ModelReloadInfo.model_validate_json(

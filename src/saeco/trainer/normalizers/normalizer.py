@@ -521,7 +521,7 @@ def main():
     class C: ...
 
     init = C()
-    setattr(init, "d_data", 768)
+    init.d_data = 768
 
     cfg = GNConfig(
         mu_s=True, mu_e=Aggregation.BATCH_AVG, std_s=True, std_e=Aggregation.BATCH_AVG
