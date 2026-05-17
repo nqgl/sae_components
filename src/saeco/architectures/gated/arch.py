@@ -84,7 +84,7 @@ class Gated(Architecture[GatedConfig]):
         )
 
     @loss_prop
-    def L2_loss(self):
+    def L2_loss(self):  # noqa: N802  # loss-prop method name is the train_cfg.coeffs key
         return L2Loss(self.gated_model)
 
     @aux_model_prop
@@ -98,7 +98,7 @@ class Gated(Architecture[GatedConfig]):
         )
 
     @loss_prop
-    def L2_aux_loss(self):
+    def L2_aux_loss(self):  # noqa: N802  # loss-prop method name is the train_cfg.coeffs key
         return L2Loss(self.model_aux)
 
     @loss_prop

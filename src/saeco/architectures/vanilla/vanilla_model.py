@@ -55,7 +55,7 @@ class VanillaSAE(Architecture[VanillaConfig]):
 
     # loss_prop designates a Loss that will be used in training
     @loss_prop
-    def L2_loss(self):
+    def L2_loss(self):  # noqa: N802  # loss-prop method name is the train_cfg.coeffs key
         return L2Loss(self.model)
 
     @loss_prop

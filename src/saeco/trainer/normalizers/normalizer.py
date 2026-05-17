@@ -440,7 +440,7 @@ class GeneralizedNormalizer(Normalizer):
     def invert(self, x, *, cache: cl.Cache, **kwargs):
         return x * (cache.std_s * cache.std_e) + (cache.mu_s + cache.mu_e)
 
-    def mu_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
+    def mu_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.mu_s == SAggregation.DONTUSE:
             return 0
         elif self.cfg.mu_s == SAggregation.PRIMED:
@@ -450,7 +450,7 @@ class GeneralizedNormalizer(Normalizer):
         else:
             raise ValueError(f"Invalid mu_s value: {self.cfg.mu_s}")
 
-    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"] | float:
+    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"] | float:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.std_s == SAggregation.DONTUSE:
             return 1.0
         elif self.cfg.std_s == SAggregation.PRIMED:
@@ -460,7 +460,7 @@ class GeneralizedNormalizer(Normalizer):
         else:
             raise ValueError(f"Invalid std_s value: {self.cfg.std_s}")
 
-    def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
+    def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.mu_e == Aggregation.DONTUSE:
             return 0
         if self.cfg.mu_e == Aggregation.RUNNING_AVG:
@@ -469,7 +469,7 @@ class GeneralizedNormalizer(Normalizer):
             return self.elementwise_mean(x)
         return self._mu_e
 
-    def std_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
+    def std_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.std_e == Aggregation.DONTUSE:
             return 1
         if self.cfg.std_e == Aggregation.RUNNING_AVG:

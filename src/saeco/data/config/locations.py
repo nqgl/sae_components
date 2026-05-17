@@ -33,12 +33,12 @@ class DataDirLocations:
 
     @property
     @dir_prop
-    def TOP_DIR(self) -> Path:
+    def TOP_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
         return Path.home()
 
     @property
     @dir_prop
-    def SAVE_DIR(self) -> Path:
+    def SAVE_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
         SAVE = self.top_level_dir / "workspace"
         if not SAVE.exists():
             SAVE.mkdir()
@@ -46,27 +46,27 @@ class DataDirLocations:
 
     @property
     @dir_prop
-    def DATA_DIR(self) -> Path:
+    def DATA_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
         return self.SAVE_DIR / "data"
 
     @property
     @dir_prop
-    def _CHUNKS_DIR(self) -> Path:
+    def _CHUNKS_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
         return self.DATA_DIR / "chunks"
 
     @property
     @dir_prop
-    def TOK_CHUNKS_DIR(self) -> Path:
+    def TOK_CHUNKS_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
         return self._CHUNKS_DIR / "tokens"
 
     @property
     @dir_prop
-    def ACT_CHUNKS_DIR(self) -> Path:
+    def ACT_CHUNKS_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
         return self._CHUNKS_DIR / "acts"
 
     @property
     @dir_prop
-    def CACHE_DIR(self) -> Path:
+    def CACHE_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
         return self.SAVE_DIR / "cache"
 
 

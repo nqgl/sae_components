@@ -238,22 +238,22 @@ class L0Targeter(L0TargeterProto):
         self._target = value
 
     @property
-    def I(self):
+    def I(self):  # noqa: N802  # PID controller term (Proportional/Integral/Derivative)
         v = self.i.value * self.i_c
         if (v.sign() != self.p.value.sign()).item():
             return torch.zeros_like(v)
         return v
 
     @property
-    def D(self):
+    def D(self):  # noqa: N802  # PID controller term (Proportional/Integral/Derivative)
         return self.d.value * self.d_c / self.dd2.value
 
     @property
-    def A(self):
+    def A(self):  # noqa: N802  # PID controller term (Proportional/Integral/Derivative)
         return self.aa.value * self.a_c
 
     @property
-    def P(self):
+    def P(self):  # noqa: N802  # PID controller term (Proportional/Integral/Derivative)
         return self.p.value * self.p_c
 
     def update(self, l0, t):

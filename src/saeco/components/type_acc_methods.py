@@ -61,7 +61,7 @@ class Singular(Protocol):
 from functools import wraps
 
 
-class typeacc_method[T, **P]:
+class typeacc_method[T, **P]:  # noqa: N801  # decorator API; lowercase by decorator convention
     # COLLECTED_FIELD_NAME = ...
     COLLECTED_FIELD_SINGULAR = False
 

@@ -16,7 +16,7 @@ LOGGER_CLASSES = {
 _logger_instance = LOGGER_CLASSES[DEFAULT_LOGGER]()
 
 
-class mlog:
+class mlog:  # noqa: N801  # singleton logging facade, used as `mlog.log(...)`
     logger_instance: WandbCustomLogger = _logger_instance
 
     @classmethod

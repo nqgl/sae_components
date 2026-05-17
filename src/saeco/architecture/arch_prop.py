@@ -76,7 +76,7 @@ class SetupComplete(Protocol):
     _setup_complete: Literal[True] = True
 
 
-class arch_prop[T](
+class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     cached_property,
 ):
     """Base class for the architecture property decorators.
@@ -154,7 +154,7 @@ class arch_prop[T](
         return {f: getattr(inst, f) for f in fields}
 
 
-class arch_prop_singular[T](arch_prop[T]):
+class arch_prop_singular[T](arch_prop[T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     COLLECTED_FIELD_SINGULAR = True
 
     @classmethod
@@ -165,7 +165,7 @@ class arch_prop_singular[T](arch_prop[T]):
         return getattr(inst, fields[0])
 
 
-class loss_prop[Loss_T: nn.Module](arch_prop[Loss_T]):
+class loss_prop[Loss_T: nn.Module](arch_prop[Loss_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     """Declares a training loss on an ``Architecture``.
 
     Decorate a method that returns a ``Loss``. All ``loss_prop``s are
@@ -185,7 +185,7 @@ class loss_prop[Loss_T: nn.Module](arch_prop[Loss_T]):
         return super().__get__(instance, owner)
 
 
-class metric_prop[Metric_T: nn.Module](arch_prop[Metric_T]):
+class metric_prop[Metric_T: nn.Module](arch_prop[Metric_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     @overload
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
 
@@ -198,7 +198,7 @@ class metric_prop[Metric_T: nn.Module](arch_prop[Metric_T]):
         return super().__get__(instance, owner)
 
 
-class _model_prop_base[T](arch_prop[T]):
+class _model_prop_base[T](arch_prop[T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     """
     Base class for model_prop and aux_model_prop.
     Adds on top of arch_prop: methods for attaching losses and metrics to a model.
@@ -230,7 +230,7 @@ class _model_prop_base[T](arch_prop[T]):
     #     return metric_prop(_metric)
 
 
-class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):
+class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     """Declares the core model on an ``Architecture``.
 
     Decorate the single method that builds and returns the main ``SAE``.
@@ -254,7 +254,7 @@ class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[S
     loss = loss_prop
 
 
-class aux_model_prop[AuxModel_T: nn.Module](_model_prop_base[AuxModel_T]):
+class aux_model_prop[AuxModel_T: nn.Module](_model_prop_base[AuxModel_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     """Declares an auxiliary model on an ``Architecture``.
 
     Decorate a method returning a secondary ``SAE`` (e.g. the gating
