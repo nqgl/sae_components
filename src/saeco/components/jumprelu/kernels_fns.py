@@ -68,10 +68,10 @@ class Kernel(Protocol):
     def __call__(self, x: torch.Tensor) -> torch.Tensor: ...
 
 
-def integrate(kernel: Kernel, range=10, samples=8192):
-    x = torch.linspace(-range, range, samples)
+def integrate(kernel: Kernel, x_range=10, samples=8192):
+    x = torch.linspace(-x_range, x_range, samples)
     y = kernel(x)
-    return y.sum() / samples * 2 * range
+    return y.sum() / samples * 2 * x_range
 
 
 def centrality(kernel, centrality_measure=gauss):
@@ -81,7 +81,7 @@ def centrality(kernel, centrality_measure=gauss):
     return integrate(f)
 
 
-def check(kernel: Kernel, range=10, samples=8192):
+def check(kernel: Kernel, x_range=10, samples=8192):
     def f2(x):
         return x * kernel(x)
 
@@ -89,9 +89,9 @@ def check(kernel: Kernel, range=10, samples=8192):
         return x**2 * kernel(x)
 
     # print(f"kernel.__name__)
-    v1 = integrate(kernel, range, samples)
-    v2 = integrate(f2, range, samples).abs()
-    v3 = integrate(f3, range, samples)
+    v1 = integrate(kernel, x_range, samples)
+    v2 = integrate(f2, x_range, samples).abs()
+    v3 = integrate(f3, x_range, samples)
     l = 10 - len(kernel.__name__)
     print(
         f"{kernel.__name__}:{' ' * l} {v1:.2f}, {v2:.2f}, {v3:.2f}, [ "

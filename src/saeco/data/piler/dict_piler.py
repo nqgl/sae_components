@@ -202,16 +202,16 @@ class DictPiler:
     def batch_generator(
         self,
         batch_size: int,
-        id: int | None = None,
+        worker_id: int | None = None,
         nw: int | None = None,
         num_epochs: int | None = 1,
         shuffle: bool = True,
         shuffle_piles_order: bool = True,
         yield_final_spare: bool = False,
     ):
-        if id is None != nw is None:
-            raise ValueError("id and nw must be either both None or both not None")
-        id = id or 0
+        if worker_id is None != nw is None:
+            raise ValueError("worker_id and nw must be either both None or both not None")
+        worker_id = worker_id or 0
         nw = nw or 1
         if num_epochs is not None:
             epoch_gen = range(num_epochs)
@@ -237,7 +237,7 @@ class DictPiler:
             if epoch != 0:
                 print(f"finished epoch {epoch - 1}")
             for p in shuffled_range(
-                (id) % nw,
+                (worker_id) % nw,
                 self.piler_metadata.num_piles,
                 nw,
                 shuffle=shuffle and shuffle_piles_order,
@@ -283,20 +283,20 @@ class DictPiler:
 
     def sized_generator(
         self,
-        id: int | None = None,
+        worker_id: int | None = None,
         nw: int | None = None,
         return_last_batch: bool = False,
     ) -> tuple[Callable[[int], tuple[DictBatch, int]], int]:
-        if not (id is None) == (nw is None):
+        if not (worker_id is None) == (nw is None):
             raise ValueError(
-                "id and nw must be either both None or both not None"
-                f"\n got id: {id} and nw: {nw}"
+                "worker_id and nw must be either both None or both not None"
+                f"\n got worker_id: {worker_id} and nw: {nw}"
             )
-        id = id or 0
+        worker_id = worker_id or 0
         nw = nw or 1
 
         def piles_gen():
-            for p in range(id % nw, self.piler_metadata.num_piles, nw):
+            for p in range(worker_id % nw, self.piler_metadata.num_piles, nw):
                 yield self[p]
             # below we clone before yielding to prevent yielding a view of the pile.
             # if a yielded view were to get pinned by the consumer of this,
@@ -305,7 +305,7 @@ class DictPiler:
         piler0 = next(iter(self.pilers.values()))
         num_samples_total = sum(
             piler0.shapes[p][0]
-            for p in range(id % nw, self.piler_metadata.num_piles, nw)
+            for p in range(worker_id % nw, self.piler_metadata.num_piles, nw)
         )
 
         num_returned = 0
@@ -447,11 +447,11 @@ class DictPilerDataset(torch.utils.data.IterableDataset):
         nw_ = None
 
         if worker_info is not None:
-            id_ = worker_info.id
+            id_ = worker_info.worker_id
             nw_ = worker_info.num_workers
         return self.piler.batch_generator(
             batch_size=self.batch_size,
-            id=id_,
+            worker_id=id_,
             nw=nw_,
             shuffle=self.shuffle,
             shuffle_piles_order=self.shuffle_piles_order,

@@ -6,8 +6,8 @@ import torch.nn.functional as F  # noqa: N812  # standard torch convention
 
 class PositiveGradthruIdentityFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input):
-        return input
+    def forward(ctx, x):
+        return x
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -16,8 +16,8 @@ class PositiveGradthruIdentityFunction(torch.autograd.Function):
 
 class NegativeGradthruIdentityFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input):
-        return input
+    def forward(ctx, x):
+        return x
 
     @staticmethod
     def backward(ctx, grad_output):

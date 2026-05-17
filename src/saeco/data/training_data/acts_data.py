@@ -229,21 +229,23 @@ class ActsDataReader:
         split: SplitConfig,
         batch_size,
         nsteps=None,
-        id=None,
+        worker_id=None,
         nw=None,
         prog_bar=False,
         target_sites: list[str] | None = None,
         input_sites: list[str] | None = None,
     ):
         assert self.cfg._acts_piles_path(split).exists()
-        if not (id == nw is None or id is not None and nw is not None):
-            raise ValueError("id and nw must be either both None or both not None")
-        id = id or 0
+        if not (worker_id == nw is None or worker_id is not None and nw is not None):
+            raise ValueError(
+                "worker_id and nw must be either both None or both not None"
+            )
+        worker_id = worker_id or 0
         nw = nw or 1
         piler = self.cfg.acts_piler(split)
         batch_gen = piler.batch_generator(
             batch_size,
-            id=id,
+            worker_id=worker_id,
             nw=nw,
         )
 
@@ -287,13 +289,13 @@ class ActsDataset(torch.utils.data.IterableDataset):
         batches_per_pile = (
             self.acts.cfg.generation_config.acts_per_pile // self.batch_size
         )
-        id = worker_info.id
+        worker_id = worker_info.id
         nw = worker_info.num_workers
-        assert id % nw == id, (id, nw)
+        assert worker_id % nw == worker_id, (worker_id, nw)
         if self.acts.cfg.databuffer_worker_offset_mult is None:
-            offset = (id * batches_per_pile) // nw
+            offset = (worker_id * batches_per_pile) // nw
         else:
-            offset = id * self.acts.cfg.databuffer_worker_offset_mult
+            offset = worker_id * self.acts.cfg.databuffer_worker_offset_mult
         base_size = (
             self.acts.cfg.databuffer_worker_queue_base_size
             if self.acts.cfg.databuffer_worker_queue_base_size is not None
@@ -303,7 +305,7 @@ class ActsDataset(torch.utils.data.IterableDataset):
             self.acts.acts_generator(
                 self.split,
                 self.batch_size,
-                id=id,
+                worker_id=worker_id,
                 nw=nw,
                 input_sites=self.input_sites,
                 target_sites=self.target_sites,

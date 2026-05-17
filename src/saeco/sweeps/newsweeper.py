@@ -119,14 +119,14 @@ class SweepManager:
             for i, h in variants
         ]
 
-    def get_worker_run_commands_for_manual_random_sweep(self, N: int, suffix: str = ""):
+    def get_worker_run_commands_for_manual_random_sweep(self, n: int, suffix: str = ""):
         root = self.arch.run_cfg
         root_swept = root.sweep_info_tree
         combos = root_swept.swept_combinations_count_including_vars()
-        assert N <= combos
+        assert n <= combos
         import random
 
-        sweep_ids = random.sample(range(combos), N)
+        sweep_ids = random.sample(range(combos), n)
         variants = []
         for i in sweep_ids:
             cfg = root.from_selective_sweep(root_swept.select_instance_by_index(i))

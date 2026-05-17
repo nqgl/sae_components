@@ -98,14 +98,14 @@ class NormFeaturesMixin:
     def mixin_with_parameters(
         cls,
         featureparameter_name: str | None = None,
-        ord: float = 2,
+        norm_ord: float = 2,
         only_clip_norms: bool = False,
     ) -> type[Self]:
         assert cls is NormFeaturesMixin
 
         class ParameterizedNormFeaturesMixin(cls):
             _norm_features_mixin_featureparameter_name = featureparameter_name
-            _norm_features_mixin_ord = ord
+            _norm_features_mixin_ord = norm_ord
             _norm_features_mixin_max_only = only_clip_norms
 
         return ParameterizedNormFeaturesMixin
@@ -115,10 +115,10 @@ class NormFeaturesMixin:
 class NormFeatures(WrapsModule):
     wrapped: HasFeatures
 
-    def __init__(self, wrapped: HasFeatures, index=None, ord=2, max_only=False):
+    def __init__(self, wrapped: HasFeatures, index=None, norm_ord=2, max_only=False):
         super().__init__(wrapped)
         self.index = index
-        self.ord = ord
+        self.ord = norm_ord
         self.max_only = max_only
 
     def post_step_hook(self):
