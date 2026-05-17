@@ -12,7 +12,7 @@ from saeco.mlog import mlog
 from saeco.sweeps.sweep_data import SweepData
 from sweepable import SweepableConfig
 
-from .SweepRunner import SweepRunner
+from .sweep_runner import SweepRunner
 
 if TYPE_CHECKING:
     from ezpod import Pods

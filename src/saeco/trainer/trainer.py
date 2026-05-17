@@ -22,7 +22,7 @@ from .call_training_hooks import (
     do_pre_forward,
 )
 from .l0targeter import TARGETER_TYPES
-from .OptimConfig import get_optim_cls
+from .optim_config import get_optim_cls
 from .run_config import RunConfig
 from .train_cache import TrainCache
 from .train_config import TrainConfig

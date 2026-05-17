@@ -4,7 +4,7 @@ import click
 
 from saeco.mlog import mlog
 from saeco.sweeps.sweep_data import SweepData
-from saeco.sweeps.SweepRunner import SweepRunner
+from saeco.sweeps.sweep_runner import SweepRunner
 
 
 @click.command()
