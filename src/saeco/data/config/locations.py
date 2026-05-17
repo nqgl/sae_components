@@ -39,10 +39,10 @@ class DataDirLocations:
     @property
     @dir_prop
     def SAVE_DIR(self) -> Path:  # noqa: N802  # constant-like path accessor; SCREAMING_CASE intentional
-        SAVE = self.top_level_dir / "workspace"
-        if not SAVE.exists():
-            SAVE.mkdir()
-        return SAVE
+        save = self.top_level_dir / "workspace"
+        if not save.exists():
+            save.mkdir()
+        return save
 
     @property
     @dir_prop

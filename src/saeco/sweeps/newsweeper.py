@@ -88,8 +88,8 @@ class SweepManager:
         # root = self.sweep_data.root_arch_ref.config
         root = self.arch.run_cfg
         root_swept = root.sweep_info_tree
-        N = root_swept.swept_combinations_count_including_vars()
-        for i in range(N):
+        n = root_swept.swept_combinations_count_including_vars()
+        for i in range(n):
             cfg = root.from_selective_sweep(root_swept.select_instance_by_index(i))
             cfg_hash = cfg.get_hash()
             runner = SweepRunner.from_sweepdata(

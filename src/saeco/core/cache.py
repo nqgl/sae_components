@@ -63,7 +63,7 @@ def dlmerge(da, db, unique=True):
     da = dlcopy(da)
     for k, vb in db.items():
         if k in da:
-            assert type(da[k]) == type(vb), (
+            assert type(da[k]) is type(vb), (
                 f"Type mismatch: {type(da[k])} and {type(vb)}"
             )
             if isinstance(vb, list):
@@ -517,7 +517,7 @@ class SubCacher:
         try:
             v = self._obj(*args, **kwargs)
         except Exception as e:
-            raise locate_cache_exception(e, self._cache)
+            raise locate_cache_exception(e, self._cache) from e
         if self._record:
             record_location = self._cache._subcache_index
             if isinstance(self._record, str):

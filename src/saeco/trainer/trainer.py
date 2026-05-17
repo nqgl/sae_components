@@ -246,11 +246,11 @@ class Trainer:
             buffer = buf()
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
             x: SAETrainBatch
-            input, target = x.input, x.target
-            # print(input.shape)
+            inp, target = x.input, x.target
+            # print(inp.shape)
             # print(target.shape)
             if not self.cfg.use_autocast:
-                input = input.float()  # TODO maybe cast other direction instead
+                inp = inp.float()  # TODO maybe cast other direction instead
                 target = target.float()  # TODO maybe cast other direction instead
             self.optim.zero_grad()
             if self.t % self.eval_step_freq == 0 or (
@@ -259,10 +259,10 @@ class Trainer:
                 and self.t % 5 == 0
             ):
                 with self.evaluate():
-                    self.eval_step(input, y=target)
+                    self.eval_step(inp, y=target)
 
             cache = self.make_cache()
-            self.trainstep(input, cache, y=target)
+            self.trainstep(inp, cache, y=target)
             self.full_log(cache)
             self.t += 1
             if self.cfg.early_stopping_bounds.should_stop(cache, t=self.t):

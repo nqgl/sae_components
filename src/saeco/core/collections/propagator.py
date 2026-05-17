@@ -58,7 +58,7 @@ class Propagator(Collection):
         # decision: assuming no variation in first layer case desired behavior
         if self._propagate_rule is None:
             raise ValueError("Propagate rule not set")
-        return self._propagate_rule(x=x, l=l, *a, **k)
+        return self._propagate_rule(*a, x=x, l=l, **k)
 
     def forward(self, x, *, cache: Cache, **kwargs):
         l = []

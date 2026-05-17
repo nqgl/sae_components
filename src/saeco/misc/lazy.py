@@ -19,7 +19,7 @@ def debug_enter(self, field, current):
     global TRACE
     if DEBUGGING:
         nice_name = field[1:]
-        IND = "   " * DEBUG_INDENT
+        ind = "   " * DEBUG_INDENT
         prevget = GETTING
         TRACE.append(nice_name)
         if current is None and not GETTING:
@@ -27,9 +27,9 @@ def debug_enter(self, field, current):
             GETTING = True
         if GETTING:
             if current is None:
-                dbprint(f"{IND}GET: {nice_name}")
+                dbprint(f"{ind}GET: {nice_name}")
             else:
-                dbprint(f"{IND}HAS: {nice_name}")
+                dbprint(f"{ind}HAS: {nice_name}")
 
         def cleanup():
             global GETTING

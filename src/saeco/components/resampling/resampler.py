@@ -62,7 +62,7 @@ class ResamplerConfig(SweepableConfig):
     expected_encs: int | None = 1
 
 
-class Resampler(ABC):
+class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op defaults
     """
     currently it is assumed that the freq tracker does not change after
     the first usage
@@ -83,7 +83,7 @@ class Resampler(ABC):
     def get_feature_indices_to_reset(self):
         return self.freq_tracker.freqs < self.cfg.dead_threshold
 
-    def get_reset_feature_directions(self, num_directions, data_source, model): ...
+    def get_reset_feature_directions(self, num_directions, data_source, model): ...  # noqa: B027  # optional hook; default no-op
 
     def resample(self, data_source: iter, optimizer: torch.optim.Optimizer, model):
         i = self.get_feature_indices_to_reset()
