@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import paramsight
 import torch
 from attrs import define
 from paramsight import get_resolved_typevars_for_base, takes_alias
@@ -16,6 +17,7 @@ from .chunk import Chunk
 
 
 @define
+@paramsight.slotted_strategies.add_field
 class CachedActs[InputsT: torch.Tensor | DictBatch]:
     path: Path
     cfg: CacheConfig

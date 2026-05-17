@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 from weakref import WeakValueDictionary
 
+import paramsight
 import torch
 from attrs import define, field
 from paramsight import get_resolved_typevars_for_base, takes_alias
@@ -70,6 +71,7 @@ class RemovableOnFinalize(Protocol):
 
 
 @define
+@paramsight.slotted_strategies.add_field
 class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
     path: Path
     metadata: MetadataT

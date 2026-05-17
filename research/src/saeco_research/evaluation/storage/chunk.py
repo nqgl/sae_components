@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import cached_property
 from pathlib import Path
 
+import paramsight
 import torch
 from attrs import define
 from jaxtyping import Float
@@ -19,6 +20,7 @@ from .cache_config import CacheConfig
 
 
 @define
+@paramsight.slotted_strategies.add_field
 class Chunk[InputsT: torch.Tensor | DictBatch]:
     idx: int
     path: Path

@@ -4,6 +4,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import paramsight
 import torch
 from attrs import Factory, define, field
 from paramsight import get_resolved_typevars_for_base, takes_alias
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
 
 
 @define(slots=True)
+@paramsight.slotted_strategies.add_field
 class Evaluation[InputsT: torch.Tensor | DictBatch](
     Enrichment, Patching, Coactivity, PerturbationAnalysis
 ):
