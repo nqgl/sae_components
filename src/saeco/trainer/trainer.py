@@ -376,17 +376,6 @@ class Trainer:
                 excluded=["act_metrics_name"],
             )
         )
-        # if wandb.run is None and self.t % 25 == 0:
-
-        #     d = cache.logdict(
-        #         exclude_contains=["normalization/mu", "normalization/std"],
-        #         excluded=["act_metrics_name"],
-        #     )
-        #     n = ["L2_loss", "L2_aux_loss", "sparsity_loss", "l0", "L0"]
-        #     for key in n:
-        #         k = f"cache/{key}"
-        #         if k in d:
-        #             print(f"{k}: {d[k]}")
 
     def eval_log(self, cache: Cache):
         self.log(
