@@ -17,7 +17,7 @@ jobs:
       - name: Install ruff
         run: pip install "ruff>=0.14.3"
       - name: ruff check
-        run: ruff check src tests sweepable/src sweepable/tests
+        run: ruff check src tests sweepable/src sweepable/tests research/tests/test_research_public_imports.py
 
   test:
     name: Pytest (Python ${{ matrix.python-version }})
