@@ -1,3 +1,6 @@
+import torch
+import tqdm
+
 from saeco.architectures.vanilla.vanilla_model import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
@@ -51,8 +54,6 @@ arch = VanillaSAE(cfg)
 
 data = arch.run_cfg.train_cfg.data_cfg._get_databuffer(num_workers=16)
 model = arch.trainable
-import torch
-import tqdm
 
 optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 # for i in tqdm.trange(800):

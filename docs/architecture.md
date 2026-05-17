@@ -92,19 +92,17 @@ saeco-research in-flight scratch: experimental archs, eval, analysis
 ```
 
 `sweepable` has no saeco-specific dependencies and is independently
-useful, so it's a standalone, separately-installable package that can go
-to PyPI on its own. `saeco` is the polished, API-stable surface.
-`saeco-research` is the honest home for "this works but isn't supported"
-— exploratory architectures, the evaluation API, analysis GUIs.
+useful, so it's a standalone, separately-installable package. `saeco` is the polished, API-stable surface.
+`saeco-research` is the unstable exploratory regime - experimental architectures, evaluation code, analysis GUIs. Code in here may get be staled or incomplete.
 
-**Why the split?** It lets the library have an API contract without
+<!-- **Why the split?** It lets the library have a clearer API without
 throwing away in-progress work or pretending everything is stable.
 What's load-bearing (`src/saeco/`) versus a research notebook
 (`research/`) is obvious at a glance. The
 dependency arrows only point one way, so nothing in the stable layer
 reaches into scratch code. The boundary is enforced mechanically:
 packaging only ships `src/saeco`, CI lints/tests each layer, and a
-tombstone module fails loudly if old import paths are used after a move.
+tombstone module fails loudly if old import paths are used after a move. -->
 
 ## Composable layers via mixins
 

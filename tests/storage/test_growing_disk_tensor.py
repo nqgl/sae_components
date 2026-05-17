@@ -564,13 +564,6 @@ class TestGrowingDiskTensorRoundtrip:
         gdt.append(data)
         gdt.finalize()
         gdt2 = GrowingDiskTensor.open(path)
-        gdt.tensor == gdt2.tensor
-        gdt2.tensor.stride()
-        gdt2.cat_axis
-        gdt.cat_axis
-        data.stride()
-        (data - gdt2.tensor).abs() < 1e-5
-        data
         assert torch.allclose(gdt2.tensor, data), (
             f"gdt2.tensor: {gdt2.tensor}, data: {data}"
         )
@@ -642,16 +635,3 @@ class TestGrowingDiskTensorEdgeCases:
 
         # First 5 rows should be unchanged
         assert torch.allclose(gdt.valid_tensor[:5], read1)
-
-
-if __name__ == "__main__":
-    path = Path("testdata/storage_testing")
-    path.mkdir(parents=True, exist_ok=True)
-    TestGrowingDiskTensorRoundtrip().test_roundtrip_various_cat_axes(
-        tmp_path=path,
-        cat_axis=2,
-    )
-
-    TestGrowingDiskTensorAppend().test_append_triggers_resize(
-        tmp_tensor_path=path / "test_append_triggers_resize"
-    )

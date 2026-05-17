@@ -6,9 +6,10 @@ from typing import TYPE_CHECKING
 import einops
 import nnsight
 import torch
-import torch.autograd.forward_ad as fwAD
+import torch.autograd.forward_ad as fw_ad
 import tqdm
 from saeco_research.evaluation.utils import fwad_safe_sdp
+from torch import Tensor
 
 from saeco.data.dict_batch import DictBatch
 from saeco.misc.nnsite import getsite, setsite
@@ -150,16 +151,16 @@ class Patching:
 
                 def fwad_hook(acts):
                     acts = patch_fn(acts)
-                    return fwAD.make_dual(acts, tangent)
+                    return fw_ad.make_dual(acts, tangent)
             else:
 
                 def fwad_hook(acts):
                     acts = patch_fn(acts)
-                    return fwAD.make_dual(acts, tangent_gen(acts))
+                    return fw_ad.make_dual(acts, tangent_gen(acts))
 
             patched_sae = self.sae_with_patch(fwad_hook)
 
-            with fwAD.dual_level():
+            with fw_ad.dual_level():
                 batch = self._build_model_batch(
                     tokens_or_batch, doc_indices=doc_indices, metadata=metadata
                 )
@@ -177,12 +178,12 @@ class Patching:
                     logits = self.model_adapter.get_logits(out)
                     ls_logits = logits.log_softmax(dim=-1)
                     tangent_out = nnsight.apply(
-                        fwAD.unpack_dual, ls_logits
+                        fw_ad.unpack_dual, ls_logits
                     ).tangent.save()
 
                 if return_prob_grads:
                     soft = logits.softmax(dim=-1)
-                    probspace = fwAD.unpack_dual(soft).tangent
+                    probspace = fw_ad.unpack_dual(soft).tangent
 
             return (
                 (out, tangent_out, probspace)
@@ -608,7 +609,7 @@ class Patching:
         def tangentize_embedding(embedding):
             assert embedding.ndim == 3
             return (
-                fwAD.make_dual(
+                fw_ad.make_dual(
                     torch.ones_like(embedding[:, :, 0]).unsqueeze(-1),
                     torch.eye(embedding.shape[1]).unsqueeze(-1)[
                         seq_range[0] : seq_range[1]
@@ -618,7 +619,7 @@ class Patching:
             )
 
         with fwad_safe_sdp():
-            with fwAD.dual_level():
+            with fw_ad.dual_level():
                 with self.nnsight_model.trace(
                     tokens, **self.sae_cfg.train_cfg.data_cfg.model_cfg.model_kwargs
                 ) as tracer:
@@ -633,7 +634,7 @@ class Patching:
                     sae_acts = res[1]
 
                     acts_tangent = nnsight.apply(
-                        fwAD.unpack_dual, sae_acts
+                        fw_ad.unpack_dual, sae_acts
                     ).tangent.save()
                     lm_acts.stop()
         return acts_tangent

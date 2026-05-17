@@ -165,7 +165,6 @@ class Trainer:
         mlog.log(d, step=self.t + self.log_t_offset)
 
     def coeffs(self):
-        self.cfg.schedule
         return self.cfg.coeffs
 
     @contextmanager
