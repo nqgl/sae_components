@@ -20,7 +20,8 @@ class ResampledWeight(WrapsModule):  # TODO dep
     def __init__(self, wrapped: HasFeatures):
         if not isinstance(wrapped, HasFeatures):
             raise TypeError(
-                f"Expected HasFeatures, but {type(wrapped)} does not implement HasFeatures protocol."
+                f"Expected HasFeatures, but {type(wrapped)} does not implement "
+                "HasFeatures protocol."
             )
         # assert isinstance(wrapped, Resamplable)
         super().__init__(wrapped)

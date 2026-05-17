@@ -246,7 +246,8 @@ def get_featuresparams(model: nn.Module) -> set[FeaturesParam]:
             other = d[fp.param]
             assert other == fp, f"{other} != {fp}"
             raise ValueError(
-                f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just (intelligently) deduplicate and check for inconsistency"
+                f"Duplicate feature parameter {fp}. implement __eq__ and change this "
+                "check to just (intelligently) deduplicate and check for inconsistency"
             )
         d[fp.param] = fp
     return l

@@ -27,7 +27,8 @@ class VanillaSAE(Architecture[VanillaConfig]):
     def setup(self):
         # these will add wrappers to the decoder that ensure:
         # 1. the features are normalized after each optimizer step to have unit norm
-        # 2. the gradients of the features are orthogonalized after each backward pass before the optimizer step
+        # 2. the gradients of the features are orthogonalized after each backward pass
+        # before the optimizer step
         # self.init._decoder.add_wrapper(
         #     ft.NormFeatures
         # )

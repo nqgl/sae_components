@@ -493,16 +493,20 @@ class StaticInvertibleGeneralizedNormalizer(GeneralizedNormalizer):
             SAggregation.PRIMED,
         )
         assert cfg.mu_e in static_aggs, (
-            f"{cfg.mu_e} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.mu_e} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
         assert cfg.std_e in static_aggs, (
-            f"{cfg.std_e} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.std_e} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
         assert cfg.mu_s in static_saggs, (
-            f"{cfg.mu_s} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.mu_s} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
         assert cfg.std_s in static_saggs, (
-            f"{cfg.std_s} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.std_s} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
 
         super().__init__(init, cfg, eps)

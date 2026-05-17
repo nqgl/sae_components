@@ -101,7 +101,8 @@ def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
         if issubclass(int, annotation):
             if issubclass(RunFloat, annotation) and issubclass(ResFloat, annotation):
                 raise Exception(
-                    "Warning: both RunFloat and ResFloat, skipping. <int | float> type will not be replaced"
+                    "Warning: both RunFloat and ResFloat, skipping. <int | float> type "
+                    "will not be replaced"
                 )
             elif issubclass(RunFloat, annotation):
                 t = RunFloat

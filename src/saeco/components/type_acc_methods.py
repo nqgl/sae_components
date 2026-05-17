@@ -83,13 +83,15 @@ class typeacc_method[T, **P]:
         if hasfield(owner, self.__class__):
             if self.COLLECTED_FIELD_SINGULAR:
                 raise AttributeError(
-                    f"{self.__class__}: Cannot overwrite singular field '{name}' on {owner}"
+                    f"{self.__class__}: Cannot overwrite singular field '{name}' on "
+                    f"{owner}"
                 )
             fields = getfields(owner, self.__class__)
             fields.append(name)
             if len(fields) != len(set(fields)):
                 raise AttributeError(
-                    f"{self.__class__}: Field names must be unique: duplicate name '{name}' on {owner}"
+                    f"{self.__class__}: Field names must be unique: duplicate name "
+                    f"'{name}' on {owner}"
                 )
         else:
             setfield(owner, self.__class__, [name])
@@ -98,7 +100,8 @@ class typeacc_method[T, **P]:
     def get_fields(cls, owner: type):
         if len(_missing_name) > 0:
             raise AttributeError(
-                f"some properties have not been owned: {[f.func for f in _missing_name]}"
+                "some properties have not been owned: "
+                f"{[f.func for f in _missing_name]}"
             )
         return getfields(owner, cls)
 

@@ -124,7 +124,8 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
         if str(t.dtype) != self.metadata.dtype:
             raise ValueError(
-                f"Tensor dtype {t.dtype} does not match Piler dtype {self.metadata.dtype}"
+                f"Tensor dtype {t.dtype} does not match Piler dtype "
+                f"{self.metadata.dtype}"
             )
         if indexer is None:
             i = torch.randint(0, self.metadata.num_piles, [t.shape[0]])
@@ -146,7 +147,8 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
         if str(t.dtype) != self.metadata.dtype:
             raise ValueError(
-                f"Tensor dtype {t.dtype} does not match Piler dtype {self.metadata.dtype}"
+                f"Tensor dtype {t.dtype} does not match Piler dtype "
+                f"{self.metadata.dtype}"
             )
         # Compute indexer tensor if not provided
         if indexer is None:
@@ -168,7 +170,8 @@ class Piler:
                 await asyncio.to_thread(pile.append, data_to_append)
 
         # Use tqdm for progress - note that tqdm is not asynchronous but
-        # we can still update it as long as the loop scheduling is done in the main thread.
+        # we can still update it as long as the loop scheduling is done in the main
+        # thread.
         # Prepare tasks and attach a simple progress counter.
         tasks = []
         for pile_idx in range(self.metadata.num_piles):

@@ -39,7 +39,9 @@ class SparsityPenaltyLoss(Loss):
     def loss(self, x, y, y_pred, cache: SAECache):
         sparsity_losses = cache._ancestor.search("sparsity_penalty")
         assert len(sparsity_losses) == self.num_expected, (
-            f"Expected exactly one (or self.num_expected) sparsity penalty, but got {len(sparsity_losses)}. We may want to support >1 in the future, so this may or may not be a bug."
+            "Expected exactly one (or self.num_expected) sparsity penalty, but got "
+            f"{len(sparsity_losses)}. We may want to support >1 in the future, so this "
+            "may or may not be a bug."
         )
         l = 0
         for sp_cache in sparsity_losses:

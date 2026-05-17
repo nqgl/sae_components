@@ -32,7 +32,8 @@ def shuffled_range(start, stop, mod, shuffle=True):
 
 ### TODO flip:
 # currently it's DictPiler[tensor name key -> Piler[ index -> Pile]]
-# seems better to flip it to DictPiler[ index -> DictPile[tensor name key -> Pile/tensor]]
+# seems better to flip it to DictPiler[ index -> DictPile[tensor name key ->
+# Pile/tensor]]
 # not high priority though
 
 
@@ -136,11 +137,14 @@ class DictPiler:
                 )
             if first_piler.shape[0] != piler.shape[0]:
                 raise ValueError(
-                    f"Piler {piler.path} shape does not match first piler {first_piler.path}: {piler.shape[0]} != {first_piler.shape[0]}"
+                    f"Piler {piler.path} shape does not match first piler "
+                    f"{first_piler.path}: {piler.shape[0]} != {first_piler.shape[0]}"
                 )
             if first_piler.metadata.compression != piler.metadata.compression:
                 raise ValueError(
-                    f"Piler {piler.path} compression does not match first piler {first_piler.path}: {piler.metadata.compression} != {first_piler.metadata.compression}"
+                    f"Piler {piler.path} compression does not match first piler "
+                    f"{first_piler.path}: {piler.metadata.compression} != "
+                    f"{first_piler.metadata.compression}"
                 )
         return pilers
 

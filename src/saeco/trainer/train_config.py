@@ -99,14 +99,18 @@ class TrainConfig(SweepableConfig):
             set(self.input_sites) <= set(self.data_cfg.model_cfg.acts_cfg.sites)
         ):
             raise ValueError(
-                f"Input sites must be a subset of the data config's sites. Got {self.input_sites}, expected subset of {self.data_cfg.model_cfg.acts_cfg.sites}"
+                "Input sites must be a subset of the data config's sites. Got "
+                f"{self.input_sites}, expected subset of "
+                f"{self.data_cfg.model_cfg.acts_cfg.sites}"
             )
 
         if self.target_sites and not (
             set(self.target_sites) <= set(self.data_cfg.model_cfg.acts_cfg.sites)
         ):
             raise ValueError(
-                f"Target sites must be a subset of the data config's sites. Got {self.target_sites}, expected subset of {self.data_cfg.model_cfg.acts_cfg.sites}"
+                "Target sites must be a subset of the data config's sites. Got "
+                f"{self.target_sites}, expected subset of "
+                f"{self.data_cfg.model_cfg.acts_cfg.sites}"
             )
 
         used_input_sites = self.input_sites or self.data_cfg.model_cfg.acts_cfg.sites

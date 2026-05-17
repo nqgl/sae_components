@@ -14,7 +14,8 @@ def assert_wrapped(fn):
     @wraps(fn)
     def wrapper(self, *args, **kwargs):
         assert getattr(self.__class__, "_IS_WRAPPED", False), (
-            "Cannot call methods on the raw schedule. Access the wrapped object via .step_scheduler instead."
+            "Cannot call methods on the raw schedule. Access the wrapped object via "
+            ".step_scheduler instead."
         )
         return fn(self, *args, **kwargs)
 
@@ -99,7 +100,8 @@ class RunSchedulingConfig(SweepableConfig):
         # signified by type -- ints are steps, floats are proportions
         # this converts proportions to steps and leaves steps as is
         assert isinstance(n, int), (
-            "some assumptions failed and this actually can't be removed. if i dont hit this, method is indeed obsolete"
+            "some assumptions failed and this actually can't be removed. if i dont hit "
+            "this, method is indeed obsolete"
         )
         assert 0 <= n
         if isinstance(n, int):

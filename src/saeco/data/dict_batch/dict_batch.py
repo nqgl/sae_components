@@ -1720,7 +1720,8 @@ if __name__ == "__main__":
     print("\nAfter clone():")
     print(f"  cloned.inner is outer.inner: {cloned.inner is outer.inner}")
     print(
-        f"  cloned.inner.hidden is outer.inner.hidden: {cloned.inner.hidden is outer.inner.hidden}"
+        "  cloned.inner.hidden is outer.inner.hidden: "
+        f"{cloned.inner.hidden is outer.inner.hidden}"
     )
     cloned.items()
 

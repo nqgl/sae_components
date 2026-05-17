@@ -11,7 +11,8 @@ def get_src(fn):
 
 
 @deprecated(
-    "Deprecated as part of migration to Architecture. ArchReloadInfo replaces this functionality"
+    "Deprecated as part of migration to Architecture. ArchReloadInfo replaces this "
+    "functionality"
 )
 class ModelReloadInfo(BaseModel):
     module: str

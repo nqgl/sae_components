@@ -43,7 +43,8 @@ class Propagator(Collection):
         self._binary_reduction_initial_value = None
         self._propagate_rule: PropagateRule | None = None
         self._output_rule: OutputRule = output_normal
-        # ah maybe I should make this take these as list or as dict explicitly not as args and kwargs
+        # ah maybe I should make this take these as list or as dict explicitly not as
+        # args and kwargs
 
     def propagate(self, propagate_rule: PropagateRule):
         if not isinstance(propagate_rule, PropagateRule):

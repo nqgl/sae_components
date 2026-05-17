@@ -50,7 +50,8 @@ class ArchStoragePaths(BaseModel):
         if self.model_weights.exists():
             if load_weights is None:
                 raise ValueError(
-                    f"weights exist at {self.model_weights}, but load_weights is not set"
+                    f"weights exist at {self.model_weights}, but load_weights is not "
+                    "set"
                 )
             if load_weights:
                 state_dict = (

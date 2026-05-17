@@ -46,7 +46,8 @@ class OrthogonalizeFeatureGradsMixin:
         assert (
             grad_orth / (grad_orth.norm(dim=-1, keepdim=True) + 1e-6) * dec_normed
         ).sum(-1).abs().mean() < 1e-4, (
-            f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+            "Not orthogonal, oops. How not orthogonal? This much (max): "
+            f"{(fp.grad * fp.features).sum(-1).abs().max()}"
         )
         fp.grad[:] = grad_orth
         return 1
@@ -181,6 +182,7 @@ class OrthogonalizeFeatureGrads(WrapsModule):
         assert (
             grad_orth / (grad_orth.norm(dim=-1, keepdim=True) + 1e-6) * dec_normed
         ).sum(-1).abs().mean() < 1e-4, (
-            f"Not orthogonal, oops. How not orthogonal? This much (max): {(fp.grad * fp.features).sum(-1).abs().max()}"
+            "Not orthogonal, oops. How not orthogonal? This much (max): "
+            f"{(fp.grad * fp.features).sum(-1).abs().max()}"
         )
         fp.grad[:] = grad_orth

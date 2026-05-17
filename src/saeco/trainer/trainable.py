@@ -87,7 +87,8 @@ class Trainable(cl.Module):
         assert not any(
             isinstance(m, Normalized) for m in list(losses.values()) + models
         ), (
-            "models and losses should not be normalized, the Trainable object is responsible for normalization."
+            "models and losses should not be normalized, the Trainable object is "
+            "responsible for normalization."
         )
         self.models = nn.ModuleList(models)
         model = models[0]

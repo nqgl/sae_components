@@ -234,7 +234,8 @@ class SweepManager:
                         Pods.All(group=self.ezpod_group).purge()
                     except Exception as e:
                         print(
-                            "failed twice to purge subset of pods, purging all pods in 10 seconds"
+                            "failed twice to purge subset of pods, purging all pods in "
+                            "10 seconds"
                         )
                         time.sleep(10)
                         Pods.All().purge()
@@ -263,7 +264,8 @@ class SweepManager:
                         Pods.All(group=self.ezpod_group).purge()
                     except Exception as e:
                         print(
-                            "failed twice to purge subset of pods, purging all pods in 10 seconds"
+                            "failed twice to purge subset of pods, purging all pods in "
+                            "10 seconds"
                         )
                         time.sleep(10)
                         Pods.All().purge()

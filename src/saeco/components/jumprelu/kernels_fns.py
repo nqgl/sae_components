@@ -94,7 +94,8 @@ def check(kernel: Kernel, range=10, samples=8192):
     v3 = integrate(f3, range, samples)
     l = 10 - len(kernel.__name__)
     print(
-        f"{kernel.__name__}:{' ' * l} {v1:.2f}, {v2:.2f}, {v3:.2f}, [ {kernel(torch.zeros(1)).item():.2f}, cent: {centrality(kernel):.2f} ]"
+        f"{kernel.__name__}:{' ' * l} {v1:.2f}, {v2:.2f}, {v3:.2f}, [ "
+        f"{kernel(torch.zeros(1)).item():.2f}, cent: {centrality(kernel):.2f} ]"
     )
 
 
