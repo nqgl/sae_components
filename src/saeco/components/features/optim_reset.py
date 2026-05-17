@@ -1,9 +1,10 @@
 # %%
-
 # %%
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from typing import TYPE_CHECKING
+
+from saeco.sweeps import SweepableConfig
 
 if TYPE_CHECKING:
     from saeco.components.features.features_param import FeaturesParam
@@ -118,7 +119,6 @@ class FeatureParamType(StrEnum):
     other = "other"
 
 
-from saeco.sweeps import SweepableConfig
 
 b2_techniques = {
     "mean": ResetToMean,

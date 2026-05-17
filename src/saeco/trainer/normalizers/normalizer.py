@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from enum import IntEnum
 
 import torch
 import torch.nn as nn
@@ -8,6 +9,7 @@ from torch import Tensor
 
 import saeco.core as cl
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
+from saeco.sweeps import SweepableConfig
 
 
 class Normalizer(cl.Module, ABC):
@@ -230,13 +232,11 @@ class BatchNormalizer(AffineNormalizer):
         return x.std(dim=0, keepdim=True, unbiased=False) + self.eps
 
 
-from enum import IntEnum
 
 # class Aggregation(SweepableConfig):
 #     primed: bool
 #     running: bool
 #     batch: bool
-from saeco.sweeps import SweepableConfig
 
 
 class GNConfig(SweepableConfig):

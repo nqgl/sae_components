@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
+import saeco.core as cl
+from saeco.components.features import FeaturesParam
 from saeco.components.jumprelu.kernels_fns import rect
 from saeco.components.penalties import Penalty
 
@@ -183,8 +185,6 @@ class L0Penalty(Penalty):
         return cache(self).H(x).sum(1).mean(0)
 
 
-import saeco.core as cl
-from saeco.components.features import FeaturesParam
 
 
 class JumpReLU(cl.Module):

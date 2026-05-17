@@ -1,3 +1,4 @@
+from enum import IntEnum
 from typing import ClassVar
 
 import torch
@@ -53,7 +54,6 @@ def get_param_parent_module(param, model: nn.Module):
     return list(containing.values())[0]
 
 
-from enum import IntEnum
 
 
 class ResampleType(IntEnum):

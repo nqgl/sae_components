@@ -1,6 +1,7 @@
 import types
 from collections import defaultdict
 from collections.abc import Callable
+from functools import wraps
 from typing import (
     Literal,
     Protocol,
@@ -58,7 +59,6 @@ class Singular(Protocol):
     COLLECTED_FIELD_SINGULAR: Literal[True] = True
 
 
-from functools import wraps
 
 
 class typeacc_method[T, **P]:  # noqa: N801  # decorator API; lowercase by decorator convention

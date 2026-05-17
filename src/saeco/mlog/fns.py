@@ -311,7 +311,6 @@ class WandbCustomLogger:
         return self._sweep_inst_config
 
 
-from attrs import define, field
 
 
 @define

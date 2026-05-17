@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from functools import cached_property
 from typing import Protocol, overload, runtime_checkable
 
 import torch
@@ -289,8 +290,6 @@ def get_resampled_params(model: nn.Module):
 #     @property
 #     def features_grad(self) -> Optional[Tensor]: ...
 
-from functools import cached_property
-from typing import overload
 
 
 @runtime_checkable

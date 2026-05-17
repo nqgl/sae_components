@@ -1,5 +1,5 @@
 from functools import update_wrapper
-from typing import Any
+from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
 
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
@@ -47,7 +47,6 @@ class ResFloat(float, metaclass=FloatCheckMeta):
     PERIOD_FIELD_NAME = "resample_period"
 
 
-from typing import TYPE_CHECKING, Annotated, get_args, get_origin
 
 if TYPE_CHECKING:
     from saeco.trainer.schedule_cfg import RunSchedulingConfig
