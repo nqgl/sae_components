@@ -223,7 +223,6 @@ if __name__ == "__main__":
     print(growing_disk_tensor.tensor[:, 4])
     print(growing_disk_tensor.tensor[:, 4444])
     print(growing_disk_tensor.tensor[4])
-    # print(growing_disk_tensor.tensor[4444])
 
     print(growing_disk_tensor.tensor.shape)
     print(growing_disk_tensor.tensor.dtype)

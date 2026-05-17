@@ -139,9 +139,7 @@ class WandbCustomLogger:
             self.project = project
         self.run_name = run_name
 
-        print("init wandb", self.project, run_name)
         self.run = self.wandb.init(project=self.project, name=run_name)
-        print("init wandb done")
 
         if config:
             self.update_config(config)

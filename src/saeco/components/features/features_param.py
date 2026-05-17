@@ -140,10 +140,7 @@ class FeaturesParam:
     #         pass
     #     param_state = optim.state[self.param]
     #     fields = set(param_state.keys())
-    #     print("fields", fields)
-    #     print(fields - self.field_handlers.skips)
     #     if fields & set(self.field_handlers.skips):
-    #         print("skipping", fields & set(self.field_handlers.skips))
     #         fields = fields - set(self.field_handlers.skips)
     #     for field in fields:
     #         field_state = param_state[field]

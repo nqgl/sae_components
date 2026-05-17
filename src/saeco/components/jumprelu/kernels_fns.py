@@ -88,7 +88,6 @@ def check(kernel: Kernel, x_range=10, samples=8192):
     def f3(x):
         return x**2 * kernel(x)
 
-    # print(f"kernel.__name__)
     v1 = integrate(kernel, x_range, samples)
     v2 = integrate(f2, x_range, samples).abs()
     v3 = integrate(f3, x_range, samples)

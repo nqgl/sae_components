@@ -105,10 +105,8 @@ def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
                 )
             elif issubclass(RunFloat, annotation):
                 t = RunFloat
-                print("found run", name)
             elif issubclass(ResFloat, annotation):
                 t = ResFloat
-                print("found res", name)
             else:
                 continue
 
@@ -121,7 +119,6 @@ def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
     # model_dump = cls.model_dump
 
     # def aliasdump(self, *a, **k):
-    #     print(k)
 
     # cls.model_dump = aliasdump
     return Class2

@@ -8,9 +8,7 @@ def geometric_median(x, eps=1e-5, max_iter=100):
     x: (batch, n, d)
     """
     y = torch.zeros_like(x[:, 0])
-    print(y.shape)
-    for i in range(max_iter):
-        print(i)
+    for _ in range(max_iter):
         y0 = y
         y = (x / (y.unsqueeze(1) + eps)).sum(dim=1) / (
             (y.unsqueeze(1) + eps).sum(dim=1)

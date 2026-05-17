@@ -1,3 +1,4 @@
+import traceback
 from collections.abc import Iterable
 from contextlib import contextmanager
 from functools import cached_property
@@ -213,12 +214,15 @@ class Trainer:
         try:
             self._train(buffer=buffer, num_steps=num_steps)
         finally:
-            print("training complete, entering final")
             if self.cfg.save_on_complete:
                 try:
                     self.save()
-                except Exception as e:
-                    print(e)
+                except Exception:
+                    # Resilience: a save failure must not discard an
+                    # expensively-trained model or abort post-save steps.
+                    # Still make the failure loud — keep the full traceback.
+                    print("WARNING: save() failed after training; continuing.")
+                    traceback.print_exc()
 
     def _train(self, buffer=None, num_steps=None):
         if buffer is None:
@@ -240,15 +244,12 @@ class Trainer:
                     n += 1
                     yield next(old_buffer)
                     if n >= num_steps:
-                        print("hit end in train buf()")
                         break
 
             buffer = buf()
         for x in tqdm.tqdm(buffer, total=num_steps or self.cfg.schedule.run_length):
             x: SAETrainBatch
             inp, target = x.input, x.target
-            # print(inp.shape)
-            # print(target.shape)
             if not self.cfg.use_autocast:
                 inp = inp.float()  # TODO maybe cast other direction instead
                 target = target.float()  # TODO maybe cast other direction instead
@@ -286,7 +287,6 @@ class Trainer:
                 with self.evaluate():
                     self.do_intermittent_metrics()
             if self.cfg.schedule.run_length and self.t > self.cfg.schedule.run_length:
-                print("hit end in train()")
                 break
 
     @contextmanager
@@ -388,9 +388,7 @@ class Trainer:
 
     def save(self):
         save_dir = SAVED_MODELS_DIR
-        print("get run name")
         name = mlog.get_run_name()
-        print("done")
         sweep_name, run_name = name.split(":")
         savename = save_dir / sweep_name / run_name / str(self.t)
 

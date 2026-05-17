@@ -67,7 +67,6 @@ class ArchStoragePaths(BaseModel):
                 )
         arch_ref = ArchRef.open(self.arch_ref, xcls=xcls)
         arch_inst = arch_ref.load_arch(state_dict=state_dict, device=device, xcls=xcls)
-        print(f"arch_inst_type: {arch_inst.__class__}")
         return arch_inst
 
     def exists(self):

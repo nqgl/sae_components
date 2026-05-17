@@ -565,8 +565,6 @@ def main():
 
     # t(torch.rand(3, 4), torch.rand(2, 5))
 
-    # print(type_example)
-
 
 if __name__ == "__main__":
     main()

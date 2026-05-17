@@ -157,21 +157,6 @@ class ActsDataCreator:
             mask = einops.rearrange(mask, flatten_pattern)
             acts = acts[mask]
 
-        # if (
-        #     self.cfg.model_cfg.acts_cfg.filter_pad
-        #     and self.model.tokenizer.pad_token_id is not None
-        # ):
-        #     # TODO get_padding_mask method
-
-        #     # if structured data is needed, instead of short-circuiting, we should
-        #     # return the data + the mask
-        #     assert isinstance(self.model.tokenizer.pad_token_id, int)
-        #     mask = toks_re != self.model.tokenizer.pad_token_id
-        #     if not mask.all():
-        #         print(
-        #             f"removing {(~mask).sum()} activations from pad token locations"
-        #         )
-        #         acts = acts[mask]
         return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
 
     def _to_acts_single(

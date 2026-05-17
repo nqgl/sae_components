@@ -44,7 +44,6 @@ def load_sparse_tensor_force_shape(filename, shape, document_index_adder):
     assert shape[1:] == load_shape[1:]
 
     loaded_data = load_file(filename)
-    print(loaded_data.keys())
     indices = loaded_data["indices"]
     assert indices.shape[1] == 3
     indices[:, 0] += document_index_adder

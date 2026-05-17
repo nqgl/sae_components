@@ -1,7 +1,5 @@
 def bufferized_iter(it, queue_size=32, getnext=next):
-    print("bufferizing", queue_size)
     queue = [getnext(it) for _ in range(queue_size)]
-    print("buffer initialized")
 
     def qbuf():
         try:
@@ -12,7 +10,7 @@ def bufferized_iter(it, queue_size=32, getnext=next):
                 yield queue.pop(0)
                 queue.append(getnext(it))
         except StopIteration:
-            print("buffer depleted")
+            pass
         yield from queue
 
     return qbuf()

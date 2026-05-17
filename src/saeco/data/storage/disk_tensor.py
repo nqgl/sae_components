@@ -95,7 +95,6 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
 
     @cached_property
     def _raw_tensor(self):
-        # print("opening tensor", self.path)
         safepath = self.path.with_suffix(".safetensors")
         if safepath.exists():
             self.finalized = True
@@ -208,7 +207,6 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
         # self.resize(self.metadata.shape[self.cat_axis], truncate=True)
         self.finalized = True
         assert not self.metadata_path.exists()
-        # TODO
 
         self._save_safe()
         if self.tensor.numel() > 0:
