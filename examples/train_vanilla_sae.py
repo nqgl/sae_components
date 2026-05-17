@@ -15,8 +15,8 @@ Prerequisites
 -------------
 - A CUDA-capable GPU (`Architecture.__init__` defaults to `device="cuda"`).
 - HuggingFace + transformers can fetch GPT-2 (~500 MB on first run).
-- `pip install -e .` from the repo root.
-- For W&B logging: `pip install -e ".[wandb]"`.
+- `pip install -e ./sweepable && pip install -e .` from the repo root
+  (W&B logging is included; it is a core dependency).
 - For remote pod orchestration: `pip install -e ".[remote]"`.
 """
 

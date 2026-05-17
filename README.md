@@ -89,8 +89,12 @@ class VanillaSAE(Architecture[VanillaConfig]):
         return SparsityPenaltyLoss(self.model)
 ```
 
-For a runnable example that wires this up to a sweep and a training run, see
-[`research/experiments/vanilla_example_training.py`](research/experiments/vanilla_example_training.py).
+For a runnable end-to-end script that wires this up to a `RunConfig`, a
+small sweep grid, and a training run, see
+[`examples/train_vanilla_sae.py`](examples/train_vanilla_sae.py). Two more
+standalone demos live alongside it:
+[`examples/define_architecture.py`](examples/define_architecture.py) and
+[`examples/sweep_dsl.py`](examples/sweep_dsl.py).
 
 ## A more involved architecture: Gated SAE
 
