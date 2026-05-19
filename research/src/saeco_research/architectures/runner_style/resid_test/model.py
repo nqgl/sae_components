@@ -317,7 +317,7 @@ def resid_sae(
         )
     )
     model_full = Seq(
-        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
         encoder=(ReuseResidModule if cfg.reuse_layer else ResidModule)(
             *split_pairs(
                 encoder=encoder,

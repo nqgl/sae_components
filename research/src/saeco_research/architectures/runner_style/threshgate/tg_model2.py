@@ -453,7 +453,7 @@ def multigate_sae(
                     init.encoder, init.d_dict
                 ),
             ),
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             lin=init.encoder,
             split=co.ops.Lambda(lambda x: torch.split(x, init.d_dict, dim=-1)),
             gate_x=cl.Parallel(

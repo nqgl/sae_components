@@ -18,7 +18,7 @@ class Initializer:
 
     Exposed as ``self.init`` inside an ``Architecture``. Provides the
     encoder/decoder linear factories and bias helpers (``self.init.encoder``,
-    ``self.init.decoder``, ``self.init._decoder.sub_bias()``, …) so a
+    ``self.init.decoder``, ``self.init._decoder.sub_bias``, …) so a
     model can be assembled without hand-wiring shapes; also carries the
     initialization strategy (e.g. geometric-median decoder init).
     """

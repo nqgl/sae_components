@@ -176,7 +176,7 @@ class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
                 Seq(
                     encoder_pre=Seq(
                         **useif(
-                            self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()
+                            self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias
                         ),
                         lin=self.init.encoder,
                     ),

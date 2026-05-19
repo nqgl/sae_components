@@ -4,7 +4,6 @@ from pydantic import Field
 
 from saeco.components.sae_cache import SAECache
 from saeco.data.config.data_cfg import DataConfig
-from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig
 
 from .optim_config import get_optim_cls
@@ -80,8 +79,7 @@ class TrainConfig(SweepableConfig):
         default_factory=EarlyStoppingBounds.none
     )
 
-    @property
-    @lazycall
+    @cached_property
     def schedule(self):
         return self.raw_schedule_cfg.step_scheduler
 

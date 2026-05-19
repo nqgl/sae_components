@@ -41,7 +41,7 @@ class Gated(Architecture[GatedConfig]):
         return Seq(
             **useif(
                 self.cfg.pre_bias,
-                pre_bias=ReuseForward(self.init._decoder.sub_bias()),
+                pre_bias=ReuseForward(self.init._decoder.sub_bias),
             ),
             r_mag=cl.ops.MulParallel(
                 identity=ReuseForward(self.init.encoder),
@@ -64,7 +64,7 @@ class Gated(Architecture[GatedConfig]):
                         left=cl.ops.Identity(), right=self.init.decoder.bias
                     ).reduce((lambda l, r: l - r.detach()))
                     if self.cfg.detach
-                    else ReuseForward(self.init._decoder.sub_bias())
+                    else ReuseForward(self.init._decoder.sub_bias)
                 ),
             ),
             weight=ReuseForward(self.init.encoder),

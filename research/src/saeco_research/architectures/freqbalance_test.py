@@ -35,7 +35,7 @@ def sae(
 
     def model(enc, penalties, metrics, detach=False):
         return Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             encoder=enc,
             freqs=EMAFreqTracker(),
             **penalties,

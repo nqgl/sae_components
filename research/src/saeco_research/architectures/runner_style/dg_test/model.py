@@ -31,7 +31,7 @@ def sae(
     dg.weight.data = torch.eye(init.d_dict)
     model = Seq(
         encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             lin=init.encoder,
         ),
         penalty1=Seq(nn.ReLU(), co.L1Penalty(scale=cfg.l1_1_scale)),

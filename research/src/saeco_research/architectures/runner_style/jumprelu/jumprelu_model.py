@@ -52,7 +52,7 @@ def jumprelu_sae(
     thresh_metadata.lr_mult(cfg.thresh_lr_mult)
     model = Seq(
         encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             lin=init.encoder,
             **useif(
                 cfg.penalize_pre_acts,

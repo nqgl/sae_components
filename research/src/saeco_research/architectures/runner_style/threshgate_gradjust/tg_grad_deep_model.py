@@ -166,7 +166,7 @@ def deep_tg_grad_sae(
 
     model = Seq(
         encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             **useif(
                 cfg.deep_enc,
                 resids=cl.collections.seq.ResidualSeq(

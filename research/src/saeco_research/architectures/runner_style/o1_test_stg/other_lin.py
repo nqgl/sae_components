@@ -1,8 +1,9 @@
+from functools import cached_property
+
 import torch
 from torch.optim.optimizer import Optimizer as Optimizer
 
 import saeco.components.features as ft
-from saeco.misc import lazycall
 
 
 class RandResampledFP(ft.FeaturesParam):
@@ -43,8 +44,7 @@ class OtherLinear(ft.LinWeights):
         self.weight_param_index = weight_param_index
         self.channel_split = channel_split
 
-    @property
-    @lazycall
+    @cached_property
     def features(self):
         return {
             "weight": RandResampledFP(

@@ -23,7 +23,7 @@ def sae(
 ):
     model = Seq(
         encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             lin=init.encoder,
             nonlinearity=nn.ReLU(),
         ),

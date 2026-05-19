@@ -18,7 +18,7 @@ def tg_grad_sae(
 ):
     model = Seq(
         encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             lin=GTTest(cfg, init) if cfg.mag_weights else BinaryEncoder(cfg, init),
         ),
         freqs=EMAFreqTracker(),

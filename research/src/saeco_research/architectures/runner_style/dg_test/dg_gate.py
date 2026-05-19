@@ -73,7 +73,7 @@ def gated_dg_sae(
     enc_mag = Seq(
         **useif(
             cfg.pre_bias,
-            pre_bias=ReuseForward(init._decoder.sub_bias()),
+            pre_bias=ReuseForward(init._decoder.sub_bias),
         ),
         r_mag=cl.ops.MulParallel(
             identity=ReuseForward(init.encoder),
@@ -95,7 +95,7 @@ def gated_dg_sae(
                         (lambda l, r: l - r.detach())
                     )
                     if cfg.detach
-                    else ReuseForward(init._decoder.sub_bias())
+                    else ReuseForward(init._decoder.sub_bias)
                 ),
             ),
             weight=ReuseForward(init.encoder),

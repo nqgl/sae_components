@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import Self
 
 import torch
@@ -16,7 +17,6 @@ from saeco.components.features.optim_reset import (
 from saeco.components.resampling.freq_tracker.freq_tracker import (
     get_active_freq_trackers,
 )
-from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig
 
 from .freq_tracker import FreqTracker
@@ -78,7 +78,6 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
         self._decs = None
         self._biases = None
         self._other_types = None
-        # self._freq_tracker = None
 
     def get_feature_indices_to_reset(self):
         return self.freq_tracker.freqs < self.cfg.dead_threshold
@@ -149,18 +148,12 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
         if self._other_types is None:
             self._other_types = other_types
 
-    @property
-    @lazycall
+    @cached_property
     def freq_tracker(self) -> FreqTracker:
         fts = get_active_freq_trackers(self.model)
         assert len(fts) == 1, f"Expected 1 freq tracker, got {len(fts)}"
         ft: FreqTracker = fts.pop()
         return ft
-
-    def set_freq_tracker(self, value):
-        assert self._freq_tracker is None
-        self._freq_tracker = value
-        return value
 
     @property
     def encs(self) -> list[Resamplable]:
