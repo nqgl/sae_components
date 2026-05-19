@@ -1,14 +1,10 @@
-# %%
 from collections.abc import Callable
 from functools import wraps
-from typing import Optional
 
 from saeco.sweeps import SweepableConfig
-
-AmbiguousTypes = [Optional[int | float], int | float]
-# Run length
-# ", resample period
 from saeco.trainer.tosteps_wrapper import ResFloat, RunFloat, tosteps_wrapper
+
+AmbiguousTypes = [int | float | None, int | float]
 
 
 def assert_wrapped(fn):
@@ -17,7 +13,8 @@ def assert_wrapped(fn):
     @wraps(fn)
     def wrapper(self, *args, **kwargs):
         assert getattr(self.__class__, "_IS_WRAPPED", False), (
-            "Cannot call methods on the raw schedule. Access the wrapped object via .step_scheduler instead."
+            "Cannot call methods on the raw schedule. Access the wrapped object via "
+            ".step_scheduler instead."
         )
         return fn(self, *args, **kwargs)
 
@@ -25,6 +22,14 @@ def assert_wrapped(fn):
 
 
 class RunSchedulingConfig(SweepableConfig):
+    """Timeline for a run: length, resampling cadence, and LR schedule.
+
+    Controls total ``run_length`` (in steps), the resampling period and
+    its delay/finish phases, and learning-rate warmup/cooldown. Several
+    fields accept fractional values (e.g. a float in [0, 1]) that are
+    interpreted relative to ``run_length`` or the resample period.
+    """
+
     run_length: int | None = 50_000
 
     resample_period: int = 12_500
@@ -38,7 +43,8 @@ class RunSchedulingConfig(SweepableConfig):
     targeting_warmup_length: int | RunFloat = 0.15
     targeting_pre_deflation: float | None = None
 
-    ### lr scheduler # this is not quite the continuous pretraining scheduler, seems fine though
+    ### lr scheduler
+    # this is not quite the continuous pretraining scheduler, seems fine though
     lr_warmup_length: int | RunFloat = 2_000
     lr_end_plateau_length: int | RunFloat = 0
     lr_cooldown_length: int | RunFloat = 0.2
@@ -48,7 +54,6 @@ class RunSchedulingConfig(SweepableConfig):
     lr_resample_warmup_factor: float = 0.1
     lr_geometric_rescale: bool = True
 
-    # def model_post_init(self):
     @property
     def step_scheduler(self) -> "RunSchedulingConfig":
         return tosteps_wrapper(self.__class__)(_raw=self)
@@ -94,12 +99,14 @@ class RunSchedulingConfig(SweepableConfig):
         # signified by type -- ints are steps, floats are proportions
         # this converts proportions to steps and leaves steps as is
         assert isinstance(n, int), (
-            "some assumptions failed and this actually can't be removed. if i dont hit this, method is indeed obsolete"
+            "some assumptions failed and this actually can't be removed. if i dont hit "
+            "this, method is indeed obsolete"
         )
         assert 0 <= n
         if isinstance(n, int):
             return n
-        assert isinstance(n, float) and n <= 1
+        assert isinstance(n, float)
+        assert n <= 1
         period = period or self.run_length
         return n * period
 
@@ -108,13 +115,15 @@ class RunSchedulingConfig(SweepableConfig):
         if self.lr_geometric_rescale:
 
             def interpolate(scale, factor):
-                assert 0 < factor <= 1 and 0 <= scale <= 1
+                assert 0 < factor <= 1
+                assert 0 <= scale <= 1
                 return factor ** (1 - scale)
 
         else:
 
             def interpolate(scale, factor):
-                assert 0 <= factor <= 1 and 0 <= scale <= 1
+                assert 0 <= factor <= 1
+                assert 0 <= scale <= 1
                 return max(scale, factor)
 
         return self._lr_scale2(t, interpolate)
@@ -122,7 +131,6 @@ class RunSchedulingConfig(SweepableConfig):
     @assert_wrapped
     def _lr_scale2(self, t: int, interpolator: Callable) -> float:
         re_lr = 1
-        endmin = 1
         if self.lr_resample_warmup_length and (resample_t := self.resample_t(t)) != -1:
             re_lr = interpolator(
                 min(resample_t / self.lr_resample_warmup_length, 1),

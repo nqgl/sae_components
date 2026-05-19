@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 
@@ -81,7 +80,9 @@ class Tied:
                 dst_param.data.shape == src_param.data.transpose(-2, -1).shape
             ):
                 print(
-                    "WARNING: Tied initialization weights are the same shape. Ambiguous whether to transpose. Defaulting to transposing"
+                    "WARNING: Tied initialization weights are the same "
+                    "shape. Ambiguous whether to transpose. Defaulting to "
+                    "transposing"
                 )
                 dst_param.data[:] = src_param.data.transpose(-2, -1)
 
@@ -103,14 +104,16 @@ class Tied:
 
 
 class LinearFactory:
-    def __init__(self, d_in, d_out, bias=True, wrappers=[], mixins: list = []):
+    def __init__(
+        self, d_in, d_out, bias=True, wrappers=None, mixins: list | None = None
+    ):
         self.d_in = d_in
         self.d_out = d_out
         self._bias = bias
         self._linear = None
         self._linear_raw = None
-        self.wrappers = wrappers
-        self.mixins = mixins
+        self.wrappers = wrappers if wrappers is not None else []
+        self.mixins = mixins if mixins is not None else []
         self._weight_tie: Tied | None = None
         self._bias_tie: Tied | None = None
 
@@ -135,6 +138,11 @@ class LinearFactory:
         if not self.unset:
             raise ValueError("Cannot add wrappers after linear has been created")
         self.wrappers.append(wrapper)
+
+    def add_mixin_(self, mixin):
+        if not self.unset:
+            raise ValueError("Cannot add mixins after linear has been created")
+        self.mixins.append(mixin)
 
     @property
     def linear_cls(self) -> type[nn.Linear]:
@@ -166,7 +174,6 @@ class LinearFactory:
         assert self.d_out % bf == 0
 
         lin = nn.Linear(self.d_in, self.d_out // bf, bias=True)
-        ll = self.raw.weight.data
         # v = einops.rearrange(ll, "(i bf) q -> i bf q", bf=bf).sum(dim=-2)
         # v = einops.rearrange(ll, "(bf i) q -> bf i q", bf=bf).sum(dim=0)
         # lin.weight.data[:] = v * (ll.std() / v.std(dim=0, keepdim=True))
@@ -178,14 +185,14 @@ class LinearFactory:
             self._linear = self.make_new()
         return self._linear
 
-    def new_bias(self) -> torch.Tensor:
-        class temp:
+    def new_bias(self) -> nn.Parameter:
+        class _BiasProbe:
             weight = self.lin.weight
             bias = torch.zeros(self.d_out)
 
         if self._bias_tie is not None:
-            self._bias_tie(temp)
-        return nn.Parameter(temp.bias)
+            self._bias_tie(_BiasProbe)
+        return nn.Parameter(_BiasProbe.bias)
 
     @property
     def raw(self):
@@ -225,7 +232,8 @@ class LinearFactory:
         assert self._bias_tie is None
         self._bias_tie = Tied(torch.zeros(self.d_out) + const, Tied.TO_VALUE, "bias")
         # assert (self.lin.weight.data.shape == other.lin.weight.data.shape) ^ (
-        #     self.lin.weight.data.shape == other.lin.weight.data.transpose(-2, -1).shape
+        #     self.lin.weight.data.shape
+        #     == other.lin.weight.data.transpose(-2, -1).shape
         # )
         # if self.lin.weight.data.shape == other.lin.weight.data.shape:
         #     self.lin.weight.data[:] = other.lin.weight.data

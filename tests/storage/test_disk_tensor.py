@@ -1,13 +1,14 @@
 from pathlib import Path
+
 import pytest
 import torch
 
+from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.disk_tensor import (
     DiskTensor,
     DiskTensorMetadata,
     _numel_from_shape,
 )
-from saeco.data.storage.compressed_safetensors import CompressionType
 
 
 @pytest.fixture
@@ -27,7 +28,7 @@ class TestDiskTensorMetadata:
         assert meta.dtype == torch.int64
 
     @pytest.mark.parametrize(
-        "dtype_str,expected",
+        ("dtype_str", "expected"),
         [
             ("torch.float32", torch.float32),
             ("torch.int64", torch.int64),
@@ -43,7 +44,7 @@ class TestDiskTensorMetadata:
 
 class TestNumelFromShape:
     @pytest.mark.parametrize(
-        "shape,expected",
+        ("shape", "expected"),
         [
             ([10], 10),
             ([10, 10], 100),
@@ -321,7 +322,7 @@ class TestDiskTensorEdgeCases:
 
     def test_empty_tensor(self, tmp_tensor_path: Path):
         dt = DiskTensor.create(tmp_tensor_path, (0,), torch.float32)
-        dt.tensor  # trigger creation
+        _ = dt.tensor  # trigger creation
         dt.finalize()
 
         dt2 = DiskTensor.open(tmp_tensor_path)

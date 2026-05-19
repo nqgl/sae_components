@@ -48,7 +48,7 @@ D2S = {d: str(d) for d in DTYPES_DEDUPLICATED}
 def str_to_dtype(dtype: str, strict: bool = False) -> torch.dtype:
     if dtype not in S2D:
         if strict:
-            raise ValueError(f"Unsupported dtype string: {dtype}")
+            raise ValueError(f"Unknown dtype string: {dtype}")
         else:
             return str_to_dtype(f"torch.{dtype}", strict=True)
     return S2D[dtype]

@@ -1,8 +1,14 @@
 def getsite(obj, name):
     if "." in name:
         name = name.split(".")
-        for n in name:
-            obj = getsite(obj, n)
+        for i, n in enumerate(name):
+            try:
+                obj = getsite(obj, n)
+            except AttributeError as e:
+                raise AttributeError(
+                    f"Failed to get site {name[i]} from {'.'.join(name[:i])} "
+                    f"in getsite(..., {'.'.join(name)})"
+                ) from e
         return obj
     if name.isnumeric():
         return obj[int(name)]
@@ -38,7 +44,7 @@ ROOT = "transformer"
 
 
 def tlsite_to_nnsite(tl_name):
-    while any([k in tl_name for k in translations.keys()]):
+    while any(k in tl_name for k in translations.keys()):
         for k, v in translations.items():
             tl_name = tl_name.replace(k, v)
     return f"{ROOT}.{tl_name}"

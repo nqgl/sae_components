@@ -4,13 +4,15 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
+import saeco.core as cl
+from saeco.components.features import FeaturesParam
 from saeco.components.jumprelu.kernels_fns import rect
 from saeco.components.penalties import Penalty
 
 # import saeco.core as cl
 
 
-class H_z_minus_thresh_fn(torch.autograd.Function):
+class H_z_minus_thresh_fn(torch.autograd.Function):  # noqa: N801  # load-bearing mnemonic (H(z - thresh))
     @staticmethod
     @custom_fwd
     def forward(ctx, z, thresh, kernel, eps):
@@ -36,8 +38,8 @@ class H_z_minus_thresh_fn(torch.autograd.Function):
         return torch.zeros_like(ctx.z)
 
 
-def modified_H(n):
-    class H_z_minus_thresh_modified_fn(torch.autograd.Function):
+def heaviside(n):
+    class H_z_minus_thresh_modified_fn(torch.autograd.Function):  # noqa: N801  # load-bearing mnemonic (H(z - thresh))
         @staticmethod
         @custom_fwd
         def forward(ctx, z, thresh, kernel, eps):
@@ -76,7 +78,7 @@ class HStep(nn.Module):
         self.exp = exp
         self.H = H_z_minus_thresh_fn.apply
         if modified_grad:
-            self.H = modified_H(modified_grad)
+            self.H = heaviside(modified_grad)
 
     def forward(self, x):
         thresh = self.thresh
@@ -85,7 +87,7 @@ class HStep(nn.Module):
         return self.H(x, thresh, self.kernel, self.eps)
 
 
-class JumpReLU_fn(torch.autograd.Function):
+class JumpReLUFn(torch.autograd.Function):
     @staticmethod
     @custom_fwd
     def forward(ctx, z, thresh, kernel, eps):
@@ -113,7 +115,7 @@ class JumpReLU_fn(torch.autograd.Function):
 
 
 def jumprelu_modified(n):
-    class JumpReLU_Modified_fn(torch.autograd.Function):
+    class JumpReLUModifiedFn(torch.autograd.Function):
         @staticmethod
         @custom_fwd
         def forward(ctx, z, thresh, kernel, eps):
@@ -156,7 +158,7 @@ def jumprelu_modified(n):
                     None,
                 )
 
-    return JumpReLU_Modified_fn.apply
+    return JumpReLUModifiedFn.apply
 
 
 class L0Penalty(Penalty):
@@ -183,8 +185,6 @@ class L0Penalty(Penalty):
         return cache(self).H(x).sum(1).mean(0)
 
 
-import saeco.core as cl
-from saeco.components.features import FeaturesParam
 
 
 class JumpReLU(cl.Module):
@@ -193,7 +193,7 @@ class JumpReLU(cl.Module):
         self.thresh = thresh
         self.kernel = kernel
         self.eps = eps
-        self.jumprelu = JumpReLU_fn.apply
+        self.jumprelu = JumpReLUFn.apply
         if modified_jumprelu:
             self.jumprelu = jumprelu_modified(modified_jumprelu)
         self.exp = exp
@@ -206,10 +206,10 @@ class JumpReLU(cl.Module):
 
     @property
     def features(self):
-        return dict(
-            thresh=FeaturesParam(
+        return {
+            "thresh": FeaturesParam(
                 self.thresh,
                 feature_index=0,
                 feature_parameter_type="bias",
             )
-        )
+        }

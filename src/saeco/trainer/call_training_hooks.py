@@ -36,8 +36,8 @@ def do_decorated_post_backward(module: nn.Module, cache=None):
             d[m] = {name: getattr(m, name) for name in fields}
 
     module.apply(appl_fn)
-    for m, hooks in d.items():
-        for name, hook in hooks.items():
+    for _m, hooks in d.items():
+        for _name, hook in hooks.items():
             hook()
 
 
@@ -52,8 +52,8 @@ def call_decorated_training_hook(
             d[m] = {name: getattr(m, name) for name in fields}
 
     module.apply(appl_fn)
-    for m, hooks in d.items():
-        for name, hook in hooks.items():
+    for _m, hooks in d.items():
+        for _name, hook in hooks.items():
             hook()
 
 

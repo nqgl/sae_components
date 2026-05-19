@@ -5,12 +5,37 @@ from .components.mlp import MLP, FeedForward
 from .features.features import EncoderBias
 from .features.linear_type import LinDecoder, LinEncoder
 from .losses import L2Loss, Loss, SparsityPenaltyLoss
-from .ops.fnlambda import Lambda
 from .metrics import metrics
 from .metrics.metrics import Metrics
+from .ops.fnlambda import Lambda
 from .penalties import L1Penalty, LambdaPenalty, LinearDecayL1Penalty, Penalty
 from .resampling import (
     EMAFreqTracker,
     FreqTracker,
 )
 from .sae_cache import SAECache
+
+__all__ = [
+    "EMAFreqTracker",
+    "EncoderBias",
+    "FeedForward",
+    "FreqTracker",
+    "IfTraining",
+    "L1Penalty",
+    "L2Loss",
+    "Lambda",
+    "LambdaPenalty",
+    "LinDecoder",
+    "LinEncoder",
+    "LinearDecayL1Penalty",
+    "Loss",
+    "MLP",
+    "Metrics",
+    "Penalty",
+    "SAECache",
+    "SparsityPenaltyLoss",
+    "metrics",
+    "ops",
+    "penalties",
+    "useif",
+]

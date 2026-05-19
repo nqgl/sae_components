@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Literal, cast, overload
 from weakref import WeakValueDictionary
 
+import paramsight
 import torch
 from attrs import define, field
 from paramsight import get_resolved_typevars_for_base, takes_alias
@@ -46,12 +47,12 @@ class MixedCache[DiskTensorType: DiskTensor[Any]]:
 
 
 @define
+@paramsight.slotted_strategies.add_field
 class DiskTensorCollection[
     DiskTensorType: DiskTensor[Any] = DiskTensor,
 ]:
     path: Path | None = None
     stored_tensors_subdirectory_name: str = "tensors"
-    return_raw: bool = False
     cache: MixedCache[DiskTensorType] = field(factory=MixedCache[DiskTensorType])
 
     @property
@@ -116,10 +117,8 @@ class DiskTensorCollection[
             self.cache[name] = obj
             return obj
 
-    def __getitem__(self, name: str | int) -> torch.Tensor | DiskTensorType:
+    def __getitem__(self, name: str | int) -> torch.Tensor:
         disk_tensor = self.get(name)
-        if self.return_raw:
-            return disk_tensor
         return disk_tensor.tensor
 
     def __setitem__(self, name: str, value: torch.Tensor) -> None:
@@ -148,8 +147,10 @@ class DiskTensorCollection[
     @overload
     def items(self, raw: Literal[True] = True) -> list[tuple[str, DiskTensorType]]: ...
     @overload
-    def items(self, raw: Literal[False] = False) -> list[tuple[str, torch.Tensor]]: ...
-    def items(self, raw: bool = True):
+    def items(self, raw: Literal[False]) -> list[tuple[str, torch.Tensor]]: ...
+    def items(
+        self, raw: bool = True
+    ) -> list[tuple[str, DiskTensorType]] | list[tuple[str, torch.Tensor]]:
         if raw:
             return [(name, self.get(name)) for name in self.keys()]
         else:
@@ -158,8 +159,8 @@ class DiskTensorCollection[
     @overload
     def values(self, raw: Literal[True] = True) -> list[DiskTensorType]: ...
     @overload
-    def values(self, raw: Literal[False] = False) -> list[torch.Tensor]: ...
-    def values(self, raw: bool = True):
+    def values(self, raw: Literal[False]) -> list[torch.Tensor]: ...
+    def values(self, raw: bool = True) -> list[DiskTensorType] | list[torch.Tensor]:
         if raw:
             return [self.get(name) for name in self.keys()]
         else:

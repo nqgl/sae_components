@@ -63,7 +63,7 @@ def dlmerge(da, db, unique=True):
     da = dlcopy(da)
     for k, vb in db.items():
         if k in da:
-            assert type(da[k]) == type(vb), (
+            assert type(da[k]) is type(vb), (
                 f"Type mismatch: {type(da[k])} and {type(vb)}"
             )
             if isinstance(vb, list):
@@ -140,7 +140,8 @@ class Cache:
     _write_callbacks = ...
     _lazy_read_funcs = ...
     _name: str = ...
-    has: CacheHas  # TypeVar this so it knows it's contents would be nice. maybe possible?
+    # TypeVar-ing this so it knows its contents would be nice. maybe possible?
+    has: CacheHas
     watching: CacheWatching
 
     def __init__(self, callbacks=None, parent=None, subcache_index=None):
@@ -185,7 +186,8 @@ class Cache:
         if __value == self._NULL_ATTR:
             if hasattr(self, _name) and getattr(self, _name) not in self._NULLTYPES:
                 raise AttributeError(
-                    f"Cache error: Tried to watch attribute {_name}, but {_name} already set to {getattr(self, _name)}"
+                    f"Cache error: Tried to watch attribute {_name}, but "
+                    f"{_name} already set to {getattr(self, _name)}"
                 )
             else:
                 return super().__setattr__(_name, __value)
@@ -203,12 +205,14 @@ class Cache:
         if self._ignored(_name):
             if _name in self._unwatched_writes:
                 raise AttributeError(
-                    f"Cache overwrite error on unwatched attribute: Unwatched attribute {_name} already written"
+                    f"Cache overwrite error on unwatched attribute: "
+                    f"Unwatched attribute {_name} already written"
                 )
             self._unwatched_writes.add(_name)
         elif getattr(self, _name) != self._NULL_ATTR:
             raise AttributeError(
-                f"Cache overwrite error: Watched attribute {_name} already set to {getattr(self, _name)}"
+                f"Cache overwrite error: Watched attribute {_name} "
+                f"already set to {getattr(self, _name)}"
             )
         if _name in self._write_callbacks:
             for nice in sorted(self._write_callbacks[_name].keys()):
@@ -252,7 +256,9 @@ class Cache:
         self._lazy_read_funcs = dlmerge(self._lazy_read_funcs, other._lazy_read_funcs)
         if other._parent is not None and self._parent is not other:
             pass
-            # raise NotImplementedError("cache copy receiving _parent not yet supported")
+            # raise NotImplementedError(
+            #     "cache copy receiving _parent not yet supported"
+            # )
         if not other._subcaches == {} and self._parent is not other:
             raise NotImplementedError(
                 "cache copy recieving _subcaches not yet supported"
@@ -309,7 +315,8 @@ class Cache:
     def register_write_callback(self, _name: str, hook, ignore=False, nice=0):
         """
         hook fn: (cache, value) -> Optional[value]
-            if hook returns a value, that value will replace the input value as what gets written into the cache
+            if hook returns a value, that value will replace the input
+            value as what gets written into the cache
         """
         if _name.startswith("_"):
             raise AttributeError("Cannot set hook on private attribute")
@@ -343,10 +350,12 @@ class Cache:
     def logdict(
         self,
         name="cache",
-        excluded: list[str] = [],
-        exclude_contains: list[str] = [],
+        excluded: list[str] | None = None,
+        exclude_contains: list[str] | None = None,
         itemize=True,
     ):
+        excluded = excluded if excluded is not None else []
+        exclude_contains = exclude_contains if exclude_contains is not None else []
         _, vals = self._getfields()
         for ex in excluded:
             if ex in vals:
@@ -445,7 +454,7 @@ class Cache:
         return a
 
     def destruct(self):
-        for k, cache in [i for i in self._subcaches.items()]:
+        for k, cache in list(self._subcaches.items()):
             cache.destruct()
             del self._subcaches[k]
             del cache
@@ -508,7 +517,7 @@ class SubCacher:
         try:
             v = self._obj(*args, **kwargs)
         except Exception as e:
-            raise locate_cache_exception(e, self._cache)
+            raise locate_cache_exception(e, self._cache) from e
         if self._record:
             record_location = self._cache._subcache_index
             if isinstance(self._record, str):
@@ -538,7 +547,6 @@ def main():
     class TC(Cache):
         tf = ...
 
-    c = Cache()
     tc = TC()
     tc2 = TC()
 
@@ -556,8 +564,6 @@ def main():
     # t(torch.rand(3, 4), torch.rand(3, 5))
 
     # t(torch.rand(3, 4), torch.rand(2, 5))
-
-    # print(type_example)
 
 
 if __name__ == "__main__":

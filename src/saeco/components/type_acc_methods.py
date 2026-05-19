@@ -1,10 +1,10 @@
 import types
 from collections import defaultdict
 from collections.abc import Callable
+from functools import wraps
 from typing import (
     Literal,
     Protocol,
-    TypeVar,
     overload,
 )
 
@@ -13,42 +13,42 @@ _fields_dict: dict[type, dict[type["typeacc_method"], list[str]]] = defaultdict(
 _missing_name: set["typeacc_method"] = set()
 
 
-def _getfields(cls: type, FIELD_NAME: type["typeacc_method"]) -> list[str]:
+def _getfields(cls: type, field_name: type["typeacc_method"]) -> list[str]:
     if not isinstance(cls, type):
         cls = cls.__class__
     cls_d = _fields_dict[cls]
-    if FIELD_NAME not in cls_d:
+    if field_name not in cls_d:
         for c in cls.__mro__:
             if c == cls or c is object:
                 continue
             try:
-                return _getfields(c, FIELD_NAME)
+                return _getfields(c, field_name)
             except AttributeError:
                 pass
-        raise AttributeError(FIELD_NAME)
-    return cls_d[FIELD_NAME]
+        raise AttributeError(field_name)
+    return cls_d[field_name]
 
 
-def getfields(cls: type, FIELD_NAME: type["typeacc_method"]) -> list[str]:
+def getfields(cls: type, field_name: type["typeacc_method"]) -> list[str]:
     try:
-        return _getfields(cls, FIELD_NAME)
+        return _getfields(cls, field_name)
     except AttributeError:
         return []
 
 
-def setfield(cls: type, FIELD_NAME: type["typeacc_method"], value: list[str]):
+def setfield(cls: type, field_name: type["typeacc_method"], value: list[str]):
     assert isinstance(cls, type)
     if cls not in _fields_dict:
         _fields_dict[cls] = {}
     cls_d = _fields_dict[cls]
-    cls_d[FIELD_NAME] = value
+    cls_d[field_name] = value
 
 
-def hasfield(cls: type, FIELD_NAME: type["typeacc_method"]):
+def hasfield(cls: type, field_name: type["typeacc_method"]):
     if cls not in _fields_dict:
         return False
     cls_d = _fields_dict[cls]
-    return FIELD_NAME in cls_d
+    return field_name in cls_d
 
 
 class NonSingular(Protocol):
@@ -59,10 +59,9 @@ class Singular(Protocol):
     COLLECTED_FIELD_SINGULAR: Literal[True] = True
 
 
-from functools import wraps
 
 
-class typeacc_method[T, **P]:
+class typeacc_method[T, **P]:  # noqa: N801  # decorator API; lowercase by decorator convention
     # COLLECTED_FIELD_NAME = ...
     COLLECTED_FIELD_SINGULAR = False
 
@@ -84,13 +83,15 @@ class typeacc_method[T, **P]:
         if hasfield(owner, self.__class__):
             if self.COLLECTED_FIELD_SINGULAR:
                 raise AttributeError(
-                    f"{self.__class__}: Cannot overwrite singular field '{name}' on {owner}"
+                    f"{self.__class__}: Cannot overwrite singular field '{name}' on "
+                    f"{owner}"
                 )
             fields = getfields(owner, self.__class__)
             fields.append(name)
             if len(fields) != len(set(fields)):
                 raise AttributeError(
-                    f"{self.__class__}: Field names must be unique: duplicate name '{name}' on {owner}"
+                    f"{self.__class__}: Field names must be unique: duplicate name "
+                    f"'{name}' on {owner}"
                 )
         else:
             setfield(owner, self.__class__, [name])
@@ -99,7 +100,8 @@ class typeacc_method[T, **P]:
     def get_fields(cls, owner: type):
         if len(_missing_name) > 0:
             raise AttributeError(
-                f"some properties have not been owned: {[f.func for f in _missing_name]}"
+                "some properties have not been owned: "
+                f"{[f.func for f in _missing_name]}"
             )
         return getfields(owner, cls)
 
@@ -115,17 +117,6 @@ class typeacc_method[T, **P]:
         fields = cls.get_fields(inst.__class__)
         assert not cls.COLLECTED_FIELD_SINGULAR
         return {f: getattr(inst, f) for f in fields}
-
-
-class arch_prop_singular(typeacc_method):
-    COLLECTED_FIELD_SINGULAR = True
-
-    @classmethod
-    def get_from_fields(cls, inst: object) -> Callable:
-        fields = cls.get_fields(inst.__class__)
-        assert cls.COLLECTED_FIELD_SINGULAR
-        assert len(fields) == 1
-        return getattr(inst, fields[0])
 
 
 class PreForwardHook(typeacc_method): ...

@@ -12,6 +12,11 @@ from saeco.data.config.locations import DATA_DIRS
 from saeco.data.config.model_config.model_cfg import ModelConfig
 from saeco.data.config.model_config.model_type_cfg_base import ModelLoadingConfigBase
 from saeco.data.config.split_config import SplitConfig
+from saeco.data.config.tokenization_config import (
+    PackingMode,
+    TokenizationConfig,
+    TokenizationMode,
+)
 from saeco.data.piler.dict_piler import DictBatch, DictPiler
 from saeco.data.training_data.acts_data import (
     ActsDataCreator,
@@ -48,13 +53,18 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
             end=100,
         )
     )
-    override_dictpiler_path_str: str | None = None
+    override_token_dictpiler_path_str: str | None = (
+        None  # TODO make this use relative user path
+    )
     dataset: str = "alancooney/sae-monology-pile-uncopyrighted-tokenizer-gpt2"  # tok
     load_from_disk: bool = False  # tok
     set_bos: bool = True  # tok
     tokens_column_name: str = "input_ids"  # tok
+    attention_mask_column_name: str | None = "attention_mask"
     perm_all: bool = False  # tok
     seq_len: int | None = 128
+    recons_loss_skip_first_n_targets: int = 0
+    tokenization: TokenizationConfig = Field(default_factory=TokenizationConfig)
     generation_config: DataGenerationProcessConfig = Field(
         default_factory=DataGenerationProcessConfig
     )
@@ -82,13 +92,14 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
             if self.model_cfg.model_kwargs
             else ""
         )
+        extra_strs += self.tokenization.idstr_fragment()
         return f"{self.dataset.replace('/', '_')}_{extra_strs}_{self.set_bos}"
 
     def _get_tokens_split_path(self, split: SplitConfig):
         return (
             DATA_DIRS._CHUNKS_DIR
             / self.idstr()
-            / self.model_cfg.modelstring
+            # / self.model_cfg.modelstring
             / split.split_dir_id
             / "tokens"
         )
@@ -105,8 +116,13 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     def _tokens_piles_path(self, split: SplitConfig) -> Path:
         return self._get_tokens_split_path(split) / "piles"
 
-    def _tokens_perm_path(self, split: SplitConfig) -> Path:
-        return self._get_tokens_split_path(split) / "perm.safetensors"
+    def _tokens_perm_path(self) -> Path:
+        return (
+            DATA_DIRS._CHUNKS_DIR
+            / self.idstr()
+            / self.model_cfg.modelstring
+            / "perm.safetensors"
+        )
 
     def _acts_piles_path(self, split: SplitConfig) -> Path:
         return self._get_acts_split_path(split) / "piles"
@@ -122,7 +138,10 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
                 {site: [self.model_cfg.acts_cfg.d_data] for site in sites}
                 if not self.model_cfg.acts_cfg.site_d_datas
                 else {
-                    k: [v] for k, v in zip(sites, self.model_cfg.acts_cfg.site_d_datas)
+                    k: [v]
+                    for k, v in zip(
+                        sites, self.model_cfg.acts_cfg.site_d_datas, strict=False
+                    )
                 }
             )
             return DictPiler.create(
@@ -197,7 +216,8 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     ):
         model = None
         if not self._acts_piles_path(self.trainsplit).exists():
-            self.store_split(self.trainsplit)
+            with self.model_cfg.model_on_cuda():
+                self.store_split(self.trainsplit)
         ds = self._train_dataset(
             model,
             batch_size=batch_size,
@@ -210,21 +230,12 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
 
         return dl
 
-    def store_split(self, split: SplitConfig):
-        ActsDataCreator(cfg=self, model=self.model_cfg.model)._store_split(split)
-        assert self._acts_piles_path(split).exists()
-
     def getsplit(self, split: str):
         return getattr(self, f"{split}split")
 
     def load_dataset_from_split(self, split: SplitConfig, to_torch=True):
         if self.perm_all:
-            perm_path = (
-                DATA_DIRS._CHUNKS_DIR
-                / self.idstr()
-                / self.model_cfg.modelstring
-                / "perm.safetensors"
-            )
+            perm_path = self._tokens_perm_path()
             assert not self.load_from_disk
             dataset = datasets.load_dataset(
                 self.dataset,
@@ -253,11 +264,15 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
                     cache_dir=DATA_DIRS.CACHE_DIR,
                 )
 
-        if to_torch:
+        if to_torch and self.tokenization.mode == TokenizationMode.PRETOKENIZED:
             dataset.set_format(
                 type="torch", columns=[self.tokens_column_name], output_all_columns=True
             )
         return dataset
+
+    def store_split(self, split: SplitConfig):
+        self.acts_data_creator()._store_split(split)
+        assert self._acts_piles_path(split).exists()
 
     def acts_data_creator(self) -> "ActsDataCreator":
         return ActsDataCreator(cfg=self, model=self.model_cfg.model)
@@ -265,24 +280,24 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     def tokens_data(
         self, split: SplitConfig | str = "train"
     ) -> TokensDataInterface[torch.Tensor] | TokensDataInterface[DictBatch]:
-        if self.override_dictpiler_path_str is not None:
+        split_cfg = (
+            split if isinstance(split, SplitConfig) else getattr(self, f"{split}split")
+        )
+        if self.override_token_dictpiler_path_str is not None:
             return DictPiledTokensData(
                 cfg=self,
-                piler_path=Path(self.override_dictpiler_path_str),
-                split=(
-                    split
-                    if isinstance(split, SplitConfig)
-                    else getattr(self, f"{split}split")
-                ),
+                piler_path=Path(self.override_token_dictpiler_path_str),
+                split=split_cfg,
             )
-        return TokensData(
-            cfg=self,
-            split=(
-                split
-                if isinstance(split, SplitConfig)
-                else getattr(self, f"{split}split")
-            ),
-        )
+        if (
+            self.tokenization.mode != TokenizationMode.PRETOKENIZED
+            and self.tokenization.packing == PackingMode.PAD
+        ):
+            piles_path = self._tokens_piles_path(split_cfg)
+            if not piles_path.exists():
+                TokensData(cfg=self, split=split_cfg)._store_split(split_cfg)
+            return DictPiledTokensData(cfg=self, piler_path=piles_path, split=split_cfg)
+        return TokensData(cfg=self, split=split_cfg)
 
     def get_split_tokens(self, split, num_tokens=None):
         return self.tokens_data(split).get_tokens(

@@ -3,11 +3,11 @@ import importlib.util
 import os
 from functools import cached_property
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 import wandb
-
-from saeco.sweeps.sweepable_config import SweepableConfig
+from saeco.trainer.trainer import mlog
+from sweepable import SweepableConfig
 
 
 class SweepFile(Protocol):
@@ -30,9 +30,11 @@ class Sweeper:
         spec = importlib.util.spec_from_file_location(
             self.full_name, str(self.path / f"{self.module_name}.py")
         )
+        assert spec is not None
+        assert spec.loader is not None
         sweepfile = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sweepfile)
-        return sweepfile
+        return cast(SweepFile, sweepfile)
 
     def initialize_sweep(self):
         dump = self.sweepfile.cfg.sweep()
@@ -57,23 +59,23 @@ class Sweeper:
         basecfg: SweepableConfig = self.sweepfile.cfg
 
         cfg = basecfg.from_selective_sweep(dict(wandb.config))
-        pod_info = dict(
-            id=os.environ.get("RUNPOD_POD_ID", "local"),
-            hostname=os.environ.get("RUNPOD_POD_HOSTNAME", None),
-            gpu_count=os.environ.get("RUNPOD_GPU_COUNT", None),
-            cpu_count=os.environ.get("RUNPOD_CPU_COUNT", None),
-            public_ip=os.environ.get("RUNPOD_PUBLIC_IP", None),
-            datacenter_id=os.environ.get("RUNPOD_DC_ID", None),
-            volume_id=os.environ.get("RUNPOD_VOLUME_ID", None),
-            cuda_version=os.environ.get("CUDA_VERSION", None),
-            pytorch_version=os.environ.get("PYTORCH_VERSION", None),
-        )
+        pod_info = {
+            "id": os.environ.get("RUNPOD_POD_ID", "local"),
+            "hostname": os.environ.get("RUNPOD_POD_HOSTNAME", None),
+            "gpu_count": os.environ.get("RUNPOD_GPU_COUNT", None),
+            "cpu_count": os.environ.get("RUNPOD_CPU_COUNT", None),
+            "public_ip": os.environ.get("RUNPOD_PUBLIC_IP", None),
+            "datacenter_id": os.environ.get("RUNPOD_DC_ID", None),
+            "volume_id": os.environ.get("RUNPOD_VOLUME_ID", None),
+            "cuda_version": os.environ.get("CUDA_VERSION", None),
+            "pytorch_version": os.environ.get("PYTORCH_VERSION", None),
+        }
 
         wandb.config.update(
-            dict(
-                full_cfg=cfg.model_dump(),
-                pod_info=pod_info,
-            )
+            {
+                "full_cfg": cfg.model_dump(),
+                "pod_info": pod_info,
+            }
         )
         print(dict(wandb.config))
         self.sweepfile.run(cfg)
@@ -83,16 +85,19 @@ class Sweeper:
         wandb.agent(
             self.sweep_id,
             function=self.run,
-            project=self.sweepfile.PROJECT,  # TODO change project to being from config maybe? or remove from config
+            # TODO change project to being from config maybe? or remove from config
+            project=self.sweepfile.PROJECT,
         )
 
-    def rand_run_no_agent(self, init=False):
+    def rand_run_no_agent(self, init=True):
         basecfg: SweepableConfig = self.sweepfile.cfg
 
         cfg = basecfg.random_sweep_configuration()
         # wandb.init()
+
         if init:
-            wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
+            mlog.init()
+            # wandb.init(config=cfg.model_dump(), project=self.sweepfile.PROJECT)
         # wandb.config.update(cfg.model_dump())
         self.sweepfile.run(cfg)
         wandb.finish()

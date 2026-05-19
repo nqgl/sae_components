@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "saeco-research"
+version = "0.0.1"
+description = "Research scratch space for the saeco library: in-flight architectures, exploration scripts, ad-hoc experiments. No API stability."
+readme = "README.md"
+requires-python = ">=3.13"
+authors = [
+    {name = "Glen Taggart", email = "glenmtaggart@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "saeco",
+    # evaluation/api_components
+    "fastapi",
+    "modal",
+    # analysis/ (GUI + plotting + stats)
+    "matplotlib",
+    "nicegui",
+    "plotly",
+    "scipy",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/saeco_research"]

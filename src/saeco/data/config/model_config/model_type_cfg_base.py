@@ -50,6 +50,9 @@ class ModelLoadingConfigBase[ModelT: nn.Module = nn.Module](SweepableConfig):
     ) -> tuple[list[Any], dict[str, Any]]:
         raise NotImplementedError("unpack_model_inputs not implemented")
 
+    def get_model_load_ident_str(self) -> str:
+        raise NotImplementedError
+
 
 # @runtime_checkable
 # class ModelLoadingConfigBase(Protocol):

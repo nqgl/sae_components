@@ -1,2 +1,12 @@
+from sweepable import SweepableConfig, SweepExpression, SweepVar, Swept, Val
+
 from .do_sweep import do_sweep
-from .sweepable_config import SweepableConfig, SweepExpression, SweepVar, Swept, Val
+
+__all__ = [
+    "SweepExpression",
+    "SweepVar",
+    "SweepableConfig",
+    "Swept",
+    "Val",
+    "do_sweep",
+]

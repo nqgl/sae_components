@@ -33,7 +33,7 @@ from saeco.data.storage.compressed_safetensors import load_file_with_metadata
 from saeco.misc.utils import assert_cast, chill_issubclass
 
 
-def batch_size_targeter(batch_size: int):
+def batch_size_targeter(batch_size: int, yield_final_spare: bool = False):
     spares = []
     nspare = 0
 
@@ -51,17 +51,25 @@ def batch_size_targeter(batch_size: int):
         batch_gen: Iterable[T],
     ) -> Generator[T]:
         nonlocal spares, nspare
-        for batch in batch_gen:
-            spare = yield from yield_batches_and_return_spares(batch)
+        try:
+            for batch in batch_gen:
+                spare = yield from yield_batches_and_return_spares(batch)
 
-            if spare.batch_size > 0:
-                spares.append(spare)
-                nspare += spare.batch_size
-                if nspare >= batch_size:
-                    consolidated = batch.cat_list(spares, dim=0)
-                    spare = yield from yield_batches_and_return_spares(consolidated)
-                    spares = [spare]
-                    nspare = spare.batch_size
+                if spare.batch_size > 0:
+                    spares.append(spare)
+                    nspare += spare.batch_size
+                    if nspare >= batch_size:
+                        consolidated = batch.cat_list(spares, dim=0)
+                        spare = yield from yield_batches_and_return_spares(consolidated)
+                        spares = [spare]
+                        nspare = spare.batch_size
+        except StopIteration as e:
+            if nspare > 0:
+                consolidated = spares[0].cat_list(spares, dim=0)
+                final = yield from yield_batches_and_return_spares(consolidated)
+                if final.batch_size > 0 and yield_final_spare:
+                    yield final
+            raise e
 
     return transformed_gen
 
@@ -771,7 +779,10 @@ class DictBatch(dict):
         return cls(data, **other)
 
     def _construct_with_copied_other_data(self, data: dict[str, Any]) -> Self:
-        return self.cast_convert(data, **self._get_other_dict())
+        # `data` already has the correct (possibly nested) structure — going
+        # through cast_convert would flatten nested DictBatch values and, for
+        # untyped DictBatch, fail to re-nest them. Construct directly instead.
+        return self.construct_with_other_data(data, self._get_other_dict())
 
     # -- simple rule: enjoy equal extras or keep first; can customise in subclass
     @classmethod
@@ -945,6 +956,21 @@ class DictBatch(dict):
         cls.FIELD_DEFAULTS = merged_tensor_defaults
         cls.OTHER_FIELD_DEFAULTS = merged_other_defaults
 
+        # A tensor field declared with a default (e.g. `a: Tensor =
+        # dictbatch_field(...)` or `c: Tensor | None = None`) leaves that
+        # default as a class attribute, which shadows __getattr__ so
+        # `batch.a` returns the raw default instead of the stored tensor.
+        # The default is already captured in FIELD_DEFAULTS, so drop the
+        # class attribute and let attribute access fall through to the dict.
+        for name in merged_tensor:
+            if name in cls.__dict__:
+                attr = cls.__dict__[name]
+                if isinstance(attr, (property, cached_property)):
+                    continue
+                if callable(attr) and not isinstance(attr, type):
+                    continue
+                delattr(cls, name)
+
         return cls
 
     def float(self):
@@ -969,7 +995,19 @@ class DictBatch(dict):
         return self.apply_func(gather)
 
     def apply_func(self, func: Callable[[Tensor], Tensor]) -> Self:
-        return self._construct_with_copied_other_data(self._apply(func, pass_none=True))
+        new_data: dict[str, Any] = {}
+        for k, v in self.items():
+            if v is None:
+                new_data[k] = None
+            elif isinstance(v, Tensor):
+                new_data[k] = func(v)
+            elif isinstance(v, DictBatch):
+                # Recurse so nested batches keep their structure (and type)
+                # instead of being flattened into dotted keys.
+                new_data[k] = v.apply_func(func)
+            else:
+                raise TypeError(f"Unexpected value type in DictBatch: {type(v)}")
+        return self._construct_with_copied_other_data(new_data)
 
     @overload
     def _apply[T](
@@ -1435,7 +1473,16 @@ class DictBatchShape:
     def __getitem__(self, key: Literal[0]) -> int: ...
     @overload
     def __getitem__(self, key: int) -> dict[str, int]: ...
-    def __getitem__(self, key: str | int) -> tuple[int, ...] | int | dict[str, int]:
+    @overload
+    def __getitem__(self, key: slice) -> tuple[int, ...]: ...
+    def __getitem__(
+        self, key: str | int | slice
+    ) -> tuple[int, ...] | int | dict[str, int]:
+        if isinstance(key, slice):
+            s = {v[key] for v in self.shapes.values()}
+            if len(s) != 1:
+                raise ValueError("inconsistent shapes from sliced items")
+            return s.pop()
         if key == 0:
             return self.batch_size
         if isinstance(key, str):
@@ -1673,7 +1720,8 @@ if __name__ == "__main__":
     print("\nAfter clone():")
     print(f"  cloned.inner is outer.inner: {cloned.inner is outer.inner}")
     print(
-        f"  cloned.inner.hidden is outer.inner.hidden: {cloned.inner.hidden is outer.inner.hidden}"
+        "  cloned.inner.hidden is outer.inner.hidden: "
+        f"{cloned.inner.hidden is outer.inner.hidden}"
     )
     cloned.items()
 

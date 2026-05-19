@@ -1,4 +1,5 @@
-
+import torch
+import tqdm
 
 from saeco.architectures.vanilla.vanilla_model import VanillaConfig, VanillaSAE
 from saeco.components.resampling.anthropic_resampling import (
@@ -21,7 +22,7 @@ train_cfg = TrainConfig(
     },
     lr=1e-3,
     use_autocast=True,
-    wandb_cfg=dict(project=PROJECT),
+    wandb_cfg={"project": PROJECT},
     l0_target_adjustment_size=0.0003,
     batch_size=4096,
     use_lars=True,
@@ -53,8 +54,6 @@ arch = VanillaSAE(cfg)
 
 data = arch.run_cfg.train_cfg.data_cfg._get_databuffer(num_workers=16)
 model = arch.trainable
-import torch
-import tqdm
 
 optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 # for i in tqdm.trange(800):
@@ -74,7 +73,7 @@ optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 data = arch.data
 
 for _ in range(3):
-    for i in tqdm.trange(100):
+    for _i in tqdm.trange(100):
         x = next(data).cuda()
         y = model(x)
         l = (y - x).pow(2).mean()
@@ -85,7 +84,7 @@ with torch.no_grad():
     q = 0
     print("disk + sum task")
     for _ in range(3):
-        for i in tqdm.trange(101):
+        for _i in tqdm.trange(101):
             x = next(data)
             q += x
 
@@ -93,7 +92,7 @@ data = arch.trainer.get_databuffer(num_workers=16, queue_size=128)
 
 
 for _ in range(8):
-    for i in tqdm.trange(100):
+    for _i in tqdm.trange(100):
         x = next(data).cuda()
         y = model(x)
         l = (y - x).pow(2).mean()
@@ -104,7 +103,7 @@ with torch.no_grad():
     q = 0
     print("disk + sum task")
     for _ in range(15):
-        for i in tqdm.trange(101):
+        for _i in tqdm.trange(101):
             x = next(data)
             q += x
 

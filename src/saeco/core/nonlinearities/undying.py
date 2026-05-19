@@ -1,13 +1,13 @@
 # by Glen Taggart @nqgl
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812  # standard torch convention
 
 
 class PositiveGradthruIdentityFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input):
-        return input
+    def forward(ctx, x):
+        return x
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -16,8 +16,8 @@ class PositiveGradthruIdentityFunction(torch.autograd.Function):
 
 class NegativeGradthruIdentityFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input):
-        return input
+    def forward(ctx, x):
+        return x
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -34,13 +34,19 @@ def undying_relu(
 
     Args:
         x (torch.Tensor): Input tensor.
-        l (float, optional): Leakage parameter for negative values. Stand-in for l_mid_pos if leaky=False. Defaults to 0.01.
-        k (float, optional): Threshold parameter. Defaults to 1. Value ranges are defined as
+        l (float, optional): Leakage parameter for negative values.
+            Stand-in for l_mid_pos if leaky=False. Defaults to 0.01.
+        k (float, optional): Threshold parameter. Defaults to 1. Value
+            ranges are defined as
             low < -k < mid < 0
-        l_mid_neg (float, optional): Leakage parameter for negative values in the mid-range. Defaults to l.
-        l_low_neg (float, optional): Leakage parameter for negative values in the low range. Defaults to 0.
-        l_low_pos (float, optional): Leakage parameter for positive values in the low range. Defaults to l.
-        leaky (bool, optional): Whether to use leaky gradients, in which case only l must be defined.
+        l_mid_neg (float, optional): Leakage parameter for negative
+            values in the mid-range. Defaults to l.
+        l_low_neg (float, optional): Leakage parameter for negative
+            values in the low range. Defaults to 0.
+        l_low_pos (float, optional): Leakage parameter for positive
+            values in the low range. Defaults to l.
+        leaky (bool, optional): Whether to use leaky gradients, in which
+            case only l must be defined.
 
     Returns:
         torch.Tensor: Output tensor after applying the undying ReLU activation function.

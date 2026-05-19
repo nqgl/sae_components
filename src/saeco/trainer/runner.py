@@ -4,12 +4,14 @@ from warnings import deprecated
 
 from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco.initializer import Initializer
-from saeco.trainer.normalizers import GeneralizedNormalizer
+from saeco.trainer.normalizers.normalizer import StaticInvertibleGeneralizedNormalizer
 
 from .run_config import RunConfig
 from .saved_model_source_info import ModelReloadInfo
 from .trainable import Trainable
 from .trainer import Trainer
+
+_DEFAULT_MODELS_DIR = Path.home() / "workspace/saved_models/"
 
 
 @deprecated("Deprecated as part of migration to Architecture")
@@ -28,7 +30,8 @@ class TrainingRunner:
 
     @state_dict.setter
     def state_dict(self, value):
-        assert self._state_dict is None and self._trainable_loaded is False
+        assert self._state_dict is None
+        assert self._trainable_loaded is False
         self._state_dict = value
 
     @cached_property
@@ -75,37 +78,42 @@ class TrainingRunner:
         self._trainable_loaded = True
         trainable = Trainable(
             self.models,
-            self.losses,
+            losses=self.losses,
             normalizer=self.normalizer,
             resampler=self.resampler,
         ).cuda()
         if self.state_dict is not None:
             load_result = trainable.load_state_dict(self.state_dict)
             print("loaded state dict into trainable:", load_result)
+
         return trainable
 
     @cached_property
     def resampler(self) -> AnthResampler:
         res = AnthResampler(self.cfg.resampler_config)
-        res.assign_model(
-            self.models[0]
-        )  # TODO not a big fan of this. maybe just remove the assigning model part of resample class
+        # TODO not a big fan of this. maybe just remove the assigning
+        # model part of resample class
+        res.assign_model(self.models[0])
         return res
 
     @cached_property
     def normalizer(self):
-        # normalizer = NORMALIZERS[self.cfg.sae_cfg.normalizer]()
-        normalizer = GeneralizedNormalizer(
+        normalizer = StaticInvertibleGeneralizedNormalizer(
             init=self.initializer, cfg=self.cfg.normalizer_cfg
-        )
+        ).to(device="cuda")
+
+        def data_gen():
+            for d in self.data:
+                yield d.cuda()
+
         if self.state_dict is None:
-            normalizer.prime_normalizer(self.data)
+            normalizer.prime_normalizer(data_gen())
         return normalizer
 
     # @normalizer.setter
-    def normalizer(self, value):
-        self._normalizer = value
-        self._normalizer.prime_normalizer(self.data)
+    # def normalizer(self, value):
+    #     self._normalizer = value
+    #     self._normalizer.prime_normalizer(self.data)
 
     @cached_property
     def trainer(self):
@@ -113,8 +121,9 @@ class TrainingRunner:
             self.cfg.train_cfg,
             run_cfg=self.cfg,
             model=self.trainable,
-            run_name=self.name,
-            reload_info=ModelReloadInfo.from_model_fn(self.model_fn),
+            # run_name=self.name,
+            recons_eval_fns={},
+            # reload_info=ModelReloadInfo.from_model_fn(self.model_fn),
         )
         # trainer.post_step()
         return trainer
@@ -127,7 +136,7 @@ class TrainingRunner:
         name,
         modify_cfg_fn=lambda x: x,
         modify_state_dict_fn=lambda x: x,
-        models_dir: Path = Path.home() / "workspace/saved_models/",
+        models_dir: Path = _DEFAULT_MODELS_DIR,
     ) -> "TrainingRunner":
         import torch
 
@@ -151,7 +160,7 @@ class TrainingRunner:
         name,
         modify_cfg_fn=lambda x: x,
         modify_state_dict_fn=lambda x: x,
-        models_dir: Path = Path.home() / "workspace/saved_models/",
+        models_dir: Path = _DEFAULT_MODELS_DIR,
     ) -> "TrainingRunner":
         modelpath: Path = models_dir / (name + ".json")
         reload_info = ModelReloadInfo.model_validate_json(

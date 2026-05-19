@@ -21,7 +21,7 @@ from .normalizers import (
 from .train_cache import TrainCache
 
 if TYPE_CHECKING:
-    from saeco.architecture.architecture import SAE
+    from saeco.architecture.sae import SAE
 
 from functools import wraps
 
@@ -87,7 +87,8 @@ class Trainable(cl.Module):
         assert not any(
             isinstance(m, Normalized) for m in list(losses.values()) + models
         ), (
-            "models and losses should not be normalized, the Trainable object is responsible for normalization."
+            "models and losses should not be normalized, the Trainable object is "
+            "responsible for normalization."
         )
         self.models = nn.ModuleList(models)
         model = models[0]
@@ -120,7 +121,7 @@ class Trainable(cl.Module):
     def losses_d(self) -> dict[str, Loss]:
         return cast(dict[str, Loss], self.losses)
 
-    def loss(self, x, *, cache: Cache, y=None, coeffs: dict[str, float] = {}):
+    def loss(self, x, *, cache: Cache, y=None, coeffs: dict[str, float] | None = None):
         if isinstance(x, SAETrainBatch):
             batch = x
             x = batch.input
@@ -128,9 +129,10 @@ class Trainable(cl.Module):
                 y = batch.target
             elif batch.target_sites is not None:
                 raise ValueError(
-                    "x was SAETrainBatch, y was provided, and target_sites was not None -- unexpected input combination"
+                    "x was SAETrainBatch, y was provided, and target_sites "
+                    "was not None -- unexpected input combination"
                 )
-        coeffs = dict(coeffs)
+        coeffs = dict(coeffs) if coeffs is not None else {}
         loss = 0
         for key, loss_fn in self.losses_d.items():
             m = loss_fn(x, y=y, cache=cache[key])
@@ -182,7 +184,7 @@ class Trainable(cl.Module):
 
         normal = []
         has_metadata = {}
-        for name, param in self.named_parameters():
+        for _name, param in self.named_parameters():
             if isinstance(param, MetaDataParam):
                 md = param._param_metadata
                 if not md.has_param_group_values():
@@ -196,7 +198,7 @@ class Trainable(cl.Module):
                 normal.append(param)
         groups = [{"name": "normal", "params": normal}]
         for kvs, params in has_metadata.items():
-            groups.append({"params": params, **{k: v for k, v in kvs}})
+            groups.append({"params": params, **dict(kvs)})
         assert sum(len(g["params"]) for g in groups) == len(list(self.parameters())), (
             "param_groups did not cover all parameters"
         )

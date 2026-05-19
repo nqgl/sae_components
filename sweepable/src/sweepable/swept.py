@@ -1,0 +1,101 @@
+from __future__ import annotations
+
+from typing import Any, Literal
+
+import pydantic._internal._model_construction as mc
+from pydantic import BaseModel
+
+
+class SweptCheckerMeta(mc.ModelMetaclass):
+    def __instancecheck__(self, instance: Any) -> bool:
+        if mc.ModelMetaclass.__instancecheck__(self, instance):
+            return True
+        if self is Swept:
+            return False
+        if not isinstance(instance, Swept):
+            return False
+        i_args = instance.__pydantic_generic_metadata__["args"]
+        s_args = self.__pydantic_generic_metadata__["args"]
+        if len(i_args) == len(s_args) == 1:
+            try:
+                if issubclass(i_args[0], s_args[0]):
+                    return True
+            except TypeError:
+                pass
+        if len(s_args) == 1 and all(isinstance(v, s_args) for v in instance.values):
+            return True
+        return False
+
+
+class Swept[T](BaseModel, metaclass=SweptCheckerMeta):
+    """A sweep axis: one run per value.
+
+    Assign ``Swept(a, b, c)`` anywhere a plain ``T`` is expected on a
+    ``SweepableConfig`` (every field's type is implicitly widened to
+    ``T | Swept[T] | SweepExpression[T]``). The runner expands each
+    ``Swept`` field into the outer product of its values::
+
+        class Cfg(SweepableConfig):
+            lr: float = 1e-3
+            pre_bias: bool = False
+
+        Cfg(lr=Swept(1e-3, 3e-4), pre_bias=Swept(True, False))  # 4 runs
+    """
+
+    values: list[T]
+
+    def __init__(self, *values: T, **kwargs):
+        """
+        Enables the Swept(a,b,c) syntax for initializing Swept fields.
+        """
+        if values:
+            if "values" in kwargs:
+                raise ValueError("two sources of values in Swept initialization!")
+            kwargs["values"] = values
+        return super().__init__(**kwargs)
+
+    @property
+    def generic_type(self) -> type[T] | None:
+        args = self.__pydantic_generic_metadata__["args"]
+        if len(args) == 0:
+            return None
+        if len(args) > 1:
+            raise Exception("Swept can only have one generic type")
+        assert len(args) == 1
+        return args[0]
+
+    def model_dump(
+        self,
+        *,
+        mode: str = "python",
+        include: set[int] | set[str] | dict[int, Any] | dict[str, Any] | None = None,
+        exclude: set[int] | set[str] | dict[int, Any] | dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        by_alias: bool = False,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_none: bool = False,
+        round_trip: bool = False,
+        warnings: bool | Literal["none"] | Literal["warn"] | Literal["error"] = True,
+        serialize_as_any: bool = False,
+    ) -> dict[str, Any]:
+        dump = super().model_dump(
+            mode=mode,
+            include=include,
+            exclude=exclude,
+            context=context,
+            by_alias=by_alias,
+            exclude_unset=exclude_unset,
+            exclude_defaults=exclude_defaults,
+            exclude_none=exclude_none,
+            round_trip=round_trip,
+            warnings=warnings,
+            serialize_as_any=serialize_as_any,
+        )
+        # T_args = self.__pydantic_generic_metadata__["args"]
+        # if T_args:
+        for i, v in enumerate(dump["values"]):
+            if isinstance(v, bool):
+                dump["values"][i] = int(v)
+
+        return dump

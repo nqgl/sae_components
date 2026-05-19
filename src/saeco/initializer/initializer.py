@@ -14,6 +14,15 @@ def intersect_isinstance[T](obj, typ: type[T]) -> TypeGuard[T]:
 
 
 class Initializer:
+    """Factory for an architecture's parameters, sized from ``InitConfig``.
+
+    Exposed as ``self.init`` inside an ``Architecture``. Provides the
+    encoder/decoder linear factories and bias helpers (``self.init.encoder``,
+    ``self.init.decoder``, ``self.init._decoder.sub_bias()``, …) so a
+    model can be assembled without hand-wiring shapes; also carries the
+    initialization strategy (e.g. geometric-median decoder init).
+    """
+
     def __init__(
         self,
         d_data,
@@ -72,7 +81,7 @@ class Initializer:
         if split_d_data:
             assert self.d_data % bf == 0
         l = []
-        for i in range(bf):
+        for _i in range(bf):
             new = Initializer(
                 d_data=self.d_data // bf if split_d_data else self.d_data,
                 d_dict=self.d_dict // bf,
@@ -90,7 +99,7 @@ class Initializer:
     ) -> list["Initializer"]:
         assert self.d_dict % bf == 0
         l = []
-        for i in range(bf):
+        for _i in range(bf):
             new = Initializer(
                 d_data=self.d_data // bf if split_d_data else self.d_data,
                 d_dict=self.d_dict // bf,

@@ -250,15 +250,17 @@ def test_set_split_and_recombine_roundtrip(mybatch: MyBatch) -> None:
     assert set(split.a.keys()) == {"input_ids"}
     assert set(split.b.keys()) == {"attention_mask", "labels"}
     recombined = split.recombine()
-    assert isinstance(
-        recombined, DictBatch
-    )  # recombine uses cls stored in SplitDictBatch; your current code passes self.__class__
-    # If you want it to be MyBatch, you’ll adjust set_split() to preserve subclass; test below is future-facing:
+    # recombine uses cls stored in SplitDictBatch; your current code
+    # passes self.__class__
+    assert isinstance(recombined, DictBatch)
+    # If you want it to be MyBatch, you’ll adjust set_split() to preserve subclass; test
+    # below is future-facing:
     # assert isinstance(recombined, MyBatch)
 
 
 def test_cat_list_and_stack_list_handle_optional_none_correctly() -> None:
-    # This test will catch the common bug: torch.cat(... if cond else None, dim=...) vs (torch.cat(...) if cond else None)
+    # This test will catch the common bug: torch.cat(... if cond else None, dim=...) vs
+    # (torch.cat(...) if cond else None)
     b1 = WithOptionalTensor(
         a=torch.ones(2, 8, dtype=torch.long),
         b=None,

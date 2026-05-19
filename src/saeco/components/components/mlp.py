@@ -11,7 +11,7 @@ class MLP(cl.Seq):
                 item
                 for pair in [
                     (nn.Linear(in_features, out_features, bias=bias), nonlinearity)
-                    for in_features, out_features in zip(dims, dims[1:])
+                    for in_features, out_features in zip(dims, dims[1:], strict=False)
                 ]
                 for item in pair
             ][:-1]
@@ -25,7 +25,7 @@ class FeedForward(MLP):
         d_out=None,
         d_hidden=None,
         expansion_factor=None,
-        nonlinearity=nn.ReLU,
+        nonlinearity: nn.Module = nn.ReLU,
         bias=True,
     ):
         assert (d_hidden is None) != (expansion_factor is None)

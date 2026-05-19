@@ -1,19 +1,19 @@
 import torch.nn as nn
 
-import saeco.components.features.features as ft
+import saeco.components.features as ft
 from saeco.architecture import (
-    SAE,
-    Architecture,
     loss_prop,
     model_prop,
 )
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 from saeco.components import (
     L2Loss,
     SparsityPenaltyLoss,
 )
 from saeco.core import Seq
 from saeco.misc import useif
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
+from sweepable import SweepableConfig
 
 
 class VanillaConfig(SweepableConfig):
@@ -27,9 +27,16 @@ class VanillaSAE(Architecture[VanillaConfig]):
     def setup(self):
         # these will add wrappers to the decoder that ensure:
         # 1. the features are normalized after each optimizer step to have unit norm
-        # 2. the gradients of the features are orthogonalized after each backward pass before the optimizer step
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        # 2. the gradients of the features are orthogonalized after each backward pass
+        # before the optimizer step
+        # self.init._decoder.add_wrapper(
+        #     ft.NormFeatures
+        # )
+        # self.init._decoder.add_wrapper(
+        #     ft.OrthogonalizeFeatureGrads
+        # )
+        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
+        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
 
     # model_prop tells the Architecture class that this method
     # is the method that constructs the model.
@@ -48,7 +55,7 @@ class VanillaSAE(Architecture[VanillaConfig]):
 
     # loss_prop designates a Loss that will be used in training
     @loss_prop
-    def L2_loss(self):
+    def L2_loss(self):  # noqa: N802  # loss-prop method name is the train_cfg.coeffs key
         return L2Loss(self.model)
 
     @loss_prop

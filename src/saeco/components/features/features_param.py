@@ -1,5 +1,6 @@
 from collections.abc import Mapping
-from typing import Protocol, TypeAlias, overload, runtime_checkable
+from functools import cached_property
+from typing import Protocol, overload, runtime_checkable
 
 import torch
 import torch.nn as nn
@@ -32,7 +33,7 @@ class OptimFieldFeatures:
     def __getitem__(self, i: str) -> Mapping[IndexType, Tensor]: ...
 
     def parse_index_field(self, i):
-        if isinstance(i, tuple) and any([isinstance(el, str) for el in i]):
+        if isinstance(i, tuple) and any(isinstance(el, str) for el in i):
             assert len(i) == 2
             if isinstance(i[0], str):
                 field, index = i
@@ -139,10 +140,7 @@ class FeaturesParam:
     #         pass
     #     param_state = optim.state[self.param]
     #     fields = set(param_state.keys())
-    #     print("fields", fields)
-    #     print(fields - self.field_handlers.skips)
     #     if fields & set(self.field_handlers.skips):
-    #         print("skipping", fields & set(self.field_handlers.skips))
     #         fields = fields - set(self.field_handlers.skips)
     #     for field in fields:
     #         field_state = param_state[field]
@@ -150,7 +148,9 @@ class FeaturesParam:
     #             field_state.shape == self.param.shape
     #         ), f"{field}: {field_state.shape} != {self.param.shape}"
     #         feat_field_state = self.features_transform(field_state)
-    #         feat_field_state[feat_mask] = self.field_handlers.handlers[field].get_value(
+    #         feat_field_state[feat_mask] = self.field_handlers.handlers[
+    #             field
+    #         ].get_value(
     #             param_state=param_state,
     #             param=self,
     #             ft_optim_field_state=,
@@ -246,7 +246,8 @@ def get_featuresparams(model: nn.Module) -> set[FeaturesParam]:
             other = d[fp.param]
             assert other == fp, f"{other} != {fp}"
             raise ValueError(
-                f"Duplicate feature parameter {fp}. implement __eq__ and change this check to just (intelligently) deduplicate and check for inconsistency"
+                f"Duplicate feature parameter {fp}. implement __eq__ and change this "
+                "check to just (intelligently) deduplicate and check for inconsistency"
             )
         d[fp.param] = fp
     return l
@@ -286,8 +287,6 @@ def get_resampled_params(model: nn.Module):
 #     @property
 #     def features_grad(self) -> Optional[Tensor]: ...
 
-from functools import cached_property
-from typing import overload
 
 
 @runtime_checkable
@@ -307,6 +306,4 @@ class HasFeaturesProperty(Protocol):
     def features(self) -> dict[str, FeaturesParam]: ...
 
 
-HasFeatures: TypeAlias = (
-    HasFeaturesProperty | HasFeaturesCachedProperty | HasFeaturesAttr
-)
+type HasFeatures = HasFeaturesProperty | HasFeaturesCachedProperty | HasFeaturesAttr

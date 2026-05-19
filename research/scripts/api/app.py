@@ -1,0 +1,11 @@
+import fastapi
+import uvicorn
+from saeco_research.evaluation import Evaluation
+from saeco_research.evaluation.api_components.api import create_app
+
+STORAGE_NAME = "mid_store"
+root = Evaluation.from_cache_name(STORAGE_NAME)
+app = create_app(fastapi.FastAPI(), root)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="localhost", port=8000)

@@ -10,6 +10,7 @@ from nnsight import LanguageModel, NNsight
 
 from saeco.data.config.split_config import SplitConfig
 from saeco.data.dict_batch import DictBatch
+from saeco.data.subject_model_inputs import prepare_subject_chunk
 from saeco.data.training_data.bufferized_iter import bufferized_iter
 from saeco.misc.nnsite import getsite
 
@@ -98,21 +99,15 @@ class ActsDataCreator:
                 trng = tqdm.trange(0, batch_size, llm_batch_size, leave=False)
                 trng.set_description(f"Tracing {batch_size}")
                 for i in trng:
-                    # batch_kwargs = {
-                    #     k: v[i : i + llm_batch_size] for k, v in batched_kwargs.items()
-                    # }
                     model = self.model
                     d = {}
-                    args, kwargs = (
-                        self.cfg.model_cfg.model_load_cfg.unpack_model_inputs(
-                            tx_inputs[i : i + llm_batch_size],
-                            extra_kwargs=self.cfg.model_cfg.model_kwargs,
-                        )
+                    prepared = prepare_subject_chunk(
+                        self.cfg, tx_inputs[i : i + llm_batch_size]
                     )
-                    assert len(args) > 0, (
+                    assert len(prepared.args) > 0, (
                         "nnsight needs there to be a nonzero number of args"
-                    )
-                    with model.trace(*args, **kwargs):
+                    )  # TODO this may have been addressed in 0.6
+                    with model.trace(*prepared.args, **prepared.kwargs):
                         for site in self.cfg.model_cfg.acts_cfg.sites:
                             acts_module = getsite(model, site)
                             acts = acts_module.save()
@@ -121,13 +116,12 @@ class ActsDataCreator:
                     for site in self.cfg.model_cfg.acts_cfg.sites:
                         acts_dict[site].append(d[site])
 
-        acts = {}
-
-        for site in self.cfg.model_cfg.acts_cfg.sites:
-            acts[site] = torch.cat(acts_dict[site], dim=0)
-
-        acts = DictBatch(data=acts)
-
+        acts = DictBatch(
+            data={
+                site: torch.cat(acts_dict[site], dim=0)
+                for site in self.cfg.model_cfg.acts_cfg.sites
+            }
+        )
         if self.cfg.model_cfg.acts_cfg.force_cast_dtype is not None:
             acts = acts.to(self.cfg.model_cfg.acts_cfg.force_cast_dtype)
         # TODO Generate and use mask from custom
@@ -135,21 +129,26 @@ class ActsDataCreator:
         flatten_pattern = "batch seq ... -> (batch seq) ..."
 
         acts = acts[:, : self.cfg.seq_len]
-        if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
-            acts = acts[:, 1:]
-            # toks_re = toks_re[:, 1:]
-        mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
-            tx_inputs, self.cfg.seq_len
+        # Reuse the shared helper to pull the tokens tensor + combined mask
+        # (model-specific create_acts_mask AND attention_mask column). We
+        # only use .tokens and .mask here — args/kwargs were already spent in
+        # the chunked trace loop above.
+        prepared_full = prepare_subject_chunk(
+            self.cfg, tx_inputs, seq_len=self.cfg.seq_len
         )
+        input_tokens = prepared_full.tokens
+        mask = prepared_full.mask
+        assert input_tokens is not None
 
-        # if isinstance(toks_re, DictBatch):
-        #     toks_re = toks_re.einops_rearrange(flatten_pattern)
-        # else:
-        #     toks_re = einops.rearrange(
-        #         toks_re,
-        #         flatten_pattern,
-        #     )
-        # toks_re = toks_re[mask]
+        all_same_bos = (input_tokens[:, 0] == input_tokens[0, 0]).all()
+        if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
+            assert all_same_bos
+            if mask is not None:
+                assert mask.shape == acts.shape[:2]
+                mask = mask[:, 1:]
+            acts = acts[:, 1:]
+        else:
+            assert not all_same_bos
         if not rearrange:
             assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
             return acts
@@ -158,19 +157,6 @@ class ActsDataCreator:
             mask = einops.rearrange(mask, flatten_pattern)
             acts = acts[mask]
 
-        # if (
-        #     self.cfg.model_cfg.acts_cfg.filter_pad
-        #     and self.model.tokenizer.pad_token_id is not None
-        # ):
-        #     # TODO get_padding_mask method
-
-        #     # if structured data is needed, instead of short-circuiting, we should
-        #     # return the data + the mask
-        #     assert isinstance(self.model.tokenizer.pad_token_id, int)
-        #     mask = toks_re != self.model.tokenizer.pad_token_id
-        #     if not mask.all():
-        #         print(f"removing {(~mask).sum()} activations from pad token locations")
-        #         acts = acts[mask]
         return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
 
     def _to_acts_single(
@@ -181,14 +167,11 @@ class ActsDataCreator:
         force_not_skip_padding=False,
     ) -> DictBatch:
         d = {}
+        prepared = prepare_subject_chunk(self.cfg, tx_inputs, seq_len=self.cfg.seq_len)
         with self.cfg.model_cfg.autocast_context():
             with torch.inference_mode():  # is this ok with nnsight?
                 model = self.model
-                args, kwargs = self.cfg.model_cfg.model_load_cfg.unpack_model_inputs(
-                    tx_inputs,
-                    extra_kwargs=self.cfg.model_cfg.model_kwargs,
-                )
-                with model.trace(*args, **kwargs):
+                with model.trace(*prepared.args, **prepared.kwargs):
                     for site in self.cfg.model_cfg.acts_cfg.sites:
                         acts_module = getsite(model, site)
                         acts = acts_module.save()
@@ -204,9 +187,7 @@ class ActsDataCreator:
         if self.cfg.model_cfg.acts_cfg.excl_first and not skip_exclude:
             acts = acts[:, 1:]
             # toks_re = toks_re[:, 1:]
-        mask = self.cfg.model_cfg.model_load_cfg.create_acts_mask(
-            tx_inputs, self.cfg.seq_len
-        )
+        mask = prepared.mask
 
         if not rearrange:
             assert force_not_skip_padding or not self.cfg.model_cfg.acts_cfg.filter_pad
@@ -233,22 +214,23 @@ class ActsDataReader:
         split: SplitConfig,
         batch_size,
         nsteps=None,
-        id=None,
+        worker_id=None,
         nw=None,
         prog_bar=False,
         target_sites: list[str] | None = None,
         input_sites: list[str] | None = None,
     ):
         assert self.cfg._acts_piles_path(split).exists()
-        if not (id == nw == None or id is not None and nw is not None):
-            raise ValueError("id and nw must be either both None or both not None")
-        id = id or 0
+        if not (worker_id == nw is None or worker_id is not None and nw is not None):
+            raise ValueError(
+                "worker_id and nw must be either both None or both not None"
+            )
+        worker_id = worker_id or 0
         nw = nw or 1
         piler = self.cfg.acts_piler(split)
         batch_gen = piler.batch_generator(
             batch_size,
-            yield_dicts=False,
-            id=id,
+            worker_id=worker_id,
             nw=nw,
         )
 
@@ -292,13 +274,13 @@ class ActsDataset(torch.utils.data.IterableDataset):
         batches_per_pile = (
             self.acts.cfg.generation_config.acts_per_pile // self.batch_size
         )
-        id = worker_info.id
+        worker_id = worker_info.id
         nw = worker_info.num_workers
-        assert id % nw == id, (id, nw)
+        assert worker_id % nw == worker_id, (worker_id, nw)
         if self.acts.cfg.databuffer_worker_offset_mult is None:
-            offset = (id * batches_per_pile) // nw
+            offset = (worker_id * batches_per_pile) // nw
         else:
-            offset = id * self.acts.cfg.databuffer_worker_offset_mult
+            offset = worker_id * self.acts.cfg.databuffer_worker_offset_mult
         base_size = (
             self.acts.cfg.databuffer_worker_queue_base_size
             if self.acts.cfg.databuffer_worker_queue_base_size is not None
@@ -308,7 +290,7 @@ class ActsDataset(torch.utils.data.IterableDataset):
             self.acts.acts_generator(
                 self.split,
                 self.batch_size,
-                id=id,
+                worker_id=worker_id,
                 nw=nw,
                 input_sites=self.input_sites,
                 target_sites=self.target_sites,

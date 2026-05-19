@@ -43,7 +43,6 @@ def inv2(x: torch.Tensor) -> torch.Tensor:
 
 
 def inv(x: torch.Tensor) -> torch.Tensor:
-    h = 1
     r = 1.5
     ri = r - 1
     a = 2
@@ -52,44 +51,50 @@ def inv(x: torch.Tensor) -> torch.Tensor:
     return q / ((x.abs() * k + a).pow(r))
 
 
-kernels = dict(
-    rect=rect,
-    tri=tri,
-    exp=exp,
-    trap=trap,
-    gauss=gauss,
-    bimodal=bimodal,
-    softtrap=softtrap,
-    inv2=inv2,
-    inv=inv,
-)
+kernels = {
+    "rect": rect,
+    "tri": tri,
+    "exp": exp,
+    "trap": trap,
+    "gauss": gauss,
+    "bimodal": bimodal,
+    "softtrap": softtrap,
+    "inv2": inv2,
+    "inv": inv,
+}
 
 
 class Kernel(Protocol):
     def __call__(self, x: torch.Tensor) -> torch.Tensor: ...
 
 
-def integrate(kernel: Kernel, range=10, samples=8192):
-    x = torch.linspace(-range, range, samples)
+def integrate(kernel: Kernel, x_range=10, samples=8192):
+    x = torch.linspace(-x_range, x_range, samples)
     y = kernel(x)
-    return y.sum() / samples * 2 * range
+    return y.sum() / samples * 2 * x_range
 
 
 def centrality(kernel, centrality_measure=gauss):
-    f = lambda x: centrality_measure(x) * kernel(x)
+    def f(x):
+        return centrality_measure(x) * kernel(x)
+
     return integrate(f)
 
 
-def check(kernel: Kernel, range=10, samples=8192):
-    f2 = lambda x: x * kernel(x)
-    f3 = lambda x: x**2 * kernel(x)
-    # print(f"kernel.__name__)
-    v1 = integrate(kernel, range, samples)
-    v2 = integrate(f2, range, samples).abs()
-    v3 = integrate(f3, range, samples)
+def check(kernel: Kernel, x_range=10, samples=8192):
+    def f2(x):
+        return x * kernel(x)
+
+    def f3(x):
+        return x**2 * kernel(x)
+
+    v1 = integrate(kernel, x_range, samples)
+    v2 = integrate(f2, x_range, samples).abs()
+    v3 = integrate(f3, x_range, samples)
     l = 10 - len(kernel.__name__)
     print(
-        f"{kernel.__name__}:{' ' * l} {v1:.2f}, {v2:.2f}, {v3:.2f}, [ {kernel(torch.zeros(1)).item():.2f}, cent: {centrality(kernel):.2f} ]"
+        f"{kernel.__name__}:{' ' * l} {v1:.2f}, {v2:.2f}, {v3:.2f}, [ "
+        f"{kernel(torch.zeros(1)).item():.2f}, cent: {centrality(kernel):.2f} ]"
     )
 
 

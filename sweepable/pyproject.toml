@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sweepable"
+version = "0.1.0"
+description = "Pydantic configs that double as hyperparameter sweep specifications. Each field is implicitly `T | Swept[T] | SweepExpression`; a runner can enumerate the resulting concrete configurations."
+readme = "README.md"
+requires-python = ">=3.13"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Glen Taggart", email = "glenmtaggart@gmail.com"}
+]
+keywords = ["pydantic", "configuration", "hyperparameter-sweep", "grid-search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "paramsight @ git+https://github.com/nqgl/paramsight.git",
+    "pydantic>=2.12.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.14.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sweepable"]
+
+[tool.hatch.metadata]
+# Required because `paramsight` is currently a git+https dep, not on PyPI.
+allow-direct-references = true
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "PT"]
+ignore = ["E741"]
+fixable = ["ALL"]
+unfixable = ["B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

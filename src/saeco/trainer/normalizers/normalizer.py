@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from enum import IntEnum
 
 import torch
 import torch.nn as nn
@@ -8,6 +9,7 @@ from torch import Tensor
 
 import saeco.core as cl
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
+from saeco.sweeps import SweepableConfig
 
 
 class Normalizer(cl.Module, ABC):
@@ -230,13 +232,11 @@ class BatchNormalizer(AffineNormalizer):
         return x.std(dim=0, keepdim=True, unbiased=False) + self.eps
 
 
-from enum import IntEnum
 
 # class Aggregation(SweepableConfig):
 #     primed: bool
 #     running: bool
 #     batch: bool
-from saeco.sweeps import SweepableConfig
 
 
 class GNConfig(SweepableConfig):
@@ -440,7 +440,7 @@ class GeneralizedNormalizer(Normalizer):
     def invert(self, x, *, cache: cl.Cache, **kwargs):
         return x * (cache.std_s * cache.std_e) + (cache.mu_s + cache.mu_e)
 
-    def mu_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:
+    def mu_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"]:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.mu_s == SAggregation.DONTUSE:
             return 0
         elif self.cfg.mu_s == SAggregation.PRIMED:
@@ -450,7 +450,7 @@ class GeneralizedNormalizer(Normalizer):
         else:
             raise ValueError(f"Invalid mu_s value: {self.cfg.mu_s}")
 
-    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"] | float:
+    def std_s(self, x, *, cache=None) -> Float[Tensor, "batch 1"] | float:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.std_s == SAggregation.DONTUSE:
             return 1.0
         elif self.cfg.std_s == SAggregation.PRIMED:
@@ -460,7 +460,7 @@ class GeneralizedNormalizer(Normalizer):
         else:
             raise ValueError(f"Invalid std_s value: {self.cfg.std_s}")
 
-    def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
+    def mu_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.mu_e == Aggregation.DONTUSE:
             return 0
         if self.cfg.mu_e == Aggregation.RUNNING_AVG:
@@ -469,7 +469,7 @@ class GeneralizedNormalizer(Normalizer):
             return self.elementwise_mean(x)
         return self._mu_e
 
-    def std_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:
+    def std_e(self, x, *, cache=None) -> Float[Tensor, "1 d_data"]:  # noqa: F722  # jaxtyping string annotation
         if self.cfg.std_e == Aggregation.DONTUSE:
             return 1
         if self.cfg.std_e == Aggregation.RUNNING_AVG:
@@ -493,16 +493,20 @@ class StaticInvertibleGeneralizedNormalizer(GeneralizedNormalizer):
             SAggregation.PRIMED,
         )
         assert cfg.mu_e in static_aggs, (
-            f"{cfg.mu_e} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.mu_e} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
         assert cfg.std_e in static_aggs, (
-            f"{cfg.std_e} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.std_e} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
         assert cfg.mu_s in static_saggs, (
-            f"{cfg.mu_s} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.mu_s} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
         assert cfg.std_s in static_saggs, (
-            f"{cfg.std_s} is not a static aggregation but is being used with a static-invertible normalizer"
+            f"{cfg.std_s} is not a static aggregation but is being used with a "
+            "static-invertible normalizer"
         )
 
         super().__init__(init, cfg, eps)
@@ -517,7 +521,7 @@ def main():
     class C: ...
 
     init = C()
-    setattr(init, "d_data", 768)
+    init.d_data = 768
 
     cfg = GNConfig(
         mu_s=True, mu_e=Aggregation.BATCH_AVG, std_s=True, std_e=Aggregation.BATCH_AVG

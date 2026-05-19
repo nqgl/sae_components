@@ -1,5 +1,5 @@
 import os
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import torch
@@ -8,7 +8,7 @@ from safetensors import safe_open
 from safetensors.torch import load, save
 
 
-class CompressionType(str, Enum):
+class CompressionType(StrEnum):
     NONE = "none"
     ZSTD = "zstd"
 

@@ -31,18 +31,21 @@ class Collection(Module):
             if isinstance(module, nn.Module):
                 if not _support_modules:
                     raise ValueError(
-                        "This collection type does not support modules, but module provided"
+                        "This collection type does not support modules, but module "
+                        "provided"
                     )
                 self.add_module(name, module)
             elif isinstance(module, nn.Parameter):
                 if not _support_parameters:
                     raise ValueError(
-                        "This collection type does not support parameters, but parameter provided"
+                        "This collection type does not support parameters, but "
+                        "parameter provided"
                     )
                 self.register_parameter(name, module)
             else:
                 raise ValueError(
-                    f"Only nn.Modules and nn.Parameters are allowed in collections.\nError@ {name}={module}"
+                    "Only nn.Modules and nn.Parameters are allowed in "
+                    f"collections.\nError@ {name}={module}"
                 )
 
         self._support_parameters = _support_parameters
@@ -71,9 +74,10 @@ class Collection(Module):
             raise ValueError(
                 "key.start and key.stop must be of the same type (int or str)"
             )
-        assert "_support_parameters" not in items and "_support_modules" not in items
+        assert "_support_parameters" not in items
+        assert "_support_modules" not in items
         return self.__class__(
             _support_parameters=self._support_parameters,
             _support_modules=self._support_modules,
-            **{k: v for k, v in items},
+            **dict(items),
         )

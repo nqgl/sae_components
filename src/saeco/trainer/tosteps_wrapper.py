@@ -1,5 +1,5 @@
 from functools import update_wrapper
-from typing import Any
+from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
 
 from pydantic import GetCoreSchemaHandler
 from pydantic_core import CoreSchema, core_schema
@@ -14,12 +14,14 @@ def tosteps(n: int | float, period: int | None = None) -> int:
     assert 0 <= n
     if isinstance(n, int):
         return n
-    assert isinstance(n, float) and n <= 1 and isinstance(period, int)
+    assert isinstance(n, float)
+    assert n <= 1
+    assert isinstance(period, int)
     return int(n * period)
 
 
 class FloatCheckMeta(type):
-    def __instancecheck__(self, __instance: Any) -> bool:
+    def __instancecheck__(cls, __instance: Any) -> bool:
         if isinstance(__instance, float):
             return True
         return super().__instancecheck__(__instance)
@@ -45,11 +47,9 @@ class ResFloat(float, metaclass=FloatCheckMeta):
     PERIOD_FIELD_NAME = "resample_period"
 
 
-from typing import TYPE_CHECKING, Annotated, get_args, get_origin
 
 if TYPE_CHECKING:
     from saeco.trainer.schedule_cfg import RunSchedulingConfig
-
 
 
 def deannotate(annotation):
@@ -84,7 +84,7 @@ def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
                 return getattr(self.raw, name)
 
     update_wrapper(Class2.__init__, cls.__init__)
-    mfi = {k: v for k, v in cls.model_fields.items()}
+    mfi = dict(cls.model_fields.items())
 
     def get_replacements(name, t):
         @property
@@ -100,14 +100,13 @@ def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
         if issubclass(int, annotation):
             if issubclass(RunFloat, annotation) and issubclass(ResFloat, annotation):
                 raise Exception(
-                    "Warning: both RunFloat and ResFloat, skipping. <int | float> type will not be replaced"
+                    "Warning: both RunFloat and ResFloat, skipping. <int | float> type "
+                    "will not be replaced"
                 )
             elif issubclass(RunFloat, annotation):
                 t = RunFloat
-                print("found run", name)
             elif issubclass(ResFloat, annotation):
                 t = ResFloat
-                print("found res", name)
             else:
                 continue
 
@@ -120,7 +119,6 @@ def tosteps_wrapper(cls: type["RunSchedulingConfig"]):
     # model_dump = cls.model_dump
 
     # def aliasdump(self, *a, **k):
-    #     print(k)
 
     # cls.model_dump = aliasdump
     return Class2

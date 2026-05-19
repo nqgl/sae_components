@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 from weakref import WeakValueDictionary
 
+import paramsight
 import torch
 from attrs import define, field
 from paramsight import get_resolved_typevars_for_base, takes_alias
@@ -70,6 +71,7 @@ class RemovableOnFinalize(Protocol):
 
 
 @define
+@paramsight.slotted_strategies.add_field
 class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
     path: Path
     metadata: MetadataT
@@ -95,7 +97,6 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
 
     @cached_property
     def _raw_tensor(self):
-        # print("opening tensor", self.path)
         safepath = self.path.with_suffix(".safetensors")
         if safepath.exists():
             self.finalized = True
@@ -208,7 +209,6 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
         # self.resize(self.metadata.shape[self.cat_axis], truncate=True)
         self.finalized = True
         assert not self.metadata_path.exists()
-        # TODO
 
         self._save_safe()
         if self.tensor.numel() > 0:

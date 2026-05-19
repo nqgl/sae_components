@@ -21,7 +21,8 @@ class FreqTracker(PassThroughModule, ABC):
     # if freqs.ndim != 1:
     #     raise ValueError(
     #         f"Expected 1D freqs, got {freqs.ndim}D with shape {freqs.shape}.\
-    #         If multidimensional freqs are correct for some use cases, will add support for it."
+    # If multidimensional freqs are correct for some use cases, will add support for
+    # it."
     #     )
     # return freqs
     @torch.no_grad()

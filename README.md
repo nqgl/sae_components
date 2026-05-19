@@ -1,66 +1,75 @@
 # saeco
 
+[![CI](https://github.com/nqgl/sae_components/actions/workflows/ci.yml/badge.svg)](https://github.com/nqgl/sae_components/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+
+A modular library for training and analyzing sparse autoencoders (SAEs) for
+mechanistic interpretability. You compose architectures from small building
+blocks; the library handles training, data caching, resampling, L0 targeting,
+sweeping, and remote orchestration.
+
+## Why saeco?
+
+- **Build architectures from small, named pieces.** Declare the model,
+  losses, and aux losses for an SAE; the library handles the training
+  pipeline, save/load, sweep enumeration, and resampling for you.
+- **Sweeping is a first-class config feature.** Any field on a
+  `SweepableConfig` can be a `Swept(a, b, c)` or a `SweepExpression(...)`
+  — the trainer enumerates the combinations for you.
+- **Composable layers.** Mixins like `NormFeaturesMixin` and
+  `OrthogonalizeFeatureGradsMixin` attach to layers declaratively and
+  participate in the standard training loop.
+
+See [docs/architecture.md](docs/architecture.md) for the rationale behind these choices.
+
 ## Installation
 
-Depends on ezpod.
+`saeco` depends on the [`sweepable`](sweepable/) package which lives in
+this same repo and is not on PyPI yet. From the repo root, install the
+dependency chain in editable mode:
 
 ```bash
-pip install -e .
+python -m pip install -e ./sweepable
+python -m pip install -e .
 ```
 
+Optional extras:
 
-## Disclaimer 
+```bash
+python -m pip install -e ".[remote]"     # remote sweep orchestration (ezpod)
+python -m pip install -e ".[dev]"        # pytest, ruff, pre-commit
+```
 
-This project is in the midst of a few transitions.
+## Quickstart: Vanilla SAE
 
-The system for defining Architectures has been recently overhauled.
-
-The logging system used to depend on Weights and Biases, but is in the middle of transitioning away. This transition is currently in progress so some functionality is broken and the current state of the code around logging is well below my standards. 
-
-This codebase has been mainly used by me personally, so currently most of the code is not documented. I'm beginning to change that, but at the moment I wouldn't advise building on this codebase unless you can ask me questions.
-
-## What this does
-
-This is a library for training sparse autoencoders. You use components from the library, and then you get a bunch of the functionality taken care of for you.
-- training pipeline
-    - data generation and caching
-- resampling "for free"
-- L0Targeting
-- remote orchestration for running large sweeps
-- logging
-- sweeping as a first class feature of configs
-- other nice stuff
-
-
-
-## Examples
-
-
-### Vanilla SAE
-
-Check out [the vanilla SAE Architecture](src/saeco/architectures/vanilla/vanilla_model.py) for an example of how the library is used to define a model architecture.
+The full reference implementation lives at
+[`src/saeco/architectures/vanilla/vanilla_model.py`](src/saeco/architectures/vanilla/vanilla_model.py).
 
 ```python
+import torch.nn as nn
+
+import saeco.components.features as ft
+from saeco import SAE, Architecture, SweepableConfig, loss_prop, model_prop
+from saeco.components import L2Loss, SparsityPenaltyLoss
+from saeco.core import Seq
+from saeco.misc import useif
+
 
 class VanillaConfig(SweepableConfig):
-    # SweepableConfig is a subclass of pydantic BaseModel
+    # SweepableConfig is a subclass of pydantic BaseModel.
+    # Each field is implicitly `T | Swept[T] | SweepExpression`.
     pre_bias: bool = False
-    # this is implicitly bool | Swept | SweepExpression due to being a SweepableConfig
 
 
 class VanillaSAE(Architecture[VanillaConfig]):
-    # setup is called before models are constructed
     def setup(self):
-        # these will add wrappers to the decoder that ensure:
-        # 1. the features are normalized after each optimizer step to have unit norm
-        # 2. the gradients of the features are orthogonalized after each backward pass before the optimizer step
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        # Mixins added during setup participate in the training loop:
+        # 1. features are normalized to unit norm after each optimizer step
+        # 2. feature gradients are orthogonalized before each step
+        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
+        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
 
-    # model_prop tells the Architecture class that this method
-    # is the method that constructs the model.
-    # model_prop is a subclass of cached_property, so self.model will always
-    # refer to the same instance of the model
     @model_prop
     def model(self):
         return SAE(
@@ -72,7 +81,6 @@ class VanillaSAE(Architecture[VanillaConfig]):
             decoder=self.init.decoder,
         )
 
-    # loss_prop designates a Loss that will be used in training
     @loss_prop
     def L2_loss(self):
         return L2Loss(self.model)
@@ -82,15 +90,34 @@ class VanillaSAE(Architecture[VanillaConfig]):
         return SparsityPenaltyLoss(self.model)
 ```
 
-Then see how simple it is [run the grid search on the VanillaSAE](experiments/vanilla_example_training.py).
+For a runnable end-to-end script that wires this up to a `RunConfig`, a
+small sweep grid, and a training run, see
+[`examples/train_vanilla_sae.py`](examples/train_vanilla_sae.py). Two more
+standalone demos live alongside it:
+[`examples/define_architecture.py`](examples/define_architecture.py) and
+[`examples/sweep_dsl.py`](examples/sweep_dsl.py).
 
-### Gated SAE
+## A more involved architecture: Gated SAE
 
-For an example of a more complex Architecture, here's a quick implementation of a GatedSAE:
-
-
+The Gated SAE shows the rest of the library: parallel paths, auxiliary
+models with their own losses, conditional setup based on config flags, and
+detached gradients across paths.
 
 ```python
+from functools import cached_property
+
+import torch
+import torch.nn as nn
+
+import saeco.components as co
+import saeco.components.features as ft
+import saeco.core as cl
+from saeco import SAE, Architecture, SweepableConfig, aux_model_prop, model_prop
+from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
+from saeco.core import Seq
+from saeco.core.reused_forward import ReuseForward
+from saeco.misc import useif
+
 
 class GatedConfig(SweepableConfig):
     pre_bias: bool = False
@@ -101,8 +128,8 @@ class Gated(Architecture[GatedConfig]):
     def setup(self):
         self.init._encoder.bias = False
         self.init._encoder.add_wrapper(ReuseForward)
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
+        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
 
     @cached_property
     def enc_mag(self):
@@ -146,9 +173,7 @@ class Gated(Architecture[GatedConfig]):
             encoder=cl.Parallel(
                 magnitude=self.enc_mag,
                 gate=co.ops.Thresh(self.enc_gate),
-            ).reduce(
-                lambda x, y: x * y,
-            ),
+            ).reduce(lambda x, y: x * y),
             decoder=self.init.decoder,
             penalty=None,
         )
@@ -169,10 +194,50 @@ class Gated(Architecture[GatedConfig]):
     sparsity_loss = model_aux.add_loss(SparsityPenaltyLoss)
 ```
 
+## Repository layout
 
+```
+src/saeco/                  # the library — public API
+├── architecture/           # Architecture, SAE, *_prop decorators
+├── architectures/          # reference architectures (vanilla, gated)
+├── components/             # losses, penalties, ops, features, resampling
+├── core/                   # Seq, Parallel, MulParallel, Cache, …
+├── data/                   # dataset config, tokenization, activation caches
+├── initializer/            # parameter initialization (incl. geometric median)
+├── mlog/                   # logging (currently W&B-backed)
+├── sweeps/                 # do_sweep + thin re-exports of sweepable's DSL
+└── trainer/                # Trainer, RunConfig, scheduling, normalizers
 
-## Future
+sweepable/                  # standalone subrepo — Pydantic + sweep DSL
+├── pyproject.toml          # installs as `sweepable` (no saeco deps)
+├── src/sweepable/          # SweepableConfig, Swept, SweepVar, Val, …
+└── tests/
 
-This is still a work in progress, there's more to come (both for the library and this README).
+research/                   # experimental extension package
+                            # installs as `saeco-research`; no API guarantees
 
-Feel free to contact me if you have any questions!
+examples/                   # curated standalone demos
+tests/                      # library tests
+```
+
+This repo is a "monorepo of three packages" (`sweepable` → `saeco` →
+`saeco-research`). To use them all:
+
+```bash
+python -m pip install -e ./sweepable    # the sweep DSL (used by saeco)
+python -m pip install -e .              # the library
+python -m pip install -e ./research     # the research extension package
+```
+
+## Status
+
+This is an active research-driven project. The library is stable enough to
+build on, and the reference architectures (`vanilla`, `gated`) work
+end-to-end. Logging is W&B-backed by default in this iteration, with calls
+centralized through `saeco.mlog`.
+
+Feel free to open an issue or contact me if you have questions.
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).

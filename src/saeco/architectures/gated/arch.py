@@ -4,14 +4,15 @@ import torch
 import torch.nn as nn
 
 import saeco.components as co
-import saeco.components.features.features as ft
+import saeco.components.features as ft
 import saeco.core as cl
 from saeco.architecture import (
-    SAE,
-    Architecture,
     aux_model_prop,
+    loss_prop,
     model_prop,
 )
+from saeco.architecture.sae import SAE
+from saeco.architecture.sae_architecture import Architecture
 from saeco.components import (
     EMAFreqTracker,
     L2Loss,
@@ -20,7 +21,7 @@ from saeco.components import (
 from saeco.core import Seq
 from saeco.core.reused_forward import ReuseForward
 from saeco.misc import useif
-from saeco.sweeps.sweepable_config.sweepable_config import SweepableConfig
+from sweepable import SweepableConfig
 
 
 class GatedConfig(SweepableConfig):
@@ -82,7 +83,9 @@ class Gated(Architecture[GatedConfig]):
             penalty=None,
         )
 
-    L2_loss = gated_model.add_loss(L2Loss)
+    @loss_prop
+    def L2_loss(self):  # noqa: N802  # loss-prop method name is the train_cfg.coeffs key
+        return L2Loss(self.gated_model)
 
     @aux_model_prop
     def model_aux(self):
@@ -94,5 +97,10 @@ class Gated(Architecture[GatedConfig]):
             ),
         )
 
-    L2_aux_loss = model_aux.add_loss(L2Loss)
-    sparsity_loss = model_aux.add_loss(SparsityPenaltyLoss)
+    @loss_prop
+    def L2_aux_loss(self):  # noqa: N802  # loss-prop method name is the train_cfg.coeffs key
+        return L2Loss(self.model_aux)
+
+    @loss_prop
+    def sparsity_loss(self):
+        return SparsityPenaltyLoss(self.model_aux)

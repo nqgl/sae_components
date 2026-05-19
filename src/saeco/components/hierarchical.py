@@ -4,7 +4,7 @@ import saeco.core as cl
 from saeco.components.threshgate import RandSoftThreshGate
 
 
-class GotActsInterrupt(Exception):
+class GotActsInterrupt(Exception):  # noqa: N818  # control-flow signal, not an error
     def __init__(self, acts):
         super().__init__()
         self.acts = acts

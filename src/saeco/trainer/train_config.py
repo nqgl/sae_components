@@ -7,12 +7,11 @@ from saeco.data.config.data_cfg import DataConfig
 from saeco.misc import lazycall
 from saeco.sweeps import SweepableConfig
 
-from .OptimConfig import get_optim_cls
+from .optim_config import get_optim_cls
 from .schedule_cfg import RunSchedulingConfig
 
 
 class EarlyStoppingBounds(SweepableConfig):
-    # check_timestamps: list[int] = Field(default_factory=list[int])
     min_values: dict[str, dict[int, float]]
     max_values: dict[str, dict[int, float]]
 
@@ -22,20 +21,14 @@ class EarlyStoppingBounds(SweepableConfig):
 
     @cached_property
     def check_timestamps(self):
-        return list(
-            set.union(
-                *[
-                    set(d.keys())
-                    for d in list(self.min_values.values())
-                    + list(self.max_values.values())
-                ]
-            )
-        )
+        values = list(self.min_values.values()) + list(self.max_values.values())
+        if len(values) == 0:
+            return []
+        return list(set.union(*[set(d.keys()) for d in values]))
 
     def should_stop(self, cache: SAECache, t: int):
         if t not in self.check_timestamps:
             return False
-        print("getfields", cache._getfields())
         for k, v in self.min_values.items():
             if t not in v:
                 continue
@@ -52,10 +45,17 @@ class EarlyStoppingBounds(SweepableConfig):
 
 
 class TrainConfig(SweepableConfig):
+    """Training hyperparameters: data, schedule, optimizer, and losses.
+
+    Holds the data config, run schedule, optimizer settings, per-loss
+    coefficients (``coeffs``, keyed by ``loss_prop`` name), and the L0
+    targeting controls that auto-tune the sparsity coefficient toward a
+    target average L0.
+    """
+
     data_cfg: DataConfig = Field(default_factory=DataConfig)
-    wandb_cfg: dict = Field(default_factory=lambda: dict(project="sae sweeps"))
-    coeffs: dict[str, float] = Field(default_factory=lambda: dict(sparsity_loss=1e-3))
-    # coeffs: Coeffs = Field(default_factory=Coeffs)
+    wandb_cfg: dict = Field(default_factory=lambda: {"project": "sae sweeps"})
+    coeffs: dict[str, float] = Field(default_factory=lambda: {"sparsity_loss": 1e-3})
     l0_targeter_type: str = "gentle_basic"
     l0_target: float | None = None
     l0_targeting_enabled: bool = True
@@ -68,7 +68,7 @@ class TrainConfig(SweepableConfig):
     kwargs: dict = Field(default_factory=dict)
     optim: str = "RAdam"
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
-    use_averaged_model: bool = True
+    use_averaged_model: bool = False
     checkpoint_period: int | None = None
     save_on_complete: bool = True
     weight_decay: float | None = None
@@ -99,14 +99,18 @@ class TrainConfig(SweepableConfig):
             set(self.input_sites) <= set(self.data_cfg.model_cfg.acts_cfg.sites)
         ):
             raise ValueError(
-                f"Input sites must be a subset of the data config's sites. Got {self.input_sites}, expected subset of {self.data_cfg.model_cfg.acts_cfg.sites}"
+                "Input sites must be a subset of the data config's sites. Got "
+                f"{self.input_sites}, expected subset of "
+                f"{self.data_cfg.model_cfg.acts_cfg.sites}"
             )
 
         if self.target_sites and not (
             set(self.target_sites) <= set(self.data_cfg.model_cfg.acts_cfg.sites)
         ):
             raise ValueError(
-                f"Target sites must be a subset of the data config's sites. Got {self.target_sites}, expected subset of {self.data_cfg.model_cfg.acts_cfg.sites}"
+                "Target sites must be a subset of the data config's sites. Got "
+                f"{self.target_sites}, expected subset of "
+                f"{self.data_cfg.model_cfg.acts_cfg.sites}"
             )
 
         used_input_sites = self.input_sites or self.data_cfg.model_cfg.acts_cfg.sites
