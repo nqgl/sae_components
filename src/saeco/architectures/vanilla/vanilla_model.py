@@ -46,7 +46,7 @@ class VanillaSAE(Architecture[VanillaConfig]):
     def model(self):
         return SAE(
             encoder_pre=Seq(
-                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()),
+                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias),
                 lin=self.init.encoder,
             ),
             nonlinearity=nn.ReLU(),

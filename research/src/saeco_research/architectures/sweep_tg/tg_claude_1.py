@@ -502,7 +502,7 @@ class TGArch(Architecture[GateConfig]):
         init = self.init
         s = SAE(
             encoder=Seq(
-                **useif(self.cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+                **useif(self.cfg.pre_bias, pre_bias=init._decoder.sub_bias),
                 lin=GTTest(self.cfg, init)
                 if self.cfg.mag_weights
                 else BinaryEncoder(self.cfg, init),

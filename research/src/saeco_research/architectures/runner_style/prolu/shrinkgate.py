@@ -87,7 +87,7 @@ class ShrinkGateSae(cl.Module):
         )
         self.l1 = dec_mul_l1
         self.encode_pre = Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             encoder_linear=init.encoder.resampled(),
         )
         self.full_dec = dec_mul_l1.set_decoder(init.decoder)

@@ -156,7 +156,7 @@ def dynamic_thresh_sae(
     model = Seq(
         encoder=cl.ReuseForward(
             Seq(
-                **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+                **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
                 lin=init.encoder,
                 pre_acts=PreActMetrics(),
                 nonlinearity=thrlu,

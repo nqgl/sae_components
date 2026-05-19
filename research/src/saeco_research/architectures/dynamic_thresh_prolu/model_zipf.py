@@ -191,7 +191,7 @@ class DynamicZipfThreshSAE(Architecture[DynamicZipfThreshConfig]):
         return Seq(
             encoder=cl.ReuseForward(
                 Seq(
-                    **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()),
+                    **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias),
                     lin=self.init.encoder,
                     pre_acts=PreActMetrics(),
                     nonlinearity=thrlu,

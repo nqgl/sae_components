@@ -127,7 +127,7 @@ class ShrinkGateSae(cl.Module):
         )
         self.l1 = L1Penalty()
         # self.encode_pre = Seq(
-        #     **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+        #     **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
         #     encoder_linear=init.encoder.resampled(),
         # )
         self.gate = ShrinkGate(cfg, init.encoder.resampled(), init=init)

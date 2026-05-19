@@ -1,8 +1,9 @@
+from functools import cached_property
+
 import torch
 import torch.nn as nn
 
 from saeco.core.basic_ops import Sub
-from saeco.misc import lazycall
 
 
 class DetachedLinear(nn.Module):
@@ -240,6 +241,6 @@ class LinearFactory:
         # else:
         #     self.lin.weight.data[:] = other.lin.weight.data.transpose(-2, -1)
 
-    @lazycall
+    @cached_property
     def sub_bias(self) -> Sub:
         return Sub(self.lin.bias)

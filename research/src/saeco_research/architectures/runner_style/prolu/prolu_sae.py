@@ -87,7 +87,7 @@ def sae(
     else:
         prolu = PProLU(cfg.prolu_cfg, init.d_dict)
     model_full = Seq(
-        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
         encoder=Seq(
             linear=init.encoder.resampled(),
             prolu=prolu,

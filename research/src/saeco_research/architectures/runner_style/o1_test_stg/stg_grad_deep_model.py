@@ -160,7 +160,7 @@ def build_encoder(init: Initializer, cfg: DeepConfig, penalty):
 
     encoder_layers = []
     if cfg.pre_bias:
-        encoder_layers.append(("pre_bias", init._decoder.sub_bias()))
+        encoder_layers.append(("pre_bias", init._decoder.sub_bias))
 
     if cfg.deep_enc:
         # Example deep encoder block

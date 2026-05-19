@@ -42,7 +42,7 @@ def jumprelu_l1_sae(
     )  # TODO resample thresh
     model = Seq(
         encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias()),
+            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
             lin=init.encoder,
             nonlinearity=JumpReLU(thresh=thresh, kernel=cfg.get_kernel(), eps=cfg.eps),
         ),

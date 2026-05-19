@@ -51,7 +51,7 @@ class TGArch(Architecture[TGSAEConfig]):
         init = self.init
         s = SAE(
             encoder=Seq(
-                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias()),
+                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias),
                 lin=ThreshGate(
                     self.cfg.thresh_gate_cfg,
                     init=self.init,
