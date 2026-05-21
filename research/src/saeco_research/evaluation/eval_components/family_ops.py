@@ -2,11 +2,12 @@ from typing import TYPE_CHECKING
 
 import torch
 import tqdm
+from torch import Tensor
+
 from saeco_research.evaluation.fastapi_models.families_draft import (
     Family,
 )
 from saeco_research.evaluation.filtered import FilteredTensor
-from torch import Tensor
 
 if TYPE_CHECKING:
     from ..evaluation import Evaluation

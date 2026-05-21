@@ -5,12 +5,12 @@ import torch
 from comlm.datasource.training_batch import NoisedBatch
 from comlm.exprank import XRNoisedBatch
 from load_comlm_tahoe import root_eval
-from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
-from saeco_research.evaluation.evaluation import Evaluation
-from saeco_research.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 from torch import Tensor
 
 from saeco.data.config.model_config.model_cfg import ModelConfig
+from saeco_research.comlm.comlm_model_cfg import ComlmModelConfig
+from saeco_research.evaluation.evaluation import Evaluation
+from saeco_research.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 
 NoisedBatch
 root: Evaluation[XRNoisedBatch] = root_eval

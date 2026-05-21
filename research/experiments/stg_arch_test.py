@@ -1,5 +1,3 @@
-from saeco_research.architectures.sweep_tg.symm_arch import GateConfig, TGArch
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -11,6 +9,7 @@ from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from saeco_research.architectures.sweep_tg.symm_arch import GateConfig, TGArch
 
 cfg = RunConfig[GateConfig](
     train_cfg=TrainConfig(

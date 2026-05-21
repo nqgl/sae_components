@@ -288,7 +288,6 @@ def get_resampled_params(model: nn.Module):
 #     def features_grad(self) -> Optional[Tensor]: ...
 
 
-
 @runtime_checkable
 class HasFeaturesAttr(Protocol):
     features: dict[str, FeaturesParam]

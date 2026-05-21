@@ -1,6 +1,5 @@
-from saeco_research.evaluation import Evaluation
-
 from saeco.architecture.sae_architecture import Architecture
+from saeco_research.evaluation import Evaluation
 
 path = "/home/g/workspace/saved_models/rand29/DynamicThreshSAE/51.arch_ref"
 arch = Architecture.load(path, load_weights=True)

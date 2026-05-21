@@ -16,19 +16,6 @@ runs ONE randomly-selected configuration via `rand_run_no_agent`. To run
 the full grid (locally or on remote pods), see the commented-out
 `sweep_manager` calls at the bottom.
 
-Prerequisites
--------------
-- A CUDA-capable GPU (`Architecture.__init__` defaults to `device="cuda"`).
-- The Gemma-4 checkpoint is **gated** on HuggingFace: accept the license
-  on the model page and authenticate (`huggingface-cli login` or export
-  `HF_TOKEN`) before first run. The weights are a multi-GB download.
-- `pip install -e ./sweepable && pip install -e .` from the repo root
-  (W&B logging is included; it is a core dependency).
-- For remote pod orchestration: `pip install -e ".[remote]"`.
-
-Note: `GEMMA_4_DEFAULT_D_DATA` is the repo's residual-stream width
-placeholder for the E2B variant — confirm it against the loaded model
-if you change checkpoints.
 """
 
 from saeco import (

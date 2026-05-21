@@ -5,11 +5,11 @@ import nnsight
 import torch
 from load import root_eval
 from nicegui import ui
-from saeco_research.analysis.uiitem import UIE
-from saeco_research.evaluation.evaluation import Evaluation
 from torch import Tensor
 
 from saeco.misc.nnsite import tlsite_to_nnsite
+from saeco_research.analysis.uiitem import UIE
+from saeco_research.evaluation.evaluation import Evaluation
 
 # from transformers import GPT2LMHeadModel
 # %%

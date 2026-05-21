@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+from torch import Tensor
+
 from saeco_research.evaluation.fastapi_models.EnrichmentSortBy import EnrichmentSortBy
 from saeco_research.evaluation.fastapi_models.metadata_enrichment import (
     MetadataEnrichmentLabelResult,
@@ -13,7 +15,6 @@ from saeco_research.evaluation.fastapi_models.token_enrichment import (
 )
 from saeco_research.evaluation.filtered import FilteredTensor
 from saeco_research.evaluation.token_utils import extract_token_tensor
-from torch import Tensor
 
 if TYPE_CHECKING:
     from saeco_research.evaluation.evaluation import Evaluation

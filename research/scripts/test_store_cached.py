@@ -5,13 +5,13 @@ from pathlib import Path
 import torch
 from pydantic import BaseModel
 
+from saeco.trainer.runner import TrainingRunner
+
 # from saeco_research.architectures.anth_update import cfg, anth_update_model
 from saeco_research.architectures.threshgate_gradjust.tg_grad_deep_model import (
     cfg,
     deep_tg_grad_sae,
 )
-
-from saeco.trainer.runner import TrainingRunner
 
 
 def timed(func, name=""):

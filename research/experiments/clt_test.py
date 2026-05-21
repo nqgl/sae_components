@@ -1,17 +1,16 @@
-from saeco.data.data_config_definitions import gpt_2_block
-from saeco_research.architectures.matry_clt.test_clt import (
-    CrossLayerTranscoder,
-    CrossLayerTranscoderConfig,
-)
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
+from saeco.data.data_config_definitions import gpt_2_block
 from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from saeco_research.architectures.matry_clt.test_clt import (
+    CrossLayerTranscoder,
+    CrossLayerTranscoderConfig,
+)
 
 cfg = RunConfig[CrossLayerTranscoderConfig](
     train_cfg=TrainConfig(

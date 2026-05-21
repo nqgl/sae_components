@@ -8,11 +8,11 @@ import nnsight
 import torch
 import torch.autograd.forward_ad as fw_ad
 import tqdm
-from saeco_research.evaluation.utils import fwad_safe_sdp
 from torch import Tensor
 
 from saeco.data.dict_batch import DictBatch
 from saeco.misc.nnsite import getsite, setsite
+from saeco_research.evaluation.utils import fwad_safe_sdp
 
 if TYPE_CHECKING:
     from saeco_research.evaluation.evaluation import Evaluation

@@ -119,7 +119,6 @@ class FeatureParamType(StrEnum):
     other = "other"
 
 
-
 b2_techniques = {
     "mean": ResetToMean,
     "sq": OptimFieldResetSqMean,

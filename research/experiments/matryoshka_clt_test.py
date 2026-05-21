@@ -1,8 +1,3 @@
-from saeco_research.architectures.matry_clt.matryoshka_clt import (
-    MatryoshkaCLT,
-    MatryoshkaCLTConfig,
-)
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -14,6 +9,10 @@ from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from saeco_research.architectures.matry_clt.matryoshka_clt import (
+    MatryoshkaCLT,
+    MatryoshkaCLTConfig,
+)
 
 cfg = RunConfig[MatryoshkaCLTConfig](
     train_cfg=TrainConfig(

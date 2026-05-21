@@ -3,9 +3,8 @@ import time
 from pathlib import Path
 
 import pandas as pd
-from wandb.apis.public import Run, Runs
-
 import wandb
+from wandb.apis.public import Run, Runs
 
 api = wandb.Api()
 
