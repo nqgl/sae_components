@@ -1,8 +1,8 @@
 import torch.nn as nn
-from saeco_research.architectures.sweep_tg.other_lin import OtherLinear
 
 import saeco.components.hooks.feature_hooks as ft
 from saeco.core import Seq
+from saeco_research.architectures.sweep_tg.other_lin import OtherLinear
 
 
 def mlp_layer(

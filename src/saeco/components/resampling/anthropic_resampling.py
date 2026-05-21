@@ -54,8 +54,6 @@ def get_param_parent_module(param, model: nn.Module):
     return list(containing.values())[0]
 
 
-
-
 class ResampleType(IntEnum):
     enc_in = 0
     error = 1

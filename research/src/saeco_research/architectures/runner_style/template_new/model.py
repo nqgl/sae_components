@@ -1,5 +1,4 @@
 import torch.nn as nn
-from saeco.components.model import Architecture
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -8,6 +7,7 @@ from saeco.components import (
     L2Loss,
     SparsityPenaltyLoss,
 )
+from saeco.components.model import Architecture
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,

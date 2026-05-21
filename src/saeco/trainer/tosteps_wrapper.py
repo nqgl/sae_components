@@ -47,7 +47,6 @@ class ResFloat(float, metaclass=FloatCheckMeta):
     PERIOD_FIELD_NAME = "resample_period"
 
 
-
 if TYPE_CHECKING:
     from saeco.trainer.schedule_cfg import RunSchedulingConfig
 

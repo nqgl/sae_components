@@ -1,14 +1,3 @@
-from saeco_research.architectures.sweep_tg.orig_rewrite.tg_arch import (
-    TGArch,
-    TGSAEConfig,
-)
-from saeco_research.architectures.sweep_tg.orig_rewrite.threshgrad_v1 import (
-    GateFunctionConfig,
-    GatingConfig,
-    ThreshGateConfig,
-    ThreshGateConfigThing,
-)
-
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
@@ -20,6 +9,16 @@ from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.train_config import TrainConfig
+from saeco_research.architectures.sweep_tg.orig_rewrite.tg_arch import (
+    TGArch,
+    TGSAEConfig,
+)
+from saeco_research.architectures.sweep_tg.orig_rewrite.threshgrad_v1 import (
+    GateFunctionConfig,
+    GatingConfig,
+    ThreshGateConfig,
+    ThreshGateConfigThing,
+)
 
 cfg = RunConfig[TGSAEConfig](
     train_cfg=TrainConfig(

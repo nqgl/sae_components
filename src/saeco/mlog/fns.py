@@ -110,9 +110,8 @@ class WandbCustomLogger:
     root_config: "SweepableConfig"
 
     def __init__(self):
-        from wandb.sdk.wandb_run import Run
-
         import wandb
+        from wandb.sdk.wandb_run import Run
 
         self.wandb = wandb
         self.run: Run | None = None
@@ -307,8 +306,6 @@ class WandbCustomLogger:
 
     def config_get(self) -> dict | None:
         return self._sweep_inst_config
-
-
 
 
 @define

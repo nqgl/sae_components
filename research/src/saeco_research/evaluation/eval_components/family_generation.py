@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 import einops
 import torch
 import tqdm
+
 from saeco_research.evaluation.cache_version import cache_version
 from saeco_research.evaluation.fastapi_models.families_draft import (
     Family,

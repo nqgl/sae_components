@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol, cast
 
 import wandb
+
 from saeco.trainer.trainer import mlog
 from sweepable import SweepableConfig
 

@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Literal
 import torch
 import tqdm
 from pydantic import BaseModel
+from torch import Tensor
+
 from saeco_research.evaluation.cache_version import cache_version
 from saeco_research.evaluation.storage.chunk import Chunk
-from torch import Tensor
 
 if TYPE_CHECKING:
     from saeco_research.evaluation.evaluation import Evaluation

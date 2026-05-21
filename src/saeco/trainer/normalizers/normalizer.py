@@ -232,7 +232,6 @@ class BatchNormalizer(AffineNormalizer):
         return x.std(dim=0, keepdim=True, unbiased=False) + self.eps
 
 
-
 # class Aggregation(SweepableConfig):
 #     primed: bool
 #     running: bool

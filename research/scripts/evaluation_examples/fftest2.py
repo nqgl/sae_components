@@ -2,12 +2,12 @@
 import nnsight
 import torch
 from load import root_eval
+
+from saeco.misc.nnsite import getsite, setsite
 from saeco_research.evaluation.fastapi_models.feature_effects import (
     LogitEffectsRequest,
     TopKFeatureEffects,
 )
-
-from saeco.misc.nnsite import getsite, setsite
 
 # b = root_eval.average_aggregated_patching_effect_on_dataset(22535, random_subset_n=200)
 # print("did B")

@@ -9,9 +9,9 @@ import torch
 #     deep_tg_grad_sae,
 # )
 from pydantic import BaseModel
-from saeco_research.architectures.anth_update import anth_update_model, cfg
 
 from saeco.trainer.runner import TrainingRunner
+from saeco_research.architectures.anth_update import anth_update_model, cfg
 
 
 def timed(func, name=""):

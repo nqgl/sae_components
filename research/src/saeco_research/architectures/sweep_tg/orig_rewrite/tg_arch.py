@@ -1,11 +1,6 @@
 # port of sweep_tg/sthreshgrad.py
 
 
-from saeco_research.architectures.sweep_tg.orig_rewrite.threshgrad_v1 import (
-    ThreshGate,
-    ThreshGateConfig,
-)
-
 import saeco
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -17,6 +12,10 @@ from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.core import Seq
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
+from saeco_research.architectures.sweep_tg.orig_rewrite.threshgrad_v1 import (
+    ThreshGate,
+    ThreshGateConfig,
+)
 
 # useif
 ThreshGateConfig

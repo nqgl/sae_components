@@ -185,8 +185,6 @@ class L0Penalty(Penalty):
         return cache(self).H(x).sum(1).mean(0)
 
 
-
-
 class JumpReLU(cl.Module):
     def __init__(self, thresh, eps, kernel=rect, modified_jumprelu=False, exp=False):
         super().__init__()

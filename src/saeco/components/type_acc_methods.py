@@ -59,8 +59,6 @@ class Singular(Protocol):
     COLLECTED_FIELD_SINGULAR: Literal[True] = True
 
 
-
-
 class typeacc_method[T, **P]:  # noqa: N801  # decorator API; lowercase by decorator convention
     # COLLECTED_FIELD_NAME = ...
     COLLECTED_FIELD_SINGULAR = False

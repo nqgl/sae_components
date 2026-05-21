@@ -3,10 +3,10 @@ from pathlib import Path
 
 import torch
 from pydantic import BaseModel
-from saeco_research.architectures.threshgate.tg_model2 import cfg, multigate_sae
 
 from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_cache import TrainCache
+from saeco_research.architectures.threshgate.tg_model2 import cfg, multigate_sae
 
 modelss = Path.home() / "workspace/saved_models/"
 

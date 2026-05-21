@@ -1,6 +1,5 @@
-from saeco_research.architectures.anth_update import model
-
 from saeco.sweeps import do_sweep
+from saeco_research.architectures.anth_update import model
 
 model_fn = model.sae
 PROJECT = "sae sweeps"

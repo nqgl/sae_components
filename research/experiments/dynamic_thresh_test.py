@@ -1,18 +1,17 @@
+from saeco.components.resampling.anthropic_resampling import (
+    AnthResamplerConfig,
+    OptimResetValuesConfig,
+)
 from saeco.data.data_config_definitions import gemma_2_2b_openwebtext_bf16
+from saeco.initializer import InitConfig
+from saeco.trainer import RunSchedulingConfig
+from saeco.trainer.run_config import RunConfig
+from saeco.trainer.train_config import TrainConfig
 from saeco_research.architectures.dynamic_thresh_prolu.model import (
     DynamicThreshConfig,
     DynamicThreshSAE,
     ThreshConfig,
 )
-
-from saeco.components.resampling.anthropic_resampling import (
-    AnthResamplerConfig,
-    OptimResetValuesConfig,
-)
-from saeco.initializer import InitConfig
-from saeco.trainer import RunSchedulingConfig
-from saeco.trainer.run_config import RunConfig
-from saeco.trainer.train_config import TrainConfig
 
 cfg = RunConfig[DynamicThreshConfig](
     train_cfg=TrainConfig(
