@@ -11,6 +11,7 @@ import torch.nn as nn
 
 import torch.nn.functional as F
 
+import saeco.components.hooks.feature_hooks as ft
 from saeco.architecture import aux_model_prop, loss_prop, model_prop
 
 from saeco.components import L2Loss, Lambda, Loss, SparsityPenaltyLoss
@@ -163,9 +164,7 @@ def split_tensor(x, bounds, dim):
     return [x[slice_dim(bounds[i], bounds[i + 1], dim)] for i in range(len(bounds) - 1)]
 
 
-class SplittableDecoder(
-    cl.Module, saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin, saeco.components.hooks.feature_hooks.NormFeaturesMixin
-):
+class SplittableDecoder(cl.Module):
     def __init__(self, d_layer_dict, num_layers, d_layer_data, nesting_boundaries):
         super().__init__()
         self.weight = nn.Parameter(
@@ -241,11 +240,15 @@ class MatryoshkaCLTDecoder(cl.Module):
         )
 
         self.decoders = [
-            SplittableDecoder(
-                d_layer_dict=d_layer_dict,
-                num_layers=n + 1,
-                d_layer_data=d_layer_data,
-                nesting_boundaries=nesting_boundaries,
+            ft.OrthogonalizeFeatureGrads(
+                ft.NormFeatures(
+                    SplittableDecoder(
+                        d_layer_dict=d_layer_dict,
+                        num_layers=n + 1,
+                        d_layer_data=d_layer_data,
+                        nesting_boundaries=nesting_boundaries,
+                    )
+                )
             )
             for n in range(cfg.n_sites)
         ]

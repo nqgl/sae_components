@@ -1,3 +1,9 @@
+from saeco_research.architectures.threshgate_gradjust.threshgrad import (
+    BinaryEncoder,
+    Config,
+    GTTest,
+)
+
 import saeco.components as co
 import saeco.components.features as ft
 from saeco.components import (
@@ -8,11 +14,6 @@ from saeco.components import (
 from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
-from saeco_research.architectures.threshgate_gradjust.threshgrad import (
-    BinaryEncoder,
-    Config,
-    GTTest,
-)
 
 
 def tg_grad_sae(

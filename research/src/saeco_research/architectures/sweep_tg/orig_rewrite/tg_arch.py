@@ -31,11 +31,11 @@ class TGSAEConfig(SweepableConfig):
 
 class TGArch(Architecture[TGSAEConfig]):
     def setup(self):
-        self.init._decoder.add_mixin_(
-            saeco.components.hooks.feature_hooks.NormFeaturesMixin
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.NormFeatures
         )
-        self.init._decoder.add_mixin_(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
         )
 
     @model_prop

@@ -38,6 +38,7 @@ dependencies = [
     "tqdm",
     "transformers",
     "wandb",
+    "wrapt>=2.0",
     "zstd",
 ]
 
@@ -80,6 +81,10 @@ unfixable = ["B"]
 pythonVersion = "3.13"
 
 [tool.pytest.ini_options]
+pythonpath = [
+    "src",
+    "sweepable/src",
+]
 testpaths = [
     "tests",
 ]

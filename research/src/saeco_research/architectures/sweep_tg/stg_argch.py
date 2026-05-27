@@ -347,11 +347,11 @@ def tg_grad_sae(
 # useif
 class TGArch(Architecture[GateConfig]):
     def setup(self):
-        self.init._decoder.mixins.append(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.NormFeatures
         )
-        self.init._decoder.mixins.append(
-            saeco.components.hooks.feature_hooks.NormFeaturesMixin
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
         )
 
     @model_prop

@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Callable
 from typing import Any
 
@@ -20,7 +21,11 @@ def find_and_call_attr_on_modules(module: nn.Module, attr: str, *args, **kwargs)
     fns = {}
 
     def appl_fn(m):
-        if hasattr(m, attr):
+        try:
+            inspect.getattr_static(m, attr)
+        except AttributeError:
+            return
+        else:
             fns[getattr(m, attr)] = m
 
     module.apply(appl_fn)
@@ -31,7 +36,7 @@ def do_decorated_post_backward(module: nn.Module, cache=None):
     d: dict[nn.Module, dict[str, Callable[[], Any]]] = {}
 
     def appl_fn(m):
-        fields = PostBackwardHook.get_fields(m)
+        fields = PostBackwardHook.get_fields(type(m))
         if fields:
             d[m] = {name: getattr(m, name) for name in fields}
 
@@ -47,7 +52,7 @@ def call_decorated_training_hook(
     d: dict[nn.Module, dict[str, Callable[[], Any]]] = {}
 
     def appl_fn(m):
-        fields = hook_type.get_fields(m)
+        fields = hook_type.get_fields(type(m))
         if fields:
             d[m] = {name: getattr(m, name) for name in fields}
 

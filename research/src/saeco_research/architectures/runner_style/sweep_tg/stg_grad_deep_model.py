@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from saeco_research.architectures.sweep_tg.mlp_layer import mlp_layer
+from saeco_research.architectures.sweep_tg.sthreshgrad import BinaryEncoder, GTTest
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -9,8 +11,6 @@ from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco_research.architectures.sweep_tg.mlp_layer import mlp_layer
-from saeco_research.architectures.sweep_tg.sthreshgrad import BinaryEncoder, GTTest
 
 
 class DeepConfig(SweepableConfig):

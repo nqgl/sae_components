@@ -1,5 +1,10 @@
 import torch
 import torch.nn as nn
+from saeco_research.architectures.threshgate_gradjust.other_lin import OtherLinear
+from saeco_research.architectures.threshgate_gradjust.threshgrad import (
+    BinaryEncoder,
+    GTTest,
+)
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -9,11 +14,6 @@ from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco_research.architectures.threshgate_gradjust.other_lin import OtherLinear
-from saeco_research.architectures.threshgate_gradjust.threshgrad import (
-    BinaryEncoder,
-    GTTest,
-)
 
 
 def mlp_layer(

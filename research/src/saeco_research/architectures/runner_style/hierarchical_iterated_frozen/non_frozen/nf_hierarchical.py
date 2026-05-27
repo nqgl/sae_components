@@ -4,15 +4,6 @@ import torch
 import torch.nn as nn
 from pydantic import BaseModel
 
-import saeco.core as cl
-from saeco.components import (
-    L2Loss,
-    SparsityPenaltyLoss,
-)
-from saeco.components.hierarchical import ActsGateSubstitutor, get_acts_only
-from saeco.initializer import Initializer
-from saeco.sweeps import SweepableConfig
-
 # TODO
 # add feature to specify dominant encoder
 # oh, we've actually got to just fully disable resampling on the earlier layers
@@ -23,6 +14,15 @@ from saeco_research.architectures.anth_update.model import (
     anth_update_model,
 )
 from saeco_research.architectures.topk.model import TopKConfig, topk_sae
+
+import saeco.core as cl
+from saeco.components import (
+    L2Loss,
+    SparsityPenaltyLoss,
+)
+from saeco.components.hierarchical import ActsGateSubstitutor, get_acts_only
+from saeco.initializer import Initializer
+from saeco.sweeps import SweepableConfig
 
 
 class LLModelSpec(BaseModel):

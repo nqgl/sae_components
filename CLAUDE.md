@@ -51,8 +51,8 @@ resample, and save/load — no glue code:
 - `@model_prop` — the one method that builds the core `SAE` (a composed `cl.Seq`)
 - `@loss_prop` — a training loss; weighted by method name via `train_cfg.coeffs`
 - `@aux_model_prop` — a secondary `SAE` with its own losses
-- `setup()` — attaches layer mixins (e.g. `ft.NormFeaturesMixin`,
-  `ft.OrthogonalizeFeatureGradsMixin`) that participate in the training loop
+- `setup()` — attaches layer wrappers (e.g. `ft.NormFeatures`,
+  `ft.OrthogonalizeFeatureGrads`) that participate in the training loop
 
 `self.cfg` is the arch config; `self.init` is the `Initializer` (parameter
 factories sized from `init_cfg`). `RunConfig[ConfigT]` bundles

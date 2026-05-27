@@ -1,7 +1,6 @@
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any
 
 import torch
 
@@ -16,14 +15,6 @@ class Module(torch.nn.Module, ABC):
     @abstractmethod
     def forward(self, x, *, cache: Cache, **kwargs):
         raise NotImplementedError
-
-    @classmethod
-    def __instancecheck__(cls: ABCMeta, instance: Any) -> bool:
-        from saeco.components.wrap import WrapsModule
-
-        return super().__instancecheck__(instance) or (
-            isinstance(instance, WrapsModule) and isinstance(instance.wrapped, cls)
-        )
 
     @contextmanager
     def train_ctx(self):

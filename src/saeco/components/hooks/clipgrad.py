@@ -4,27 +4,14 @@ from saeco.components.type_acc_methods import post_backward_hook
 from saeco.components.wrap import WrapsModule
 
 
-class ClipGrad(WrapsModule):
-    def __init__(self, module, max_norm=1):
+class ClipGrad(WrapsModule[nn.Module]):
+    """Clip ``self.parameters()`` to ``max_norm`` after each backward pass."""
+
+    def __init__(self, module: nn.Module, max_norm: float = 1.0):
         super().__init__(module)
-        self.max_norm = max_norm
-
-    def post_backward_hook(self):
-        nn.utils.clip_grad_norm_(self.parameters(), float(self.max_norm))
-
-
-class ClipGradMixin(nn.Module):
-    _clip_grad_mixin_max_norm: float = 1.0
+        self._self_max_norm = max_norm
 
     @post_backward_hook
-    def clip_parameter_grads(self):
-        nn.utils.clip_grad_norm_(
-            self.parameters(), float(self._clip_grad_mixin_max_norm)
-        )
-
-    @classmethod
-    def with_max_norm(cls, max_norm: float) -> type:
-        class ClipGradMixinParameterized(cls):
-            _clip_grad_mixin_max_norm = max_norm
-
-        return ClipGradMixinParameterized
+    def clip_parameter_grads(self) -> None:
+        # `self.parameters()` proxies through wrapt to `self.__wrapped__.parameters()`.
+        nn.utils.clip_grad_norm_(self.parameters(), float(self._self_max_norm))

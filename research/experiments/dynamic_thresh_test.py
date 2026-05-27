@@ -1,8 +1,9 @@
+from saeco.data.data_config_definitions import gemma_2_2b_openwebtext_bf16
+
 from saeco.components.resampling.anthropic_resampling import (
     AnthResamplerConfig,
     OptimResetValuesConfig,
 )
-from saeco.data.data_config_definitions import gemma_2_2b_openwebtext_bf16
 from saeco.initializer import InitConfig
 from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig

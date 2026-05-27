@@ -15,7 +15,7 @@ _missing_name: set["typeacc_method"] = set()
 
 def _getfields(cls: type, field_name: type["typeacc_method"]) -> list[str]:
     if not isinstance(cls, type):
-        cls = cls.__class__
+        cls = type(cls)
     cls_d = _fields_dict[cls]
     if field_name not in cls_d:
         for c in cls.__mro__:
@@ -112,7 +112,7 @@ class typeacc_method[T, **P]:  # noqa: N801  # decorator API; lowercase by decor
 
     @classmethod
     def get_from_fields(cls, inst: object) -> dict[str, Callable] | Callable:
-        fields = cls.get_fields(inst.__class__)
+        fields = cls.get_fields(type(inst))
         assert not cls.COLLECTED_FIELD_SINGULAR
         return {f: getattr(inst, f) for f in fields}
 
