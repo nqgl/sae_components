@@ -48,7 +48,7 @@ class OtherCache(Cache):
 class ExplicitCachePostStep(nn.Module):
     def __init__(self):
         super().__init__()
-        self.seen_cache = None
+        self.seen_cache = "unset"
 
     @post_step_hook(takes_cache=True)
     def record_cache(self, training_cache):
@@ -78,7 +78,7 @@ class ForwardRefCachePostStep(nn.Module):
 class UnionCachePostStep(nn.Module):
     def __init__(self):
         super().__init__()
-        self.seen_cache = None
+        self.seen_cache = "unset"
 
     @post_step_hook
     def record_cache(self, training_cache: SpecializedCache | None):
@@ -327,9 +327,20 @@ def test_post_step_hook_explicitly_disables_cache_inference():
     assert module.seen_cache is None
 
 
-def test_cache_requiring_post_step_hook_requires_cache():
-    with pytest.raises(ValueError, match="requires cache"):
-        do_post_step(ExplicitCachePostStep())
+def test_cache_requiring_post_step_hook_is_skipped_without_cache():
+    module = ExplicitCachePostStep()
+
+    do_post_step(module)
+
+    assert module.seen_cache == "unset"
+
+
+def test_optional_cache_post_step_hook_receives_none_without_cache():
+    module = UnionCachePostStep()
+
+    do_post_step(module)
+
+    assert module.seen_cache is None
 
 
 def test_old_style_post_step_hook_name_raises():

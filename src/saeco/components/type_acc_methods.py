@@ -2,10 +2,12 @@ import inspect
 import types
 from collections import defaultdict
 from collections.abc import Callable
-from functools import wraps
+from functools import update_wrapper
 from typing import (
     Any,
+    Concatenate,
     Literal,
+    Self,
     Union,
     cast,
     get_args,
@@ -17,17 +19,19 @@ from typing import (
 from saeco.core.cache import Cache
 
 type HookWithoutCache[OwnerT] = Callable[[OwnerT], Any]
-type HookWithCache[OwnerT, CacheT: Cache] = Callable[[OwnerT, CacheT], Any]
+type HookWithCache[OwnerT, CacheT: Cache] = (
+    Callable[[OwnerT, CacheT], Any] | Callable[[OwnerT, CacheT | None], Any]
+)
 type HookFunction[OwnerT, CacheT: Cache] = (
     HookWithoutCache[OwnerT] | HookWithCache[OwnerT, CacheT]
 )
-type HookDecorator[HookT: "saeco_hook[Any, ...]", OwnerT, CacheT: Cache] = Callable[
-    [HookFunction[OwnerT, CacheT]], HookT
-]
+type HookDecorator[HookT: "saeco_hook[Any, Any, ...]", OwnerT, CacheT: Cache] = (
+    Callable[[HookFunction[OwnerT, CacheT]], HookT]
+)
 
 _fields_dict: dict[type, dict[type, list[str]]] = defaultdict(dict)
 # (cls -> (field_categ_name -> field_name/names))
-_missing_name: set["typeacc_method"] = set()
+_missing_name: set["typeacc_method[Any, Any, ...]"] = set()
 
 
 def _getfields(cls: type, field_name: type) -> list[str]:
@@ -53,7 +57,7 @@ def getfields(cls: type, field_name: type) -> list[str]:
         return []
 
 
-def setfield(cls: type, field_name: type, value: list[str]):
+def setfield(cls: type, field_name: type, value: list[str]) -> None:
     assert isinstance(cls, type)
     if cls not in _fields_dict:
         _fields_dict[cls] = {}
@@ -61,27 +65,39 @@ def setfield(cls: type, field_name: type, value: list[str]):
     cls_d[field_name] = value
 
 
-def hasfield(cls: type, field_name: type):
+def hasfield(cls: type, field_name: type) -> bool:
     if cls not in _fields_dict:
         return False
     cls_d = _fields_dict[cls]
     return field_name in cls_d
 
 
-class typeacc_method[T, **P]:  # noqa: N801  # decorator API; lowercase by decorator convention
-    COLLECTED_FIELD_SINGULAR = False
+class typeacc_method[OwnerT, T, **P]:  # noqa: N801  # decorator API; lowercase by decorator convention
+    COLLECTED_FIELD_SINGULAR: bool = False
+    func: Callable[Concatenate[OwnerT, P], T]
+    _name: str | None
 
-    def __init__(self, func: Callable[P, T]) -> None:
+    def __init__(self, func: Callable[Concatenate[OwnerT, P], T]) -> None:
         _missing_name.add(self)
         self.func = func
         self._name = None
-        # update_wrapper(self, func)
+        update_wrapper(self, func)
 
-    def __get__(self, instance, owner):
-        return types.MethodType(self, instance)
+    @overload
+    def __get__(self, instance: None, owner: type[OwnerT] | None = None) -> Self: ...
+    @overload
+    def __get__(
+        self, instance: OwnerT, owner: type[OwnerT] | None = None
+    ) -> Callable[P, T]: ...
+    def __get__(
+        self, instance: OwnerT | None, owner: type[OwnerT] | None = None
+    ) -> Self | Callable[P, T]:
+        if instance is None:
+            return self
+        return cast(Callable[P, T], types.MethodType(self, instance))
 
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
-        return self.func(*args, **kwargs)
+    def __call__(self, instance: OwnerT, *args: P.args, **kwargs: P.kwargs) -> T:
+        return self.func(instance, *args, **kwargs)
 
     def __set_name__(self, owner: type, name: str) -> None:
         _missing_name.remove(self)
@@ -103,7 +119,7 @@ class typeacc_method[T, **P]:  # noqa: N801  # decorator API; lowercase by decor
             setfield(owner, self.__class__, [name])
 
     @classmethod
-    def get_fields(cls, owner: type):
+    def get_fields(cls, owner: type) -> list[str]:
         if len(_missing_name) > 0:
             raise AttributeError(
                 "some properties have not been owned: "
@@ -125,24 +141,32 @@ def _resolved_type_hints(func: Callable[..., Any]) -> dict[str, Any]:
         return {}
 
 
-def _cache_types_from_annotation(annotation: Any) -> tuple[type[Cache], ...]:
+def _cache_types_from_annotation(
+    annotation: Any,
+) -> tuple[tuple[type[Cache], ...], bool]:
     if annotation is inspect.Signature.empty:
-        return ()
+        return (), False
     if isinstance(annotation, str):
-        return ()
+        return (), False
     if get_origin(annotation) in (Union, types.UnionType):
         cache_types = []
+        allows_none = False
         for arg in get_args(annotation):
-            cache_types.extend(_cache_types_from_annotation(arg))
-        return tuple(dict.fromkeys(cache_types))
+            if arg is types.NoneType:
+                allows_none = True
+                continue
+            arg_cache_types, arg_allows_none = _cache_types_from_annotation(arg)
+            cache_types.extend(arg_cache_types)
+            allows_none = allows_none or arg_allows_none
+        return tuple(dict.fromkeys(cache_types)), allows_none
     if isinstance(annotation, type) and issubclass(annotation, Cache):
-        return (annotation,)
-    return ()
+        return (annotation,), False
+    return (), False
 
 
 def _cache_parameter_and_types(
     func: Callable[..., Any], *, fallback: bool = False
-) -> tuple[inspect.Parameter | None, tuple[type[Cache], ...]]:
+) -> tuple[inspect.Parameter | None, tuple[type[Cache], ...], bool]:
     signature = inspect.signature(func)
     hints = _resolved_type_hints(func)
     parameters = list(signature.parameters.values())
@@ -159,7 +183,7 @@ def _cache_parameter_and_types(
                 f"{func.__qualname__} was declared with takes_cache=True but has no "
                 "cache parameter."
             )
-        return None, ()
+        return None, (), False
 
     parameter = parameters[0]
     if parameter.kind not in (
@@ -172,32 +196,36 @@ def _cache_parameter_and_types(
             f"{parameter.kind.description}."
         )
 
-    cache_types = _cache_types_from_annotation(
+    cache_types, cache_allows_none = _cache_types_from_annotation(
         hints.get(parameter.name, parameter.annotation)
     )
     if cache_types:
-        return parameter, cache_types
+        return parameter, cache_types, cache_allows_none
     if fallback:
         if parameter.annotation is not inspect.Signature.empty:
             raise TypeError(
                 f"{func.__qualname__} declares takes_cache=True but its cache "
                 "parameter is not annotated as a Cache subtype."
             )
-        return parameter, (Cache,)
+        return parameter, (Cache,), False
     raise TypeError(
         f"{func.__qualname__} has one hook parameter, but it is not annotated as "
         "a Cache subtype and the hook decorator did not pass takes_cache=True."
     )
 
 
-class saeco_hook[T, **P](typeacc_method[T, P]):  # noqa: N801
+class saeco_hook[OwnerT, T, **P](typeacc_method[OwnerT, T, P]):  # noqa: N801
     def __init__(
-        self, func: Callable[P, T], takes_cache: bool | None = None
+        self,
+        func: Callable[Concatenate[OwnerT, P], T],
+        takes_cache: bool | None = None,
     ) -> None:
         super().__init__(func)
-        self.cache_parameter, self.cache_types = _cache_parameter_and_types(
-            func, fallback=takes_cache is True
-        )
+        (
+            self.cache_parameter,
+            self.cache_types,
+            self.cache_allows_none,
+        ) = _cache_parameter_and_types(func, fallback=takes_cache is True)
         self.takes_cache = (
             self.cache_parameter is not None if takes_cache is None else takes_cache
         )
@@ -205,12 +233,13 @@ class saeco_hook[T, **P](typeacc_method[T, P]):  # noqa: N801
     def call(self, bound_hook: Callable[..., Any], *, cache: Any = None) -> Any:
         if not self.takes_cache:
             return bound_hook()
-        if cache is None:
-            raise ValueError(
-                f"{bound_hook.__qualname__} requires cache, but no cache was "
-                "provided."
-            )
-        if self.cache_types and not isinstance(cache, self.cache_types):
+        if cache is None and not self.cache_allows_none:
+            return None
+        if (
+            cache is not None
+            and self.cache_types
+            and not isinstance(cache, self.cache_types)
+        ):
             accepted_types = ", ".join(t.__qualname__ for t in self.cache_types)
             raise TypeError(
                 f"{bound_hook.__qualname__} requires cache of type {accepted_types}; "
@@ -227,10 +256,10 @@ class saeco_hook[T, **P](typeacc_method[T, P]):  # noqa: N801
         return bound_hook(**{parameter.name: cache})
 
 
-class PreForwardHook[T, **P](saeco_hook[T, P]): ...
+class PreForwardHook[OwnerT, T, **P](saeco_hook[OwnerT, T, P]): ...
 
 
-def _hook_decorator[HookT: saeco_hook[Any, ...], OwnerT, CacheT: Cache](
+def _hook_decorator[HookT: saeco_hook[Any, Any, ...], OwnerT, CacheT: Cache](
     hook_cls: type[HookT],
     f: HookFunction[OwnerT, CacheT] | None = None,
     *,
@@ -238,7 +267,7 @@ def _hook_decorator[HookT: saeco_hook[Any, ...], OwnerT, CacheT: Cache](
 ) -> Any:
     def decorate(func: HookFunction[OwnerT, CacheT]) -> HookT:
         hook = hook_cls(cast(Callable[..., Any], func), takes_cache=takes_cache)
-        return cast(HookT, wraps(cast(Callable[..., Any], func))(hook))
+        return hook
 
     if f is None:
         return decorate
@@ -281,7 +310,7 @@ def pre_forward_hook[OwnerT, CacheT: Cache](
     return _hook_decorator(PreForwardHook, f, takes_cache=takes_cache)
 
 
-class PostForwardHook[T, **P](saeco_hook[T, P]): ...
+class PostForwardHook[OwnerT, T, **P](saeco_hook[OwnerT, T, P]): ...
 
 
 @overload
@@ -320,7 +349,7 @@ def post_forward_hook[OwnerT, CacheT: Cache](
     return _hook_decorator(PostForwardHook, f, takes_cache=takes_cache)
 
 
-class PostBackwardHook[T, **P](saeco_hook[T, P]): ...
+class PostBackwardHook[OwnerT, T, **P](saeco_hook[OwnerT, T, P]): ...
 
 
 @overload
@@ -359,7 +388,7 @@ def post_backward_hook[OwnerT, CacheT: Cache](
     return _hook_decorator(PostBackwardHook, f, takes_cache=takes_cache)
 
 
-class PostStepHook[T, **P](saeco_hook[T, P]): ...
+class PostStepHook[OwnerT, T, **P](saeco_hook[OwnerT, T, P]): ...
 
 
 @overload

@@ -14,7 +14,7 @@ from saeco.components.type_acc_methods import (
 )
 from saeco.components.wrap import WrapsModule
 
-HookCall = tuple[Callable[..., Any], saeco_hook[Any, ...]]
+HookCall = tuple[Callable[..., Any], saeco_hook[Any, Any, ...]]
 HookCallsByTarget = dict[int, tuple[HookCall, ...]]
 
 
@@ -58,7 +58,7 @@ def _check_old_style_methods(module: nn.Module, *attrs: str):
     module.apply(appl_fn)
 
 
-_old_style_hook_magic_names: dict[str, type[typeacc_method[Any, ...]]] = {
+_old_style_hook_magic_names: dict[str, type[typeacc_method[Any, Any, ...]]] = {
     "post_backward_hook": PostBackwardHook,
     "post_backward_hook_with_cache": PostBackwardHook,
     "post_step_hook": PostStepHook,
@@ -71,7 +71,7 @@ _old_style_hook_magic_names: dict[str, type[typeacc_method[Any, ...]]] = {
 
 
 def call_decorated_training_hook(
-    module: nn.Module, hook_type: type[saeco_hook[Any, ...]], cache=None
+    module: nn.Module, hook_type: type[saeco_hook[Any, Any, ...]], cache=None
 ):
     d: HookCallsByTarget = {}
 
