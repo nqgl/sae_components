@@ -1,6 +1,5 @@
 from collections.abc import Mapping
-from functools import cached_property
-from typing import Protocol, overload, runtime_checkable
+from typing import Protocol, cast, overload, runtime_checkable
 
 import torch
 import torch.nn as nn
@@ -27,11 +26,6 @@ class OptimFieldFeatures:
         self.index = index
         self.field = field
 
-    @overload
-    def __getitem__(self, i: IndexType) -> Mapping[str, Tensor]: ...
-    @overload
-    def __getitem__(self, i: str) -> Mapping[IndexType, Tensor]: ...
-
     def parse_index_field(self, i):
         if isinstance(i, tuple) and any(isinstance(el, str) for el in i):
             assert len(i) == 2
@@ -52,18 +46,35 @@ class OptimFieldFeatures:
 
         index = index if index is not None else self.index
         field = field if field is not None else self.field
+        assert isinstance(field, str | None)
         return index, field
 
-    def __getitem__(self, i: tuple) -> Tensor:
+    @overload
+    def __getitem__(self, i: IndexType) -> Mapping[str, Tensor]: ...
+    @overload
+    def __getitem__(self, i: str) -> Mapping[IndexType, Tensor]: ...
+    @overload
+    def __getitem__(
+        self, i: tuple[str, IndexType] | tuple[IndexType, str]
+    ) -> Tensor: ...
+
+    def __getitem__(
+        self, i: tuple[str, IndexType] | tuple[IndexType, str] | str | IndexType
+    ) -> Tensor | Mapping[str, Tensor] | Mapping[IndexType, Tensor]:
         index, field = self.parse_index_field(i)
         if None in (index, field):
-            return OptimFieldFeatures(self.optim, self.fp, field, index)
+            return cast(
+                Mapping[str, Tensor] | Mapping[IndexType, Tensor],
+                OptimFieldFeatures(self.optim, self.fp, field, index),
+            )
+        assert field is not None
         return self.fp.features_transform(self.pstate[field])[index]
 
     def __setitem__(self, i, v):
         index, field = self.parse_index_field(i)
         if None in (index, field):
             raise KeyError("Index or field not set")
+        assert field is not None
         self.fp.features_transform(self.pstate[field])[index] = v
 
     @property
@@ -94,7 +105,9 @@ class FeaturesParam:
         self.resampler_cfg = None
         self.reset_optim_on_resample = reset_optim_on_resample
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, FeaturesParam):
+            return False
         return (
             self.param is other.param
             and self.feature_index == other.feature_index
@@ -164,12 +177,13 @@ class FeaturesParam:
         return self.features_transform(self.param)
 
     @property
-    def grad(self) -> Tensor:
+    def grad(self) -> Tensor | None:
         if self.param.grad is None:
             return None
         return self.features_transform(self.param.grad)
 
-    def get_optim(self, optim):
+    @classmethod
+    def get_optim(cls, optim):
         try:
             from torchlars import LARS
 
@@ -259,50 +273,7 @@ def get_resampled_params(model: nn.Module):
             yield fp
 
 
-# class Features:
-#     def __init__(self, features: nn.Parameter, transformation: callable):
-#         self.features = features
-#         self.transformation = transformation
-
-#     def __getitem__(self, index):
-#         return self.transformation(self.features)[index]
-
-#     def __setitem__(self, index, value):
-#         self.transformation(self.features)[index] = value
-
-#     @property
-#     def data(self):
-#         return self.transformation(self.features)
-
-#     @property
-#     def grad(self):
-#         return self.transformation(self.features.grad)
-
-
-# @runtime_checkable
-# class HasFeatures(Protocol):
-#     @property
-#     def features(self) -> Tensor: ...
-
-#     @property
-#     def features_grad(self) -> Optional[Tensor]: ...
-
-
 @runtime_checkable
-class HasFeaturesAttr(Protocol):
-    features: dict[str, FeaturesParam]
-
-
-@runtime_checkable
-class HasFeaturesCachedProperty(Protocol):
-    @cached_property
-    def features(self) -> dict[str, FeaturesParam]: ...
-
-
-@runtime_checkable
-class HasFeaturesProperty(Protocol):
+class HasFeatures(Protocol):
     @property
     def features(self) -> dict[str, FeaturesParam]: ...
-
-
-type HasFeatures = HasFeaturesProperty | HasFeaturesCachedProperty | HasFeaturesAttr

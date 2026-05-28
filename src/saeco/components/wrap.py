@@ -17,17 +17,8 @@ class WrapsModule[T: nn.Module = nn.Module](wrapt.CallableObjectProxy[T]):
         super().__init__(wrapped)
 
     def apply(self, fn):
-        """Visit the wrapper itself in addition to the wrapped module.
-
-        ``nn.Module.apply`` recurses through ``_modules`` and ends with
-        ``fn(self)``. A wrapt proxy forwards ``_modules`` and ``apply`` to
-        the wrapped module, so the wrapper would otherwise be invisible to
-        ``apply()`` — and the training loop discovers ``post_step_hook`` /
-        ``post_backward_hook`` methods via ``apply()``. We traverse the
-        wrapped's children first (matching the order of ``nn.Module.apply``)
-        and then call ``fn(self)`` so any wrapper-defined hooks are seen.
-        """
-        self.__wrapped__.apply(fn)
+        for module in self.__wrapped__.children():
+            module.apply(fn)
         fn(self)
         return self
 

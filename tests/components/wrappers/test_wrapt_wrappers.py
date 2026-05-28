@@ -1,5 +1,6 @@
 """Tests for wrapt-based module wrappers and wrapper-based training hooks."""
 
+import pytest
 import torch
 import torch.nn as nn
 
@@ -9,7 +10,9 @@ from saeco.components.hooks.feature_hooks import (
     NormFeatures,
     OrthogonalizeFeatureGrads,
 )
+from saeco.components.type_acc_methods import post_step_hook
 from saeco.components.wrap import WrapsModule
+from saeco.core.cache import Cache
 from saeco.core.module import Module
 from saeco.core.reused_forward import ReuseForward
 from saeco.initializer.linear_factory import LinearFactory
@@ -25,12 +28,82 @@ class CountingPostStep(WrapsModule):
     def count(self):
         return self._self_count
 
-    def post_step_hook(self):
+    @post_step_hook
+    def increment_count(self):
         self._self_count += 1
 
 
 class PassiveWrapper(WrapsModule):
     pass
+
+
+class SpecializedCache(Cache):
+    pass
+
+
+class OtherCache(Cache):
+    pass
+
+
+class ExplicitCachePostStep(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seen_cache = None
+
+    @post_step_hook(takes_cache=True)
+    def record_cache(self, training_cache):
+        self.seen_cache = training_cache
+
+
+class InferredCacheByAnnotationPostStep(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seen_cache = None
+
+    @post_step_hook
+    def record_cache(self, training_cache: Cache):
+        self.seen_cache = training_cache
+
+
+class ForwardRefCachePostStep(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seen_cache = None
+
+    @post_step_hook
+    def record_cache(self, training_cache: "SpecializedCache"):
+        self.seen_cache = training_cache
+
+
+class UnionCachePostStep(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seen_cache = None
+
+    @post_step_hook
+    def record_cache(self, training_cache: SpecializedCache | None):
+        self.seen_cache = training_cache
+
+
+class WrongSubtypeCachePostStep(nn.Module):
+    @post_step_hook
+    def record_cache(self, training_cache: SpecializedCache):
+        raise AssertionError("hook should fail before being called")
+
+
+class ExplicitNoCachePostStep(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.seen_cache = "unset"
+
+    @post_step_hook(takes_cache=False)
+    def record_cache(self):
+        self.seen_cache = None
+
+
+class OldStylePostStep(nn.Module):
+    def post_step_hook(self):
+        raise AssertionError("old-style hooks should not be called")
 
 
 def test_wraps_module_is_transparent_to_torch_module_apis():
@@ -72,6 +145,7 @@ def test_reused_nested_wrappers_do_not_duplicate_delegated_plain_hooks():
     model = nn.Sequential(wrapped, wrapped)
 
     do_post_step(model)
+    do_post_backward(model)  # should do nothing
 
     assert wrapped.__wrapped__.count == 1
     rewrapped = CountingPostStep(wrapped)
@@ -103,6 +177,20 @@ def test_wrapped_class_registers_as_module():
         == len(list(m1.parameters()))
         == len(list(m2.parameters()))
     )
+
+
+def test_apply_visits_stacked_wrapped_module_once():
+    lin = nn.Linear(3, 2)
+    wrapped = PassiveWrapper(PassiveWrapper(lin))
+    seen_weight_ids = []
+
+    def collect_linear_weight_id(module):
+        if isinstance(module, nn.Linear):
+            seen_weight_ids.append(id(module.weight))
+
+    nn.Sequential(wrapped).apply(collect_linear_weight_id)
+
+    assert seen_weight_ids == [id(lin.weight)]
 
 
 def test_norm_features_wrapper_normalizes_decoder_features():
@@ -179,3 +267,107 @@ def test_clipgrad_wrapper_clips_norm():
     do_post_backward(nn.Sequential(wrapped))
     post_norm = torch.cat([p.grad.flatten() for p in lin.parameters()]).norm()
     assert post_norm <= 0.5 + 1e-5
+
+
+def test_post_step_hook_can_request_cache_explicitly():
+    module = ExplicitCachePostStep()
+    cache = Cache()
+
+    do_post_step(module, cache=cache)
+
+    assert module.seen_cache is cache
+
+
+def test_post_step_hook_infers_cache_from_annotation():
+    module = InferredCacheByAnnotationPostStep()
+    cache = Cache()
+
+    do_post_step(module, cache=cache)
+
+    assert module.seen_cache is cache
+
+
+def test_post_step_hook_resolves_forward_ref_cache_annotation():
+    module = ForwardRefCachePostStep()
+    cache = SpecializedCache()
+
+    do_post_step(module, cache=cache)
+
+    assert module.seen_cache is cache
+
+
+def test_post_step_hook_infers_cache_from_union_annotation():
+    module = UnionCachePostStep()
+    cache = SpecializedCache()
+
+    do_post_step(module, cache=cache)
+
+    assert module.seen_cache is cache
+
+
+def test_cache_annotation_requires_compatible_cache_subtype():
+    with pytest.raises(TypeError, match="SpecializedCache"):
+        do_post_step(WrongSubtypeCachePostStep(), cache=OtherCache())
+
+
+def test_cache_annotation_accepts_cache_subtype():
+    module = InferredCacheByAnnotationPostStep()
+    cache = SpecializedCache()
+
+    do_post_step(module, cache=cache)
+
+    assert module.seen_cache is cache
+
+
+def test_post_step_hook_explicitly_disables_cache_inference():
+    module = ExplicitNoCachePostStep()
+
+    do_post_step(module, cache=Cache())
+
+    assert module.seen_cache is None
+
+
+def test_cache_requiring_post_step_hook_requires_cache():
+    with pytest.raises(ValueError, match="requires cache"):
+        do_post_step(ExplicitCachePostStep())
+
+
+def test_old_style_post_step_hook_name_raises():
+    with pytest.raises(ValueError, match="old name-based hook discovery"):
+        do_post_step(OldStylePostStep())
+
+
+def test_hook_with_extra_parameter_requires_cache_contract():
+    with pytest.raises(TypeError, match="not annotated as a Cache subtype"):
+
+        class BadHook(nn.Module):
+            @post_step_hook
+            def record_cache(self, training_cache):
+                pass
+
+
+def test_hook_signature_rejects_more_than_one_hook_parameter():
+    with pytest.raises(TypeError, match=r"\(self\) or \(self, cache\)"):
+
+        class BadHook(nn.Module):
+            @post_step_hook  # pyright: ignore[reportCallIssue, reportArgumentType]
+            def record_cache(self, cache: Cache, extra):
+                pass
+
+
+def test_takes_cache_requires_cache_parameter():
+    with pytest.raises(TypeError, match="takes_cache=True"):
+
+        class BadHook(nn.Module):
+            @post_step_hook(takes_cache=True)  # pyright: ignore[reportArgumentType]
+            def record_cache(self):
+                pass
+
+
+def test_takes_cache_rejects_non_cache_annotation():
+    with pytest.raises(TypeError, match="not annotated as a Cache subtype"):
+
+        class BadHook(nn.Module):
+            @post_step_hook(takes_cache=True)  # pyright: ignore[reportArgumentType]
+            def record_cache(self, training_cache: int):
+                pass
