@@ -18,6 +18,7 @@ from saeco.components import (
     LinearDecayL1Penalty,
     SparsityPenaltyLoss,
 )
+from saeco.components.type_acc_methods import post_step_hook
 from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
@@ -122,9 +123,10 @@ class Thresholder(cl.Module):
             return (log(x + self.cfg.logeps) - log(target + self.cfg.logeps)) * target
         return x - target
 
+    @post_step_hook
     @torch.no_grad()
-    def post_step_hook_with_cache(self, cache: cl.Cache):
-        if self.freqs.freqs is None:
+    def update_thresholds_from_cache(self, cache: cl.Cache | None = None):
+        if cache is None or self.freqs.freqs is None:
             return
         if cache._is_dead:
             return
