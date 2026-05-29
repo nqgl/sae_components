@@ -6,8 +6,10 @@ from saeco.architecture import (
     ArchitectureBase,
     arch_prop,
     aux_model_prop,
+    component_prop,
     loss_prop,
     model_prop,
+    prop,
 )
 from saeco.initializer import InitConfig, Initializer
 from saeco.sweeps import (
@@ -33,8 +35,10 @@ __all__ = [
     "SAE",
     "arch_prop",
     "aux_model_prop",
+    "component_prop",
     "loss_prop",
     "model_prop",
+    "prop",
     # Config & sweep DSL
     "InitConfig",
     "RunConfig",

@@ -28,29 +28,18 @@ class Singular(Protocol):
     COLLECTED_FIELD_SINGULAR: Literal[True] = True
 
 
-class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
-    cached_property,
-):
-    """Base class for the architecture property decorators.
+class _setup_guarded_cached_property[T](cached_property):  # noqa: N801  # lowercase-class-as-decorator by convention (cf. functools.cached_property)
+    """A ``cached_property`` whose body runs only after ``setup()`` finished.
 
-    A ``cached_property`` that also registers the decorated method as a
-    named, discoverable part of an ``Architecture`` (so the framework can
-    collect models, losses, etc. by field). Use the concrete subclasses
-    ``model_prop`` / ``loss_prop`` / ``aux_model_prop`` rather than this
-    directly. Like ``cached_property``, the method runs once and the
-    result is reused.
-
-    The discovery bookkeeping lives in the composed ``FieldRegistry``
-    (``_registry``); this class is just a holder that forwards to it. Access
-    semantics (cache-once via ``cached_property``) stay here.
+    Accessing it on an architecture instance triggers ``instantiate()`` (which
+    runs ``setup()``) if needed, then asserts setup completed. Because
+    ``instantiate()`` flips ``_instantiated`` *before* calling ``setup()`` and
+    sets ``_setup_complete`` only *after*, this also makes reading such a
+    property from *inside* ``setup()`` fail loudly — enforcing the convention
+    that ``setup()`` does the stateful configuration of ``self.init`` and the
+    cached bodies only read the finished configuration. Cache-once semantics
+    (via ``cached_property``) are inherited.
     """
-
-    COLLECTED_FIELD_SINGULAR = False
-    _registry: ClassVar[FieldRegistry] = FIELDS
-
-    def __init__(self, func: Callable[[Any], T]) -> None:
-        super().__init__(func)
-        self._registry.mark_unowned(self)
 
     @overload
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
@@ -66,6 +55,43 @@ class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-de
             assert instance._instantiated
             assert instance._setup_complete
         return super().__get__(instance, owner)
+
+
+class component_prop[T](_setup_guarded_cached_property[T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
+    """A cached, setup-guarded sub-component of an ``Architecture``.
+
+    Like ``@model_prop`` / ``@loss_prop``, accessing it forces ``setup()`` to
+    have completed (so the body sees the fully-configured ``self.init``);
+    unlike them it is *not* collected as a discoverable field. Use it for
+    shared intermediate modules that several models/losses compose and that
+    must be built exactly once — e.g. a ``ReuseForward``-wrapped encoder
+    referenced by both the magnitude and gate paths of a gated SAE.
+    """
+
+
+class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
+    _setup_guarded_cached_property[T],
+):
+    """Base class for the architecture property decorators.
+
+    A setup-guarded ``cached_property`` (see
+    :class:`_setup_guarded_cached_property`) that also registers the decorated
+    method as a named, discoverable part of an ``Architecture`` (so the
+    framework can collect models, losses, etc. by field). Use the concrete
+    subclasses ``model_prop`` / ``loss_prop`` / ``aux_model_prop`` rather than
+    this directly.
+
+    The discovery bookkeeping lives in the composed ``FieldRegistry``
+    (``_registry``); this class is just a holder that forwards to it. The
+    setup-guard and cache-once access semantics come from the base.
+    """
+
+    COLLECTED_FIELD_SINGULAR = False
+    _registry: ClassVar[FieldRegistry] = FIELDS
+
+    def __init__(self, func: Callable[[Any], T]) -> None:
+        super().__init__(func)
+        self._registry.mark_unowned(self)
 
     def __set_name__(self, owner: type, name: str) -> None:
         self._registry.claim(
@@ -211,3 +237,20 @@ class aux_model_prop[AuxModel_T: nn.Module](_model_prop_base[AuxModel_T]):  # no
         self, instance: object | None, owner: Any | None = None
     ) -> AuxModel_T | Self:
         return super().__get__(instance, owner)
+
+
+class prop:  # noqa: N801  # namespace of architecture property decorators
+    """Discoverable namespace grouping the architecture property decorators.
+
+    Lets you write ``@prop.component`` / ``@prop.model`` / ``@prop.loss`` /
+    ``@prop.aux_model`` / ``@prop.metric`` instead of importing each name
+    individually. Each attribute is exactly the corresponding standalone
+    ``*_prop`` decorator, so the two styles are interchangeable.
+    """
+
+    component = component_prop
+    model = model_prop
+    loss = loss_prop
+    aux_model = aux_model_prop
+    metric = metric_prop
+    arch = arch_prop

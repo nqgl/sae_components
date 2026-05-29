@@ -3,49 +3,8 @@ from functools import cached_property, partial
 import torch
 import torch.nn as nn
 
+from saeco.components.features.linear_type import DetachedLinear
 from saeco.core.basic_ops import Sub
-
-
-class DetachedLinear(nn.Module):
-    def __init__(self, lin, use_bias=True):
-        super().__init__()
-        self.lin = lin
-        self.use_bias = use_bias
-
-    def forward(self, x):
-        return torch.nn.functional.linear(
-            x,
-            self.lin.weight.detach(),
-            (
-                self.lin.bias.detach()
-                if (self.lin.bias is not None) and self.use_bias
-                else None
-            ),
-        )
-
-
-class InitSite:
-    def __init__(self, site):
-        self.site = site
-
-    def __getattribute__(self, name: str) -> "InitSite":
-        pass
-
-    def __setattr__(self, name: str, value) -> None:
-        pass
-
-
-class BiasDetachedLinear(nn.Module):
-    def __init__(self, lin):
-        super().__init__()
-        self.lin = lin
-
-    def forward(self, x):
-        return torch.nn.functional.linear(
-            x,
-            self.lin.weight,
-            self.lin.bias.detach(),
-        )
 
 
 class Tied:
@@ -224,7 +183,7 @@ class LinearFactory:
 
     @property
     def biasdetached(self):
-        return BiasDetachedLinear(self.lin)  # should this use raw?
+        return DetachedLinear(self.lin, detach_weight=False)  # should this use raw?
 
     def tie_weights(self, other):
         assert self.unset
@@ -236,6 +195,22 @@ class LinearFactory:
         assert self.unset
         assert self._weight_tie is None
         self._weight_tie = Tied(other, Tied.INIT, "weight")
+
+    def untie(self):
+        """Clear any weight-tie/weight-init policy. Must precede the build."""
+        assert self.unset
+        self._weight_tie = None
+
+    def init_weight_to(self, value):
+        """Initialize the weight to a fixed tensor at build time.
+
+        A named alternative to poking ``_weight_tie`` directly (covers the
+        power-user pattern of building one side, then initializing the other
+        from a tensor computed off it). Must precede the build.
+        """
+        assert self.unset
+        assert self._weight_tie is None
+        self._weight_tie = Tied(value, Tied.TO_VALUE, "weight")
 
     def const_init_bias(self, const=0):
         assert self.unset

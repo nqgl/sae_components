@@ -113,6 +113,31 @@ class Initializer:
         return l
 
     @property
+    def enc_builder(self) -> LinearFactory:
+        """The encoder *builder*: configure bias/shape/tie here, *before* the
+        encoder linear is materialized via :attr:`encoder`.
+
+        Accessing it once the encoder has been built raises — configuration at
+        that point would be silently ignored, so read :attr:`encoder` instead.
+        """
+        if not self._encoder.unset:
+            raise RuntimeError(
+                "init.enc_builder is configure-before-build only: the encoder "
+                "linear has already been built. Read init.encoder instead."
+            )
+        return self._encoder
+
+    @property
+    def dec_builder(self) -> LinearFactory:
+        """The decoder *builder* — see :attr:`enc_builder`."""
+        if not self._decoder.unset:
+            raise RuntimeError(
+                "init.dec_builder is configure-before-build only: the decoder "
+                "linear has already been built. Read init.decoder instead."
+            )
+        return self._decoder
+
+    @property
     def encoder(self) -> co.LinEncoder:
         enc = self._encoder.get()
         assert intersect_isinstance(enc, co.LinEncoder)

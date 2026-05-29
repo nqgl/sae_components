@@ -48,8 +48,15 @@ class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
         self.setup()
         self._setup_complete = True
 
-    @abstractmethod
-    def setup(self) -> None: ...
+    def setup(self) -> None:
+        """Stateful configuration hook, run once during ``instantiate()``.
+
+        Override to configure ``self.init`` before any model/component/loss is
+        built — e.g. ``self.init.enc.bias = False`` or reshaping/retying a
+        side. Building and wrapping the layers belongs in the (setup-guarded)
+        ``@component`` / ``@model_prop`` bodies, not here. Defaults to a no-op,
+        so architectures with no stateful configuration can omit it.
+        """
 
     @takes_alias
     @classmethod
