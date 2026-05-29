@@ -1,10 +1,10 @@
 import inspect
 import types
-from collections import defaultdict
 from collections.abc import Callable
 from functools import update_wrapper
 from typing import (
     Any,
+    ClassVar,
     Concatenate,
     Literal,
     Self,
@@ -17,6 +17,7 @@ from typing import (
 )
 
 from saeco.core.cache import Cache
+from saeco.misc.field_collection import FIELDS, FieldRegistry
 
 type HookWithoutCache[OwnerT] = Callable[[OwnerT], Any]
 type HookWithCache[OwnerT, CacheT: Cache] = (
@@ -29,59 +30,26 @@ type HookDecorator[HookT: "saeco_hook[Any, Any, ...]", OwnerT, CacheT: Cache] = 
     Callable[[HookFunction[OwnerT, CacheT]], HookT]
 )
 
-_fields_dict: dict[type, dict[type, list[str]]] = defaultdict(dict)
-# (cls -> (field_categ_name -> field_name/names))
-_missing_name: set["typeacc_method[Any, Any, ...]"] = set()
-
-
-def _getfields(cls: type, field_name: type) -> list[str]:
-    if not isinstance(cls, type):
-        cls = type(cls)
-    cls_d = _fields_dict[cls]
-    if field_name not in cls_d:
-        for c in cls.__mro__:
-            if c == cls or c is object:
-                continue
-            try:
-                return _getfields(c, field_name)
-            except AttributeError:
-                pass
-        raise AttributeError(field_name)
-    return cls_d[field_name]
-
-
-def getfields(cls: type, field_name: type) -> list[str]:
-    try:
-        return _getfields(cls, field_name)
-    except AttributeError:
-        return []
-
-
-def setfield(cls: type, field_name: type, value: list[str]) -> None:
-    assert isinstance(cls, type)
-    if cls not in _fields_dict:
-        _fields_dict[cls] = {}
-    cls_d = _fields_dict[cls]
-    cls_d[field_name] = value
-
-
-def hasfield(cls: type, field_name: type) -> bool:
-    if cls not in _fields_dict:
-        return False
-    cls_d = _fields_dict[cls]
-    return field_name in cls_d
-
-
 class typeacc_method[OwnerT, T, **P]:  # noqa: N801  # decorator API; lowercase by decorator convention
+    """A method that is discoverable by its descriptor type.
+
+    Like :class:`saeco.architecture.arch_prop.arch_prop`, this is a *holder*:
+    the discovery bookkeeping lives in the composed ``FieldRegistry``
+    (``_registry``) and this class just forwards to it. Unlike ``arch_prop``,
+    access yields a bound method (``__get__`` -> ``MethodType``) rather than a
+    cached value.
+    """
+
     COLLECTED_FIELD_SINGULAR: bool = False
+    _registry: ClassVar[FieldRegistry] = FIELDS
     func: Callable[Concatenate[OwnerT, P], T]
     _name: str | None
 
     def __init__(self, func: Callable[Concatenate[OwnerT, P], T]) -> None:
-        _missing_name.add(self)
         self.func = func
         self._name = None
         update_wrapper(self, func)
+        self._registry.mark_unowned(self)
 
     @overload
     def __get__(self, instance: None, owner: type[OwnerT] | None = None) -> Self: ...
@@ -100,38 +68,20 @@ class typeacc_method[OwnerT, T, **P]:  # noqa: N801  # decorator API; lowercase 
         return self.func(instance, *args, **kwargs)
 
     def __set_name__(self, owner: type, name: str) -> None:
-        _missing_name.remove(self)
         self._name = name
-        if hasfield(owner, self.__class__):
-            if self.COLLECTED_FIELD_SINGULAR:
-                raise AttributeError(
-                    f"{self.__class__}: Cannot overwrite singular field '{name}' on "
-                    f"{owner}"
-                )
-            fields = getfields(owner, self.__class__)
-            fields.append(name)
-            if len(fields) != len(set(fields)):
-                raise AttributeError(
-                    f"{self.__class__}: Field names must be unique: duplicate name "
-                    f"'{name}' on {owner}"
-                )
-        else:
-            setfield(owner, self.__class__, [name])
+        self._registry.claim(
+            owner, type(self), name, self, singular=self.COLLECTED_FIELD_SINGULAR
+        )
 
     @classmethod
     def get_fields(cls, owner: type) -> list[str]:
-        if len(_missing_name) > 0:
-            raise AttributeError(
-                "some properties have not been owned: "
-                f"{[f.func for f in _missing_name]}"
-            )
-        return getfields(owner, cls)
+        return cls._registry.get_fields(owner, cls)
 
     @classmethod
     def get_from_fields(cls, inst: object) -> dict[str, Callable[..., Any]]:
-        fields = cls.get_fields(type(inst))
-        assert not cls.COLLECTED_FIELD_SINGULAR
-        return {f: getattr(inst, f) for f in fields}
+        return cls._registry.get_from_fields(
+            inst, cls, singular=cls.COLLECTED_FIELD_SINGULAR
+        )
 
 
 def _resolved_type_hints(func: Callable[..., Any]) -> dict[str, Any]:

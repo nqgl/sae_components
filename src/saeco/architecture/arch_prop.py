@@ -1,59 +1,23 @@
-from collections import defaultdict
 from collections.abc import Callable
 from functools import cached_property
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Literal,
     Protocol,
     Self,
     overload,
-    runtime_checkable,
 )
 from warnings import deprecated
 
 import torch.nn as nn
 
-_fields_dict: dict[type, dict[type["arch_prop[Any]"], list[str]]] = defaultdict(
-    dict
-)  # (cls -> (field_categ_name -> field_name/names))
-_missing_name: set["arch_prop[Any]"] = set()
+from saeco.architecture.architecture import ArchitectureBase
+from saeco.misc.field_collection import FIELDS, FieldRegistry
+
 if TYPE_CHECKING:
     from saeco.components.losses import Loss
-
-
-def _getfields(cls: type, field_name: type["arch_prop[Any]"]) -> list[str]:
-    if not isinstance(cls, type):
-        cls = cls.__class__
-    cls_d = _fields_dict[cls]
-    if field_name not in cls_d:
-        for c in cls.__mro__:
-            if c == cls or c is object:
-                continue
-            try:
-                return _getfields(c, field_name)
-            except AttributeError:
-                pass
-        raise AttributeError(field_name)
-    return cls_d[field_name]
-
-
-def getfields(cls: type, field_name: type["arch_prop[Any]"]) -> list[str]:
-    try:
-        return _getfields(cls, field_name)
-    except AttributeError:
-        return []
-
-
-def setfield(cls: type, field_name: type["arch_prop[Any]"], value: list[str]):
-    assert isinstance(cls, type)
-    cls_d = _fields_dict[cls]
-    cls_d[field_name] = value
-
-
-def hasfield(cls: type, field_name: type["arch_prop[Any]"]):
-    cls_d = _fields_dict[cls]
-    return field_name in cls_d
 
 
 class NonSingular(Protocol):
@@ -62,18 +26,6 @@ class NonSingular(Protocol):
 
 class Singular(Protocol):
     COLLECTED_FIELD_SINGULAR: Literal[True] = True
-
-
-@runtime_checkable
-class Instantiable(Protocol):
-    _instantiated: bool
-
-    def instantiate(self, inst_cfg: dict[str, Any] | None = None): ...
-
-
-@runtime_checkable
-class SetupComplete(Protocol):
-    _setup_complete: Literal[True] = True
 
 
 class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
@@ -87,13 +39,18 @@ class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-de
     ``model_prop`` / ``loss_prop`` / ``aux_model_prop`` rather than this
     directly. Like ``cached_property``, the method runs once and the
     result is reused.
+
+    The discovery bookkeeping lives in the composed ``FieldRegistry``
+    (``_registry``); this class is just a holder that forwards to it. Access
+    semantics (cache-once via ``cached_property``) stay here.
     """
 
     COLLECTED_FIELD_SINGULAR = False
+    _registry: ClassVar[FieldRegistry] = FIELDS
 
     def __init__(self, func: Callable[[Any], T]) -> None:
         super().__init__(func)
-        _missing_name.add(self)
+        self._registry.mark_unowned(self)
 
     @overload
     def __get__(self, instance: None, owner: type[Any] | None = None) -> Self: ...
@@ -103,8 +60,7 @@ class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-de
 
     def __get__(self, instance: object | None, owner: Any | None = None) -> T | Self:
         if instance is not None:
-            assert isinstance(instance, Instantiable)
-            assert isinstance(instance, SetupComplete)
+            assert isinstance(instance, ArchitectureBase)
             if not instance._instantiated:
                 instance.instantiate()
             assert instance._instantiated
@@ -112,33 +68,14 @@ class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-de
         return super().__get__(instance, owner)
 
     def __set_name__(self, owner: type, name: str) -> None:
-        _missing_name.remove(self)
-        if hasfield(owner, self.__class__):
-            if self.COLLECTED_FIELD_SINGULAR:
-                raise AttributeError(
-                    f"{self.__class__}: Cannot overwrite singular field "
-                    f"'{name}' on {owner}"
-                )
-            fields = getfields(owner, self.__class__)
-            fields.append(name)
-            if len(fields) != len(set(fields)):
-                raise AttributeError(
-                    f"{self.__class__}: Field names must be unique: "
-                    f"duplicate name '{name}' on {owner}"
-                )
-        else:
-            setfield(owner, self.__class__, [name])
-
+        self._registry.claim(
+            owner, type(self), name, self, singular=self.COLLECTED_FIELD_SINGULAR
+        )
         return super().__set_name__(owner, name)
 
     @classmethod
-    def get_fields(cls, owner: type):
-        if len(_missing_name) > 0:
-            raise AttributeError(
-                "some properties have not been owned: "
-                f"{[f.func for f in _missing_name]}"
-            )
-        return getfields(owner, cls)
+    def get_fields(cls, owner: type) -> list[str]:
+        return cls._registry.get_fields(owner, cls)
 
     @overload
     @classmethod
@@ -149,9 +86,9 @@ class arch_prop[T](  # noqa: N801  # public decorator API; lowercase-class-as-de
 
     @classmethod
     def get_from_fields(cls, inst: object) -> dict[str, T] | T:
-        fields = cls.get_fields(inst.__class__)
-        assert not cls.COLLECTED_FIELD_SINGULAR
-        return {f: getattr(inst, f) for f in fields}
+        return cls._registry.get_from_fields(
+            inst, cls, singular=cls.COLLECTED_FIELD_SINGULAR
+        )
 
 
 class arch_prop_singular[T](arch_prop[T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
@@ -159,10 +96,7 @@ class arch_prop_singular[T](arch_prop[T]):  # noqa: N801  # public decorator API
 
     @classmethod
     def get_from_fields(cls, inst: object) -> T:
-        fields = cls.get_fields(inst.__class__)
-        assert cls.COLLECTED_FIELD_SINGULAR
-        assert len(fields) == 1
-        return getattr(inst, fields[0])
+        return cls._registry.get_from_fields(inst, cls, singular=True)
 
 
 class loss_prop[Loss_T: nn.Module](arch_prop[Loss_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
