@@ -20,6 +20,7 @@ from saeco.components import (
 )
 from saeco.components.features.optim_reset import FeatureParamType
 from saeco.components.resampling.resampler import ResampleableModule
+from saeco.components.type_acc_methods import post_step_hook
 from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
@@ -129,9 +130,10 @@ class Thresholder(cl.Module, ResampleableModule):
             return (log(x + self.cfg.logeps) - log(target + self.cfg.logeps)) * target
         return x - target
 
+    @post_step_hook
     @torch.no_grad()
-    def post_step_hook_with_cache(self, cache: cl.Cache):
-        if self.freqs.freqs is None:
+    def update_thresholds_from_cache(self, cache: cl.Cache | None = None):
+        if cache is None or self.freqs.freqs is None:
             return
         if cache._is_dead:
             return
@@ -161,11 +163,11 @@ class Thresholder(cl.Module, ResampleableModule):
 
 class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
     def setup(self):
-        self.init._decoder.mixins.append(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGradsMixin
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.NormFeatures
         )
-        self.init._decoder.mixins.append(
-            saeco.components.hooks.feature_hooks.NormFeaturesMixin
+        self.init._decoder.add_wrapper(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
         )
 
     @model_prop

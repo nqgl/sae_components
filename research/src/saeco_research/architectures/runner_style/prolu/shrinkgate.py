@@ -1,4 +1,5 @@
 import torch
+from saeco_research.architectures.prolu.prolu import PProLU, ProLUConfig
 
 import saeco.components as co
 import saeco.core as cl
@@ -9,6 +10,7 @@ from saeco.components import (
 )
 from saeco.components.hooks.clipgrad import ClipGrad
 from saeco.components.penalties import L1PenaltyScaledByDecoderNorm
+from saeco.components.type_acc_methods import post_step_hook
 from saeco.core import Seq
 from saeco.data import DataConfig, ModelConfig
 from saeco.data.config.model_config.acts_data_cfg import ActsDataConfig
@@ -19,7 +21,6 @@ from saeco.trainer import RunSchedulingConfig
 from saeco.trainer.run_config import RunConfig
 from saeco.trainer.runner import TrainingRunner
 from saeco.trainer.train_config import TrainConfig
-from saeco_research.architectures.prolu.prolu import PProLU, ProLUConfig
 from sweepable import Swept
 
 
@@ -95,8 +96,9 @@ class ShrinkGateSae(cl.Module):
         self.gate_dec.use_bias = False
         self.steps = 0
 
+    @post_step_hook
     @torch.no_grad()
-    def post_step_hook(self):
+    def normalize_features_after_step(self):
         if self.steps > 700:
             return
         wl = [

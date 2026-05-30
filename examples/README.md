@@ -5,7 +5,7 @@ explains what it demonstrates in its top-of-file docstring.
 
 | File | Demonstrates | Runs without GPU? |
 |------|--------------|-------------------|
-| [`define_architecture.py`](define_architecture.py) | Defining a custom `Architecture` subclass: config, model, losses, setup wrappers/mixins | Yes |
+| [`define_architecture.py`](define_architecture.py) | Defining a custom `Architecture` subclass: config, model, losses, setup wrappers | Yes |
 | [`sweep_dsl.py`](sweep_dsl.py) | The `SweepableConfig` DSL: `Swept`, `SweepVar`, `SweepExpression`, `Val`, combination counting | Yes |
 | [`train_vanilla_sae.py`](train_vanilla_sae.py) | Wiring a full `RunConfig` and running a training job (single config or full sweep) | No (needs CUDA) |
 

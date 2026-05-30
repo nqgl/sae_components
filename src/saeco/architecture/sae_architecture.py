@@ -36,7 +36,7 @@ class Architecture[ArchConfigT: SweepableConfig](
       - ``@model_prop`` — the method that builds the core SAE
       - ``@loss_prop`` — a training loss
       - ``@aux_model_prop`` — an auxiliary model with its own losses
-      - ``setup()`` — optional hook to attach layer mixins before the
+      - ``setup()`` — optional hook to attach layer wrappers before the
         model is built
 
     From those declarations you get the training pipeline, save/load,

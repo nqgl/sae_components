@@ -25,18 +25,12 @@ class VanillaConfig(SweepableConfig):
 class VanillaSAE(Architecture[VanillaConfig]):
     # setup is called before models are constructed
     def setup(self):
-        # these will add wrappers to the decoder that ensure:
+        # these wrappers ensure:
         # 1. the features are normalized after each optimizer step to have unit norm
         # 2. the gradients of the features are orthogonalized after each backward pass
         # before the optimizer step
-        # self.init._decoder.add_wrapper(
-        #     ft.NormFeatures
-        # )
-        # self.init._decoder.add_wrapper(
-        #     ft.OrthogonalizeFeatureGrads
-        # )
-        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
-        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
+        self.init._decoder.add_wrapper(ft.NormFeatures)
+        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 
     # model_prop tells the Architecture class that this method
     # is the method that constructs the model.

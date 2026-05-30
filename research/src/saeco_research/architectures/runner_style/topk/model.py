@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from saeco_research.architectures.topk.TopK import NormalizedResidL2Loss, TopK, TopKDead
 
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
@@ -14,7 +15,6 @@ from saeco.core.basic_ops import Sub
 from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
-from saeco_research.architectures.topk.TopK import NormalizedResidL2Loss, TopK, TopKDead
 
 
 class TopKConfig(SweepableConfig):

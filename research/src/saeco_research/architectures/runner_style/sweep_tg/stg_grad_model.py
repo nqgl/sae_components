@@ -1,14 +1,15 @@
+from saeco_research.architectures.sweep_tg.sthreshgrad import (
+    BinaryEncoder,
+    Config,
+    GTTest,
+)
+
 import saeco.components as co
 import saeco.components.hooks.feature_hooks
 from saeco.components import EMAFreqTracker, L2Loss, SparsityPenaltyLoss
 from saeco.core import Seq
 from saeco.initializer import Initializer
 from saeco.misc import useif
-from saeco_research.architectures.sweep_tg.sthreshgrad import (
-    BinaryEncoder,
-    Config,
-    GTTest,
-)
 
 
 def tg_grad_sae(

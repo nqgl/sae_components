@@ -21,7 +21,7 @@ An architecture declares its model and losses as named properties:
 ```python
 class VanillaSAE(Architecture[VanillaConfig]):
     def setup(self):
-        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
+        self.init._decoder.add_wrapper(ft.NormFeatures)
 
     @model_prop
     def model(self):
@@ -96,7 +96,7 @@ supported package; `research/` is an installable, unsupported extension
 space. The dependency arrows point one way, so the stable layer does not
 reach into research code.
 
-## Composable layers via mixins
+## Composable layers via wrappers
 
 Behaviors like "renormalize features to unit norm after each optimizer
 step" or "orthogonalize feature gradients before the step" aren't
@@ -104,14 +104,14 @@ properties of the *model* — they're properties of *training*. They're
 attached declaratively in `setup()`:
 
 ```python
-self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
-self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
+self.init._decoder.add_wrapper(ft.NormFeatures)
+self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 ```
 
-The mixin participates in the standard training loop at the right hook
+The wrapper participates in the standard training loop at the right hook
 points. This keeps the model definition about *structure* and pushes
-*training-time behavior* into composable units that can be mixed onto
-any layer, rather than special-cased in each architecture's loss or a
+*training-time behavior* into composable units that can wrap any layer,
+rather than special-cased in each architecture's loss or a
 bespoke training loop.
 
 ## Things deliberately not done
@@ -131,7 +131,7 @@ bespoke training loop.
 | Area | Where | Notes |
 |---|---|---|
 | Architecture base + decorators | `saeco.architecture` | `Architecture`, `SAE`, `*_prop` |
-| Building blocks | `saeco.core`, `saeco.components` | `Seq`, `Parallel`, losses, penalties, mixins |
+| Building blocks | `saeco.core`, `saeco.components` | `Seq`, `Parallel`, losses, penalties, wrappers |
 | Training | `saeco.trainer` | `Trainer`, `RunConfig`, schedule, normalizers |
 | Data | `saeco.data` | dataset config, tokenization, activation caches |
 | Sweep DSL | `sweepable` | standalone package |

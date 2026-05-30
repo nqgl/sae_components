@@ -34,11 +34,11 @@ class MyVanillaConfig(SweepableConfig):
 
 class MyVanillaSAE(Architecture[MyVanillaConfig]):
     def setup(self):
-        # Mixins participate in the standard training loop:
-        # - NormFeaturesMixin: re-normalize features to unit norm after each step
-        # - OrthogonalizeFeatureGradsMixin: orthogonalize feature grads pre-step
-        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
-        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
+        # Wrappers participate in the standard training loop:
+        # - NormFeatures: re-normalize features to unit norm after each step
+        # - OrthogonalizeFeatureGrads: orthogonalize feature grads pre-step
+        self.init._decoder.add_wrapper(ft.NormFeatures)
+        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 
     @model_prop
     def model(self):

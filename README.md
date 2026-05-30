@@ -17,8 +17,8 @@ sweeping, and remote orchestration.
 - **Sweeping is a first-class config feature.** Any field on a
   `SweepableConfig` can be a `Swept(a, b, c)` or a `SweepExpression(...)`
   — the trainer enumerates the combinations for you.
-- **Composable layers.** Mixins like `NormFeaturesMixin` and
-  `OrthogonalizeFeatureGradsMixin` attach to layers declaratively and
+- **Composable layers.** Wrappers like `NormFeatures` and
+  `OrthogonalizeFeatureGrads` attach to layers declaratively and
   participate in the standard training loop.
 
 See [docs/architecture.md](docs/architecture.md) for the rationale behind these choices.
@@ -64,11 +64,11 @@ class VanillaConfig(SweepableConfig):
 
 class VanillaSAE(Architecture[VanillaConfig]):
     def setup(self):
-        # Mixins added during setup participate in the training loop:
+        # Wrappers added during setup participate in the training loop:
         # 1. features are normalized to unit norm after each optimizer step
         # 2. feature gradients are orthogonalized before each step
-        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
-        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
+        self.init._decoder.add_wrapper(ft.NormFeatures)
+        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 
     @model_prop
     def model(self):
@@ -128,8 +128,8 @@ class Gated(Architecture[GatedConfig]):
     def setup(self):
         self.init._encoder.bias = False
         self.init._encoder.add_wrapper(ReuseForward)
-        self.init._decoder.add_mixin_(ft.NormFeaturesMixin)
-        self.init._decoder.add_mixin_(ft.OrthogonalizeFeatureGradsMixin)
+        self.init._decoder.add_wrapper(ft.NormFeatures)
+        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
 
     @cached_property
     def enc_mag(self):

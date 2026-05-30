@@ -1,41 +1,32 @@
-from abc import ABCMeta
-from typing import Any
+from typing import cast
 
 import torch.nn as nn
+import wrapt
 
-import saeco.core as cl
 
+# T should be nn.Module bound but bc no intersection type may have to do no bound sadly
+class WrapsModule[T: nn.Module = nn.Module](wrapt.CallableObjectProxy[T]):
+    """Transparent proxy around an :class:`nn.Module`.
 
-class WrapsModule(cl.Module):
-    wrapped: nn.Module
+    The only intentionally non-transparent method is ``apply``: PyTorch's
+    ``Module.apply`` would otherwise visit only the wrapped module tree, so
+    wrapper-defined training hooks would be invisible to the trainer.
+    """
 
-    def __init__(self, module):
-        super().__init__()
-        try:
-            object.__getattribute__(self, "module")
-            raise ValueError("module attribute already exists on self")
-        except AttributeError:
-            pass
-        object.__setattr__(self, "module", module)
-        self.wrapped = module
+    def __init__(self, wrapped: T):
+        super().__init__(wrapped)
 
-    def _get_name(self):
-        return f"{self.__class__.__name__}[{self.wrapped._get_name()}]"
+    def apply(self, fn):
+        for module in self.__wrapped__.children():
+            module.apply(fn)
+        fn(self)
+        return self
 
-    def forward(self, *args, **kwargs):
-        cache = kwargs.pop("cache", None)
-        if cache:
-            return cache(self).wrapped(*args, **kwargs)
-        return self.wrapped(*args, **kwargs)
+    def _get_name(self) -> str:
+        # for nn.Module __repr__
+        return f"{type(self).__name__}[{self.__wrapped__._get_name()}]"
 
-    def __getattr__(self, name: str) -> Any:
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(super().__getattr__("wrapped"), name)
-
-    @classmethod
-    def __instancecheck__(cls: ABCMeta, instance: Any) -> bool:
-        return super().__instancecheck__(instance) or (
-            isinstance(instance, WrapsModule) and isinstance(instance.wrapped, cls)
-        )
+    def __repr__(self) -> str:
+        # Defer to nn.Module's repr (which uses _get_name + the wrapped's
+        # children), so stacked wrappers print nicely.
+        return nn.Module.__repr__(cast(nn.Module, self))

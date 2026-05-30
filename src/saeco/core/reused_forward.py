@@ -1,6 +1,6 @@
 import torch
-import torch.nn as nn
 
+from saeco.components.wrap import WrapsModule
 from saeco.core.cache import Cache
 from saeco.core.module import Module
 
@@ -51,10 +51,12 @@ def reuse_method(mth):
     return wrapper
 
 
-class ReuseForward[T: nn.Module](Module):
+class ReuseForward[T: Module](WrapsModule[T]):
     def __init__(self, module: T):
-        super().__init__()
-        self.module: T = module
+        super().__init__(module)
 
-    def forward(self, x: torch.Tensor, *, cache: ReuseCache, **kwargs):
-        return reuse_forward(x=x, module=self.module, cache=cache, **kwargs)
+    def __call__(self, x: torch.Tensor, *, cache: ReuseCache, **kwargs):
+        return reuse_forward(x=x, module=self.__wrapped__, cache=cache, **kwargs)
+
+
+Module.register(ReuseForward)

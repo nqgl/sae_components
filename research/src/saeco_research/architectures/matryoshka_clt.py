@@ -53,9 +53,7 @@ def split_tensor(x, bounds, dim):
     return [x[slice_dim(bounds[i], bounds[i + 1], dim)] for i in range(len(bounds) - 1)]
 
 
-class SplittableDecoder(
-    cl.Module, ft.OrthogonalizeFeatureGradsMixin, ft.NormFeaturesMixin
-):
+class SplittableDecoder(cl.Module):
     def __init__(self, d_dict, num_layers, d_data, num_nestings):
         super().__init__()
         self.weight = nn.Parameter(torch.randn(num_layers * d_data, d_dict))
@@ -118,11 +116,15 @@ class MatryoshkaCLTDecoder(cl.Module):
             ).reduce(lambda *x: x),
             splittable_decoders=cl.Router(
                 *[
-                    SplittableDecoder(
-                        d_dict=d_dict,
-                        num_layers=n + 1,
-                        d_data=d_data,
-                        num_nestings=cfg.n_nestings,
+                    ft.OrthogonalizeFeatureGrads(
+                        ft.NormFeatures(
+                            SplittableDecoder(
+                                d_dict=d_dict,
+                                num_layers=n + 1,
+                                d_data=d_data,
+                                num_nestings=cfg.n_nestings,
+                            )
+                        )
                     )
                     for n in range(cfg.n_sites)
                 ]

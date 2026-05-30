@@ -150,16 +150,16 @@ class Trainer:
     def subject_model(self):
         return self.cfg.data_cfg.model_cfg.model
 
-    def pre_forward(self, cache):
+    def pre_forward(self, cache: Cache):
         do_pre_forward(self.trainable, cache)
 
-    def post_forward(self, cache):
+    def post_forward(self, cache: Cache):
         do_post_forward(self.trainable, cache)
 
-    def post_backward(self, cache=None):
+    def post_backward(self, cache: Cache | None = None):
         do_post_backward(self.trainable, cache)
 
-    def post_step(self, cache=None):
+    def post_step(self, cache: Cache | None = None):
         do_post_step(self.trainable, cache)
 
     def log(self, d):

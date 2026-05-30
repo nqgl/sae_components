@@ -13,41 +13,17 @@ class Resamplable(Protocol):
     def resample(self, *, indices, new_directions, bias_reset_value, optim): ...
 
 
-@deprecated("resampled x usage")
-class ResampledWeight(WrapsModule):  # TODO dep
-    wrapped: HasFeatures
-
-    def __init__(self, wrapped: HasFeatures):
-        if not isinstance(wrapped, HasFeatures):
-            raise TypeError(
-                f"Expected HasFeatures, but {type(wrapped)} does not implement "
-                "HasFeatures protocol."
-            )
-        # assert isinstance(wrapped, Resamplable)
-        super().__init__(wrapped)
-
-    def resample(self, *, indices, new_directions, bias_reset_value):
-        self.wrapped.features[indices] = new_directions
+class HasFeaturesModule(HasFeatures, nn.Module): ...
 
 
 @deprecated("resampled x usage")
-class ResampledBias(WrapsModule):  # TODO
-    wrapped: HasFeatures
-
-    def __init__(self, wrapped: HasFeatures):
-        if not isinstance(wrapped, HasFeatures):
-            raise TypeError("")
-        # assert isinstance(wrapped, Resamplable)
-        super().__init__(wrapped)
-
+class ResampledBias(WrapsModule[HasFeaturesModule]):  # TODO
     def resample(self, *, indices, new_directions, bias_reset_value):
-        self.wrapped.features[indices] = bias_reset_value
+        self.__wrapped__.features[indices] = bias_reset_value
 
 
 @deprecated("EncoderBias as wrapper will be replaced by an Add subclass")
-class EncoderBias(WrapsModule):
-    wrapped: cl.ops.Add
-
+class EncoderBias(WrapsModule[HasFeaturesModule]):
     # TODO maybe make this wrap a param instead of the Add op
     def __init__(self, wrapped: cl.ops.Add):
         if isinstance(wrapped, nn.Parameter):
@@ -63,13 +39,8 @@ class EncoderBias(WrapsModule):
     def features(self) -> dict[str, FeaturesParam]:
         return {
             "bias": FeaturesParam(
-                self.wrapped.bias,
+                self.__wrapped__.bias,
                 feature_index=0,
                 feature_parameter_type=FeaturesParam.FPTYPES.bias,
             )
         }
-
-    # @property
-    # def feature_indexed(self) -> Tensor:
-    #     assert self.wrapped.bias.data.ndim == 1
-    #     return self.wrapped.bias.data

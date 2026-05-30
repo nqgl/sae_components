@@ -54,12 +54,12 @@ class SweepRunner:
     def run_random_instance(self):
         arch = self.sweep_data.root_arch_ref.load_arch()
         cfg: SweepableConfig = self.sweep_data.root_arch_ref.config
-        arch.instantiate(cfg.sweep_info_tree.random_selection())
         with mlog.enter(
             arch_ref=self.sweep_data.root_arch_ref,
             run_name=self.run_name,
             project=self.sweep_data.project,
         ):
+            arch.instantiate(cfg.sweep_info_tree.random_selection())
             mlog.update_config(full_cfg=arch.run_cfg.model_dump())
             self.log_sweep_info(cfg)
             arch.run_training()

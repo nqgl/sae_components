@@ -1,6 +1,6 @@
 import inspect
 import re
-from typing import Any, TypeVar
+from typing import Any, Self, TypeVar
 
 from torch import NumberType, Tensor
 
@@ -439,15 +439,8 @@ class Cache:
             )
         return getattr(l[0], attr)
 
-    # def _search_children(self, attr):
-    #     l = []
-    #     for k, v in self._subcaches.items():
-    #         if v._has(attr):
-    #             l.append(v)
-    #     return l
-
     @property
-    def _ancestor(self):
+    def _ancestor(self) -> Self:
         a = self
         while a._parent is not None:
             a = a._parent

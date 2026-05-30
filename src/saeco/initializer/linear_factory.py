@@ -1,4 +1,4 @@
-from functools import cached_property
+from functools import cached_property, partial
 
 import torch
 import torch.nn as nn
@@ -135,15 +135,24 @@ class LinearFactory:
             raise ValueError("Cannot change bias after linear has been created")
         self._bias = value
 
-    def add_wrapper(self, wrapper):
+    def add_wrapper(self, wrapper, *args, **kwargs):
+        """Register a wrapper to be applied to the produced linear.
+
+        Each registered wrapper is invoked as ``wrapper(linear)`` at
+        ``make_new`` time, stacking outer-most last:
+        ``add_wrapper(A); add_wrapper(B)`` produces ``B(A(linear))``.
+
+        Extra positional/keyword arguments are bound (via
+        :func:`functools.partial`) — e.g.
+        ``add_wrapper(NormFeatures, index="weight", max_only=True)`` is
+        equivalent to ``add_wrapper(partial(NormFeatures, index="weight",
+        max_only=True))``.
+        """
         if not self.unset:
             raise ValueError("Cannot add wrappers after linear has been created")
+        if args or kwargs:
+            wrapper = partial(wrapper, *args, **kwargs)
         self.wrappers.append(wrapper)
-
-    def add_mixin_(self, mixin):
-        if not self.unset:
-            raise ValueError("Cannot add mixins after linear has been created")
-        self.mixins.append(mixin)
 
     @property
     def linear_cls(self) -> type[nn.Linear]:
