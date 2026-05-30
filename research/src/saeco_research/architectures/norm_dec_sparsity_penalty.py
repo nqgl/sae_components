@@ -29,19 +29,19 @@ def sae(
     cfg: Config,
 ):
     if cfg.untied:
-        init._decoder.add_wrapper(ft.NormFeatures)
-        init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        decoder = ft.OrthogonalizeFeatureGrads(ft.NormFeatures(init.decoder.resampled()))
     else:
-        init._decoder.tie_weights(init._encoder)
+        init.dec_builder.tie_weights(init.enc_builder)
+        decoder = init.decoder.resampled()
 
     def model(enc, penalties, metrics, detach=False):
         return Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+            **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
             encoder=enc,
             freqs=EMAFreqTracker(),
             **penalties,
             metrics=metrics,
-            decoder=init.decoder.resampled(),
+            decoder=decoder,
         )
 
     model_full = model(

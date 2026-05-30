@@ -113,19 +113,18 @@ def gated_sae(
     init: Initializer,
     cfg: Config,
 ):
-    init._encoder.bias = False
-    init._encoder.add_wrapper(ReuseForward)
-    init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
-    init._decoder.add_wrapper(
-        saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
+    init.enc_builder.bias = False
+    encoder = ReuseForward(init.encoder)
+    decoder = saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+        saeco.components.hooks.feature_hooks.NormFeatures(init.decoder)
     )
     enc_mag = Seq(
         **useif(
             cfg.pre_bias,
-            pre_bias=ReuseForward(init._decoder.sub_bias),
+            pre_bias=ReuseForward(init.decoder.sub_bias),
         ),
         r_mag=cl.ops.MulParallel(
-            identity=ReuseForward(init.encoder),
+            identity=encoder,
             exp_r=co.Lambda(
                 func=lambda x: torch.exp(x),
                 module=init.dict_bias(),
@@ -144,10 +143,10 @@ def gated_sae(
                         (lambda l, r: l - r.detach())
                     )
                     if cfg.detach
-                    else ReuseForward(init._decoder.sub_bias)
+                    else ReuseForward(init.decoder.sub_bias)
                 ),
             ),
-            weight=ReuseForward(init.encoder),
+            weight=encoder,
             bias=init.new_encoder_bias(),
             nonlinearity=nn.ReLU(),
         )
@@ -163,14 +162,14 @@ def gated_sae(
         ),
         freqs=EMAFreqTracker(),
         metrics=co.metrics.ActMetrics(),
-        decoder=init.decoder,
+        decoder=decoder,
     )
 
     model_aux = Seq(  # this one is just used for training the gate appropriately
         encoder=enc_gate,  # oh and it's missing 1-2 detaches
         L1=L1Penalty(),
         freqs=EMAFreqTracker(),
-        decoder=init._decoder.detached if cfg.detach else init.decoder,
+        decoder=init.decoder.as_detached() if cfg.detach else decoder,
     )
 
     # losses

@@ -162,23 +162,16 @@ class Thresholder(cl.Module, ResampleableModule):
 
 
 class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
-    def setup(self):
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.NormFeatures
-        )
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-        )
-
     @model_prop
     def model(self):
         thrlu = Thresholder(self.init, self.cfg.thresh_cfg)
+        decoder = ft.OrthogonalizeFeatureGrads(ft.NormFeatures(self.init.decoder))
         return SAE(
             encoder=torch.compile(
                 Seq(
                     encoder_pre=Seq(
                         **useif(
-                            self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias
+                            self.cfg.pre_bias, pre_bias=self.init.decoder.sub_bias
                         ),
                         lin=self.init.encoder,
                     ),
@@ -191,7 +184,7 @@ class DynamicThreshSAE(Architecture[DynamicThreshConfig]):
                 end=self.cfg.l1_decay_end,
                 end_scale=self.cfg.l1_end_scale,
             ),
-            decoder=self.init.decoder,
+            decoder=decoder,
         )
 
     @loss_prop

@@ -60,16 +60,10 @@ def sae(
     init: Initializer,
     cfg: Config,
 ):
-    # init._encoder.add_wrapper(ReuseForward)
-    if not cfg.anthropic_l1_mode:
-        init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-        )
-        init._decoder.add_wrapper(saeco.components.hooks.feature_hooks.NormFeatures)
     dec_mul_l1 = L1PenaltyScaledByDecoderNorm(det_dec_norms=cfg.anthropic_l1_mode == 1)
-    init._decoder.const_init_bias()
-    init._encoder.const_init_bias(cfg.bias_init_value)
-    init._encoder._bias = False
+    init.dec_builder.const_init_bias()
+    init.enc_builder.const_init_bias(cfg.bias_init_value)
+    init.enc_builder.bias = False
     if cfg.from_thresh:
         if cfg.from_thresh == "thresh":
             bwd = lambda x: x > 0
@@ -86,12 +80,17 @@ def sae(
 
         prolu = PProLU(
             prolu=prolu_ste_from_thresh(thresh_from_bwd(bwd)),
-            d_bias=init._encoder.new_bias(),
+            d_bias=init.encoder.new_bias(),
         )
     else:
-        prolu = PProLU(cfg.prolu_cfg, init._encoder.new_bias())
+        prolu = PProLU(cfg.prolu_cfg, init.encoder.new_bias())
+    decoder = init.decoder.resampled()
+    if not cfg.anthropic_l1_mode:
+        decoder = saeco.components.hooks.feature_hooks.NormFeatures(
+            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(decoder)
+        )
     model_full = Seq(
-        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+        **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
         encoder=Seq(
             linear=init.encoder.resampled(),
             prolu=prolu,
@@ -99,7 +98,7 @@ def sae(
         freqs=EMAFreqTracker(),
         l1=dec_mul_l1 if cfg.anthropic_l1_mode else L1Penalty(),
         metrics=co.metrics.ActMetrics(),
-        decoder=dec_mul_l1.set_decoder(init.decoder.resampled()),
+        decoder=dec_mul_l1.set_decoder(decoder),
     )
     if cfg.clip_grad:
         model_full = ClipGrad(model_full)

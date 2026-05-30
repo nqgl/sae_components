@@ -109,8 +109,8 @@ def deep_tg_grad_sae(
 
     # lin = OtherLinear(init.d_data, init.d_data)
     if cfg.squeeze_channels > 1:
-        init._decoder.d_in = init.d_dict // cfg.squeeze_channels
-        init._decoder._weight_tie = None
+        init.dec_builder.d_in = init.d_dict // cfg.squeeze_channels
+        init.dec_builder.untie()
 
     dec_layers = [dec_layer(init, cfg) for _ in range(cfg.deep_dec)]
     deep = Seq(
@@ -149,7 +149,7 @@ def deep_tg_grad_sae(
 
     model = Seq(
         encoder=Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+            **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
             **useif(
                 cfg.deep_enc,
                 resids=cl.collections.seq.ResidualSeq(

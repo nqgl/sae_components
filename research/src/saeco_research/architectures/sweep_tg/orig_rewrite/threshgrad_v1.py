@@ -341,7 +341,7 @@ class ThreshGateConfig(SweepableConfig):
 class Mag(cl.Module):
     def __init__(self, cfg: ThreshGateConfig, init: Initializer):
         super().__init__()
-        self.mag = init._encoder.new_bias()
+        self.mag = init.encoder.new_bias()
         self.mag.data -= 1
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):

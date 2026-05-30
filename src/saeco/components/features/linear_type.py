@@ -51,6 +51,10 @@ class LinWeightsMixin:
             fp.resampled = resample
         return self
 
+    def resampled(self, resample: bool = True) -> Self:
+        """Backwards-compatible alias for :meth:`set_resampled`; returns self."""
+        return self.set_resampled(resample)
+
     @cached_property
     def sub_bias(self) -> Sub:
         """A ``Sub`` op that subtracts this layer's (shared) bias parameter."""

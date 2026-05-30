@@ -160,7 +160,7 @@ def build_encoder(init: Initializer, cfg: DeepConfig, penalty):
 
     encoder_layers = []
     if cfg.pre_bias:
-        encoder_layers.append(("pre_bias", init._decoder.sub_bias))
+        encoder_layers.append(("pre_bias", init.decoder.sub_bias))
 
     if cfg.deep_enc:
         # Example deep encoder block
@@ -213,8 +213,8 @@ def deep_tg_grad_sae(init: Initializer, cfg: DeepConfig):
 
     # Adjust input dimension if we squeeze channels
     if cfg.squeeze_channels > 1:
-        init._decoder.d_in = init.d_dict // cfg.squeeze_channels
-        init._decoder._weight_tie = None
+        init.dec_builder.d_in = init.d_dict // cfg.squeeze_channels
+        init.dec_builder.untie()
 
     decoder = saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
         saeco.components.hooks.feature_hooks.NormFeatures(

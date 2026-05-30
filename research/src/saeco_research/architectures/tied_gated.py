@@ -86,7 +86,7 @@ class ShrinkGate(cl.Module):
         if self.cfg.prolu_gate:
             thresh = thresh_from_bwd(lambda x: 1)
             self.prolu = PProLU(
-                ProLUConfig(b_ste=1, m_ste=1, m_gg=1), init._encoder.new_bias()
+                ProLUConfig(b_ste=1, m_ste=1, m_gg=1), init.encoder.new_bias()
             )
             self.thresh = lambda m: thresh(self.prolu(m))
         else:
@@ -110,13 +110,15 @@ class ShrinkGateSae(cl.Module):
     ):
         super().__init__()
         self.cfg = cfg
-        init._decoder.const_init_bias(0)
-        init._encoder.const_init_bias(cfg.enc_bias_init_value)
-        if cfg.constrain_D:
-            init._decoder.add_wrapper(ft.NormFeatures)
-            init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        init.dec_builder.const_init_bias(0)
+        init.enc_builder.const_init_bias(cfg.enc_bias_init_value)
+        decoder = (
+            ft.OrthogonalizeFeatureGrads(ft.NormFeatures(init.decoder))
+            if cfg.constrain_D
+            else init.decoder
+        )
         if self.cfg.prolu_gate:
-            init._encoder._bias = False
+            init.enc_builder.bias = False
         # self.prolu = PProLU(cfg.prolu_cfg, init.d_dict)
         # self.det_prolu = DetProLu(cfg.det_prolu_cfg, self.prolu.bias)
         # self.magnitude_encoder = nn.Linear(
@@ -128,12 +130,12 @@ class ShrinkGateSae(cl.Module):
         )
         self.l1 = L1Penalty()
         # self.encode_pre = Seq(
-        #     **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+        #     **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
         #     encoder_linear=init.encoder.resampled(),
         # )
         self.gate = ShrinkGate(cfg, init.encoder.resampled(), init=init)
-        self.full_dec = init.decoder
-        self.gate_dec = init._decoder.detached
+        self.full_dec = decoder
+        self.gate_dec = init.decoder.as_detached()
         self.D_T = nn.Linear(
             init.d_data,
             init.d_dict,
@@ -210,7 +212,6 @@ def sae(
     init: Initializer,
     cfg: Config,
 ):
-    # init._encoder.add_wrapper(ReuseForward)
     model_full = ShrinkGateSae(init, cfg)
     if cfg.clip_grad:
         model_full = ClipGrad(model_full, cfg.clip_grad)

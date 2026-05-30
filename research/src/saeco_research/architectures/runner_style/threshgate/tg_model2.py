@@ -21,7 +21,7 @@ from saeco.components.penalties.l1_penalizer import (
     LinearDecayL1Penalty,
 )
 from saeco.core import ReuseForward, Seq
-from saeco.initializer import Initializer, Tied
+from saeco.initializer import Initializer
 from saeco.misc import useif
 from saeco.sweeps import SweepableConfig
 
@@ -409,17 +409,13 @@ def multigate_sae(
     init: Initializer,
     cfg: Config,
 ):
-    init._encoder.d_out *= cfg.num_layers
-    init._decoder._weight_tie = None
+    init.enc_builder.d_out *= cfg.num_layers
+    init.dec_builder.untie()
     init.decoder
     decx3 = init.decoder.weight.data.repeat(1, cfg.num_layers).transpose(-2, -1)
-    init._encoder.bias = cfg.use_enc_bias > 0
+    init.enc_builder.bias = cfg.use_enc_bias > 0
 
-    init._encoder._weight_tie = Tied(
-        decx3 + torch.randn_like(decx3) * 0.03,
-        Tied.TO_VALUE,
-        "weight",
-    )
+    init.enc_builder.init_weight_to(decx3 + torch.randn_like(decx3) * 0.03)
     # encoder = init.encoder
     # encoder.stored_fake_res_weight = nn.Parameter(
     #     init.encoder.wrapped.weight[: init.d_dict]
@@ -453,7 +449,7 @@ def multigate_sae(
                     init.encoder, init.d_dict
                 ),
             ),
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+            **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
             lin=init.encoder,
             split=co.ops.Lambda(lambda x: torch.split(x, init.d_dict, dim=-1)),
             gate_x=cl.Parallel(
@@ -469,7 +465,7 @@ def multigate_sae(
         freqs=None,
         penalty=None,
         decoder=cl.Router(
-            det_dec=init._decoder.detached_no_bias,
+            det_dec=init.decoder.as_detached(use_bias=False),
             decoder=saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
                 saeco.components.hooks.feature_hooks.NormFeatures(
                     init.decoder,

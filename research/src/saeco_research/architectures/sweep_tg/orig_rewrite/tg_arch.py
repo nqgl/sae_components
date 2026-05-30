@@ -31,12 +31,7 @@ class TGSAEConfig(SweepableConfig):
 
 class TGArch(Architecture[TGSAEConfig]):
     def setup(self):
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.NormFeatures
-        )
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-        )
+        pass
 
     @model_prop
     def model(self):
@@ -48,9 +43,12 @@ class TGArch(Architecture[TGSAEConfig]):
             )
 
         init = self.init
+        decoder = saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(init.decoder)
+        )
         s = SAE(
             encoder=Seq(
-                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias),
+                **useif(self.cfg.pre_bias, pre_bias=self.init.decoder.sub_bias),
                 lin=ThreshGate(
                     self.cfg.thresh_gate_cfg,
                     init=self.init,
@@ -68,7 +66,7 @@ class TGArch(Architecture[TGSAEConfig]):
                 if self.cfg.penalize_after_gate
                 else cl.ops.Identity()
             ),
-            decoder=init.decoder,
+            decoder=decoder,
         )
         return s
 

@@ -182,7 +182,7 @@ class BinaryEncoder(cl.Module):
     ):
         super().__init__()
         self.cfg = cfg
-        self.mag = init._encoder.new_bias()
+        self.mag = init.encoder.new_bias()
         self.mag.data -= 1
         # self.mag.data += 2
         self.gate = init.encoder
@@ -278,7 +278,7 @@ class GTMulti(cl.Module):
         super().__init__()
         self.cfg = cfg
         if cfg.mag_weights:
-            self.mag = init._encoder.new_bias()
+            self.mag = init.encoder.new_bias()
             self.mag.data -= 1
         # self.mag.data += 2
         self.gate = init.encoder

@@ -255,7 +255,7 @@ class SlicedDecoder(nn.Module):
         super().__init__()
         self.lin = lin
         self.split = split
-        self.bias = None if init is None else init._decoder.new_bias()
+        self.bias = None if init is None else init.decoder.new_bias()
 
     def forward(self, x):
         return torch.nn.functional.linear(
@@ -291,7 +291,7 @@ def split_pairs(
                     bias=(
                         None
                         if not cfg.individual_enc_bias
-                        else init._encoder.new_bias()
+                        else init.encoder.new_bias()
                     ),
                 ),
                 SlicedDecoder(decoder, split, init),
@@ -305,8 +305,8 @@ def resid_sae(
     init: Initializer,
     cfg: ResidConfig,
 ):
-    init._decoder.const_init_bias(0)
-    init._encoder.const_init_bias(0)
+    init.dec_builder.const_init_bias(0)
+    init.enc_builder.const_init_bias(0)
     encoder = init.encoder.resampled()
     penalizer = L1PenaltyScaledByDecoderNorm() if cfg.anth_scale else L1Penalty()
     decoder = (
@@ -317,7 +317,7 @@ def resid_sae(
         )
     )
     model_full = Seq(
-        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+        **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
         encoder=(ReuseResidModule if cfg.reuse_layer else ResidModule)(
             *split_pairs(
                 encoder=encoder,
@@ -334,7 +334,7 @@ def resid_sae(
             ),
             init=init,
         ),
-        **useif(not cfg.individual_dec_bias, bias=cl.ops.Add(init._decoder.new_bias())),
+        **useif(not cfg.individual_dec_bias, bias=cl.ops.Add(init.decoder.new_bias())),
     )
     models = [model_full]
     losses = dict(
