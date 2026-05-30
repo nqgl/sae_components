@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from functools import cached_property
 from typing import (
-    TYPE_CHECKING,
     Any,
     ClassVar,
     Literal,
@@ -9,15 +8,11 @@ from typing import (
     Self,
     overload,
 )
-from warnings import deprecated
 
 import torch.nn as nn
 
 from saeco.architecture.architecture import ArchitectureBase
 from saeco.misc.field_collection import FIELDS, FieldRegistry
-
-if TYPE_CHECKING:
-    from saeco.components.losses import Loss
 
 
 class NonSingular(Protocol):
@@ -132,39 +127,7 @@ class metric_prop[Metric_T: nn.Module](arch_prop[Metric_T]):  # noqa: N801  # pu
         return super().__get__(instance, owner)
 
 
-class _model_prop_base[T](arch_prop[T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
-    """
-    Base class for model_prop and aux_model_prop.
-    Adds on top of arch_prop: methods for attaching losses and metrics to a model.
-    - these methods create a new loss_prop or metric_prop where
-        the called function/constructor will be called with the
-        model as an argument
-    """
-
-    @deprecated("define with loss_prop instead for now")
-    def add_loss(self, loss: "Loss") -> None:
-        raise NotImplementedError
-
-    # # tries to infer whether this is a method (therefore needing self
-    # # as the first arg)
-    # # or a Loss constructor
-    # from saeco.components.losses import Loss
-
-    # assert isinstance(loss, Loss)
-
-    # def get_loss_object(inst):
-    #     return loss(self.__get__(inst))
-
-    # return loss_prop(get_loss_object)
-
-    # def add_metric(self, metric):
-    #     def _metric(inst):
-    #         return metric(self.__get__(inst))
-
-    #     return metric_prop(_metric)
-
-
-class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[SAE_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
+class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     """Declares the core model on an ``Architecture``.
 
     Decorate the single method that builds and returns the main ``SAE``.
@@ -188,7 +151,7 @@ class model_prop[SAE_T: nn.Module](arch_prop_singular[SAE_T], _model_prop_base[S
     loss = loss_prop
 
 
-class aux_model_prop[AuxModel_T: nn.Module](_model_prop_base[AuxModel_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
+class aux_model_prop[AuxModel_T: nn.Module](arch_prop[AuxModel_T]):  # noqa: N801  # public decorator API; lowercase-class-as-decorator by convention (cf. functools.cached_property)
     """Declares an auxiliary model on an ``Architecture``.
 
     Decorate a method returning a secondary ``SAE`` (e.g. the gating
