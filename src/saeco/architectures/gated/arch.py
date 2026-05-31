@@ -1,5 +1,3 @@
-from functools import cached_property
-
 import torch
 import torch.nn as nn
 
@@ -8,6 +6,7 @@ import saeco.components.features as ft
 import saeco.core as cl
 from saeco.architecture import (
     aux_model_prop,
+    component_prop,
     loss_prop,
     model_prop,
 )
@@ -31,20 +30,29 @@ class GatedConfig(SweepableConfig):
 
 class Gated(Architecture[GatedConfig]):
     def setup(self):
-        self.init._encoder.bias = False
-        self.init._encoder.add_wrapper(ReuseForward)
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        # Stateful configuration only: the gate/magnitude encoders share a
+        # single bias built below, so the underlying encoder linear has none.
+        self.init.enc_builder.bias = False
 
-    @cached_property
+    @component_prop
+    def encoder(self):
+        # One ReuseForward-wrapped encoder, shared across the magnitude and
+        # gate paths so its forward is computed once per pass.
+        return ReuseForward(self.init.encoder)
+
+    @component_prop
+    def decoder(self):
+        return ft.OrthogonalizeFeatureGrads(ft.NormFeatures(self.init.decoder))
+
+    @component_prop
     def enc_mag(self):
         return Seq(
             **useif(
                 self.cfg.pre_bias,
-                pre_bias=ReuseForward(self.init._decoder.sub_bias),
+                pre_bias=ReuseForward(self.init.decoder.sub_bias),
             ),
             r_mag=cl.ops.MulParallel(
-                identity=ReuseForward(self.init.encoder),
+                identity=self.encoder,
                 exp_r=co.Lambda(
                     func=lambda x: torch.exp(x),
                     module=self.init.dict_bias(),
@@ -54,7 +62,7 @@ class Gated(Architecture[GatedConfig]):
             nonlinearity=nn.ReLU(),
         )
 
-    @cached_property
+    @component_prop
     def enc_gate(self):
         return Seq(
             **useif(
@@ -64,10 +72,10 @@ class Gated(Architecture[GatedConfig]):
                         left=cl.ops.Identity(), right=self.init.decoder.bias
                     ).reduce((lambda l, r: l - r.detach()))
                     if self.cfg.detach
-                    else ReuseForward(self.init._decoder.sub_bias)
+                    else ReuseForward(self.init.decoder.sub_bias)
                 ),
             ),
-            weight=ReuseForward(self.init.encoder),
+            weight=self.encoder,
             bias=self.init.new_encoder_bias(),
             nonlinearity=nn.ReLU(),
         )
@@ -79,7 +87,7 @@ class Gated(Architecture[GatedConfig]):
                 magnitude=self.enc_mag,
                 gate=co.ops.Thresh(self.enc_gate),
             ),
-            decoder=self.init.decoder,
+            decoder=self.decoder,
             penalty=None,
         )
 
@@ -93,7 +101,7 @@ class Gated(Architecture[GatedConfig]):
             encoder=self.enc_gate,
             freqs=EMAFreqTracker(),
             decoder=(
-                self.init._decoder.detached if self.cfg.detach else self.init.decoder
+                self.init.decoder.as_detached() if self.cfg.detach else self.decoder
             ),
         )
 

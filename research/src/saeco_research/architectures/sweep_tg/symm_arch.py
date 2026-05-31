@@ -196,7 +196,7 @@ class BinaryEncoder(cl.Module):
     ):
         super().__init__()
         self.cfg = cfg
-        self.mag = init._encoder.new_bias()
+        self.mag = init.encoder.new_bias()
         self.mag.data -= 1
         # self.mag.data += 2
         self.gate = init.encoder
@@ -292,7 +292,7 @@ class GTMulti(cl.Module):
         super().__init__()
         self.cfg = cfg
         if cfg.mag_weights:
-            self.mag = init._encoder.new_bias()
+            self.mag = init.encoder.new_bias()
             self.mag.data -= 1
         # self.mag.data += 2
         self.gate = init.encoder
@@ -357,7 +357,7 @@ class BinaryEncoder(cl.Module):
     ):
         super().__init__()
         self.cfg = cfg
-        self.mag = init._encoder.new_bias()
+        self.mag = init.encoder.new_bias()
         self.mag.data -= 1
         # self.mag.data += 2
         self.gate = init.encoder
@@ -455,7 +455,7 @@ class GTMulti(cl.Module):
         super().__init__()
         self.cfg = cfg
         if cfg.mag_weights:
-            self.mag = init._encoder.new_bias()
+            self.mag = init.encoder.new_bias()
             self.mag.data -= 1
         # self.mag.data += 2
         self.gate = init.encoder
@@ -495,19 +495,19 @@ class GTMulti(cl.Module):
 
 class TGArch(Architecture[GateConfig]):
     def setup(self):
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.NormFeatures
-        )
-        self.init._decoder.add_wrapper(
-            saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads
-        )
+        pass
 
     @model_prop
     def model(self):
         init = self.init
+        decoder = saeco.components.hooks.feature_hooks.OrthogonalizeFeatureGrads(
+            saeco.components.hooks.feature_hooks.NormFeatures(
+                init.decoder,
+            ),
+        )
         s = SAE(
             encoder=Seq(
-                **useif(self.cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+                **useif(self.cfg.pre_bias, pre_bias=init.decoder.sub_bias),
                 lin=GTTest(self.cfg, init)
                 if self.cfg.mag_weights
                 else BinaryEncoder(self.cfg, init),
@@ -517,7 +517,7 @@ class TGArch(Architecture[GateConfig]):
             penalty=co.LinearDecayL1Penalty(40_000)
             if self.cfg.decay_l1
             else co.L1Penalty(),
-            decoder=init.decoder,
+            decoder=decoder,
         )
         s.train()
         return s

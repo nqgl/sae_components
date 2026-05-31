@@ -2,6 +2,7 @@ import torch.nn as nn
 
 import saeco.components.features as ft
 from saeco.architecture import (
+    component_prop,
     loss_prop,
     model_prop,
 )
@@ -23,14 +24,19 @@ class VanillaConfig(SweepableConfig):
 
 
 class VanillaSAE(Architecture[VanillaConfig]):
-    # setup is called before models are constructed
     def setup(self):
-        # these wrappers ensure:
-        # 1. the features are normalized after each optimizer step to have unit norm
-        # 2. the gradients of the features are orthogonalized after each backward pass
-        # before the optimizer step
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        # Nothing to configure: the vanilla SAE needs no stateful setup of
+        # self.init. The feature wrappers are applied explicitly where the
+        # decoder is composed (see `decoder` below), not registered here.
+        pass
+
+    @component_prop
+    def decoder(self):
+        # These wrappers ensure:
+        # 1. the features are normalized to unit norm after each optimizer step
+        # 2. the feature gradients are orthogonalized after each backward pass,
+        #    before the optimizer step.
+        return ft.OrthogonalizeFeatureGrads(ft.NormFeatures(self.init.decoder))
 
     # model_prop tells the Architecture class that this method
     # is the method that constructs the model.
@@ -40,11 +46,11 @@ class VanillaSAE(Architecture[VanillaConfig]):
     def model(self):
         return SAE(
             encoder_pre=Seq(
-                **useif(self.cfg.pre_bias, pre_bias=self.init._decoder.sub_bias),
+                **useif(self.cfg.pre_bias, pre_bias=self.init.decoder.sub_bias),
                 lin=self.init.encoder,
             ),
             nonlinearity=nn.ReLU(),
-            decoder=self.init.decoder,
+            decoder=self.decoder,
         )
 
     # loss_prop designates a Loss that will be used in training

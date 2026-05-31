@@ -83,7 +83,7 @@ def silod_topk_sae(
         aux_model=Seq(
             encoder=encoder,
             topk=TopKDead(cfg.aux_top_k, freq_tracker, cfg.dead_threshold),
-            decoder=init._decoder.biasdetached,
+            decoder=init.decoder.as_detached(detach_weight=False),
         ),
     ).reduce(lambda main, aux: main.detach() + aux)
 

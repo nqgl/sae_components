@@ -3,7 +3,6 @@ from functools import cached_property
 import torch
 import torch.nn as nn
 
-import saeco.components.features as ft
 import saeco.core as cl
 from saeco.architecture import loss_prop, model_prop
 from saeco.architecture.sae import SAE
@@ -21,12 +20,7 @@ class CrossLayerTranscoderConfig(SweepableConfig):
 class CrossLayerTranscoder(Architecture[CrossLayerTranscoderConfig]):
     # setup is called before models are constructed
     def setup(self):
-        # these will add wrappers to the decoder that ensure:
-        # 1. the features are normalized after each optimizer step to have unit norm
-        # 2. the gradients of the features are orthogonalized after each backward pass before the optimizer step
-
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        pass
 
     # model_prop tells the Architecture class that this method
     # is the method that constructs the model.

@@ -39,11 +39,8 @@ class PhasedSAE(cl.Module):
     def __init__(self, init: Initializer, cfg: Config):
         super().__init__()
 
-        # init._decoder.add_wrapper(ft.NormFeatures)
-        # init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
-
         self.encode_pre = Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+            **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
             encoder_linear=init.encoder.resampled(),
         )
 
@@ -85,12 +82,11 @@ def sae(
     init: Initializer,
     cfg: Config,
 ):
-    # init._encoder.add_wrapper(ReuseForward)
     dec_mul_l1 = L1PenaltyScaledByDecoderNorm()
-    init._decoder.const_init_bias()
-    init._encoder.const_init_bias()
+    init.dec_builder.const_init_bias()
+    init.enc_builder.const_init_bias()
     model_full = Seq(
-        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+        **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
         encoder=Seq(linear=init.encoder.resampled(), relu=nn.ReLU()),
         freqs=EMAFreqTracker(),
         l1=dec_mul_l1,

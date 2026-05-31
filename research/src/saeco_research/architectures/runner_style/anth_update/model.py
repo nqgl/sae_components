@@ -20,10 +20,10 @@ def anth_update_model(
     cfg: AnthUpdateConfig,
 ):
     dec_mul_l1 = L1PenaltyScaledByDecoderNorm()
-    init._decoder.const_init_bias(0)
-    init._encoder.const_init_bias(0)
+    init.dec_builder.const_init_bias(0)
+    init.enc_builder.const_init_bias(0)
     model_full = Seq(
-        **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+        **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
         encoder=Seq(linear=init.encoder.resampled(), relu=nn.ReLU()),
         freqs=EMAFreqTracker(),
         l1=dec_mul_l1,

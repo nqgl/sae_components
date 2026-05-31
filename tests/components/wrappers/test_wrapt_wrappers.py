@@ -4,7 +4,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from saeco.components.features.linear_type import LinDecoder, LinDecoderMixin
+from saeco.components.features.linear_type import LinDecoder
 from saeco.components.hooks.clipgrad import ClipGrad
 from saeco.components.hooks.feature_hooks import (
     NormFeatures,
@@ -15,7 +15,6 @@ from saeco.components.wrap import WrapsModule
 from saeco.core.cache import Cache
 from saeco.core.module import Module
 from saeco.core.reused_forward import ReuseForward
-from saeco.initializer.linear_factory import LinearFactory
 from saeco.trainer.call_training_hooks import do_post_backward, do_post_step
 
 
@@ -218,10 +217,10 @@ def test_orthogonalize_feature_grads_wrapper_removes_radial_grad_component():
     assert torch.allclose(radial_grad, torch.zeros_like(radial_grad), atol=1e-5)
 
 
-def test_factory_add_wrapper_keeps_state_dict_clean():
-    factory = LinearFactory(4, 3, mixins=[LinDecoderMixin])
-    factory.add_wrapper(NormFeatures)
-    decoder = factory.get()
+def test_wrapped_decoder_keeps_state_dict_clean():
+    # Explicit composition is the canonical way to apply feature wrappers; the
+    # wrapt proxy must stay transparent to torch's state_dict machinery.
+    decoder = NormFeatures(LinDecoder(4, 3))
 
     assert isinstance(decoder, nn.Linear)
     assert isinstance(decoder, Module) is False
@@ -233,10 +232,8 @@ def test_factory_add_wrapper_keeps_state_dict_clean():
     assert list(parent.state_dict()) == ["decoder.weight", "decoder.bias"]
 
 
-def test_factory_add_wrapper_partial_binding():
-    factory = LinearFactory(4, 3, mixins=[LinDecoderMixin])
-    factory.add_wrapper(NormFeatures, max_only=True)
-    decoder = factory.get()
+def test_norm_features_max_only_leaves_small_norms_untouched():
+    decoder = NormFeatures(LinDecoder(4, 3), max_only=True)
 
     with torch.no_grad():
         decoder.weight.mul_(0.1)
@@ -248,11 +245,8 @@ def test_factory_add_wrapper_partial_binding():
     assert torch.allclose(pre, post)
 
 
-def test_linear_factory_add_wrapper_binds_wrapper_parameters():
-    factory = LinearFactory(3, 2, mixins=[LinDecoderMixin])
-    factory.add_wrapper(NormFeatures, max_only=True)
-
-    decoder = factory.get()
+def test_norm_features_binds_max_only_flag():
+    decoder = NormFeatures(LinDecoder(3, 2), max_only=True)
 
     assert decoder._self_max_only is True
 

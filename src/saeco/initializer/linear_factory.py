@@ -1,129 +1,54 @@
-from functools import cached_property, partial
+from collections.abc import Callable
 
-import torch
 import torch.nn as nn
-
-from saeco.core.basic_ops import Sub
-
-
-class DetachedLinear(nn.Module):
-    def __init__(self, lin, use_bias=True):
-        super().__init__()
-        self.lin = lin
-        self.use_bias = use_bias
-
-    def forward(self, x):
-        return torch.nn.functional.linear(
-            x,
-            self.lin.weight.detach(),
-            (
-                self.lin.bias.detach()
-                if (self.lin.bias is not None) and self.use_bias
-                else None
-            ),
-        )
+from torch import Tensor
 
 
-class InitSite:
-    def __init__(self, site):
-        self.site = site
+def _orient(dst: Tensor, src: Tensor) -> Tensor:
+    """Return ``src`` oriented to match ``dst``'s shape.
 
-    def __getattribute__(self, name: str) -> "InitSite":
-        pass
-
-    def __setattr__(self, name: str, value) -> None:
-        pass
-
-
-class BiasDetachedLinear(nn.Module):
-    def __init__(self, lin):
-        super().__init__()
-        self.lin = lin
-
-    def forward(self, x):
-        return torch.nn.functional.linear(
-            x,
-            self.lin.weight,
-            self.lin.bias.detach(),
-        )
-
-
-class Tied:
-    INIT = 0
-    TIED = 1
-    TO_VALUE = 2
-    INIT_FN = 3
-
-    def __init__(self, target: "LinearFactory", tie_type, site: str):
-        self.target = target
-        self.tie_type = tie_type
-        self.site = site
-
-    def __call__(self, other: nn.Linear):
-        if self.tie_type == self.TO_VALUE:
-            dst_param = getattr(other, self.site)
-            assert isinstance(self.target, torch.Tensor)
-            dst_param.data[:] = self.target
-            return
-        if self.tie_type == self.INIT_FN:
-            dst_param = getattr(other, self.site)
-            o = self.target(dst_param.data)
-            if o is not None:
-                dst_param.data = o
-            return
-        src_param = getattr(self.target.raw, self.site)
-        if self.tie_type == self.INIT:
-            dst_param = getattr(other, self.site)
-            assert (dst_param.data.shape == src_param.data.shape) or (
-                dst_param.data.shape == src_param.data.transpose(-2, -1).shape
-            )
-            if (dst_param.data.shape == src_param.data.shape) and (
-                dst_param.data.shape == src_param.data.transpose(-2, -1).shape
-            ):
-                print(
-                    "WARNING: Tied initialization weights are the same "
-                    "shape. Ambiguous whether to transpose. Defaulting to "
-                    "transposing"
-                )
-                dst_param.data[:] = src_param.data.transpose(-2, -1)
-
-            elif dst_param.data.shape == src_param.data.shape:
-                dst_param.data[:] = src_param.data
-            else:
-                dst_param.data[:] = src_param.data.transpose(-2, -1)
-        elif self.tie_type == self.TIED:
-            dst_param = getattr(other, self.site)
-            assert (dst_param.data.shape == src_param.data.shape) ^ (
-                dst_param.data.shape == src_param.data.transpose(-2, -1).shape
-            )
-            if dst_param.data.shape == src_param.data.shape:
-                dst_param.data = src_param.data
-            else:
-                dst_param.data = src_param.data.transpose(-2, -1)
-        else:
-            raise ValueError("Invalid tie type")
+    Encoder and decoder weights are transposes of each other, so tying one to
+    the other means copying/sharing the transpose. When the two shapes are
+    ambiguously compatible (i.e. square), prefer the transpose — matching the
+    historical default for tied initialization.
+    """
+    if dst.shape == src.shape and dst.shape != src.transpose(-2, -1).shape:
+        return src
+    assert dst.shape == src.transpose(-2, -1).shape, (
+        f"cannot tie a weight of shape {tuple(dst.shape)} to one of "
+        f"shape {tuple(src.shape)}"
+    )
+    return src.transpose(-2, -1)
 
 
 class LinearFactory:
-    def __init__(
-        self, d_in, d_out, bias=True, wrappers=None, mixins: list | None = None
-    ):
+    """Deferred builder for one of an SAE's encoder/decoder linears.
+
+    Configure shape (``d_in``/``d_out``), ``bias`` presence, and an optional
+    weight/bias initialization policy (tie, copy-transpose, or set-to-value)
+    *before* the linear is first materialized via :meth:`get`; afterwards the
+    built linear is cached and further configuration is rejected. The produced
+    module is the concrete ``cls`` (``LinEncoder`` / ``LinDecoder``), so it
+    carries the feature-parameter metadata that resampling and the feature
+    hooks rely on.
+    """
+
+    def __init__(self, d_in, d_out, cls: type[nn.Linear] = nn.Linear, bias=True):
         self.d_in = d_in
         self.d_out = d_out
+        self.cls = cls
         self._bias = bias
-        self._linear = None
-        self._linear_raw = None
-        self.wrappers = wrappers if wrappers is not None else []
-        self.mixins = mixins if mixins is not None else []
-        self._weight_tie: Tied | None = None
-        self._bias_tie: Tied | None = None
+        self._linear: nn.Linear | None = None
+        self._weight_init: Callable[[nn.Linear], None] | None = None
+        self._bias_init: Callable[[nn.Linear], None] | None = None
 
     @property
-    def unset(self):
-        l = self._linear is None
-        lr = self._linear_raw is None
-        assert l == lr
-        return l
+    def unset(self) -> bool:
+        return self._linear is None
+
+    def _assert_configurable(self) -> None:
+        if not self.unset:
+            raise ValueError("Cannot configure the linear after it has been built")
 
     @property
     def bias(self):
@@ -131,63 +56,15 @@ class LinearFactory:
 
     @bias.setter
     def bias(self, value):
-        if not self.unset:
-            raise ValueError("Cannot change bias after linear has been created")
+        self._assert_configurable()
         self._bias = value
 
-    def add_wrapper(self, wrapper, *args, **kwargs):
-        """Register a wrapper to be applied to the produced linear.
-
-        Each registered wrapper is invoked as ``wrapper(linear)`` at
-        ``make_new`` time, stacking outer-most last:
-        ``add_wrapper(A); add_wrapper(B)`` produces ``B(A(linear))``.
-
-        Extra positional/keyword arguments are bound (via
-        :func:`functools.partial`) — e.g.
-        ``add_wrapper(NormFeatures, index="weight", max_only=True)`` is
-        equivalent to ``add_wrapper(partial(NormFeatures, index="weight",
-        max_only=True))``.
-        """
-        if not self.unset:
-            raise ValueError("Cannot add wrappers after linear has been created")
-        if args or kwargs:
-            wrapper = partial(wrapper, *args, **kwargs)
-        self.wrappers.append(wrapper)
-
-    @property
-    def linear_cls(self) -> type[nn.Linear]:
-        if len(self.mixins) == 0:
-            return nn.Linear
-
-        class LinearMixed(*self.mixins, nn.Linear):
-            pass
-
-        return LinearMixed
-
     def make_new(self) -> nn.Linear:
-        lin = self.linear_cls(self.d_in, self.d_out, bias=self.bias)
-        if self._weight_tie is not None:
-            self._weight_tie(lin)
-        if self.bias and self._bias_tie is not None:
-            self._bias_tie(lin)
-        if self._linear_raw is not None:
-            lin.weight.data[:] = self._linear_raw.weight.data
-            if self.bias:
-                lin.bias.data[:] = self._linear_raw.bias.data
-        else:
-            self._linear_raw = lin
-        for w in self.wrappers:
-            lin = w(lin)
-        return lin
-
-    def make_hierarchical(self, bf):
-        assert self.d_out % bf == 0
-
-        lin = nn.Linear(self.d_in, self.d_out // bf, bias=True)
-        # v = einops.rearrange(ll, "(i bf) q -> i bf q", bf=bf).sum(dim=-2)
-        # v = einops.rearrange(ll, "(bf i) q -> bf i q", bf=bf).sum(dim=0)
-        # lin.weight.data[:] = v * (ll.std() / v.std(dim=0, keepdim=True))
-        # lin.bias.data[:] = lin.bias.data - 0.25
+        lin = self.cls(self.d_in, self.d_out, bias=self.bias)
+        if self._weight_init is not None:
+            self._weight_init(lin)
+        if self.bias and self._bias_init is not None:
+            self._bias_init(lin)
         return lin
 
     def get(self) -> nn.Linear:
@@ -195,61 +72,57 @@ class LinearFactory:
             self._linear = self.make_new()
         return self._linear
 
-    def new_bias(self) -> nn.Parameter:
-        class _BiasProbe:
-            weight = self.lin.weight
-            bias = torch.zeros(self.d_out)
-
-        if self._bias_tie is not None:
-            self._bias_tie(_BiasProbe)
-        return nn.Parameter(_BiasProbe.bias)
-
     @property
-    def raw(self):
-        if self._linear_raw is None:
-            self.get()
-        return self._linear_raw
-
-    @property
-    def lin(self):
+    def raw(self) -> nn.Linear:
         return self.get()
 
-    @property
-    def detached(self):
-        return DetachedLinear(self.lin)  # should this use raw?
+    # --- weight/bias initialization policies (configure before build) ---
 
-    @property
-    def detached_no_bias(self):
-        return DetachedLinear(self.lin, use_bias=False)
+    def tied_weights_init(self, other: "LinearFactory") -> None:
+        """Initialize the weight as a (transposed) copy of ``other``'s."""
+        self._assert_configurable()
+        assert self._weight_init is None
 
-    @property
-    def biasdetached(self):
-        return BiasDetachedLinear(self.lin)  # should this use raw?
+        def init(lin):
+            lin.weight.data[:] = _orient(lin.weight.data, other.raw.weight.data)
 
-    def tie_weights(self, other):
-        assert self.unset
-        # self.lin.weight = other.lin.weight
-        assert self._weight_tie is None
-        self._weight_tie = Tied(other, Tied.TIED, "weight")
+        self._weight_init = init
 
-    def tied_weights_init(self, other):
-        assert self.unset
-        assert self._weight_tie is None
-        self._weight_tie = Tied(other, Tied.INIT, "weight")
+    def tie_weights(self, other: "LinearFactory") -> None:
+        """Share weights with ``other`` (a transposed view — same storage)."""
+        self._assert_configurable()
+        assert self._weight_init is None
 
-    def const_init_bias(self, const=0):
-        assert self.unset
-        assert self._bias_tie is None
-        self._bias_tie = Tied(torch.zeros(self.d_out) + const, Tied.TO_VALUE, "bias")
-        # assert (self.lin.weight.data.shape == other.lin.weight.data.shape) ^ (
-        #     self.lin.weight.data.shape
-        #     == other.lin.weight.data.transpose(-2, -1).shape
-        # )
-        # if self.lin.weight.data.shape == other.lin.weight.data.shape:
-        #     self.lin.weight.data[:] = other.lin.weight.data
-        # else:
-        #     self.lin.weight.data[:] = other.lin.weight.data.transpose(-2, -1)
+        def init(lin):
+            lin.weight.data = _orient(lin.weight.data, other.raw.weight.data)
 
-    @cached_property
-    def sub_bias(self) -> Sub:
-        return Sub(self.lin.bias)
+        self._weight_init = init
+
+    def untie(self) -> None:
+        """Clear any weight tie/init policy. Must precede the build."""
+        self._assert_configurable()
+        self._weight_init = None
+
+    def init_weight_to(self, value) -> None:
+        """Initialize the weight to a fixed tensor at build time.
+
+        Covers the power-user pattern of building one side, then initializing
+        the other from a tensor computed off it. Must precede the build.
+        """
+        self._assert_configurable()
+        assert self._weight_init is None
+
+        def init(lin):
+            lin.weight.data[:] = value
+
+        self._weight_init = init
+
+    def const_init_bias(self, const=0) -> None:
+        """Initialize the bias to a constant at build time."""
+        self._assert_configurable()
+        assert self._bias_init is None
+
+        def init(lin):
+            lin.bias.data[:] = const
+
+        self._bias_init = init

@@ -76,9 +76,9 @@ class ShrinkGateSae(cl.Module):
         super().__init__()
         self.cfg = cfg
         dec_mul_l1 = L1PenaltyScaledByDecoderNorm()
-        init._decoder.const_init_bias()
-        init._encoder.const_init_bias()
-        # init._encoder._bias = False
+        init.dec_builder.const_init_bias()
+        init.enc_builder.const_init_bias()
+        # init.enc_builder.bias = False
         self.prolu = PProLU(cfg.prolu_cfg, init.d_dict)
         self.det_prolu = DetProLu(cfg.det_prolu_cfg, self.prolu.bias)
 
@@ -88,11 +88,11 @@ class ShrinkGateSae(cl.Module):
         )
         self.l1 = dec_mul_l1
         self.encode_pre = Seq(
-            **useif(cfg.pre_bias, pre_bias=init._decoder.sub_bias),
+            **useif(cfg.pre_bias, pre_bias=init.decoder.sub_bias),
             encoder_linear=init.encoder.resampled(),
         )
         self.full_dec = dec_mul_l1.set_decoder(init.decoder)
-        self.gate_dec = init._decoder.detached
+        self.gate_dec = init.decoder.as_detached()
         self.gate_dec.use_bias = False
         self.steps = 0
 
@@ -147,7 +147,6 @@ def sae(
     init: Initializer,
     cfg: Config,
 ):
-    # init._encoder.add_wrapper(ReuseForward)
     model_full = ShrinkGateSae(init, cfg)
     if cfg.clip_grad:
         model_full = ClipGrad(model_full, cfg.clip_grad)

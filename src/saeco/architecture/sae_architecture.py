@@ -36,8 +36,12 @@ class Architecture[ArchConfigT: SweepableConfig](
       - ``@model_prop`` — the method that builds the core SAE
       - ``@loss_prop`` — a training loss
       - ``@aux_model_prop`` — an auxiliary model with its own losses
-      - ``setup()`` — optional hook to attach layer wrappers before the
-        model is built
+      - ``@component`` — a shared, build-once sub-module (e.g. a wrapped
+        encoder) that several of the above compose
+      - ``setup()`` — optional hook for *stateful* configuration of
+        ``self.init`` (bias presence, shape, weight tying) before anything
+        is built; layer wrappers like ``ft.NormFeatures`` are applied
+        explicitly where the layer is composed, not here
 
     From those declarations you get the training pipeline, save/load,
     sweep enumeration, and resampling for free::

@@ -30,20 +30,25 @@ class GatedConfig(SweepableConfig):
 
 class Gated(Architecture[GatedConfig]):
     def setup(self):
-        self.init._encoder.bias = False
-        self.init._encoder.add_wrapper(ReuseForward)
-        self.init._decoder.add_wrapper(ft.NormFeatures)
-        self.init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+        self.init.enc_builder.bias = False
+
+    @cached_property
+    def encoder(self):
+        return ReuseForward(self.init.encoder)
+
+    @cached_property
+    def decoder(self):
+        return ft.OrthogonalizeFeatureGrads(ft.NormFeatures(self.init.decoder))
 
     @cached_property
     def enc_mag(self):
         return Seq(
             **useif(
                 self.cfg.pre_bias,
-                pre_bias=ReuseForward(self.init._decoder.sub_bias),
+                pre_bias=ReuseForward(self.init.decoder.sub_bias),
             ),
             r_mag=cl.ops.MulParallel(
-                identity=ReuseForward(self.init.encoder),
+                identity=self.encoder,
                 exp_r=co.Lambda(
                     func=lambda x: torch.exp(x),
                     module=self.init.dict_bias(),
@@ -63,10 +68,10 @@ class Gated(Architecture[GatedConfig]):
                         left=cl.ops.Identity(), right=self.init.decoder.bias
                     ).reduce((lambda l, r: l - r.detach()))
                     if self.cfg.detach
-                    else ReuseForward(self.init._decoder.sub_bias)
+                    else ReuseForward(self.init.decoder.sub_bias)
                 ),
             ),
-            weight=ReuseForward(self.init.encoder),
+            weight=self.encoder,
             bias=self.init.new_encoder_bias(),
             nonlinearity=nn.ReLU(),
         )
@@ -80,7 +85,7 @@ class Gated(Architecture[GatedConfig]):
             ).reduce(
                 lambda x, y: x * y,
             ),
-            decoder=self.init.decoder,
+            decoder=self.decoder,
             penalty=None,
         )
 
@@ -92,7 +97,7 @@ class Gated(Architecture[GatedConfig]):
             encoder=self.enc_gate,
             freqs=EMAFreqTracker(),
             decoder=(
-                self.init._decoder.detached if self.cfg.detach else self.init.decoder
+                self.init.decoder.as_detached() if self.cfg.detach else self.decoder
             ),
         )
 
