@@ -154,7 +154,7 @@ def gate(
 
 
 import saeco.core as cl
-from saeco.components.features import FeaturesParam
+from saeco.components.features import FeaturesView, FPInfo
 from saeco.initializer import Initializer
 
 
@@ -229,7 +229,7 @@ class BinaryEncoder(cl.Module):
 
     @property
     def features(self):
-        return {"mag": FeaturesParam(self.mag, 0, "bias")}
+        return FPInfo(bias=FeaturesView(self.mag, 0))
 
 
 class GTTest(cl.Module):
@@ -265,10 +265,10 @@ class GTTest(cl.Module):
 
     @property
     def features(self):
-        return {
-            "mag": FeaturesParam(self.mag.weight, 0, "other"),
-            "mag_bias": FeaturesParam(self.mag.bias, 0, "bias"),
-        }
+        return FPInfo(
+            other=FeaturesView(self.mag.weight, 0),
+            bias=FeaturesView(self.mag.bias, 0),
+        )
 
 
 class GTMulti(cl.Module):
@@ -313,4 +313,4 @@ class GTMulti(cl.Module):
 
     @property
     def features(self):
-        return {"mag": FeaturesParam(self.mag, 0, "bias")}
+        return FPInfo(bias=FeaturesView(self.mag, 0))

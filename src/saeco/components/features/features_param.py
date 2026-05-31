@@ -1,6 +1,7 @@
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Protocol, cast, overload, runtime_checkable
 
+import attrs
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -17,7 +18,7 @@ class OptimFieldFeatures:
     def __init__(
         self,
         optim: torch.optim.Optimizer,
-        fp: "FeaturesParam",
+        fp: "FeaturesView",
         field: str | None = None,
         index=None,
     ):
@@ -85,28 +86,42 @@ class OptimFieldFeatures:
         return self.pstate.keys()
 
 
-class FeaturesParam:
-    def __init__(
-        self,
-        param: nn.Parameter,
-        feature_index,
-        feature_parameter_type: FeatureParamType | None = None,
-        resampled=True,
-        reset_optim_on_resample=True,
-    ):
-        super().__init__()
-        self.param = param
-        self.feature_index = feature_index
-        self.field_handlers = None
-        self.resampled = resampled
-        self.type: FeatureParamType | None = (
-            feature_parameter_type and FeatureParamType(feature_parameter_type)
-        )
-        self.resampler_cfg = None
-        self.reset_optim_on_resample = reset_optim_on_resample
+def _coerce_optional_fptype(
+    v: FeatureParamType | str | None,
+) -> FeatureParamType | None:
+    return None if v is None else FeatureParamType(v)
+
+
+@attrs.define(eq=False)
+class FeaturesView:
+    """A view of an ``nn.Parameter`` along its feature axis, plus the metadata
+    the resampler needs to reset that feature.
+
+    ``feature_index`` is the axis of ``param`` that enumerates features — e.g.
+    ``0`` for an encoder weight ``[d_dict, d_in]`` or a bias ``[d_dict]``, ``1``
+    for a decoder weight ``[d_in, d_dict]``. ``features`` presents ``param``
+    transposed so that axis is moved to the front, i.e. axis 0 always indexes
+    features; normalization and resampling operate on that view (and write back
+    through it, since the transpose shares storage with ``param``).
+
+    ``type`` (a :class:`FeatureParamType`) drives resampling behavior. It is not
+    set by callers — :class:`FPInfo` stamps it (via ``attrs.evolve``) from the
+    slot the view is placed in. ``field_handlers`` / ``resampler_cfg`` are
+    attached later by :meth:`set_cfg`.
+    """
+
+    param: nn.Parameter
+    feature_index: int
+    type: FeatureParamType | None = attrs.field(
+        default=None, converter=_coerce_optional_fptype
+    )
+    resampled: bool = True
+    reset_optim_on_resample: bool = True
+    field_handlers: OptimResetValues | None = None
+    resampler_cfg: object = None
 
     def __eq__(self, other) -> bool:
-        if not isinstance(other, FeaturesParam):
+        if not isinstance(other, FeaturesView):
             return False
         return (
             self.param is other.param
@@ -141,35 +156,6 @@ class FeaturesParam:
 
     def reverse_transform(self, tensor: Tensor) -> Tensor:
         return self.features_transform(tensor)
-
-    FPTYPES: type[FeatureParamType] = FeatureParamType
-    # def reset_optim_features(self, optim, feat_mask, new_directions=None):
-    #     try:
-    #         from torchlars import LARS
-
-    #         if isinstance(optim, LARS):
-    #             optim = optim.optim
-    #     except ImportError:
-    #         pass
-    #     param_state = optim.state[self.param]
-    #     fields = set(param_state.keys())
-    #     if fields & set(self.field_handlers.skips):
-    #         fields = fields - set(self.field_handlers.skips)
-    #     for field in fields:
-    #         field_state = param_state[field]
-    #         assert (
-    #             field_state.shape == self.param.shape
-    #         ), f"{field}: {field_state.shape} != {self.param.shape}"
-    #         feat_field_state = self.features_transform(field_state)
-    #         feat_field_state[feat_mask] = self.field_handlers.handlers[
-    #             field
-    #         ].get_value(
-    #             param_state=param_state,
-    #             param=self,
-    #             ft_optim_field_state=,
-    #             feat_mask=feat_mask,
-    #             new_directions=new_directions,
-    #         )
 
     @property
     def features(self) -> Tensor:  # TODO is there a name with more clarity?
@@ -249,11 +235,71 @@ class FeaturesParam:
             )
 
 
-def get_featuresparams(model: nn.Module) -> set[FeaturesParam]:
-    l: set[FeaturesParam] = set()
+@attrs.define
+class FPInfo:
+    """The feature parameters a :class:`HasFeatures` module exposes, grouped by
+    :class:`FeatureParamType`.
+
+    One optional slot per type. The slot a :class:`FeaturesView` lands in *is*
+    its type: on construction each present view is replaced by a typed copy
+    (``attrs.evolve``) — the caller's object is never mutated — so call sites no
+    longer pass a type at all; a view that already carries a conflicting type is
+    a loud error. A module that genuinely needs two params of one type cannot
+    express it here — that is intentional (fail loud), revisit the container
+    then rather than papering over it.
+    """
+
+    enc: FeaturesView | None = None
+    dec: FeaturesView | None = None
+    bias: FeaturesView | None = None
+    other: FeaturesView | None = None
+
+    def __attrs_post_init__(self):
+        # The slot a view lands in *is* its type. Rather than mutate the
+        # caller's object, replace each slot with a typed copy (attrs.evolve);
+        # a view that already carries a conflicting type is a loud error.
+        for t in FeatureParamType:
+            fp = getattr(self, t.value)
+            if fp is None:
+                continue
+            if fp.type is None:
+                setattr(self, t.value, attrs.evolve(fp, type=t))
+            elif fp.type != t:
+                raise ValueError(
+                    f"FeaturesView placed in the {t.value!r} slot already carries "
+                    f"a conflicting type {fp.type!r}"
+                )
+
+    def __iter__(self) -> Iterator[FeaturesView]:
+        for t in FeatureParamType:
+            fp = getattr(self, t.value)
+            if fp is not None:
+                yield fp
+
+    def get(self, which: FeatureParamType) -> FeaturesView:
+        which = FeatureParamType(which)
+        fp = getattr(self, which.value)
+        if fp is None:
+            raise KeyError(
+                f"No {which.value!r} feature parameter present; "
+                f"have {[t.value for t in FeatureParamType if getattr(self, t.value)]}"
+            )
+        return fp
+
+
+# Keep the container's slots and the type enum in lockstep: adding a
+# FeatureParamType member without a matching slot (or vice versa) fails loudly
+# here at import rather than silently dropping that type from iteration.
+assert {f.name for f in attrs.fields(FPInfo)} == {t.value for t in FeatureParamType}, (
+    "FPInfo slots must match FeatureParamType members exactly"
+)
+
+
+def get_featuresparams(model: nn.Module) -> set[FeaturesView]:
+    l: set[FeaturesView] = set()
     for m in model.modules():
         if isinstance(m, HasFeatures):
-            l |= set(m.features.values())
+            l |= set(m.features)
     d = {}
     for fp in l:
         if fp.param in d:
@@ -276,4 +322,4 @@ def get_resampled_params(model: nn.Module):
 @runtime_checkable
 class HasFeatures(Protocol):
     @property
-    def features(self) -> dict[str, FeaturesParam]: ...
+    def features(self) -> FPInfo: ...

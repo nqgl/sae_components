@@ -153,8 +153,8 @@ class ShrinkGateSae(cl.Module):
         if self.steps > 700:
             return
         wl = [
-            self.encode_pre.encoder_linear.features["weight"],
-            self.full_dec.features["weight"],
+            self.encode_pre.encoder_linear.features.enc,
+            self.full_dec.features.dec,
         ]
         for w in wl:
             norm = w.features.norm(dim=1, keepdim=True)

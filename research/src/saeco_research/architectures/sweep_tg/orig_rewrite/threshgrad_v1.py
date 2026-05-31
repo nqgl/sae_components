@@ -9,7 +9,7 @@ from torch import Tensor
 from torch.amp.autocast_mode import custom_bwd, custom_fwd
 
 import saeco.core as cl
-from saeco.components.features import FeaturesParam
+from saeco.components.features import FeaturesView, FPInfo
 from saeco.components.penalties.l0targeter import L0Targeting
 from saeco.components.penalties.penalty import Penalty
 from saeco.initializer import Initializer
@@ -432,10 +432,10 @@ class ThreshGate(cl.Module):
     def features(self):
         if self.cfg.mag_weights:
             assert isinstance(self.mag, nn.Linear)
-            return {
-                "mag": FeaturesParam(self.mag.weight, 0, "other"),
-                "mag_bias": FeaturesParam(self.mag.bias, 0, "bias"),
-            }
+            return FPInfo(
+                other=FeaturesView(self.mag.weight, 0),
+                bias=FeaturesView(self.mag.bias, 0),
+            )
         else:
             assert isinstance(self.mag, Mag)
-            return {"mag_bias": FeaturesParam(self.mag.mag, 0, "bias")}
+            return FPInfo(bias=FeaturesView(self.mag.mag, 0))

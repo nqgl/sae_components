@@ -3,9 +3,11 @@ from saeco.components.hooks.feature_hooks import (
     OrthogonalizeFeatureGrads,
 )
 
-from .features import EncoderBias, Resamplable
+from .features import EncoderBias, SupportsResample
 from .features_param import (
-    FeaturesParam,
+    FeatureParamType,
+    FeaturesView,
+    FPInfo,
     HasFeatures,
     get_featuresparams,
     get_resampled_params,
@@ -14,13 +16,15 @@ from .linear_type import LinDecoder, LinEncoder
 
 __all__ = [
     "EncoderBias",
-    "FeaturesParam",
+    "FeatureParamType",
+    "FPInfo",
+    "FeaturesView",
     "HasFeatures",
     "LinDecoder",
     "LinEncoder",
     "NormFeatures",
     "OrthogonalizeFeatureGrads",
-    "Resamplable",
+    "SupportsResample",
     "get_featuresparams",
     "get_resampled_params",
 ]

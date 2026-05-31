@@ -6,9 +6,9 @@ import torch
 import torch.nn as nn
 from pydantic import Field
 
-from saeco.components.features import Resamplable
+from saeco.components.features import SupportsResample
 from saeco.components.features.features_param import (
-    FeaturesParam,
+    FeaturesView,
     get_resampled_params,
 )
 from saeco.components.features.optim_reset import (
@@ -33,7 +33,7 @@ def find_matching_submodules(module: nn.Module, matchfn):
     return matches
 
 
-class ResampleableModule(ABC):
+class SupportsResampleModule(ABC):
     @abstractmethod
     def resample(
         self,
@@ -45,8 +45,10 @@ class ResampleableModule(ABC):
     ) -> None: ...
 
 
-def get_resampleable_modules(model: nn.Module) -> set[FeaturesParam]:
-    return find_matching_submodules(model, lambda m: isinstance(m, ResampleableModule))
+def get_supports_resample_modules(model: nn.Module) -> set[SupportsResampleModule]:
+    return find_matching_submodules(
+        model, lambda m: isinstance(m, SupportsResampleModule)
+    )
 
 
 class ResamplerConfig(SweepableConfig):
@@ -102,7 +104,7 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
         )
 
         for r in self.encs + self.decs + self.biases + self.other_types:
-            if isinstance(r, FeaturesParam):
+            if isinstance(r, FeaturesView):
                 r.set_cfg(self.cfg)
             r.resample(
                 indices=i,
@@ -138,7 +140,8 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
             else:
                 other_types.append(param)
 
-        other_types.extend(list(get_resampleable_modules(self.model)))
+        assert self.model is not None
+        other_types.extend(list(get_supports_resample_modules(self.model)))
         if self._encs is None:
             self._encs = encs
         if self._decs is None:
@@ -156,28 +159,28 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
         return ft
 
     @property
-    def encs(self) -> list[Resamplable]:
+    def encs(self) -> list[SupportsResample]:
         if self._encs is None:
             self.setup_resample_types()
         assert self._encs is not None
         return self._encs
 
     @property
-    def decs(self) -> list[Resamplable]:
+    def decs(self) -> list[SupportsResample]:
         if self._decs is None:
             self.setup_resample_types()
         assert self._decs is not None
         return self._decs
 
     @property
-    def biases(self) -> list[Resamplable]:
+    def biases(self) -> list[SupportsResample]:
         if self._biases is None:
             self.setup_resample_types()
         assert self._biases is not None
         return self._biases
 
     @property
-    def other_types(self) -> list[Resamplable]:
+    def other_types(self) -> list[SupportsResample]:
         if self._other_types is None:
             self.setup_resample_types()
         assert self._other_types is not None

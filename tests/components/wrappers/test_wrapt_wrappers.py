@@ -201,7 +201,7 @@ def test_norm_features_wrapper_normalizes_decoder_features():
 
     do_post_step(model)
 
-    norms = lin.features["weight"].features.norm(dim=-1)
+    norms = lin.features.dec.features.norm(dim=-1)
     assert torch.allclose(norms, torch.ones_like(norms))
 
 
@@ -212,7 +212,7 @@ def test_orthogonalize_feature_grads_wrapper_removes_radial_grad_component():
     model(torch.randn(5, 3)).sum().backward()
     do_post_backward(model)
 
-    fp = lin.features["weight"]
+    fp = lin.features.dec
     dec_normed = fp.features / fp.features.norm(dim=-1, keepdim=True)
     radial_grad = (fp.grad * dec_normed).sum(dim=-1)
     assert torch.allclose(radial_grad, torch.zeros_like(radial_grad), atol=1e-5)
@@ -240,11 +240,11 @@ def test_factory_add_wrapper_partial_binding():
 
     with torch.no_grad():
         decoder.weight.mul_(0.1)
-    pre = decoder.features["weight"].features.norm(dim=-1).clone()
+    pre = decoder.features.dec.features.norm(dim=-1).clone()
 
     do_post_step(decoder)
 
-    post = decoder.features["weight"].features.norm(dim=-1)
+    post = decoder.features.dec.features.norm(dim=-1)
     assert torch.allclose(pre, post)
 
 

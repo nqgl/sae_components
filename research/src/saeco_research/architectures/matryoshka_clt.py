@@ -9,7 +9,8 @@ from saeco.architecture import loss_prop, model_prop
 from saeco.architecture.sae import SAE
 from saeco.architecture.sae_architecture import Architecture
 from saeco.components import Lambda, Loss, SparsityPenaltyLoss
-from saeco.components.features.features_param import FeaturesParam
+from saeco.components.features import FPInfo
+from saeco.components.features.features_param import FeaturesView
 from saeco.components.ops import Indexer
 from saeco.components.sae_cache import SAECache
 from saeco.core import Seq
@@ -88,13 +89,12 @@ class SplittableDecoder(cl.Module):
 
     @cached_property
     def features(self):
-        return {
-            "weight": FeaturesParam(
+        return FPInfo(
+            dec=FeaturesView(
                 self.weight,
                 feature_index=0,
-                feature_parameter_type=FeaturesParam.FPTYPES.dec,
             ),
-        }
+        )
 
 
 class AddSplitDecoderBias(cl.Module):

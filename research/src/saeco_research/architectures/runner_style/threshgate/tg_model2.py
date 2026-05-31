@@ -381,7 +381,7 @@ class MultiGate(cl.Module):
         return out
 
 
-class MGFeaturesParam(ft.FeaturesParam):
+class MGFeaturesParam(ft.FeaturesView):
     def __init__(
         self,
         param: nn.Parameter,
@@ -399,7 +399,7 @@ def zero_normal_enc_bias_only_fn_factory(encoder: co.LinEncoder, d_dict):
     @co.ops.Lambda
     @torch.no_grad()
     def zero_normal_enc_bias_only(x):
-        encoder.features["bias"].features[:d_dict].zero_()
+        encoder.features.bias.features[:d_dict].zero_()
         return x
 
     return zero_normal_enc_bias_only

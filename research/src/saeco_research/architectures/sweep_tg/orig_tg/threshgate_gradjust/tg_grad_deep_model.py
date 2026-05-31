@@ -34,17 +34,17 @@ def mlp_layer(
     if isinstance(nonlinearity, type):
         nonlinearity = nonlinearity()
     proj_in = OtherLinear(nn.Linear(d_in, d_hidden), weight_param_index=1)
-    proj_in.features["bias"].resampled = False
+    proj_in.features.bias.resampled = False
     proj_out = OtherLinear(nn.Linear(d_hidden, d_out), weight_param_index=1)
-    proj_out.features["weight"].resampled = False
+    proj_out.features.other.resampled = False
     if no_resample:
-        proj_out.features["bias"].resampled = False
-        proj_in.features["weight"].resampled = False
+        proj_out.features.bias.resampled = False
+        proj_in.features.other.resampled = False
 
     if normalize:
-        proj_in = ft.NormFeatures(proj_in, index="weight", ord=2, max_only=True)
+        proj_in = ft.NormFeatures(proj_in, which="other", norm_ord=2, max_only=True)
 
-        proj_out = ft.NormFeatures(proj_out, index="weight", ord=2, max_only=True)
+        proj_out = ft.NormFeatures(proj_out, which="other", norm_ord=2, max_only=True)
 
     return Seq(proj_in=proj_in, nonlinearity=nonlinearity, proj_out=proj_out)
 

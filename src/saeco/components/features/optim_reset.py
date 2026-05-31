@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from saeco.sweeps import SweepableConfig
 
 if TYPE_CHECKING:
-    from saeco.components.features.features_param import FeaturesParam
+    from saeco.components.features.features_param import FeaturesView
 
 
 class OptimFieldResetValue(ABC):
@@ -17,7 +17,7 @@ class OptimFieldResetValue(ABC):
     @abstractmethod
     def get_value(
         self,
-        param: "FeaturesParam",
+        param: "FeaturesView",
         ft_optim_field_state,
         feat_mask,
         new_directions,  # maybe add field name?
@@ -30,7 +30,7 @@ class ResetToConst(OptimFieldResetValue):
 
     def get_value(
         self,
-        param: "FeaturesParam",
+        param: "FeaturesView",
         ft_optim_field_state,
         feat_mask,
         new_directions,
@@ -41,7 +41,7 @@ class ResetToConst(OptimFieldResetValue):
 class ResetToDirections(OptimFieldResetValue):
     def get_value(
         self,
-        param: "FeaturesParam",
+        param: "FeaturesView",
         ft_optim_field_state,
         feat_mask,
         new_directions,
@@ -57,7 +57,7 @@ class ResetToDirections(OptimFieldResetValue):
 class ResetToMean(OptimFieldResetValue):
     def get_value(
         self,
-        param: "FeaturesParam",
+        param: "FeaturesView",
         ft_optim_field_state,
         feat_mask,
         new_directions,
@@ -70,7 +70,7 @@ class ResetToMean(OptimFieldResetValue):
 class ResetToAxisMean(OptimFieldResetValue):
     def get_value(
         self,
-        param: "FeaturesParam",
+        param: "FeaturesView",
         ft_optim_field_state,
         feat_mask,
         new_directions,
@@ -86,7 +86,7 @@ class ResetToAxisMean(OptimFieldResetValue):
 class OptimFieldResetSqMeanFeatAx(OptimFieldResetValue):
     def get_value(
         self,
-        param: "FeaturesParam",
+        param: "FeaturesView",
         ft_optim_field_state,
         feat_mask,
         new_directions,
@@ -102,7 +102,7 @@ class OptimFieldResetSqMeanFeatAx(OptimFieldResetValue):
 class OptimFieldResetSqMean(OptimFieldResetValue):
     def get_value(
         self,
-        param: "FeaturesParam",
+        param: "FeaturesView",
         ft_optim_field_state,
         feat_mask,
         new_directions,

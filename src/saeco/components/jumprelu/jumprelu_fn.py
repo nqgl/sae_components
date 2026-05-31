@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 import saeco.core as cl
-from saeco.components.features import FeaturesParam
+from saeco.components.features import FeaturesView, FPInfo
 from saeco.components.jumprelu.kernels_fns import rect
 from saeco.components.penalties import Penalty
 
@@ -204,10 +204,4 @@ class JumpReLU(cl.Module):
 
     @property
     def features(self):
-        return {
-            "thresh": FeaturesParam(
-                self.thresh,
-                feature_index=0,
-                feature_parameter_type="bias",
-            )
-        }
+        return FPInfo(bias=FeaturesView(self.thresh, feature_index=0))

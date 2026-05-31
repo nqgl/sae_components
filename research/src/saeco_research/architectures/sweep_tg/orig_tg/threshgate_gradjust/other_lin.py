@@ -1,12 +1,14 @@
 from functools import cached_property
 
+import attrs
 import torch
 from torch.optim.optimizer import Optimizer as Optimizer
 
 import saeco.components.features as ft
 
 
-class RandResampledFP(ft.FeaturesParam):
+@attrs.define(eq=False)
+class RandResampledFP(ft.FeaturesView):
     @torch.no_grad()
     def resample(self, *, indices, new_directions, bias_reset_value, optim: Optimizer):
         avg_other_norm = 1
@@ -46,13 +48,7 @@ class OtherLinear(ft.LinWeights):
 
     @cached_property
     def features(self):
-        return {
-            "weight": RandResampledFP(
-                self.get_weight(), self.weight_param_index, fptype="other"
-            ),
-            **(
-                {"bias": ft.FeaturesParam(self.get_bias(), 0, fptype="bias")}
-                if self.bias is not None
-                else {}
-            ),
-        }
+        return ft.FPInfo(
+            other=RandResampledFP(self.get_weight(), self.weight_param_index),
+            bias=(None if self.bias is None else ft.FeaturesView(self.get_bias(), 0)),
+        )

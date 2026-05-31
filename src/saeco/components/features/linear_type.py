@@ -4,7 +4,7 @@ from typing import Self
 import torch.nn as nn
 from torch import Tensor
 
-from saeco.components.features.features_param import FeaturesParam
+from saeco.components.features.features_param import FeaturesView, FPInfo
 
 
 class LinWeightsMixin:
@@ -13,47 +13,33 @@ class LinWeightsMixin:
     bias: nn.Parameter | None
 
     @cached_property
-    def features(self) -> dict[str, FeaturesParam]: ...
+    def features(self) -> FPInfo: ...
 
     def get_bias(self):
         return self.bias
 
     def set_resampled(self, resample=True) -> Self:
-        for _k, fp in self.features.items():
+        for fp in self.features:
             fp.resampled = resample
         return self
 
 
 class LinDecoderMixin(LinWeightsMixin):
     @cached_property
-    def features(self) -> dict[str, FeaturesParam]:
+    def features(self) -> FPInfo:
         # bias is excluded for decoder because it cannot be indexed by feature
-        return {
-            "weight": FeaturesParam(
-                self.weight,
-                feature_index=1,
-                feature_parameter_type=FeaturesParam.FPTYPES.dec,
-            )
-        }
+        return FPInfo(dec=FeaturesView(self.weight, feature_index=1))
 
 
 class LinEncoderMixin(LinWeightsMixin):
     @cached_property
-    def features(self) -> dict[str, FeaturesParam]:
-        d = {
-            "weight": FeaturesParam(
-                self.weight,
-                feature_index=0,
-                feature_parameter_type=FeaturesParam.FPTYPES.enc,
+    def features(self) -> FPInfo:
+        return FPInfo(
+            enc=FeaturesView(self.weight, feature_index=0),
+            bias=(
+                None if self.bias is None else FeaturesView(self.bias, feature_index=0)
             ),
-        }
-        if self.bias is not None:
-            d["bias"] = FeaturesParam(
-                self.bias,
-                feature_index=0,
-                feature_parameter_type=FeaturesParam.FPTYPES.bias,
-            )
-        return d
+        )
 
 
 class LinEncoder(LinEncoderMixin, nn.Linear):

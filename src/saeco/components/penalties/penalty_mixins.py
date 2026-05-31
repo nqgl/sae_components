@@ -18,7 +18,7 @@ class ActsScaledByDecoderNormPenaltyMixin:
 
     def set_decoder(self, decoder):
         assert self.decoder is None
-        self.decoder = decoder.features["weight"]
+        self.decoder = decoder.features.dec
         return decoder
 
 

@@ -18,8 +18,9 @@ from saeco.components import (
     LinearDecayL1Penalty,
     SparsityPenaltyLoss,
 )
+from saeco.components.features import FPInfo
 from saeco.components.features.optim_reset import FeatureParamType
-from saeco.components.resampling.resampler import ResampleableModule
+from saeco.components.resampling.resampler import SupportsResampleModule
 from saeco.components.type_acc_methods import post_step_hook
 from saeco.core import Seq
 from saeco.initializer import Initializer
@@ -77,7 +78,7 @@ def log(x):
         return math.log(x)
 
 
-class Thresholder(cl.Module, ResampleableModule):
+class Thresholder(cl.Module, SupportsResampleModule):
     thresh_values: torch.Tensor
     thresh_value_momentum: torch.Tensor
 
@@ -111,14 +112,13 @@ class Thresholder(cl.Module, ResampleableModule):
 
     @property
     def features(self):
-        return {
-            "thresh_values": ft.FeaturesParam(
+        return FPInfo(
+            bias=ft.FeaturesView(
                 self.thresh_values,
                 feature_index=0,
-                feature_parameter_type=FeatureParamType.bias,
                 reset_optim_on_resample=False,
             )
-        }
+        )
 
     # def register_freq_tracker(self, ft):
     #     assert self.freqs is None

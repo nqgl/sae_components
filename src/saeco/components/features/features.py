@@ -4,12 +4,16 @@ from warnings import deprecated
 import torch.nn as nn
 
 import saeco.core as cl
-from saeco.components.features.features_param import FeaturesParam, HasFeatures
+from saeco.components.features.features_param import (
+    FeaturesView,
+    FPInfo,
+    HasFeatures,
+)
 from saeco.components.wrap import WrapsModule
 
 
 @runtime_checkable
-class Resamplable(Protocol):
+class SupportsResample(Protocol):
     def resample(self, *, indices, new_directions, bias_reset_value, optim): ...
 
 
@@ -36,11 +40,5 @@ class EncoderBias(WrapsModule[HasFeaturesModule]):
         return ResampledBias(self)
 
     @property
-    def features(self) -> dict[str, FeaturesParam]:
-        return {
-            "bias": FeaturesParam(
-                self.__wrapped__.bias,
-                feature_index=0,
-                feature_parameter_type=FeaturesParam.FPTYPES.bias,
-            )
-        }
+    def features(self) -> FPInfo:
+        return FPInfo(bias=FeaturesView(self.__wrapped__.bias, feature_index=0))

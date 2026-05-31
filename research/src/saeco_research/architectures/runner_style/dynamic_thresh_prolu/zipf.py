@@ -112,11 +112,10 @@ class Thresholder(cl.Module):
 
     @property
     def features(self):
-        return dict(
-            thresh_values=ft.FeaturesParam(
+        return ft.FPInfo(
+            bias=ft.FeaturesView(
                 self.thresh_values,
                 feature_index=0,
-                feature_parameter_type="bias",
                 reset_optim_on_resample=False,
             )
         )

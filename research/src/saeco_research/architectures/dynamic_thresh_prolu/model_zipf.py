@@ -17,6 +17,7 @@ from saeco.components import (
     LinearDecayL1Penalty,
     SparsityPenaltyLoss,
 )
+from saeco.components.features import FPInfo
 from saeco.components.metrics.metrics import PreActMetrics
 from saeco.components.type_acc_methods import post_step_hook
 from saeco.core import Seq
@@ -116,11 +117,10 @@ class Thresholder(cl.Module):
 
     @property
     def features(self):
-        return dict(
-            thresh_values=ft.FeaturesParam(
+        return FPInfo(
+            bias=ft.FeaturesView(
                 self.thresh_values,
                 feature_index=0,
-                feature_parameter_type="bias",
                 reset_optim_on_resample=False,
             )
         )

@@ -74,7 +74,8 @@ def paramaterized_prolu(cfg: ProLUConfig):
 
 from collections.abc import Callable
 
-from saeco.components.features.features_param import FeaturesParam
+from saeco.components.features import FPInfo
+from saeco.components.features.features_param import FeaturesView
 from saeco.core import Module
 
 
@@ -99,12 +100,8 @@ class PProLU(Module):
         return self.prolu(m, self.bias)
 
     @property
-    def features(self) -> dict[str, FeaturesParam]:
-        return {
-            "bias": FeaturesParam(
-                self.bias, feature_index=0, feature_parameter_type="bias"
-            )
-        }
+    def features(self) -> FPInfo:
+        return FPInfo(bias=FeaturesView(self.bias, feature_index=0))
 
 
 ProLU.STE = ProLU_STE

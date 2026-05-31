@@ -22,7 +22,7 @@ from torch.amp.autocast_mode import custom_bwd, custom_fwd
 import saeco.core as cl
 from saeco.architecture.sae import SAE
 from saeco.architecture.sae_architecture import Architecture
-from saeco.components.features import FeaturesParam
+from saeco.components.features import FeaturesView, FPInfo
 from saeco.components.penalties.l0targeter import L0Targeting
 from saeco.initializer import Initializer
 from saeco.sweeps import SweepableConfig
@@ -338,8 +338,8 @@ class BinaryEncoder(cl.Module):
         return base_leniency
 
     @property
-    def features(self) -> dict[str, FeaturesParam]:
-        return {"mag": FeaturesParam(self.mag, 0, "bias")}
+    def features(self) -> FPInfo:
+        return FPInfo(bias=FeaturesView(self.mag, 0))
 
 
 class GTTest(cl.Module):
@@ -381,11 +381,11 @@ class GTTest(cl.Module):
         return out
 
     @property
-    def features(self) -> dict[str, FeaturesParam]:
-        return {
-            "mag": FeaturesParam(self.mag_layer.weight, 0, "other"),
-            "mag_bias": FeaturesParam(self.mag_layer.bias, 0, "bias"),
-        }
+    def features(self) -> FPInfo:
+        return FPInfo(
+            other=FeaturesView(self.mag_layer.weight, 0),
+            bias=FeaturesView(self.mag_layer.bias, 0),
+        )
 
 
 class GTMulti(cl.Module):
@@ -452,8 +452,8 @@ class GTMulti(cl.Module):
         )
 
     @property
-    def features(self) -> dict[str, FeaturesParam]:
-        return {"mag": FeaturesParam(self.mag, 0, "bias")}
+    def features(self) -> FPInfo:
+        return FPInfo(bias=FeaturesView(self.mag, 0))
 
 
 # =============================================================================
