@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, overload
 
 import torch
-from paramsight import get_args_at_base, takes_alias
+from paramsight import TypeVarValue
 
 from saeco.architecture.arch_storage_paths import ArchStoragePaths
 from saeco.sweeps import SweepableConfig
@@ -13,7 +13,7 @@ if typing.TYPE_CHECKING:
     from saeco.sweeps.newsweeper import SweepManager
 
 
-class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
+class ArchitectureBase[RunConfigT: SweepableConfig]:
     """Base architecture protocol for sweepable run configs.
 
     This class intentionally owns only config instantiation, reload/save metadata,
@@ -26,6 +26,9 @@ class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
     - run_training()
 
     """
+
+    # Resolves this subclass's RunConfigT; raises on the bare/unspecialized base.
+    config_class = TypeVarValue[RunConfigT]()
 
     def __init__(
         self,
@@ -60,23 +63,6 @@ class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
         ``@component`` / ``@model_prop`` bodies, not here. Defaults to a no-op,
         so architectures with no stateful configuration can omit it.
         """
-
-    @takes_alias
-    @classmethod
-    def get_config_class(cls) -> type[RunConfigT]:
-        if cls is ArchitectureBase:
-            raise ValueError(
-                "ArchitectureBase class must not be generic to get config class"
-            )
-        try:
-            (config_class,) = get_args_at_base(cls, ArchitectureBase)
-        except Exception as e:
-            raise ValueError("Failed in config class lookup") from e
-        if isinstance(config_class, typing.TypeVar):
-            raise ValueError(
-                "ArchitectureBase class must not be generic to get config class"
-            )
-        return config_class
 
     def _save_weights_by_default(self) -> bool:
         return False

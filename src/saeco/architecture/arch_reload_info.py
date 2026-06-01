@@ -56,7 +56,7 @@ class ArchRef[T: SweepableConfig](BaseModel):
         if xcls is not None and arch in xcls.mro():
             arch = xcls
 
-        config_class = arch.get_config_class()
+        config_class = arch.config_class
         archref_cls = cls[config_class]
         return archref_cls.model_validate(d)
 

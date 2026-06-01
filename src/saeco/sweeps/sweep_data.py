@@ -19,8 +19,8 @@ class SweepData[T: SweepableConfig = SweepableConfig](BaseModel):
         cls, arch: ArchitectureBase, sweep_id: str, project: str | None = None
     ) -> "SweepData":
         arch_ref = ArchRef.from_arch(arch)
-        # arch_ref.class_ref.get_arch_class().get_arch_config_class()
-        return cls[arch_ref.class_ref.get_arch_class().get_config_class()](
+        # arch_ref.class_ref.get_arch_class().arch_config_class
+        return cls[arch_ref.class_ref.get_arch_class().config_class](
             root_arch_ref=arch_ref.model_dump(),
             sweep_id=sweep_id,
             project=project,
@@ -32,7 +32,7 @@ class SweepData[T: SweepableConfig = SweepableConfig](BaseModel):
     ) -> "SweepData":
         arch_ref = ArchRef.from_arch(arch)
         sweep_id = mlog.create_sweep(arch_ref.config.to_swept_nodes, project=project)
-        return cls[arch_ref.class_ref.get_arch_class().get_config_class()](
+        return cls[arch_ref.class_ref.get_arch_class().config_class](
             root_arch_ref=arch_ref.model_dump(),
             sweep_id=sweep_id,
             project=project,
@@ -44,7 +44,7 @@ class SweepData[T: SweepableConfig = SweepableConfig](BaseModel):
         arch_json = data["root_arch_ref"]
         arch_ref = ArchRef.from_json(arch_json)
         return cls[
-            arch_ref.class_ref.get_arch_class().get_config_class()
+            arch_ref.class_ref.get_arch_class().config_class
         ].model_validate_json(path.read_text())
 
     def get_sweep_number(self, name: str = "") -> int:

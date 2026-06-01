@@ -65,7 +65,7 @@ if __name__ == "__main__":
     # *instantiate* an architecture you need a RunConfig (which bundles the
     # train config, resampler config, init config, and arch config). See
     # examples/train_vanilla_sae.py for the full pipeline.
-    config_class = MyVanillaSAE.get_arch_config_class()
+    config_class = MyVanillaSAE.arch_config_class
     print(f"Architecture class: {MyVanillaSAE.__name__}")
     print(f"  config class:     {getattr(config_class, '__name__', config_class)}")
     print(f"  config fields:    {list(MyVanillaConfig.model_fields)}")

@@ -1,9 +1,8 @@
-import typing
 from functools import cached_property
 from typing import Any
 
 import torch
-from paramsight import get_args_at_base, takes_alias
+from paramsight import TypeVarValue
 from torch import nn
 
 from saeco.architecture.arch_prop import (
@@ -62,6 +61,9 @@ class Architecture[ArchConfigT: SweepableConfig](
     ``Initializer`` (parameter factories sized from ``init_cfg``).
     """
 
+    # Resolves this subclass's inner ArchConfigT; raises on the bare base.
+    arch_config_class = TypeVarValue[ArchConfigT]()
+
     # run_cfg: RunConfig[ArchConfigT]
 
     def __init__(
@@ -77,20 +79,6 @@ class Architecture[ArchConfigT: SweepableConfig](
     @property
     def cfg(self) -> ArchConfigT:
         return self.run_cfg.arch_cfg
-
-    @takes_alias
-    @classmethod
-    def get_arch_config_class(cls):
-        if cls is Architecture:
-            raise ValueError(
-                "Architecture class must not be generic to get config class"
-            )
-        config_class = get_args_at_base(cls, Architecture)[0]
-        if isinstance(config_class, typing.TypeVar):
-            raise ValueError(
-                "Architecture class must not be generic to get config class"
-            )
-        return config_class
 
     @cached_property
     def _core_model(self) -> SAE:

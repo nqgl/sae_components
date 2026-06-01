@@ -16,17 +16,18 @@ from saeco.trainer.run_config import RunConfig
 
 
 def test_vanilla_config_classes():
-    assert VanillaSAE.get_arch_config_class() is VanillaConfig
-    assert VanillaSAE.get_config_class() == RunConfig[VanillaConfig]
+    assert VanillaSAE.arch_config_class is VanillaConfig
+    assert VanillaSAE.config_class == RunConfig[VanillaConfig]
 
 
 def test_gated_config_classes():
-    assert Gated.get_arch_config_class() is GatedConfig
-    assert Gated.get_config_class() == RunConfig[GatedConfig]
+    assert Gated.arch_config_class is GatedConfig
+    assert Gated.config_class == RunConfig[GatedConfig]
 
 
 def test_bare_base_does_not_resolve():
-    # An unspecialized ArchitectureBase has no concrete RunConfigT, so resolving
-    # its config class must fail rather than silently return a placeholder.
+    # An unspecialized ArchitectureBase has no concrete RunConfigT (and no
+    # typevar default), so resolving its config class must fail rather than
+    # silently return a placeholder.
     with pytest.raises((ValueError, LookupError)):
-        ArchitectureBase.get_config_class()
+        _ = ArchitectureBase.config_class

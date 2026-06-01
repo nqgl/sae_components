@@ -6,7 +6,7 @@ from weakref import WeakValueDictionary
 import paramsight
 import torch
 from attrs import define, field
-from paramsight import get_resolved_typevars_for_base, takes_alias
+from paramsight import get_args_at_base, takes_alias
 
 from saeco.data.storage.compressed_safetensors import CompressionType
 from saeco.data.storage.disk_tensor import DiskTensor
@@ -62,7 +62,7 @@ class DiskTensorCollection[
     @takes_alias
     @classmethod
     def get_disk_tensor_cls(cls) -> type[DiskTensorType]:
-        base = get_resolved_typevars_for_base(cls, DiskTensorCollection)[0]
+        base = get_args_at_base(cls, DiskTensorCollection)[0]
         assert base is not None
         return cast("type[DiskTensorType]", base)
 

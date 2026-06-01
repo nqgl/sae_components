@@ -7,7 +7,7 @@ from weakref import WeakValueDictionary
 import paramsight
 import torch
 from attrs import define, field
-from paramsight import get_resolved_typevars_for_base, takes_alias
+from paramsight import get_args_at_base, takes_alias
 from pydantic import BaseModel
 
 from saeco.misc import str_to_dtype
@@ -68,7 +68,7 @@ class DiskTensor[MetadataT: DiskTensorMetadata = DiskTensorMetadata]:
     @takes_alias
     @classmethod
     def get_metadata_cls(cls) -> type[MetadataT]:
-        base = get_resolved_typevars_for_base(cls, DiskTensor)[0]
+        base = get_args_at_base(cls, DiskTensor)[0]
         assert base is not None
         return cast("type[MetadataT]", base)
 
