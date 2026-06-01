@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 
 from saeco.components.wrap import WrapsModule
 from saeco.core.cache import Cache
