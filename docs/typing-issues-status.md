@@ -47,9 +47,14 @@ Quotes are preserved verbatim where they carry the decision.
   >> applied because you'd rather delete the logic via GenericBaseModel — re-surface
   >> when you start that pass and I'll write the serialization regression tests first.
 
+  >>> paraphrased: greenlit as the next pass — you'll paint a specific picture of the
+  >>> GenericBaseModel approach (and field questions) once I raise them. Note paramsight
+  >>> does not export `GenericBaseModel` yet, so this is blocked on that feature + your
+  >>> picture — see my questions in-channel.
+
 ### Medium priority
 
-- **`TypeVarValue` switch for `get_config_class` / `get_arch_config_class`** —
+- **✅ RESOLVED this round — `TypeVarValue` switch for `get_config_class` / `get_arch_config_class`** (tests `fcb87f0`, switch `a005009`) —
   [`architecture.py:66`](../src/saeco/architecture/architecture.py#L66),
   [`sae_architecture.py:83`](../src/saeco/architecture/sae_architecture.py#L83).
   > yes you can go forward with the switch to TypeVarValue, do this in it's own pass/commit though.
@@ -69,7 +74,21 @@ Quotes are preserved verbatim where they carry the decision.
   >> return-the-default, or `None` (`TypeVarValueOption`)? Once you pick, this is a
   >> contained ~2-function + 4-caller pass. (paramsight is mid-change on the editable
   >> install — I'll verify against it when we do this.)
+  
+  >>>Oh to be clear, it will return the default if there is a default, not raise. If there is no default and there is no value
+  >>>set for the typevar *then* it will raise.
+  >>>So yeah just go to get_config_class->config_class and in the class definition we do config_class=TypeVarValue[RunConfigT]
 
+  >>> AH I now understand what you're saying: That ArchitectureBase.config_class will fail to raise with this approach. I think
+  >>>the fix is straightforward and also makes things more correct anyway: we can just remove the default. It seems to me like
+  >>>it probably shouldn't be there and isn't expected to be there by anything else
+
+  >> **Done** (`fcb87f0` regression tests, `a005009` switch): `config_class = TypeVarValue[RunConfigT]()`
+  >> on `ArchitectureBase` and `arch_config_class = TypeVarValue[ArchConfigT]()` on `Architecture`;
+  >> the `RunConfigT` default was removed so the bare base raises `LookupError` (preserving the guard).
+  >> 4 call sites + the `define_architecture` example migrated; the disk_tensor `get_args_at_base`
+  >> rename completed too. Regression tests (VanillaSAE/Gated resolved types + bare-base raise) green.
+  
 - **`SupportsResample.resample` Protocol contract** —
   [`features.py:17`](../src/saeco/components/features/features.py#L17). `FeaturesView.resample`
   handles `new_directions` as `Tensor` *or* `tuple[Tensor, Tensor]` while
@@ -164,6 +183,33 @@ own change):
 
 ---
 
+## 2b. Inbox follow-ups (from `typing-issues-todos_misc_inbox.md`)
+
+New requests dropped mid-round — tracked here, not yet implemented.
+
+- **`Loss.loss(x, y, y_pred, cache)` — type `x`/`y`/`y_pred`.**
+  >>> paraphrased: can we get types on x, y, y_pred on the loss methods?
+  >> Doable and small: in the L2 / Cosine implementations these are `torch.Tensor`
+  >> (input acts, target, reconstruction). Will confirm against the `Loss` base + all
+  >> overrides/callers (incl. research) before pinning.
+
+- **`TruncatedLoss`: mixin → wrapper.**
+  >>> paraphrased: do `TruncatedLoss` as a wrapper that wraps a loss rather than a
+  >>> mixin — likely "less nasty".
+  >> A design refactor (behavioral structure, not just typing). Worth doing; I'd scope
+  >> the wrapper shape and confirm before changing behavior — flag if you want it now.
+
+- **`Lambda.__init__` — `module` / `func` types.**
+  >>> paraphrased: `module` looks like it could be `Module | None` (verify?); `func`
+  >>> looks like `Callable[[Tensor | DictBatch], Tensor | DictBatch]`.
+  >> **Verified — `module` is NOT `Module | None`:** `Lambda.forward` explicitly
+  >> dispatches on `nn.Parameter` (a Tensor subclass, *not* an `nn.Module` — e.g.
+  >> `co.Lambda(lambda x: x.detach(), self.mag)`) plus a final arbitrary-callable
+  >> branch, so the honest type is `nn.Module | nn.Parameter | Callable[..., Any] | None`.
+  >> `func` ≈ your proposal, but note it is also called with `module(x)`'s output, not
+  >> only the forward input; `Callable[[Tensor | DictBatch], Tensor | DictBatch]` is a
+  >> reasonable (slightly loose) choice.
+
 ## 3. Ignore / leave-as-is (deliberate, no action)
 
 - **Arch-prop methods** (`VanillaSAE.model`/`L2_loss`/… + gated) — inference
@@ -181,7 +227,17 @@ own change):
 
 ---
 
-## 4. Resolved this round  (commit `62cb1ed`)
+## 4. Resolved this round  (commits `62cb1ed`, `fcb87f0`, `a005009`)
+
+### Architecture config-class → `TypeVarValue` descriptors (`fcb87f0` tests, `a005009`)
+`get_config_class()` / `get_arch_config_class()` methods replaced by descriptors
+`ArchitectureBase.config_class = TypeVarValue[RunConfigT]()` and
+`Architecture.arch_config_class = TypeVarValue[ArchConfigT]()`; `RunConfigT` default
+removed so the bare base raises `LookupError`. Callers (arch_reload_info, sweep_data)
++ the define_architecture example migrated; `get_resolved_typevars_for_base` →
+`get_args_at_base` completed in disk_tensor{,_collection}. Regression tests pin the
+resolved types and the bare-base raise.
+
 
 Condensed; full original rationale per item is in
 [`typing-issues-to-review_reviewed.md`](typing-issues-to-review_reviewed.md).
