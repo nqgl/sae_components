@@ -29,6 +29,11 @@ class ArchRef[ConfigT: SweepableConfig, ArchT: ArchitectureBase](GenericBaseMode
 
     @classmethod
     def from_arch(cls, arch: "ArchitectureBase[Any]") -> "ArchRef[Any, Any]":
+        # ``type(arch.run_cfg)`` rather than ``arch.config_class``: it captures the
+        # *actual* stored config type (faithful if it's ever a RunConfig subclass),
+        # and — because pydantic puts each specialization on ``__class__`` — it keeps
+        # the full ``RunConfig[T]`` (no generic loss). The two are identical whenever
+        # the config matches the arch's declared type, which is every current case.
         return cls[type(arch.run_cfg), type(arch)](config=arch.run_cfg)
 
     def load_arch(
