@@ -32,11 +32,9 @@ Quotes are preserved verbatim where they carry the decision.
   >> adjusting `get_sweep_number`'s return + its other caller — a real logic
   >> decision, not an annotation. Likely folds into the GenericBaseModel pass below.
 
-- **`ArchRef` / `SweepData` → paramsight `GenericBaseModel` refactor** (own pass +
-  regression tests). Covers
-  [`from_json`](../src/saeco/architecture/arch_reload_info.py#L53),
-  [`get_src`](../src/saeco/architecture/arch_reload_info.py#L15), and the
-  runtime-specialization plumbing written pre-paramsight.
+- **✅ RESOLVED — `ArchRef` / `SweepData` → paramsight `GenericBaseModel` refactor** (tests `054ad87`, switch `0cddc87`). Covered
+  [`from_json`](../src/saeco/architecture/arch_reload_info.py),
+  `get_src`, `ArchClassRef`, and the runtime-specialization plumbing — all removed. (Details in §4. The `SweepData.sweep_id` int/str bug under §2 was **not** touched — still deferred.)
   > Yeah I think SweepData, ArchRef, etc could maybe be made into a GenericBaseModel
   > and then a lot of this logic could just be removed. When we do this, it should be
   > its own pass and we should add regression tests for all of these serialization
@@ -227,7 +225,18 @@ New requests dropped mid-round — tracked here, not yet implemented.
 
 ---
 
-## 4. Resolved this round  (commits `62cb1ed`, `fcb87f0`, `a005009`)
+## 4. Resolved this round  (commits `62cb1ed`, `fcb87f0`, `a005009`, `054ad87`, `0cddc87`)
+
+### `ArchRef` / `SweepData` → `GenericBaseModel` (`054ad87` tests, `0cddc87`)
+`ArchRef[ConfigT, ArchT]` and `SweepData[ConfigT, ArchT]` are now
+`paramsight.GenericBaseModel` subclasses, so both type args (the run-config type
+and the Architecture class) round-trip through JSON automatically. `ArchClassRef`,
+`get_src`, and `ArchRef.from_json` are removed; the arch class is carried as the
+`ArchT` generic param, recovered via the `cfg_t`/`arch_t` `TypeVarValue` descriptors;
+deserialize is `model_validate_json` (GBM reconstructs the specialization). `xcls`
+override kept explicit in `load_arch`; `sweep_data`/`sweep_runner` call sites
+rewritten to the new accessors. The nested-generic arg (`RunConfig[VanillaConfig]`)
+round-trips correctly. Regression tests pin config-type preservation + `.load`.
 
 ### Architecture config-class → `TypeVarValue` descriptors (`fcb87f0` tests, `a005009`)
 `get_config_class()` / `get_arch_config_class()` methods replaced by descriptors
