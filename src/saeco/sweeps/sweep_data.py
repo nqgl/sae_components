@@ -1,7 +1,6 @@
-import json
 from pathlib import Path
 
-from pydantic import BaseModel
+from paramsight.generic_restored_basemodel.generic_basemodel import GenericBaseModel
 
 from saeco.architecture import ArchitectureBase
 from saeco.architecture.arch_reload_info import ArchRef
@@ -9,8 +8,11 @@ from saeco.mlog import mlog
 from saeco.sweeps import SweepableConfig
 
 
-class SweepData[T: SweepableConfig = SweepableConfig](BaseModel):
-    root_arch_ref: ArchRef[T]
+class SweepData[
+    ConfigT: SweepableConfig = SweepableConfig,
+    ArchT: ArchitectureBase = ArchitectureBase,
+](GenericBaseModel):
+    root_arch_ref: ArchRef[ConfigT, ArchT]
     sweep_id: str | None = None
     project: str | None = None
 
@@ -19,9 +21,8 @@ class SweepData[T: SweepableConfig = SweepableConfig](BaseModel):
         cls, arch: ArchitectureBase, sweep_id: str, project: str | None = None
     ) -> "SweepData":
         arch_ref = ArchRef.from_arch(arch)
-        # arch_ref.class_ref.get_arch_class().arch_config_class
-        return cls[arch_ref.class_ref.get_arch_class().config_class](
-            root_arch_ref=arch_ref.model_dump(),
+        return cls[arch_ref.cfg_t, arch_ref.arch_t](
+            root_arch_ref=arch_ref,
             sweep_id=sweep_id,
             project=project,
         )
@@ -32,20 +33,17 @@ class SweepData[T: SweepableConfig = SweepableConfig](BaseModel):
     ) -> "SweepData":
         arch_ref = ArchRef.from_arch(arch)
         sweep_id = mlog.create_sweep(arch_ref.config.to_swept_nodes, project=project)
-        return cls[arch_ref.class_ref.get_arch_class().config_class](
-            root_arch_ref=arch_ref.model_dump(),
+        return cls[arch_ref.cfg_t, arch_ref.arch_t](
+            root_arch_ref=arch_ref,
             sweep_id=sweep_id,
             project=project,
         )
 
     @classmethod
     def load(cls, path: Path) -> "SweepData":
-        data = json.loads(path.read_text())
-        arch_json = data["root_arch_ref"]
-        arch_ref = ArchRef.from_json(arch_json)
-        return cls[
-            arch_ref.class_ref.get_arch_class().config_class
-        ].model_validate_json(path.read_text())
+        # GenericBaseModel reconstructs the SweepData[...] specialization from the
+        # carried generic_type.
+        return cls.model_validate_json(path.read_text())
 
     def get_sweep_number(self, name: str = "") -> int:
         proj = Path(f"./sweeprefs/{self.project}")

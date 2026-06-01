@@ -1,64 +1,35 @@
-import importlib
-import inspect
-import json
 from pathlib import Path
-from types import get_original_bases
-from typing import Any, Self
+from typing import Any, ClassVar
 
-from paramsight.generic_restored_basemodel.typeref import ObjRef
-from pydantic import BaseModel, Field
+from paramsight import TypeVarValue
+from paramsight.generic_restored_basemodel.generic_basemodel import GenericBaseModel
 
 from saeco.architecture.architecture import ArchitectureBase
 from saeco.sweeps import SweepableConfig
 
 
-def get_src(obj):
-    if obj.__module__ == "builtins":
-        return "builtins"
-    module = importlib.import_module(obj.__module__)
-    return inspect.getsource(module)
+class ArchRef[ConfigT: SweepableConfig, ArchT: ArchitectureBase](GenericBaseModel):
+    """Serializable reference to an architecture + its run config.
 
+    A :class:`GenericBaseModel`, so the type arguments — the run-config type
+    ``ConfigT`` and the architecture class ``ArchT`` — round-trip through JSON
+    automatically (no hand-rolled class-ref / re-derivation). ``cfg_t`` / ``arch_t``
+    recover them from a (de)serialized instance.
+    """
 
-class ArchClassRef(ObjRef[type[ArchitectureBase]]):
-    @classmethod
-    def from_arch(cls, arch: "ArchitectureBase[Any]") -> "ArchClassRef":
-        return cls.from_obj(arch.__class__)
-
-    def get_arch_class(self, assert_unchanged: bool = False) -> type[ArchitectureBase]:
-        return self.get_obj(strict=assert_unchanged)
-
-
-class ArchRef[T: SweepableConfig](BaseModel):
-    class_ref: ArchClassRef
-    config: T = Field()
+    config: ConfigT
+    cfg_t: ClassVar = TypeVarValue[ConfigT]()
+    arch_t: ClassVar = TypeVarValue[ArchT]()
 
     @classmethod
-    def open(
-        cls, path: Path, xcls: "type[ArchitectureBase[Any]] | None" = None
-    ) -> Self:
-        try:
-            bases = get_original_bases(cls)
-            if hasattr(bases[0], "__args__") and bases[0].__args__[0] is not T:
-                raise ValueError(
-                    f"ArchRef {cls} should not be specialized when opening "
-                    f"a stored archref\n"
-                    f"in the future, we may implement validation to the specialized "
-                    f"value when loading an ArchRef"
-                )
-        except AttributeError:
-            pass
-        return cls.from_json(json.loads(path.read_text()), xcls=xcls)
+    def open(cls, path: Path) -> "ArchRef[Any, Any]":
+        # GenericBaseModel reconstructs the right ArchRef[...] specialization from
+        # the carried generic_type; no need to pre-specialize when opening.
+        return cls.model_validate_json(path.read_text())
 
     @classmethod
-    def from_json(cls, d: dict, xcls: "type[ArchitectureBase[Any]] | None" = None):
-        arch = ArchClassRef.model_validate(d["class_ref"]).get_arch_class()
-
-        if xcls is not None and arch in xcls.mro():
-            arch = xcls
-
-        config_class = arch.config_class
-        archref_cls = cls[config_class]
-        return archref_cls.model_validate(d)
+    def from_arch(cls, arch: "ArchitectureBase[Any]") -> "ArchRef[Any, Any]":
+        return cls[type(arch.run_cfg), type(arch)](config=arch.run_cfg)
 
     def load_arch(
         self,
@@ -66,7 +37,7 @@ class ArchRef[T: SweepableConfig](BaseModel):
         device="cuda",
         xcls: "type[ArchitectureBase[Any]] | None" = None,
     ) -> "ArchitectureBase[Any]":
-        arch_cls = self.class_ref.get_arch_class()
+        arch_cls: type[ArchitectureBase[Any]] = self.arch_t
         if xcls is not None:
             if arch_cls in xcls.mro():
                 arch_cls = xcls
@@ -75,13 +46,6 @@ class ArchRef[T: SweepableConfig](BaseModel):
             else:
                 raise ValueError(f"xcls {xcls} is not a subclass of {arch_cls}")
         return arch_cls(self.config, state_dict=state_dict, device=device)
-
-    @classmethod
-    def from_arch(cls, arch: "ArchitectureBase[T]") -> "ArchRef[T]":
-        return cls(
-            class_ref=ArchClassRef.from_arch(arch),
-            config=arch.run_cfg,
-        )
 
     def save(self, path: Path):
         path.write_text(self.model_dump_json())

@@ -17,7 +17,7 @@ class SweepRunner:
 
     @property
     def run_name(self):
-        run_name = f"{self.sweep_data.root_arch_ref.class_ref.obj_name}"
+        run_name = f"{self.sweep_data.root_arch_ref.arch_t.__name__}"
         if self.sweep_index is not None:
             run_name = f"{run_name}_{self.sweep_index}"
         return f"{self.sweep_data.sweep_id}:{run_name}"

@@ -8,8 +8,6 @@ type ``RunConfig[VanillaConfig]`` and equals the original, and ``load`` still
 reconstructs the right Architecture class (the ``xcls`` override capability).
 """
 
-import json
-
 from saeco import InitConfig, RunConfig, TrainConfig
 from saeco.architecture.arch_reload_info import ArchRef
 from saeco.architectures.vanilla import VanillaConfig, VanillaSAE
@@ -34,15 +32,18 @@ def _make_arch() -> VanillaSAE:
 def test_archref_roundtrip_preserves_config_type():
     arch = _make_arch()
     ref = ArchRef.from_arch(arch)
-    back = ArchRef.from_json(json.loads(ref.model_dump_json()))
+    back = ArchRef.model_validate_json(ref.model_dump_json())
     assert back.config == ref.config
     assert back.config.__class__ is RunConfig[VanillaConfig]
+    # ArchT round-trips: the descriptors recover both type args.
+    assert back.arch_t is VanillaSAE
+    assert back.cfg_t is RunConfig[VanillaConfig]
 
 
 def test_sweepdata_roundtrip_preserves_config_type():
     arch = _make_arch()
     sd = SweepData.from_arch_and_id(arch, sweep_id="s1", project="p")
-    back = type(sd).model_validate_json(sd.model_dump_json())
+    back = SweepData.model_validate_json(sd.model_dump_json())
     assert back.sweep_id == "s1"
     assert back.root_arch_ref.config == sd.root_arch_ref.config
     assert back.root_arch_ref.config.__class__ is RunConfig[VanillaConfig]

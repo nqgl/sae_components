@@ -65,7 +65,7 @@ class ArchStoragePaths(BaseModel):
                     f"weights do not exist at {self.model_weights}, "
                     "but load_weights is set"
                 )
-        arch_ref = ArchRef.open(self.arch_ref, xcls=xcls)
+        arch_ref = ArchRef.open(self.arch_ref)
         arch_inst = arch_ref.load_arch(state_dict=state_dict, device=device, xcls=xcls)
         return arch_inst
 
