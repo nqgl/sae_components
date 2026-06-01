@@ -92,7 +92,7 @@ class RunSchedulingConfig(SweepableConfig):
         return True
 
     @assert_wrapped
-    def tosteps(self, n: int | float, period: int = None) -> int:
+    def tosteps(self, n: int | float, period: int | None = None) -> int:
         # some values will be expressed as either
         # a number of steps
         # or a fraction of some period, default run length

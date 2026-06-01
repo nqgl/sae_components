@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class OptimFieldResetValue(ABC):
-    def __init__(self, num=1):
+    def __init__(self, num: float = 1):
         self.num = num
 
     @abstractmethod
@@ -25,7 +25,7 @@ class OptimFieldResetValue(ABC):
 
 
 class ResetToConst(OptimFieldResetValue):
-    def __init__(self, num=0):
+    def __init__(self, num: float = 0):
         super().__init__(num)
 
     def get_value(

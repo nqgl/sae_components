@@ -21,7 +21,13 @@ class Initializer:
     (``tied_init``); the weights are independent thereafter.
     """
 
-    def __init__(self, d_data, d_dict=None, dict_mult=None, l0_target=None):
+    def __init__(
+        self,
+        d_data: int,
+        d_dict: int | None = None,
+        dict_mult: int | float | None = None,
+        l0_target: int | float | None = None,
+    ):
         self.d_data = d_data
         d_dict = d_dict or int(d_data * dict_mult)
         self.d_dict = d_dict
@@ -102,14 +108,14 @@ class Initializer:
         assert isinstance(dec, LinDecoder)
         return dec
 
-    def bias(self, d, name=None):
+    def bias(self, d: int, name: str | None = None) -> nn.Parameter:
         return nn.Parameter(torch.zeros(d))
 
-    def dict_bias(self):
+    def dict_bias(self) -> nn.Parameter:
         return self.bias(self.d_dict)
 
-    def new_encoder_bias(self):
+    def new_encoder_bias(self) -> co.EncoderBias:
         return co.EncoderBias(Add(self.bias(self.d_dict)))
 
-    def new_decoder_bias(self):
+    def new_decoder_bias(self) -> nn.Parameter:
         return self.bias(self.d_data)

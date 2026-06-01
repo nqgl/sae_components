@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from functools import cached_property
 from typing import Self
 
@@ -86,7 +87,7 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
 
     def get_reset_feature_directions(self, num_directions, data_source, model): ...  # noqa: B027  # optional hook; default no-op
 
-    def resample(self, data_source: iter, optimizer: torch.optim.Optimizer, model):
+    def resample(self, data_source: Iterator, optimizer: torch.optim.Optimizer, model):
         i = self.get_feature_indices_to_reset()
         d = self.get_reset_feature_directions(
             num_directions=sum(i) if i.dtype is torch.bool else len(i),

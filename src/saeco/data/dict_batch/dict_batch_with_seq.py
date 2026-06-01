@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import ClassVar
+from typing import ClassVar, Self
 
 import torch
 
@@ -29,7 +29,7 @@ class DictBatchWithSeq(DictBatch):
         self,
         perm: torch.Tensor,
         non_seq_tensors: tuple[str, ...] | list[str] | None = None,
-    ):
+    ) -> Self:
         def gather(t: torch.Tensor) -> torch.Tensor:
             return t.gather(dim=1, index=expand_to(perm, t).expand_as(t))
 
@@ -39,7 +39,7 @@ class DictBatchWithSeq(DictBatch):
         self,
         indexer: torch.Tensor | slice | int,
         non_seq_tensors: tuple[str, ...] | list[str] | None = None,
-    ):
+    ) -> Self:
         def index(t: torch.Tensor) -> torch.Tensor:
             return t[:, indexer]
 
@@ -51,7 +51,7 @@ class DictBatchWithSeq(DictBatch):
         *,
         non_seq_func: Callable[[torch.Tensor], torch.Tensor] = lambda x: x,
         non_seq_tensors: tuple[str, ...] | list[str] | None = None,
-    ):
+    ) -> Self:
         non_seq_tensors = self._get_non_seq_tensors(non_seq_tensors)
         split = self.set_split(non_seq_tensors)
         split.a = split.a.apply_func(non_seq_func)

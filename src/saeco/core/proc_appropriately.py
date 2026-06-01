@@ -8,7 +8,7 @@ from saeco.misc.exception_location_hint import locate_cache_exception
 
 # TODO unify/merge this and cache.__call__
 # either merge, or make the behaviors identical to avoid inconsistent behavioir
-def proc_appropriately(module, name, x, cache: Cache, **kwargs):
+def proc_appropriately(module, name: str, x, cache: Cache, **kwargs):
     try:
         if isinstance(module, Module) or (
             isinstance(module, torch._dynamo.eval_frame.OptimizedModule)

@@ -1,5 +1,5 @@
 import traceback
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from functools import cached_property
 from typing import cast
@@ -118,7 +118,7 @@ class Trainer:
             split=self.cfg.data_cfg.testsplit
         ).get_tokens()
 
-    def get_l0_target(self):
+    def get_l0_target(self) -> Callable[[], float] | None:
         if self.cfg.l0_target is None:
             return None
 
@@ -127,7 +127,7 @@ class Trainer:
 
         return target
 
-    def get_lr_lambda(self):
+    def get_lr_lambda(self) -> Callable[[int], float]:
         if self.cfg.use_schedulefree:
 
             def lrl(epoch):
@@ -165,7 +165,7 @@ class Trainer:
     def log(self, d):
         mlog.log(d, step=self.t + self.log_t_offset)
 
-    def coeffs(self):
+    def coeffs(self) -> dict[str, float]:
         return self.cfg.coeffs
 
     @contextmanager
@@ -200,7 +200,7 @@ class Trainer:
                 )
             self.log({"dynamic_sparsity_coeff": self.cfg.coeffs["sparsity_loss"]})
 
-    def make_cache(self, eval_mode: bool = False):
+    def make_cache(self, eval_mode: bool = False) -> TrainCache:
         cache = TrainCache()
         cache._watch(self.trainable.get_losses_and_metrics_names())
         cache.trainer = ...

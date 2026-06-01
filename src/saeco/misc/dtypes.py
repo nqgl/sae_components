@@ -54,7 +54,7 @@ def str_to_dtype(dtype: str, strict: bool = False) -> torch.dtype:
     return S2D[dtype]
 
 
-def main():
+def main() -> None:
     for d in DTYPES_DEDUPLICATED:
         assert str_to_dtype(str(d)) == d
 

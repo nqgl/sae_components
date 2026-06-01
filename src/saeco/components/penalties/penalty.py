@@ -5,7 +5,7 @@ from saeco.components.sae_cache import SAECache
 
 
 class Penalty(cl.PassThroughModule):
-    def process_data(self, x, *, cache: SAECache, **kwargs):
+    def process_data(self, x, *, cache: SAECache, **kwargs) -> None:
         cache.sparsity_penalty = self.penalty(x, cache=cache)
 
     @abstractmethod

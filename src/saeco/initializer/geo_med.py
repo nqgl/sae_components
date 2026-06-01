@@ -1,9 +1,10 @@
 import torch
+from torch import Tensor
 
 from saeco.core import Cache
 
 
-def geometric_median(x, eps=1e-5, max_iter=100):
+def geometric_median(x: Tensor, eps: float = 1e-5, max_iter: int = 100) -> Tensor:
     """
     x: (batch, n, d)
     """
@@ -18,7 +19,7 @@ def geometric_median(x, eps=1e-5, max_iter=100):
     return y.squeeze(0)
 
 
-def getmed(buf, normalizer, num_batches=10):
+def getmed(buf, normalizer, num_batches: int = 10) -> Tensor:
     big_batch = torch.cat(
         [
             normalizer.normalize(next(buf), cache=Cache())[0].float()
@@ -33,7 +34,7 @@ def getmed(buf, normalizer, num_batches=10):
     return med
 
 
-def getmean(buf, normalizer, num_batches=10):
+def getmean(buf, normalizer, num_batches: int = 10) -> Tensor:
     big_batch = torch.cat(
         [
             normalizer.normalize(next(buf), cache=Cache())[0].float()

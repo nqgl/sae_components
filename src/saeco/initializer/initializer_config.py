@@ -13,5 +13,5 @@ class InitConfig(SweepableConfig):
     dict_mult: int | float = 8
 
     @property
-    def d_dict(self):
+    def d_dict(self) -> int:
         return int(self.d_data * self.dict_mult)

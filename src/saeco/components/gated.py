@@ -105,15 +105,15 @@ class ClassicGated(Gated):
         super().__init__(gate=enc_gate, mag=enc_mag)
 
 
-def hl2ll(hl, bf):
+def hl2ll(hl: torch.Tensor, bf: int) -> torch.Tensor:
     return einops.repeat(hl, "b i -> b (i bf)", bf=bf)
 
 
-def struc(ll, bf):
+def struc(ll: torch.Tensor, bf: int) -> torch.Tensor:
     return einops.rearrange(ll, "b (i bf) -> b i bf", bf=bf)
 
 
-def unstruc(ll):
+def unstruc(ll: torch.Tensor) -> torch.Tensor:
     return einops.rearrange(ll, "b i bf -> b (i bf)")
 
 
@@ -152,11 +152,11 @@ class SafeNormalized(cl.Module):
         return out
 
 
-def l1norm(structured):
+def l1norm(structured: torch.Tensor) -> torch.Tensor:
     return structured.sum(dim=-1, keepdim=True)
 
 
-def l2norm(structured):
+def l2norm(structured: torch.Tensor) -> torch.Tensor:
     return structured.norm(dim=-1, keepdim=True)
 
 

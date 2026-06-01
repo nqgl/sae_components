@@ -9,7 +9,7 @@ class L0Targeting(cl.PassThroughModule):
         self.increment = increment
         self.mult = multiplicative
 
-    def process_data(self, x, *, cache):
+    def process_data(self, x, *, cache) -> None:
         l0 = (x != 0).sum(dim=-1).float().mean(0).sum()
 
         incr = self.increment

@@ -99,5 +99,5 @@ class SAE(cl.Seq):
             # denormalizer=...
         )
 
-    def set_to_aux_model(self, aux_name: str):
+    def set_to_aux_model(self, aux_name: str) -> None:
         self.acts.name = aux_name

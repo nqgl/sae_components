@@ -19,7 +19,7 @@ class SweepFile(Protocol):
 
 
 class Sweeper:
-    def __init__(self, path, module_name="sweepfile"):
+    def __init__(self, path: str | Path, module_name: str = "sweepfile") -> None:
         module_name = module_name.replace(".py", "")
         self.path = Path(path)
         pkg = str(self.path).split("src/")[-1].replace("/", ".")

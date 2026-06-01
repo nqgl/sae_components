@@ -9,6 +9,9 @@ from paramsight import get_resolved_typevars_for_base, takes_alias
 from saeco.architecture.arch_storage_paths import ArchStoragePaths
 from saeco.sweeps import SweepableConfig
 
+if typing.TYPE_CHECKING:
+    from saeco.sweeps.newsweeper import SweepManager
+
 
 class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
     """Base architecture protocol for sweepable run configs.
@@ -129,7 +132,7 @@ class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
     @abstractmethod
     def run_training(self): ...
 
-    def get_sweep_manager(self, ezpod_group=None):
+    def get_sweep_manager(self, ezpod_group: str | None = None) -> "SweepManager":
         from saeco.sweeps.newsweeper import SweepManager
 
         return SweepManager(self, ezpod_group=ezpod_group)

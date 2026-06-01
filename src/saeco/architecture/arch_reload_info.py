@@ -24,7 +24,7 @@ class ArchClassRef(ObjRef[type[ArchitectureBase]]):
     def from_arch(cls, arch: "ArchitectureBase[Any]") -> "ArchClassRef":
         return cls.from_obj(arch.__class__)
 
-    def get_arch_class(self, assert_unchanged: bool = False):
+    def get_arch_class(self, assert_unchanged: bool = False) -> type[ArchitectureBase]:
         return self.get_obj(strict=assert_unchanged)
 
 
@@ -65,7 +65,7 @@ class ArchRef[T: SweepableConfig](BaseModel):
         state_dict=None,
         device="cuda",
         xcls: "type[ArchitectureBase[Any]] | None" = None,
-    ):
+    ) -> "ArchitectureBase[Any]":
         arch_cls = self.class_ref.get_arch_class()
         if xcls is not None:
             if arch_cls in xcls.mro():

@@ -10,7 +10,7 @@ T = TypeVar("T")
 
 
 class CacheHas:
-    def __init__(self, cache):
+    def __init__(self, cache: "Cache"):
         self._cache: Cache = cache
 
     def __getattribute__(self, _name: str) -> Any:
@@ -20,7 +20,7 @@ class CacheHas:
 
 
 class CacheWatching:
-    def __init__(self, cache):
+    def __init__(self, cache: "Cache"):
         self._cache: Cache = cache
 
     def __getattribute__(self, _name: str) -> Any:
@@ -483,7 +483,7 @@ class Cache:
 
 
 class SubCacher:
-    def __init__(self, cache, obj, record=False, force_watch=None):
+    def __init__(self, cache: "Cache", obj, record=False, force_watch=None):
         self._cache: Cache = cache
         self._obj = obj
         self._record = record or force_watch

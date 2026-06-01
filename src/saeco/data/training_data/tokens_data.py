@@ -43,11 +43,11 @@ class TokensData(TokensDataInterface[torch.Tensor]):
         return data
 
     @property
-    def dataset_document_length(self):
+    def dataset_document_length(self) -> int:
         return self.src_dataset_data.shape[1]
 
     @property
-    def seq_len(self):
+    def seq_len(self) -> int:
         return self.cfg.seq_len or self.dataset_document_length
 
     @cached_property

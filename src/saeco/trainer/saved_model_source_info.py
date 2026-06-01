@@ -1,5 +1,6 @@
 import importlib
 import inspect
+from collections.abc import Callable
 from warnings import deprecated
 
 from pydantic import BaseModel
@@ -21,7 +22,7 @@ class ModelReloadInfo(BaseModel):
     cfg_name: str = "cfg"
 
     @classmethod
-    def from_model_fn(cls, model_fn: callable) -> "ModelReloadInfo":
+    def from_model_fn(cls, model_fn: Callable) -> "ModelReloadInfo":
         return cls(
             module=model_fn.__module__,
             fn_name=model_fn.__name__,

@@ -131,7 +131,7 @@ class Architecture[ArchConfigT: SweepableConfig](
             self._trainable = self.make_trainable().to(device=self.device)
         return self._trainable
 
-    def make_trainable(self):
+    def make_trainable(self) -> Trainable:
         if not self._instantiated:
             self.instantiate()
         trainable = Trainable(
@@ -145,7 +145,7 @@ class Architecture[ArchConfigT: SweepableConfig](
             print("loaded state dict into trainable:", load_result)
         return trainable
 
-    def make_resampler(self):
+    def make_resampler(self) -> AnthResampler:
         resampler = AnthResampler(self.run_cfg.resampler_config)
         resampler.assign_model(self._core_model)
         return resampler
@@ -174,7 +174,7 @@ class Architecture[ArchConfigT: SweepableConfig](
         return normalizer
 
     @cached_property
-    def trainer(self):
+    def trainer(self) -> Trainer:
         trainer = Trainer(
             self.run_cfg.train_cfg,
             run_cfg=self.run_cfg,

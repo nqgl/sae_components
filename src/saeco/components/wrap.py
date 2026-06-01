@@ -1,4 +1,5 @@
-from typing import cast
+from collections.abc import Callable
+from typing import Self, cast
 
 import torch.nn as nn
 import wrapt
@@ -16,7 +17,7 @@ class WrapsModule[T: nn.Module = nn.Module](wrapt.CallableObjectProxy[T]):
     def __init__(self, wrapped: T):
         super().__init__(wrapped)
 
-    def apply(self, fn):
+    def apply(self, fn: Callable[[nn.Module], None]) -> Self:
         for module in self.__wrapped__.children():
             module.apply(fn)
         fn(self)

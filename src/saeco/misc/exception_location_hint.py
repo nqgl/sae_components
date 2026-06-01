@@ -1,7 +1,7 @@
 CE_STR = "Exception Cache Location Info: Last tracked subcache was "
 
 
-def locate_cache_exception(e, cache, name=None):
+def locate_cache_exception(e: Exception, cache, name: str | None = None) -> Exception:
     if name is None:
         name = ""
     else:

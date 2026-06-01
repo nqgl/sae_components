@@ -1,3 +1,4 @@
+from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Any
 
 import einops
@@ -199,7 +200,11 @@ class ActsDataCreator:
 
         return acts.to(self.cfg.model_cfg.acts_cfg.storage_dtype)
 
-    def acts_generator_from_tokens_generator(self, inputs_generator, llm_batch_size):
+    def acts_generator_from_tokens_generator(
+        self,
+        inputs_generator: Iterable[DictBatch | torch.Tensor],
+        llm_batch_size: int,
+    ) -> Iterator[DictBatch]:
         for tokens in inputs_generator:
             acts = self.to_acts(tokens, llm_batch_size=llm_batch_size)
             yield acts
@@ -212,14 +217,14 @@ class ActsDataReader:
     def acts_generator(
         self,
         split: SplitConfig,
-        batch_size,
+        batch_size: int,
         nsteps=None,
-        worker_id=None,
-        nw=None,
+        worker_id: int | None = None,
+        nw: int | None = None,
         prog_bar=False,
         target_sites: list[str] | None = None,
         input_sites: list[str] | None = None,
-    ):
+    ) -> Iterator[SAETrainBatch]:
         assert self.cfg._acts_piles_path(split).exists()
         if not (worker_id == nw is None or worker_id is not None and nw is not None):
             raise ValueError(
@@ -261,7 +266,7 @@ class ActsDataset(torch.utils.data.IterableDataset):
         self.input_sites = input_sites
         self.target_sites = target_sites
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[SAETrainBatch]:
         worker_info = torch.utils.data.get_worker_info()
 
         if worker_info is None:

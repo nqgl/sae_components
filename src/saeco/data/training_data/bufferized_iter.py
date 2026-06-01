@@ -1,4 +1,11 @@
-def bufferized_iter(it, queue_size=32, getnext=next):
+from collections.abc import Callable, Iterator
+
+
+def bufferized_iter[T](
+    it: Iterator[T],
+    queue_size: int = 32,
+    getnext: Callable[[Iterator[T]], T] = next,
+) -> Iterator[T]:
     queue = [getnext(it) for _ in range(queue_size)]
 
     def qbuf():

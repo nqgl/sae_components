@@ -9,10 +9,10 @@ class ThreshGate(nn.Module):
     def forward(self, acts, gate_acts: torch.Tensor):
         return acts.relu() * self.gate(gate_acts)
 
-    def gate(self, gate_acts):
+    def gate(self, gate_acts: torch.Tensor) -> torch.Tensor:
         return gate_acts > 0
 
-    def soft_gate(self, gate_acts):
+    def soft_gate(self, gate_acts: torch.Tensor) -> torch.Tensor:
         return torch.sigmoid(gate_acts)
 
 

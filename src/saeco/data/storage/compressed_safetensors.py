@@ -54,7 +54,7 @@ def load_file_compressed(
 def load_file_with_metadata(
     filename: str | os.PathLike,
     device: torch.device | str = "cpu",
-):
+) -> tuple[dict[str, torch.Tensor], dict[str, str] | None]:
     result = {}
 
     with safe_open(filename, framework="pt", device=device) as f:

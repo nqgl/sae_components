@@ -223,11 +223,11 @@ class Trainable(cl.Module):
         return acts
 
     @make_cache_optional
-    def encode(self, x, cache: Cache = None):
+    def encode(self, x: torch.Tensor, cache: Cache | None = None) -> torch.Tensor:
         x, shape = self.rearrange(x)
         return self.dearrange(cache(self).encode_only(x), shape)
 
     @make_cache_optional
-    def decode(self, x, cache: Cache = None):
+    def decode(self, x: torch.Tensor, cache: Cache | None = None) -> torch.Tensor:
         x, shape = self.rearrange(x)
         return self.dearrange(cache(self).decode_only(x), shape)

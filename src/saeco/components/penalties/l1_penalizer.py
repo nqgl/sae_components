@@ -10,7 +10,7 @@ class L1Penalty(Penalty):
         super().__init__()
         self.scale = scale
 
-    def penalty(self, x, *, cache):
+    def penalty(self, x, *, cache) -> Tensor:
         return x.abs().mean(dim=0).sum() * self.scale
 
 
@@ -22,7 +22,7 @@ class LinearDecayL1Penalty(Penalty):
         self.end = end
         self.end_scale = end_scale
 
-    def penalty(self, x, *, cache):
+    def penalty(self, x, *, cache) -> Tensor:
         if not cache._ancestor.has.trainstep:
             return torch.zeros(1).sum().to(x.device, x.dtype)
         step = cache._ancestor.trainstep
@@ -47,7 +47,7 @@ class L1PenaltyScaledByDecoderNorm(Penalty):
         if decoder is not None:
             self.set_decoder(decoder)
 
-    def penalty(self, x, *, cache):
+    def penalty(self, x, *, cache) -> Tensor:
         mean_act = x.mean(dim=0)
         dec_norms = self.decoder.features[:].norm(dim=1)
         if self.det_dec_norms:
@@ -68,7 +68,7 @@ class L0TargetingL1Penalty(Penalty):
         self.target = target
         self.increment = increment
 
-    def penalty(self, x, *, cache):
+    def penalty(self, x, *, cache) -> Tensor:
         return x.abs().mean(dim=0).sum() * self.scale
 
     def update_l0(self, x: Tensor):

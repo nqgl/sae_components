@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any, Literal, cast, overload
 from weakref import WeakValueDictionary
@@ -131,7 +131,7 @@ class DiskTensorCollection[
     def __contains__(self, name: str) -> bool:
         return name in self.keys()
 
-    def keys(self):
+    def keys(self) -> list[str]:
         return sorted(
             set(self.cache.keys())
             | {
@@ -141,7 +141,7 @@ class DiskTensorCollection[
             }
         )
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         return iter(self.keys())
 
     @overload
@@ -166,7 +166,7 @@ class DiskTensorCollection[
         else:
             return [self.get(name).tensor for name in self.keys()]
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.keys())
 
 

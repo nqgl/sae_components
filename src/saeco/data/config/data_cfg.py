@@ -95,7 +95,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
         extra_strs += self.tokenization.idstr_fragment()
         return f"{self.dataset.replace('/', '_')}_{extra_strs}_{self.set_bos}"
 
-    def _get_tokens_split_path(self, split: SplitConfig):
+    def _get_tokens_split_path(self, split: SplitConfig) -> Path:
         return (
             DATA_DIRS._CHUNKS_DIR
             / self.idstr()
@@ -104,7 +104,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
             / "tokens"
         )
 
-    def _get_acts_split_path(self, split: SplitConfig):
+    def _get_acts_split_path(self, split: SplitConfig) -> Path:
         return (
             DATA_DIRS._CHUNKS_DIR
             / self.idstr()
@@ -230,7 +230,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
 
         return dl
 
-    def getsplit(self, split: str):
+    def getsplit(self, split: str) -> SplitConfig:
         return getattr(self, f"{split}split")
 
     def load_dataset_from_split(self, split: SplitConfig, to_torch=True):

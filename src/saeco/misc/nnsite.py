@@ -43,7 +43,7 @@ ROOT = "transformer"
 # ROOT = "model"
 
 
-def tlsite_to_nnsite(tl_name):
+def tlsite_to_nnsite(tl_name: str) -> str:
     while any(k in tl_name for k in translations.keys()):
         for k, v in translations.items():
             tl_name = tl_name.replace(k, v)

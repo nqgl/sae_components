@@ -27,7 +27,7 @@ class Loss(cl.Module):
 
 
 class L2Loss(Loss):
-    def loss(self, x, y, y_pred, cache: SAECache):
+    def loss(self, x, y, y_pred, cache: SAECache) -> torch.Tensor:
         return torch.mean((y - y_pred) ** 2)
 
 
@@ -50,7 +50,7 @@ class SparsityPenaltyLoss(Loss):
 
 
 class CosineSimilarityLoss(Loss):
-    def loss(self, x, y, y_pred, cache: SAECache):
+    def loss(self, x, y, y_pred, cache: SAECache) -> torch.Tensor:
         return torch.cosine_similarity(y, y_pred, dim=-1).mean()
 
 

@@ -33,7 +33,7 @@ class ModelConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBa
             return None
         return str_to_dtype(self.torch_dtype_str)
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         assert not any(
             v in self.model_kwargs
             for v in [

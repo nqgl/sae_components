@@ -22,7 +22,7 @@ class DictPilerMetadata(BaseModel):
     keys: set[str]
 
 
-def shuffled_range(start, stop, mod, shuffle=True):
+def shuffled_range(start: int, stop: int, mod: int, shuffle: bool = True) -> list[int]:
     shrange = list(range(start, stop, mod))
     if not shuffle:
         return shrange

@@ -6,11 +6,13 @@ from saeco.core.basic_ops import Add, MatMul
 from saeco.core.reused_forward import ReuseForward
 
 
-def bias(d):
+def bias(d: int) -> nn.Parameter:
     return nn.Parameter(torch.zeros(d))
 
 
-def weight(d1, d2, scale=1.0, transpose=False):
+def weight(
+    d1: int, d2: int, scale: float = 1.0, transpose: bool = False
+) -> nn.Parameter:
     if transpose:
         return nn.Parameter(
             nn.init.kaiming_uniform_(torch.empty(d2, d1)).transpose(-1, -2) * scale

@@ -619,13 +619,13 @@ class DictBatch(dict):
         return list(self.iter_tensors())
 
     # ------- device helpers (borrowed from DictBatch) -------
-    def to(self, *targets, **kwargs):
+    def to(self, *targets, **kwargs) -> Self:
         def moveto(t: Tensor) -> Tensor:
             return t.to(*targets, **kwargs)
 
         return self.apply_func(moveto)
 
-    def cuda(self, *args, **kwargs):
+    def cuda(self, *args, **kwargs) -> Self:
         return self.to("cuda", *args, **kwargs)
 
     # -------------------- cloning / contiguity -------------------------------
@@ -805,7 +805,7 @@ class DictBatch(dict):
         return merged
 
     # --------------------------- len -----------------------------------------
-    def __len__(self):
+    def __len__(self) -> int:
         return self.batch_size
 
     @property
@@ -973,7 +973,7 @@ class DictBatch(dict):
 
         return cls
 
-    def float(self):
+    def float(self) -> Self:
         return self.to(torch.float32)
 
     def items(self) -> ItemsView[str, TensorFieldTypes]:
@@ -1265,7 +1265,7 @@ class DictBatch(dict):
             start += size
         return out
 
-    def einops_rearrange(self, pattern: str, **kwargs):
+    def einops_rearrange(self, pattern: str, **kwargs) -> Self:
         import einops
 
         def rearrange(t: Tensor) -> Tensor:
