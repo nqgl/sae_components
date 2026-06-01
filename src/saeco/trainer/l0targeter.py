@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from enum import StrEnum
 from typing import Protocol
 
 import torch
@@ -396,3 +397,21 @@ TARGETER_TYPES = {
     "pid": L0Targeter,
     "gentle_basic": GentleBasicL0Targeter,
 }
+
+
+class L0TargeterType(StrEnum):
+    """Closed set of L0 targeter selectors.
+
+    Values mirror the keys of :data:`TARGETER_TYPES`; the assertion below keeps
+    the enum and the registry in sync. Members are plain strings so persisted
+    configs coerce and ``TARGETER_TYPES[value]`` lookups keep working.
+    """
+
+    basic = "basic"
+    pid = "pid"
+    gentle_basic = "gentle_basic"
+
+
+assert {t.value for t in L0TargeterType} == set(TARGETER_TYPES), (
+    "L0TargeterType members must stay in sync with TARGETER_TYPES keys"
+)

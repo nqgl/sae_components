@@ -1,8 +1,11 @@
+from collections.abc import Callable
+
 import torch
 import torch.nn as nn
 
 from saeco.core import Seq
 from saeco.core.basic_ops import Add, MatMul
+from saeco.core.module import Module
 from saeco.core.reused_forward import ReuseForward
 
 
@@ -20,10 +23,10 @@ def weight(
     return nn.Parameter(nn.init.kaiming_uniform_(torch.empty(d1, d2)) * scale)
 
 
-def reused(func):
+def reused[**P, T: Module](func: Callable[P, T]) -> Callable[P, ReuseForward[T]]:
     v = None
 
-    def f(*a, **k):
+    def f(*a: P.args, **k: P.kwargs) -> ReuseForward[T]:
         nonlocal v
         if v is None:
             v = ReuseForward(func(*a, **k))
@@ -32,7 +35,12 @@ def reused(func):
     return f
 
 
-def layer(d_in, d_out, nonlinearity=nn.LeakyReLU, scale=1.0):
+def layer(
+    d_in: int,
+    d_out: int,
+    nonlinearity: type[nn.Module] | nn.Module = nn.LeakyReLU,
+    scale: float = 1.0,
+) -> Seq:
     if nonlinearity is nn.PReLU:
         nonlinearity = nn.PReLU(d_out).cuda()
 
@@ -45,7 +53,13 @@ def layer(d_in, d_out, nonlinearity=nn.LeakyReLU, scale=1.0):
     )
 
 
-def mlp_layer(d_in, d_hidden, d_out=None, nonlinearity=nn.LeakyReLU, scale=1.0):
+def mlp_layer(
+    d_in: int,
+    d_hidden: int,
+    d_out: int | None = None,
+    nonlinearity: type[nn.Module] | nn.Module = nn.LeakyReLU,
+    scale: float = 1.0,
+) -> Seq:
     d_out = d_out or d_in
     if nonlinearity is nn.PReLU:
         nonlinearity = nn.PReLU(d_hidden).cuda()

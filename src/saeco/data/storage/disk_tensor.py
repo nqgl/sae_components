@@ -39,21 +39,6 @@ class DiskTensorMetadata(BaseModel):
         self.dtype_str = str(value)
 
 
-def tensorclass(dtype):
-    if dtype == torch.float32:
-        return torch.FloatTensor
-    elif dtype == torch.int64:
-        return torch.LongTensor
-    elif dtype == torch.bool:
-        return torch.BoolTensor
-    elif dtype == torch.float16:
-        return torch.HalfTensor
-    elif dtype == torch.bfloat16:
-        return torch.BFloat16Tensor
-    else:
-        raise ValueError(f"Unsupported dtype {dtype}")
-
-
 def _numel_from_shape(shape: Sequence[int]):
     assert all(s >= 0 for s in shape)
     if len(shape) == 0:

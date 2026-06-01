@@ -2,9 +2,11 @@ import saeco.core as cl
 
 
 class L0Targeting(cl.PassThroughModule):
-    def __init__(self, target, scale=1.0, increment=0.0003, multiplicative=True):
+    def __init__(
+        self, target, scale: float = 1.0, increment=0.0003, multiplicative=True
+    ):
         super().__init__()
-        self.value = scale
+        self.value: float = scale
         self.target = target
         self.increment = increment
         self.mult = multiplicative
@@ -20,5 +22,5 @@ class L0Targeting(cl.PassThroughModule):
         else:
             self.value += incr
 
-    def get_value(self):
+    def get_value(self) -> float:
         return self.value

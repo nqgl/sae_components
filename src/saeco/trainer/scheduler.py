@@ -14,10 +14,3 @@ class RunSchedule(SweepableConfig):
 
 class ResampleSchedule(SweepableConfig):
     schedule: dict[int | ResFloat, float]
-
-
-class Scheduler:
-    def __init__(
-        self,
-        schedule: Schedule,
-    ): ...

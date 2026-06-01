@@ -1,7 +1,14 @@
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from saeco.core.cache import Cache
+
 CE_STR = "Exception Cache Location Info: Last tracked subcache was "
 
 
-def locate_cache_exception(e: Exception, cache, name: str | None = None) -> Exception:
+def locate_cache_exception(
+    e: Exception, cache: "Cache", name: str | None = None
+) -> Exception:
     if name is None:
         name = ""
     else:

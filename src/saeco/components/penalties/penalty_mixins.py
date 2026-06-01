@@ -1,4 +1,5 @@
 import torch
+from torch import Tensor
 
 
 class ActsScaledByDecoderNormPenaltyMixin:
@@ -9,7 +10,7 @@ class ActsScaledByDecoderNormPenaltyMixin:
         if decoder is not None:
             self.set_decoder(decoder)
 
-    def penalty(self, x, *, cache):
+    def penalty(self, x, *, cache) -> Tensor:
         # x: b, f
         dec_norms = self.decoder.features[:].norm(dim=1)
         if self.det_dec_norms:
@@ -29,13 +30,13 @@ class LinearDecayPenaltyMixin:
         self.end = end
         self.end_scale = end_scale
 
-    def penalty(self, x, *, cache):
+    def penalty(self, x, *, cache) -> Tensor:
         if not cache._ancestor.has.trainstep:
-            return torch.zeros(1)
+            return torch.zeros(1, device=x.device, dtype=x.dtype)
         step = cache._ancestor.trainstep
         if step > self.end:
             if self.end_scale == 0:
-                return torch.zeros(1)
+                return torch.zeros(1, device=x.device, dtype=x.dtype)
             scale = self.end_scale
         elif step <= self.begin:
             scale = 1

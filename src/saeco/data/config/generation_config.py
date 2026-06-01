@@ -18,5 +18,6 @@ class DataGenerationProcessConfig(SweepableConfig):
     llm_batch_size: int = 2**12  # batch size when running the LLM (in tokens)
     num_document_distribution_batches: int = 100
 
-    def num_act_piles(self, num_tokens):
+    def num_act_piles(self, num_tokens: int) -> int:
+        assert self.acts_per_pile is not None
         return 1 + num_tokens // self.acts_per_pile

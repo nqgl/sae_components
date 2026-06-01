@@ -4,6 +4,9 @@ from abc import ABC, abstractmethod
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+import torch
+from torch import Tensor
+
 from saeco.sweeps import SweepableConfig
 
 if TYPE_CHECKING:
@@ -19,9 +22,9 @@ class OptimFieldResetValue(ABC):
         self,
         param: "FeaturesView",
         ft_optim_field_state,
-        feat_mask,
+        feat_mask: Tensor,
         new_directions,  # maybe add field name?
-    ): ...
+    ) -> Tensor | float: ...
 
 
 class ResetToConst(OptimFieldResetValue):
@@ -32,9 +35,9 @@ class ResetToConst(OptimFieldResetValue):
         self,
         param: "FeaturesView",
         ft_optim_field_state,
-        feat_mask,
+        feat_mask: Tensor,
         new_directions,
-    ):
+    ) -> Tensor | float:
         return self.num
 
 
@@ -43,9 +46,9 @@ class ResetToDirections(OptimFieldResetValue):
         self,
         param: "FeaturesView",
         ft_optim_field_state,
-        feat_mask,
+        feat_mask: Tensor,
         new_directions,
-    ):
+    ) -> Tensor | float:
         return (
             new_directions
             / new_directions.norm(dim=1, keepdim=True)
@@ -59,9 +62,9 @@ class ResetToMean(OptimFieldResetValue):
         self,
         param: "FeaturesView",
         ft_optim_field_state,
-        feat_mask,
+        feat_mask: Tensor,
         new_directions,
-    ):
+    ) -> Tensor | float:
         if (feat_mask).all():
             return ft_optim_field_state[:].mean() * self.num
         return ft_optim_field_state[~feat_mask].mean() * self.num
@@ -72,9 +75,9 @@ class ResetToAxisMean(OptimFieldResetValue):
         self,
         param: "FeaturesView",
         ft_optim_field_state,
-        feat_mask,
+        feat_mask: Tensor,
         new_directions,
-    ):
+    ) -> Tensor | float:
         if (feat_mask).all():
             v = ft_optim_field_state[:].mean(0) * self.num
         v = ft_optim_field_state[~feat_mask].mean(0) * self.num
@@ -88,9 +91,9 @@ class OptimFieldResetSqMeanFeatAx(OptimFieldResetValue):
         self,
         param: "FeaturesView",
         ft_optim_field_state,
-        feat_mask,
+        feat_mask: Tensor,
         new_directions,
-    ):
+    ) -> Tensor | float:
         if (feat_mask).all():
             v = ft_optim_field_state[:].pow(2).mean(0).sqrt() * self.num
         v = ft_optim_field_state[~feat_mask].pow(2).mean(0).sqrt() * self.num
@@ -104,9 +107,9 @@ class OptimFieldResetSqMean(OptimFieldResetValue):
         self,
         param: "FeaturesView",
         ft_optim_field_state,
-        feat_mask,
+        feat_mask: Tensor,
         new_directions,
-    ):
+    ) -> Tensor | float:
         if (feat_mask).all():
             return ft_optim_field_state[:].pow(2).mean(0).sqrt() * self.num
         return ft_optim_field_state[~feat_mask].pow(2).mean(0).sqrt() * self.num
@@ -119,19 +122,30 @@ class FeatureParamType(StrEnum):
     other = "other"
 
 
-b2_techniques = {
-    "mean": ResetToMean,
-    "sq": OptimFieldResetSqMean,
-    "axsq": OptimFieldResetSqMeanFeatAx,
-    "axmean": ResetToAxisMean,
-}
+class B2Technique(StrEnum):
+    mean = "mean"
+    sq = "sq"
+    axsq = "axsq"
+    axmean = "axmean"
+
+
+def b2_technique_handler(technique: B2Technique) -> type[OptimFieldResetValue]:
+    match technique:
+        case B2Technique.mean:
+            return ResetToMean
+        case B2Technique.sq:
+            return OptimFieldResetSqMean
+        case B2Technique.axsq:
+            return OptimFieldResetSqMeanFeatAx
+        case B2Technique.axmean:
+            return ResetToAxisMean
 
 
 class OptimResetValuesConfig(SweepableConfig):
     optim_momentum: float = 0
     bias_momentum: float = 0
     dec_momentum: bool = False
-    b2_technique: str = "sq"
+    b2_technique: B2Technique = B2Technique.sq
     b2_scale: float = 1.0
 
 
@@ -151,7 +165,7 @@ class OptimResetValues:
         self.handlers = {
             "momentum_buffer": ResetToConst(cfg.bias_momentum),
             "exp_avg": ResetToDirections(cfg.optim_momentum),
-            "exp_avg_sq": b2_techniques[cfg.b2_technique](cfg.b2_scale),
+            "exp_avg_sq": b2_technique_handler(cfg.b2_technique)(cfg.b2_scale),
             "mu_product": ResetToConst(0),
         }
 
@@ -160,7 +174,15 @@ class OptimResetValues:
             "dec": {} if cfg.dec_momentum else {"exp_avg": ResetToConst(0)},
         }
 
-    def get_value(self, field, param, ft_optim_field_state, feat_mask, new_directions):
+    def get_value(
+        self,
+        field: str,
+        param: "FeaturesView",
+        ft_optim_field_state,
+        feat_mask: Tensor,
+        new_directions,
+    ) -> Tensor | float:
+        assert feat_mask.dtype == torch.bool
         if (
             param.type in self.type_overrides
             and field in self.type_overrides[param.type]

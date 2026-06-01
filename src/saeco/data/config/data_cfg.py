@@ -127,9 +127,7 @@ class DataConfig[ModelLoadT: ModelLoadingConfigBase[Any] = ModelLoadingConfigBas
     def _acts_piles_path(self, split: SplitConfig) -> Path:
         return self._get_acts_split_path(split) / "piles"
 
-    def acts_piler(
-        self, split: SplitConfig, write=False, target_gb_per_pile=2, num_tokens=None
-    ) -> DictPiler:
+    def acts_piler(self, split: SplitConfig, write=False, num_tokens=None) -> DictPiler:
         if write:
             num_piles = self.generation_config.num_act_piles(num_tokens)
             sites = self.model_cfg.acts_cfg.sites

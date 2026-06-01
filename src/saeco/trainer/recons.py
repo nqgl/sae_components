@@ -1,3 +1,7 @@
+import contextlib
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+
 import nnsight
 import torch
 
@@ -10,12 +14,12 @@ from saeco.trainer.trainable import Trainable
 def get_recons_loss_with_bos(
     llm,
     sae: Trainable,
-    tokens=None,
-    num_batches=10,
-    data_cfg: DataConfig = None,
-    batch_size=1,
-    cast_fn=...,
-):
+    tokens: torch.Tensor,
+    data_cfg: DataConfig,
+    cast_fn: Callable[[], AbstractContextManager] = contextlib.nullcontext,
+    num_batches: int = 10,
+    batch_size: int = 1,
+) -> dict[str, float]:
     return get_recons_loss(
         llm=llm,
         sae=sae,
@@ -31,12 +35,12 @@ def get_recons_loss_with_bos(
 def get_recons_loss_no_bos(
     llm,
     sae: Trainable,
-    tokens=None,
-    num_batches=10,
-    data_cfg: DataConfig = None,
-    batch_size=1,
-    cast_fn=...,
-):
+    tokens: torch.Tensor,
+    data_cfg: DataConfig,
+    cast_fn: Callable[[], AbstractContextManager] = contextlib.nullcontext,
+    num_batches: int = 10,
+    batch_size: int = 1,
+) -> dict[str, float]:
     return get_recons_loss(
         llm=llm,
         sae=sae,
@@ -53,14 +57,13 @@ def get_recons_loss_no_bos(
 def get_recons_loss(
     llm,
     sae: Trainable,
-    tokens=None,
-    num_batches=10,
-    data_cfg: DataConfig = None,
-    bos_processed_with_hook=False,
-    batch_size=1,
-    cast_fn=...,
-):
-    assert data_cfg is not None
+    tokens: torch.Tensor,
+    data_cfg: DataConfig,
+    cast_fn: Callable[[], AbstractContextManager] = contextlib.nullcontext,
+    num_batches: int = 10,
+    bos_processed_with_hook: bool = False,
+    batch_size: int = 1,
+) -> dict[str, float]:
     acts_cfg = data_cfg.model_cfg.acts_cfg
     loss_list = []
 

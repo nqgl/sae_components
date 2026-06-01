@@ -87,8 +87,8 @@ class SummedPenalties(Penalty):
         super().__init__()
         self.penalties = nn.ModuleList(penalties)
 
-    def penalty(self, x, *, cache):
-        p = 0
+    def penalty(self, x, *, cache) -> Tensor:
+        p = torch.zeros((), device=x.device, dtype=x.dtype)
         for i in range(len(self.penalties)):
-            p += cache(self).penalties[i].penalty(x)
+            p = p + cache(self).penalties[i].penalty(x)
         return p.sum()

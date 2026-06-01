@@ -74,7 +74,7 @@ def integrate(kernel: Kernel, x_range=10, samples=8192):
     return y.sum() / samples * 2 * x_range
 
 
-def centrality(kernel, centrality_measure=gauss):
+def centrality(kernel: Kernel, centrality_measure: Kernel = gauss):
     def f(x):
         return centrality_measure(x) * kernel(x)
 

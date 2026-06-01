@@ -1,3 +1,5 @@
+from typing import Any
+
 import torch
 
 from saeco.components.wrap import WrapsModule
@@ -6,8 +8,8 @@ from saeco.core.module import Module
 
 
 class ReuseCache(Cache):
-    forward_reuse_dict: dict = ...
-    sparsity_penalty: float = ...
+    forward_reuse_dict: dict[tuple[int, int], Any] = ...
+    sparsity_penalty: torch.Tensor = ...
 
 
 def _reuse(*, x, keyobj, func, cache: ReuseCache, **kwargs):

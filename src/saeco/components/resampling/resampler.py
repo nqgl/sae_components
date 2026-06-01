@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from enum import StrEnum
 from functools import cached_property
 from typing import Self
 
@@ -52,6 +53,12 @@ def get_supports_resample_modules(model: nn.Module) -> set[SupportsResampleModul
     )
 
 
+class FreqBalanceStrat(StrEnum):
+    SEP = "sep"
+    MEAN = "mean"
+    MIX = "mix"
+
+
 class ResamplerConfig(SweepableConfig):
     optim_reset_cfg: OptimResetValuesConfig = Field(
         default_factory=OptimResetValuesConfig
@@ -59,7 +66,7 @@ class ResamplerConfig(SweepableConfig):
     bias_reset_value: float = 0
     dead_threshold: float = 3e-6
     freq_balance: int | float | None = None
-    freq_balance_strat: str = "sep"
+    freq_balance_strat: FreqBalanceStrat = FreqBalanceStrat.SEP
     expected_biases: int | None = 1
     expected_decs: int | None = 1
     expected_encs: int | None = 1
@@ -124,7 +131,7 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
 
     def assign_model(self, model: nn.Module) -> Self:
         self.model = model
-        return model
+        return self
 
     def setup_resample_types(self):
         encs = []
@@ -213,9 +220,9 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
                     return x
 
                 freqs = self.freq_tracker.freqs[indices]
-                if self.cfg.freq_balance_strat == "mean":
+                if self.cfg.freq_balance_strat == FreqBalanceStrat.MEAN:
                     freqs = freqs.mean() * 0.99 + freqs * 0.01
-                elif self.cfg.freq_balance_strat == "mix":
+                elif self.cfg.freq_balance_strat == FreqBalanceStrat.MIX:
                     freqs = freqs.mean() / 2 + freqs / 2
                 diff = fn(torch.tensor(target_freq)) - fn(freqs)
                 for bias in self.biases:
@@ -277,9 +284,9 @@ class Resampler(ABC):  # noqa: B024  # interface base; hooks have optional no-op
                     return x
 
                 freqs = self.freq_tracker.freqs[indices]
-                if self.cfg.freq_balance_strat == "mean":
+                if self.cfg.freq_balance_strat == FreqBalanceStrat.MEAN:
                     freqs = freqs.mean() * 0.99 + freqs * 0.01
-                elif self.cfg.freq_balance_strat == "mix":
+                elif self.cfg.freq_balance_strat == FreqBalanceStrat.MIX:
                     freqs = freqs.mean() / 2 + freqs / 2
                 diff = fn(torch.tensor(target_freq)) - fn(freqs)
                 for bias in self.biases:

@@ -3,7 +3,7 @@ from functools import cached_property
 from typing import Any
 
 import torch
-from paramsight import get_resolved_typevars_for_base, takes_alias
+from paramsight import get_args_at_base, takes_alias
 from torch import nn
 
 from saeco.architecture.arch_prop import (
@@ -85,7 +85,7 @@ class Architecture[ArchConfigT: SweepableConfig](
             raise ValueError(
                 "Architecture class must not be generic to get config class"
             )
-        config_class = get_resolved_typevars_for_base(cls, Architecture)[0]
+        config_class = get_args_at_base(cls, Architecture)[0]
         if isinstance(config_class, typing.TypeVar):
             raise ValueError(
                 "Architecture class must not be generic to get config class"

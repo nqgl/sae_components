@@ -193,19 +193,16 @@ class Piler:
             raise ValueError("Cannot write to a readonly Piler")
         self.piles.shuffle_then_finalize(perms=perms)
 
-    def __getitem__(self, i) -> torch.Tensor:
+    def __getitem__(self, i: int | slice | list[int]) -> torch.Tensor:
         if isinstance(i, int):
             piles = [self.piles[i]]
         elif isinstance(i, list):
             piles = [self.piles[j] for j in i]
-        elif isinstance(i, slice):
-            piles = [self.piles[j] for j in self.piles.keys()[i]]
         else:
-            piles = self.piles[i]
-        if isinstance(piles, list) and len(piles) == 1:
-            assert isinstance(piles[0], torch.Tensor)
+            piles = [self.piles[j] for j in self.piles.keys()[i]]
+        if len(piles) == 1:
             return piles[0]
-        return torch.cat(piles)  # type: ignore
+        return torch.cat(piles)
 
     @cached_property
     def shapes(self) -> list[list[int]]:

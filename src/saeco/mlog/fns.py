@@ -313,7 +313,7 @@ class BaseLogger[RunT]:
     root_config: SweepableConfig
     run: RunT | None = None
     run_name: str | None = None
-    _sweep_inst_config = None
+    _sweep_inst_config: dict | None = None
     DEFAULT_PROJECT_STR: str = "default-project"
 
     def init(

@@ -162,7 +162,7 @@ class Trainer:
     def post_step(self, cache: Cache | None = None):
         do_post_step(self.trainable, cache)
 
-    def log(self, d):
+    def log(self, d) -> None:
         mlog.log(d, step=self.t + self.log_t_offset)
 
     def coeffs(self) -> dict[str, float]:
@@ -203,7 +203,6 @@ class Trainer:
     def make_cache(self, eval_mode: bool = False) -> TrainCache:
         cache = TrainCache()
         cache._watch(self.trainable.get_losses_and_metrics_names())
-        cache.trainer = ...
         cache.trainer = self
         cache.trainstep = self.t
         return cache
@@ -224,7 +223,7 @@ class Trainer:
                     print("WARNING: save() failed after training; continuing.")
                     traceback.print_exc()
 
-    def _train(self, buffer=None, num_steps=None):
+    def _train(self, buffer=None, num_steps: int | None = None):
         if buffer is None:
             buffer = self.cfg.get_databuffer()
         if not self.trainable.normalizer.primed:
@@ -308,7 +307,7 @@ class Trainer:
             )
         return self._nullcontext()
 
-    def handle_backward(self, loss, cache):
+    def handle_backward(self, loss: torch.Tensor, cache) -> None:
         if self.cfg.use_autocast:
             assert self.gradscaler is not None
             self.gradscaler.scale(loss).backward()
@@ -316,7 +315,7 @@ class Trainer:
             loss.backward()
         self.post_backward(cache)
 
-    def handle_step(self, cache):
+    def handle_step(self, cache) -> None:
         if self.cfg.use_autocast:
             assert self.gradscaler is not None
             self.gradscaler.step(self.optim)
@@ -326,7 +325,7 @@ class Trainer:
         self.lr_scheduler.step()
         self.post_step(cache)
 
-    def trainstep(self, x, cache: TrainCache, y=None):
+    def trainstep(self, x, cache: TrainCache, y=None) -> None:
         self.pre_forward(cache)
         with self.cast():
             loss = self.trainable.loss(x, cache=cache, y=y, coeffs=self.coeffs())
@@ -335,7 +334,7 @@ class Trainer:
         self.handle_backward(loss, cache)
         self.handle_step(cache)
 
-    def eval_step(self, x, y=None):
+    def eval_step(self, x, y=None) -> None:
         if self.cfg.use_averaged_model:
             model = cast(Trainable, self.averaged_model.module)
         else:

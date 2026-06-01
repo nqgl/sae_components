@@ -40,7 +40,7 @@ class MixedCache[DiskTensorType: DiskTensor[Any]]:
     def keys(self) -> list[str]:
         return sorted(set(self.weak_cache.keys()) | set(self.strong_cache.keys()))
 
-    def _remove_finalized_disktensor(self, key: str, disk_tensor: DiskTensor):
+    def _remove_finalized_disktensor(self, key: str, disk_tensor: DiskTensor) -> None:
         assert disk_tensor.finalized
         d = self.strong_cache.pop(key)
         assert d is disk_tensor

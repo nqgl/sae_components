@@ -1,4 +1,12 @@
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    Protocol,
+    cast,
+    overload,
+    runtime_checkable,
+)
 
 import einops
 import torch
@@ -121,7 +129,9 @@ class Trainable(cl.Module):
     def losses_d(self) -> dict[str, Loss]:
         return cast(dict[str, Loss], self.losses)
 
-    def loss(self, x, *, cache: Cache, y=None, coeffs: dict[str, float] | None = None):
+    def loss(
+        self, x, *, cache: Cache, y=None, coeffs: dict[str, float] | None = None
+    ) -> torch.Tensor:
         if isinstance(x, SAETrainBatch):
             batch = x
             x = batch.input
@@ -138,6 +148,10 @@ class Trainable(cl.Module):
             m = loss_fn(x, y=y, cache=cache[key])
             setattr(cache, key, m)
             loss += m * coeffs.pop(key, 1.0)
+        assert isinstance(loss, torch.Tensor), (
+            "expected at least one loss; losses_d must be non-empty so the int-0 "
+            "seed is replaced by a Tensor"
+        )
         cache.loss = loss.item()
         for key, metric_fn in self.metrics.items():
             m = metric_fn(x, y=y, cache=cache[key]) * coeffs.pop(key, 1.0)
@@ -146,7 +160,7 @@ class Trainable(cl.Module):
         assert len(coeffs) == 0, f"loss coefficient cfg had unused keys: {coeffs}"
         return loss
 
-    def rearrange(self, x: torch.Tensor):
+    def rearrange(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Size | None]:
         shape = None
         if x.ndim == 3:
             shape = x.shape
@@ -155,15 +169,16 @@ class Trainable(cl.Module):
             raise NotImplementedError(f"rearrange not implemented for {x.shape}")
         return x, shape
 
-    def dearrange(self, x: torch.Tensor, shape: tuple[int, int] | None):
+    def dearrange(self, x: torch.Tensor, shape: torch.Size | None):
         if shape is None:
             return x
-        return einops.rearrange(
-            x, "(doc seq) data -> doc seq data", doc=shape[0], seq=shape[1]
-        )
+        doc, seq, _ = shape
+        return einops.rearrange(x, "(doc seq) data -> doc seq data", doc=doc, seq=seq)
 
     @make_cache_optional
-    def forward(self, x: torch.Tensor, *, cache: TrainCache) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor | SAETrainBatch, *, cache: TrainCache
+    ) -> torch.Tensor:
         if isinstance(x, SAETrainBatch):
             x = x.input
         x, shape = self.rearrange(x)
@@ -177,7 +192,7 @@ class Trainable(cl.Module):
             + ["below_3e-5", "below_1e-5", "below_3e-6", "below_1e-6", "below_1e-8"]
         )
 
-    def param_groups(self, optim_kwargs: dict) -> list[dict]:
+    def param_groups(self, optim_kwargs: dict[str, Any]) -> list[dict[str, Any]]:
         from saeco.components.features.param_metadata import (
             MetaDataParam,
         )
@@ -207,10 +222,25 @@ class Trainable(cl.Module):
     def make_cache(self) -> Cache:
         return TrainCache()
 
+    @overload
+    def get_acts(
+        self,
+        x: torch.Tensor,
+        cache: Cache | None = ...,
+        pre_acts: Literal[False] = ...,
+    ) -> torch.Tensor: ...
+    @overload
+    def get_acts(
+        self,
+        x: torch.Tensor,
+        cache: Cache | None = ...,
+        *,
+        pre_acts: Literal[True],
+    ) -> tuple[torch.Tensor, torch.Tensor]: ...
     @make_cache_optional
     def get_acts(
-        self, x: torch.Tensor, cache: Cache = None, pre_acts=False
-    ) -> torch.Tensor:
+        self, x: torch.Tensor, cache: Cache | None = None, pre_acts=False
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         cache.acts = ...
         if pre_acts:
             cache.pre_acts = ...

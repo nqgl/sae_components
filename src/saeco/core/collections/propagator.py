@@ -37,10 +37,10 @@ class Propagator(Collection):
             _support_modules=_support_modules,
             **collection_dict,
         )
-        self._reduction = None
-        self._cache_to_reduction = None
-        self._binary_reduction = None
-        self._binary_reduction_initial_value = None
+        self._reduction: Callable[..., Any] | None = None
+        self._cache_to_reduction: bool | None = None
+        self._binary_reduction: bool | None = None
+        self._binary_reduction_initial_value: Any | None = None
         self._propagate_rule: PropagateRule | None = None
         self._output_rule: OutputRule = output_normal
         # ah maybe I should make this take these as list or as dict explicitly not as

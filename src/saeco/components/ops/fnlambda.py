@@ -1,10 +1,12 @@
+from collections.abc import Callable
+
 import torch.nn as nn
 
 import saeco.core as cl
 
 
 class Lambda(cl.Module):
-    def __init__(self, func, module=None):
+    def __init__(self, func: Callable, module=None):
         super().__init__()
         self.module = module
         self.func = func

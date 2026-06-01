@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, overload
 
 import torch
-from paramsight import get_resolved_typevars_for_base, takes_alias
+from paramsight import get_args_at_base, takes_alias
 
 from saeco.architecture.arch_storage_paths import ArchStoragePaths
 from saeco.sweeps import SweepableConfig
@@ -69,7 +69,7 @@ class ArchitectureBase[RunConfigT: SweepableConfig = SweepableConfig]:
                 "ArchitectureBase class must not be generic to get config class"
             )
         try:
-            (config_class,) = get_resolved_typevars_for_base(cls, ArchitectureBase)
+            (config_class,) = get_args_at_base(cls, ArchitectureBase)
         except Exception as e:
             raise ValueError("Failed in config class lookup") from e
         if isinstance(config_class, typing.TypeVar):

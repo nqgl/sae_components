@@ -5,9 +5,6 @@ import random
 from collections.abc import Callable, Mapping, Sequence
 from functools import cached_property
 from pathlib import Path
-from typing import (
-    cast,
-)
 
 import torch
 import torch.utils.data
@@ -192,11 +189,9 @@ class DictPiler:
         for _k, p in self.pilers.items():
             p.shuffle_piles(perms)
 
-    def __getitem__(self, i) -> DictBatch:
+    def __getitem__(self, i: int | slice | list[int]) -> DictBatch:
         data = {k: self.pilers[k][i] for k in self.metadata.keys}
-        assert isinstance(data, dict)
-        assert all(isinstance(v, torch.Tensor) for v in data.values())
-        return DictBatch(data=cast(dict[str, torch.Tensor], data))
+        return DictBatch(data=data)
 
     @torch.inference_mode()
     def batch_generator(

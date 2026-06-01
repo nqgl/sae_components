@@ -16,7 +16,15 @@ from saeco.core import Cache
 
 @define
 class ModuleIO:
-    inputs: dict[nn.Module, list[torch.Tensor]]
+    # The forward hook appends the positional-args tuple (`args`) per call, and
+    # the only consumer double-indexes (`inputs[module][call][arg_pos]`), so each
+    # list element is the tuple of positional Tensors passed to the module.
+    inputs: dict[nn.Module, list[tuple[torch.Tensor, ...]]]
+    # `outputs` is populated from the forward-hook `output` but is currently never
+    # consumed anywhere in src/ or research/, and the hooked module is a generic
+    # encoder/decoder-containing `nn.Module` whose forward return type is not
+    # fixed (Tensor, tuple, etc.). Left as a Tensor list pending a real consumer
+    # that would pin the element type.
     outputs: dict[nn.Module, list[torch.Tensor]]
     model_out: torch.Tensor
 

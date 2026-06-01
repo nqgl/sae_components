@@ -6,7 +6,8 @@ from saeco.components.sae_cache import SAECache
 from saeco.data.config.data_cfg import DataConfig
 from saeco.sweeps import SweepableConfig
 
-from .optim_config import get_optim_cls
+from .l0targeter import L0TargeterType
+from .optim_config import OptimType, get_optim_cls
 from .schedule_cfg import RunSchedulingConfig
 
 
@@ -55,7 +56,7 @@ class TrainConfig(SweepableConfig):
     data_cfg: DataConfig = Field(default_factory=DataConfig)
     wandb_cfg: dict = Field(default_factory=lambda: {"project": "sae sweeps"})
     coeffs: dict[str, float] = Field(default_factory=lambda: {"sparsity_loss": 1e-3})
-    l0_targeter_type: str = "gentle_basic"
+    l0_targeter_type: L0TargeterType = L0TargeterType.gentle_basic
     l0_target: float | None = None
     l0_targeting_enabled: bool = True
     l0_target_adjustment_size: float = 0.0003
@@ -65,7 +66,7 @@ class TrainConfig(SweepableConfig):
     betas: tuple[float, float] = (0.9, 0.999)
     use_lars: bool = False
     kwargs: dict = Field(default_factory=dict)
-    optim: str = "RAdam"
+    optim: OptimType = OptimType.RAdam
     raw_schedule_cfg: RunSchedulingConfig = Field(default_factory=RunSchedulingConfig)
     use_averaged_model: bool = False
     checkpoint_period: int | None = None
@@ -85,7 +86,7 @@ class TrainConfig(SweepableConfig):
 
     @property
     def use_schedulefree(self):
-        return self.optim == "ScheduleFree"
+        return self.optim == OptimType.ScheduleFree
 
     def get_optim(self):
         return get_optim_cls(self.optim)

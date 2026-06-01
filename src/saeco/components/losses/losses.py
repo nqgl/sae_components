@@ -36,7 +36,7 @@ class SparsityPenaltyLoss(Loss):
         self.num_expected = num_expeted
         super().__init__(module)
 
-    def loss(self, x, y, y_pred, cache: SAECache):
+    def loss(self, x, y, y_pred, cache: SAECache) -> torch.Tensor:
         sparsity_losses = cache._ancestor.search("sparsity_penalty")
         assert len(sparsity_losses) == self.num_expected, (
             "Expected exactly one (or self.num_expected) sparsity penalty, but got "
@@ -46,6 +46,7 @@ class SparsityPenaltyLoss(Loss):
         l = 0
         for sp_cache in sparsity_losses:
             l += sp_cache.sparsity_penalty.squeeze()
+        assert isinstance(l, torch.Tensor)
         return l
 
 
