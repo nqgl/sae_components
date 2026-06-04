@@ -80,6 +80,21 @@ stateful case too (freq tracker's deferred update).
 
 ## D-04 — Total loss is a fused graph handle (weights as scalar source-nodes)
 
+> **SUPERSEDED (overnight self-review).** The weight *buffers* are unsafe across
+> devices: `nn.Module._apply` (`.to(device)`) **reassigns** a buffer to a new
+> tensor, so the `ref(w, ())` source-node (captured at init) and `self._weights[k]`
+> orphan on CPU while the registered buffer moves to CUDA — verified on GPU
+> (registered buffer on cuda, node's tensor on cpu, a dead duplicate in
+> state_dict; it only "worked" via silent `cuda * cpu-0dim` promotion). Reverted to
+> **device-safe Python weighting** (`total = sum(term * coeff)`): the loss terms
+> still share one fused `forward_values` pass (the fusion that matters), and the
+> dynamic coeff weight is applied in Python. A genuine `total_loss` *handle* needs
+> weights as real graph **inputs** — awaits multi-input/`DictBatch`. Lesson: a
+> graph node captures a *tensor*; only `nn.Parameter` survives `.to()` in place, so
+> graph-referenced state must be a param or a module that reads its own live buffer,
+> never a bare registered buffer.
+
+
 **Call:** Is the weighted total loss a Python sum of saved terms, or a handle the
 graph computes?
 

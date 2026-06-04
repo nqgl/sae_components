@@ -326,22 +326,13 @@ class GraphTrainable(Trainable):
         # decode: acts -> raw recon (treat acts as the input, then denormalize)
         self._decode = normalizer.denormalize(bind(main.recon, {main.acts: Input}))
 
-        # total loss is a fused handle: each term * a scalar weight source-node
-        # (a buffer synced from coeffs each step), summed (D-04).
-        self._weights = {}
-        weighted = []
-        for k, term in self._loss_terms.items():
-            self.register_buffer(f"weight_{k}", torch.ones(()))
-            w = getattr(self, f"weight_{k}")
-            self._weights[k] = w
-            weighted.append(term * ref(w, ()))
-        self._total = reduce(lambda a, b: a + b, weighted)
-
         # the whole training computation as one graph; handles reached through it,
         # producers registered onto this Trainable (so .parameters()/.to() work).
+        # The loss terms share this one fused pass; the (dynamic) coeff weighting
+        # is applied in Python -- a graph weight source-node would capture a buffer
+        # that .to(device) orphans, so weights await true graph inputs (D-04).
         self.graph = GraphSpec.of(
             output=self._output,
-            total_loss=self._total,
             acts=self._acts,
             L0=self._l0,
             L1=self._l1,
@@ -361,19 +352,21 @@ class GraphTrainable(Trainable):
         if isinstance(x, SAETrainBatch):
             x = x.input
         coeffs = dict(coeffs) if coeffs is not None else {}
-        with torch.no_grad():  # weights into the fused total_loss handle
-            for k, w in self._weights.items():
-                w.fill_(float(coeffs.get(k, 1.0)))
         with self.graph.forward_values(x, cache=cache) as save:
-            total = save(self.graph.total_loss)  # the fused, weighted backprop loss
-            for k, t in self._loss_terms.items():  # unweighted terms, for logging
-                setattr(cache, k, save(t))
+            terms = {k: save(t) for k, t in self._loss_terms.items()}
             for k, t in self._metric_terms.items():
                 setattr(cache, k, save(t))
             cache.L0, cache.L1 = save(self.graph.L0), save(self.graph.L1)
             for site in self._freq_sites:  # deferred EMA update after the pass
                 ft = site.producer
                 ft.update(ft.updated(site.inputs[0]))
+        # the loss terms shared one fused pass; weight + sum in Python (coeffs are
+        # dynamic). cache.<lossname> = unweighted (logging), cache.loss = total.
+        total = reduce(
+            lambda a, b: a + b, (m * coeffs.get(k, 1.0) for k, m in terms.items())
+        )
+        for k, m in terms.items():
+            setattr(cache, k, m)
         cache.loss = total.item()
         return total
 
