@@ -90,3 +90,9 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled PYTHONPATH=research/src:research/expe
   `.to()` in place -- never reference a bare registered buffer from a node.
   (The FreqTracker is fine: its `ref(self.freqs,())` is re-created each step
   post-`.to()` and `copy_` is in-place.) Codex review still running in bg.
+- **Review pass done (D-06).** codex review (focused exec on the 4 core files)
+  + self-review found 6 issues; all fixed: arg-slot identity (P1, the real one --
+  binding a default-Input slot rewrote all Input), deferred-callback ordering +
+  finally-reset (P1), weight buffers (P1, already done), sub_slot inheritance
+  re-pointing (P2), register_into bare buffers (P2), empty-loss guard (P2). Added
+  an arg-independence regression test (9 tests now). All green incl GPU.

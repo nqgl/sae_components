@@ -71,6 +71,27 @@ def test_forward_values_runs_each_node_once() -> None:
     assert enc.n == 1  # shared encoder node ran once across all three saves
 
 
+def test_arg_slots_are_independent() -> None:
+    # regression: arg(default=Input) must be a *unique* slot, not the global Input
+    # itself -- binding one slot must not rewrite the other or Input.
+    import torch.nn as nn
+
+    import saeco.core as cl
+    from saeco_research.cgraph2 import Arg, GraphSpec, Input, arg, op
+
+    class Two(GraphSpec):
+        a: Arg = arg(default=Input)
+        b: Arg = arg(default=Input)
+        output = op(lambda x, y: x - y)(a, b)
+
+    p = nn.Parameter(torch.ones(4))
+    g = Two(a=p)  # a -> param; b stays Input
+    out = g.out.build()(torch.full((4,), 3.0), cache=cl.Cache())
+    # with the old bug both a and b (== Input) would bind to the param -> 0;
+    # correct: a=param(1) - b=Input(3) == -2
+    assert torch.allclose(out, torch.full((4,), -2.0))
+
+
 def test_gated_graph_trains_one_step_cpu() -> None:
     import saeco.components.features as ft
     from saeco.components.resampling.anthropic_resampling import (

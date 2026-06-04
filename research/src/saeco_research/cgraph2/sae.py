@@ -297,6 +297,8 @@ class GraphTrainable(Trainable):
 
     def __init__(self, models, resampler, losses, normalizer: GraphNormalizer):
         cl.Module.__init__(self)
+        if not losses:
+            raise ValueError("GraphTrainable needs at least one loss")
         self.normalizer = normalizer
         self.graph_models = list(models)
         main = self.graph_models[0]

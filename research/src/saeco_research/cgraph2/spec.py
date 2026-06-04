@@ -64,7 +64,11 @@ class _OpSlot:
 
 @define(eq=False)
 class _ArgSlot:
-    """Marker producer for a *required* value slot (``arg()`` with no default)."""
+    """Marker producer for a value slot. ``default`` is what the slot resolves to
+    when left unbound (``_NODEFAULT`` == required). Each ``arg()`` is a *unique*
+    marker, so binding one slot never disturbs another (or the global ``Input``)."""
+
+    default: object = _NODEFAULT
 
 
 @define(eq=False)
@@ -81,10 +85,13 @@ class _SubGet:
     attr: str
 
     def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
-        if self.slot not in subs:  # not yet bound (e.g. inheritance re-point)
+        bound = subs.get(self.slot, None)
+        if bound is None:  # slot not in subs: keep the node (re-interned inputs)
             return ref(self, inputs)
-        (x_node,) = inputs
-        return bind(getattr(subs[self.slot], self.attr), {Input: x_node})
+        if isinstance(bound, _SubSlot):  # inheritance re-point: swap the marker
+            return ref(_SubGet(bound, self.attr), inputs)
+        (x_node,) = inputs  # construction: splice the bound sub-graph
+        return bind(getattr(bound, self.attr), {Input: x_node})
 
 
 class _AppliedSub:
@@ -111,14 +118,12 @@ class _SubSlotRef:
 
 
 def arg(default=_NODEFAULT) -> Any:
-    """A value-input slot. ``default`` is what it resolves to when left unbound:
-    usually ``Input`` (the global input), but also a parameter / tensor (bound in
-    as a source value node) or any handle. With no default the slot is required."""
-    if default is _NODEFAULT:
-        return ref(_ArgSlot(), ())  # required
-    if isinstance(default, ValueRef):
-        return default  # Input, a handle, etc.
-    return ref(default, ())  # a param / tensor -> a source value node
+    """A value-input slot, as a *unique* slot node carrying its default. ``default``
+    is what it resolves to when left unbound: usually ``Input`` (the global input),
+    but also a parameter / tensor (bound in as a source value node) or any handle.
+    With no default the slot is required. Binding a slot substitutes only that
+    slot's node -- never the global ``Input`` or another slot."""
+    return ref(_ArgSlot(default), ())
 
 
 def op_slot(default=_NODEFAULT) -> Any:
@@ -193,6 +198,9 @@ class _GraphMeta(type):
             for nm, vref in own_value.items():
                 if nm in base.value_slots:
                     subs[base.value_slots[nm]] = vref
+            for nm, sref in own_sub.items():  # overridden sub-model slot
+                if nm in base.sub_slots:
+                    subs[base.sub_slots[nm].slot] = sref.slot
             handles = {k: bind(h, subs) for k, h in base.handles.items()}
             handles.update(own_handles)
             output = (
@@ -229,12 +237,16 @@ class _GraphMeta(type):
             elif isinstance(marker, _OpSlot):
                 raise TypeError(f"{cls.__name__} missing required slot {nm!r}")
         for nm, vref in t.value_slots.items():
+            marker = vref.producer  # _ArgSlot
             if nm in bindings:
                 b = bindings[nm]
                 # bind to a handle/Input directly, or wrap a raw param/tensor.
                 subs[vref] = b if isinstance(b, ValueRef) else ref(b, ())
-            elif isinstance(vref.producer, _ArgSlot):
+            elif marker.default is _NODEFAULT:
                 raise TypeError(f"{cls.__name__} missing required value slot {nm!r}")
+            else:  # resolve the unbound slot to its default (Input / param / handle)
+                d = marker.default
+                subs[vref] = d if isinstance(d, ValueRef) else ref(d, ())
         for nm, sref in t.sub_slots.items():
             if nm in bindings:
                 subs[sref.slot] = bindings[nm]  # the bound sub-graph bundle

@@ -226,6 +226,11 @@ def _register_producers(module: cl.Module, order, names) -> None:
         registered.add(id(p))
         if isinstance(p, nn.Parameter):
             module.register_parameter(names[n], p)
+        elif isinstance(p, torch.Tensor):
+            # a bare buffer used as a value source -- register it so .to()/state_dict
+            # see it. (Prefer a Parameter or a buffer-reading module for graph state:
+            # a node captures the *tensor*, and .to() reassigns buffers -- see D-04.)
+            module.register_buffer(names[n], p)
         elif isinstance(p, nn.Module):
             module.add_module(names[n], p)
 
@@ -313,10 +318,17 @@ class _SaveSession:
         self.token = _ACTIVE_SESSION.set(self)
         return self
 
-    def __exit__(self, *exc):
-        for target, callback in self.deferred:
-            callback(self.save(target))
-        _ACTIVE_SESSION.reset(self.token)
+    def __exit__(self, exc_type, exc_value, tb):
+        try:
+            if exc_type is None:
+                # materialize every deferred value first (within the still-clean
+                # memoized pass), THEN run the side-effecting callbacks -- so one
+                # callback can't mutate state a later deferred target reads.
+                pending = [(cb, self.save(target)) for target, cb in self.deferred]
+                for callback, value in pending:
+                    callback(value)
+        finally:
+            _ACTIVE_SESSION.reset(self.token)
         return False
 
     def __call__(self, target: ValueRef):

@@ -138,3 +138,31 @@ full-context. The site marker is plumbing; `ActMetrics` is the graph.
 **Alternative not taken:** make the GraphSpec instance itself the producer
 (breaks: `__call__` = apply) or tag the passthrough with `self` in the class body
 (breaks: no instance at class-def time).
+
+---
+
+## D-06 — Review-pass fixes (self-review + codex)
+
+A focused codex review (of core.py/spec.py/sae.py/gated model.py) plus self-review
+surfaced and fixed:
+
+- **P1 arg-slot identity (spec.py).** `arg(default=Input)` returned the *global*
+  `Input` as the slot's identity, so binding such a slot would `subs[Input]=...` and
+  rewrite **every** `Input` use (and any other default-Input slot collides). Fixed:
+  every `arg()` is a unique `_ArgSlot(default)` marker node; the unbound slot
+  resolves to its default at construction. Regression test added.
+- **P1 deferred ordering (core.py).** `_SaveSession.__exit__` ran each deferred
+  callback immediately after computing its value, so an earlier side-effect could
+  mutate state a later deferred target reads; and the contextvar wasn't reset on
+  exception. Fixed: materialize all deferred values first, then run callbacks, only
+  on clean exit, with `_ACTIVE_SESSION.reset()` in `finally`.
+- **P1 weight buffers** — see D-04 (already reverted to Python weighting).
+- **P2 sub_slot inheritance (spec.py).** A subclass overriding a `sub_slot` didn't
+  re-point the base's `_SubGet`s. Fixed: re-point sub-slots in the inheritance
+  merge, and `_SubGet.__graph_rebind__` now distinguishes a marker (re-point) from a
+  bound bundle (splice).
+- **P2 register_into bare tensors (core.py).** Now registers bare buffer producers
+  via `register_buffer` (with the D-04 staleness caveat documented).
+- **P2 empty-loss guard (sae.py).** `GraphTrainable` raises if `losses` is empty.
+
+All cgraph2 demos + 9 pytest + ruff + GPU green after the fixes.
