@@ -5,12 +5,12 @@
 > D-09), the resolved converter fork, and the multi-output/logging design. The
 > sections below are the original overnight proposal, kept for history.
 
-**Status:** the **`field()` primitive + typed `DictBatch` contracts are built,
-tested, demoed** (D-08, D-09); the **trainable migration** (`total_loss` handle,
-transcoder `target`, bubble-up logging) is the proposal awaiting greenlight.
-Written + the primitive landed during the overnight run because this is the biggest
-repeatedly-deferred item and it gates two things we keep wanting (a true
-`total_loss` handle, transcoders).
+**Status:** `field()` + typed `DictBatch` contracts (D-08, D-09) **and the
+trainable migration (D-10) are DONE** — `total_loss` is a graph handle (weights as
+fields, device-clean), transcoder `target` works, GPU trains identically. The one
+remaining slice is the **bubble-up logging recipe** (the output-side dual; the
+cache-write is still hand-listed in `loss()`). See refinement 2 + the point-3
+projection for its shape.
 
 What I built autonomously (safe, purely additive — zero existing behavior changed):
 `field(name)` in `core.py` (a stateless `_Field` producer that reads a named field

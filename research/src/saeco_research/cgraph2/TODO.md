@@ -29,14 +29,18 @@
   (e.g. forbid `ref(buffer, ())` for a registered buffer) would catch it loudly.
   See D-04 in DECISIONS.md for the original catch.
 
-- [ ] **Multi-input: trainable migration + converter-as-GraphSpec.** Typed
-  `DictBatch` contracts + `field(Batch.x)` + override are DONE (D-09). Remaining:
-  (2) `total_loss` handle, (3) transcoder `target`, (4) the multi-output/logging
-  recipe — and Glen's **converter-as-GraphSpec** (a converter is a graph, composed
-  by binding `field(name)` reads to the converter's named handles; verified to
-  preserve fusion where a Python-function converter does not — see
-  `docs/DESIGN-multi-input.md`). The converter-as-graph *is* the multi-output recipe
-  (inputs/outputs unify), so (4) and the converter design are one piece.
+- [~] **Multi-input.** Typed `DictBatch` contracts + `field(Batch.x)` + override
+  DONE (D-09). **Trainable migration DONE (D-10):** `total_loss` is a graph handle
+  (weights as `field("w_<k>")`, device-clean — the D-04 resurrection); transcoder
+  `target` via `field("target")`; GPU trains identically. Remaining:
+  - [ ] **(4) bubble-up logging recipe** — the output-side dual. The cache-write in
+    `loss()` is still hand-listed; make it a bubble-up-built output recipe so
+    inside-metrics appear without the outside naming them (D-03; Glen's note).
+    Per refinement 2 + point-3, this is `forward_values` + projecting collected
+    site `(name, handle)` pairs into a (boundary) DictBatch — no `produce` method.
+  - [ ] **converter-as-GraphSpec** (`with_inputs`) — only if/when internal
+    multi-output sharing needs fusion across a converter (refinement 2: internal
+    composition is already just `arg`/`bind`/`sub_slot` ref-piping). Low priority.
 
 - [ ] **Bubble-up metrics / freq-tracking / logging.** A site you pass `acts`
   into (L0, L1, acts, freqs, ...) that the trainable collects by walking the
