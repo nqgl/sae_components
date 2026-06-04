@@ -22,6 +22,7 @@ import torch
 from attrs import define
 
 import saeco.core as cl
+from saeco.components.resampling import Resampler
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.trainer.normalizers.normalizer import GNConfig
 from saeco.trainer.trainable import Trainable, make_cache_optional
@@ -398,52 +399,68 @@ class GraphTrainable(Trainable):
     reads.
     """
 
-    def __init__(self, models, resampler, losses, normalizer: GraphNormalizer):
+    def __init__(
+        self,
+        models: list[SAEGraphSpec],
+        resampler: Resampler,
+        losses: dict[str, LossRef],
+        normalizer: GraphNormalizer,
+    ) -> None:
         cl.Module.__init__(self)
         if not losses:
             raise ValueError("GraphTrainable needs at least one loss")
-        self.normalizer = normalizer
-        self.graph_models = list(models)
-        main = self.graph_models[0]
-        norm = {id(m): normalizer.wrap(m) for m in self.graph_models}
-        main_nm = norm[id(main)]
+        self.normalizer: GraphNormalizer = normalizer
+        self.graph_models: list[SAEGraphSpec] = list(models)
+        main: SAEGraphSpec = self.graph_models[0]
+        norm: dict[int, NormalizedModel] = {
+            id(m): normalizer.wrap(m) for m in self.graph_models
+        }
+        main_nm: NormalizedModel = norm[id(main)]
 
         # resolve (model, loss_type) -> loss term over that model's NormalizedModel
-        self._loss_terms = {k: lr.build(norm[id(lr.model)]) for k, lr in losses.items()}
+        self._loss_terms: dict[str, ValueRef] = {
+            k: lr.build(norm[id(lr.model)]) for k, lr in losses.items()
+        }
         metric_types: dict[str, type[GraphLoss]] = {"cosim": GraphCosimLoss}
         if "L2_loss" not in losses:
             metric_types["L2_loss"] = GraphL2Loss
-        self._metric_terms = {
+        self._metric_terms: dict[str, ValueRef] = {
             k: t(norm_model=main_nm).out for k, t in metric_types.items()
         }
-        self._acts = main_nm.acts
+        self._acts: ValueRef = main_nm.acts
         # bubble up the main model's metrics site (L0/L1) -- it lives on the
         # model's acts wherever the model put it; we collect it and apply it to
         # the rebound (normalized) acts (D-03/D-05). Fall back to computing
         # directly if the model didn't splice one.
+        self._l0: ValueRef
+        self._l1: ValueRef
         sites = collect([main_nm.acts], _MetricsSite)
         if sites:
             metrics = sites[0].producer.at(sites[0].inputs[0])
             self._l0, self._l1 = metrics.L0, metrics.L1
         else:
             self._l0, self._l1 = op(_l0)(main_nm.acts), op(_l1)(main_nm.acts)
-        self._output = main_nm.out  # denormalized recon (inference)
+        self._output: ValueRef = main_nm.out  # denormalized recon (inference)
         # decode: acts -> raw recon (treat acts as the input, then denormalize)
-        self._decode = normalizer.denormalize(bind(main.recon, {main.acts: Input}))
+        self._decode: ValueRef = normalizer.denormalize(
+            bind(main.recon, {main.acts: Input})
+        )
 
         # total_loss is a first-class graph handle: each term times a per-loss
         # weight *field* (`field("w_<name>")`), summed. The weights are graph
         # inputs seeded fresh from `coeffs` each step -- device-clean, unlike the
         # captured weight buffers that broke D-04 (a field is an extraction node,
         # not a tensor orphaned by `.to(device)`). One fused pass either way.
-        self._total_loss = reduce(
+        self._total_loss: ValueRef = reduce(
             lambda a, b: a + b,
             (field(f"w_{k}") * term for k, term in self._loss_terms.items()),
         )
 
         # the whole training computation as one graph; handles reached through it,
-        # producers registered onto this Trainable (so .parameters()/.to() work).
-        self.graph = GraphSpec.of(
+        # producers registered onto this Trainable (so .parameters()/.to() work --
+        # GraphSpec is a plain object, not an nn.Module, so assignment alone does
+        # NOT register its leaf producers; register_into does that bookkeeping).
+        self.graph: GraphSpec = GraphSpec.of(
             output=self._output,
             acts=self._acts,
             L0=self._l0,
@@ -455,9 +472,9 @@ class GraphTrainable(Trainable):
         self.graph.register_into(self)
         # freq-tracker sites bubble up too: their stateful EMA update is deferred
         # onto each loss pass (ready for resampling; no-op if none spliced).
-        self._freq_sites = self.graph.collect(FreqTracker)
+        self._freq_sites: list[ValueRef] = self.graph.collect(FreqTracker)
 
-        self.resampler = resampler
+        self.resampler: Resampler = resampler
         resampler.assign_model(self)
 
     # -- training contract -----------------------------------------------------

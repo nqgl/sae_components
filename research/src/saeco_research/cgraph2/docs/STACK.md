@@ -6,6 +6,17 @@ parked questions/tasks we explicitly don't want to lose, not the active plan
 
 ---
 
+## ▸ NormalizedModel[T] generic — typed model-prop returns  (pushed 2026-06-04, Glen)
+
+(uncertain if good) Make `NormalizedModel` generic — `NormalizedModel[T]` — so a
+`@model_prop` could return `NormalizedModel[T]` rather than `T`. I.e. parametrize
+the wrapper by the model graph type it wraps, so the typed handles flow through the
+normalization wrapper. Explore whether this types cleanly (the wrapper exposes
+`acts`/`y_norm`/… ; parametrizing by the inner model's contract may or may not be
+expressible) and whether it's worth the generic machinery.
+
+---
+
 ## ▸ subgraph node-name duplication  (pushed 2026-06-04, Glen)
 
 When subgraphs get composed, check what happens if they cause **node-name
