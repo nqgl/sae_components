@@ -61,3 +61,8 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled PYTHONPATH=research/src:research/expe
   D-01 mechanism corrected (plain object + register_into, not nn.Module, because
   nn.Module.__call__ collides with g(x)=apply). All demos + CPU smoke + GPU green
   (trains identically). Next: #2.
+- **#2 DONE.** Total loss is a fused graph handle (`total_loss`): each term *
+  a scalar weight source-node (buffer synced from coeffs), summed (D-04). `loss()`
+  runs one `forward_values`, `save(graph.total_loss)` is the backprop loss, terms
+  saved unweighted for logging. L0-targeting's dynamic sparsity weight flows in;
+  GPU run trains identically (L0 bends 3288->2774). Next: #3.

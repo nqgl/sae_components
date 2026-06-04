@@ -75,3 +75,26 @@ the saeco ActMetrics property, made graph-native. Reserves the machinery for the
 stateful case too (freq tracker's deferred update).
 
 **Alternative:** (b) was simpler but Glen explicitly wants bubble-up.
+
+---
+
+## D-04 — Total loss is a fused graph handle (weights as scalar source-nodes)
+
+**Call:** Is the weighted total loss a Python sum of saved terms, or a handle the
+graph computes?
+
+**Choice:** A handle. Each loss term is multiplied by a per-loss scalar weight
+*source node* (`ref(weight_buffer, ())`), summed into `total_loss`. `loss()`
+syncs the weight buffers from `coeffs` (so L0-targeting's dynamic sparsity weight
+flows in), runs one `forward_values` pass, and `save(total_loss)` is the backprop
+loss; the *unweighted* terms are also saved for logging (matching saeco's
+`cache.<lossname>` = unweighted, `cache.loss` = weighted sum).
+
+**Why:** Glen: "we have some input that's the weights on the losses, then we
+multiply each by its corresponding loss and we sum" — the total loss *is* a graph.
+Execution-equivalent to Python weighting (the terms share one fused pass either
+way), but `total_loss` becomes a first-class handle, which is the graph-native form.
+
+**Note:** weights are scalar *buffers* synced each step — a pragmatic stand-in for
+true graph *inputs*. The cleaner form passes the weight vector as an input node,
+which awaits multi-input/`DictBatch`. Recorded for later.
