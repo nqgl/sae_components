@@ -276,47 +276,6 @@ class Graph(cl.Module):
         return "\n".join(lines)
 
 
-class ValueGraph(cl.Module):
-    """Runnable over a set of target handles (``output`` plus any ``extra``). A
-    single ``forward_values`` pass evaluates the **union** of their cones with
-    shared memoization -- each interned node (encoder, normalizer, ...) runs at
-    most once no matter how many requested outputs depend on it, and only nodes
-    actually requested are computed (minimal cone union). ``extra`` are handles
-    you want runnable/registered (their producers join the module tree) but that
-    aren't the default forward output.
-
-        with vg.forward_values(x, cache=cache) as save:
-            recon = save(recon_handle)
-            acts  = save(acts_handle)
-
-    ``save`` maps a handle ``ValueRef`` to its realized value ``T`` (the type
-    system reads it as ``Ref[T] -> T``); the work is done lazily+memoized inside
-    the ``with`` block, so it is one fused graph pass over the cone union."""
-
-    def __init__(self, output: ValueRef, extra: tuple[ValueRef, ...] = ()):
-        super().__init__()
-        self._output = output
-        self._targets = (output, *extra)
-        order = _toposort(*self._targets)
-        self._names = _names(order)
-        _register_producers(self, order, self._names)
-
-    @property
-    def output_ref(self) -> ValueRef:
-        return self._output
-
-    def collect(self, site_type: type) -> list[ValueRef]:
-        """Bubble up: the nodes in this graph whose producer is a ``site_type``."""
-        return collect(self._targets, site_type)
-
-    def forward_values(self, x, *, cache: cl.Cache, **kwargs) -> _SaveSession:
-        return _SaveSession(self, x, cache, kwargs)
-
-    def forward(self, x, *, cache: cl.Cache, **kwargs):
-        with self.forward_values(x, cache=cache, **kwargs) as save:
-            return save(self.output_ref)
-
-
 def collect(targets, site_type: type) -> list[ValueRef]:
     """Walk the cone of ``targets`` (apply-style, over the DAG) and return the
     nodes whose producer is an instance of ``site_type``. The graph-native form
@@ -330,13 +289,15 @@ def collect(targets, site_type: type) -> list[ValueRef]:
 
 @define
 class _SaveSession:
-    """Context manager backing ``ValueGraph.forward_values``. The yielded object
+    """Context manager backing ``GraphSpec.forward_values``. The yielded object
     is callable -- ``save(ref)`` evaluates that ref's cone, memoizing shared
     upstream nodes across calls so the whole ``with`` block is one fused pass.
     ``save.after(ref, fn)`` defers ``fn(save(ref))`` to block exit -- a bubbled-up
-    site (freq tracker) uses it to run its stateful update after the pass."""
+    site (freq tracker) uses it to run its stateful update after the pass.
 
-    graph: ValueGraph
+    ``graph`` is anything with a ``.names`` map (a ``GraphSpec``)."""
+
+    graph: object
     x: object
     cache: cl.Cache
     kwargs: dict
@@ -366,7 +327,7 @@ class _SaveSession:
         self.deferred.append((target, callback))
 
     def save(self, target: ValueRef):
-        names = self.graph._names
+        names = self.graph.names
         results = self.results
         for n in _toposort(target):
             if n in results:

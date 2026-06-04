@@ -35,9 +35,16 @@ from saeco_research.cgraph2.core import (
     Input,
     OpRef,
     ValueRef,
+    _register_producers,
+    _SaveSession,
+    _toposort,
     bind,
+    collect,
     op,
     ref,
+)
+from saeco_research.cgraph2.core import (
+    _names as _name_map,
 )
 
 # Annotation aliases matching the slot vocabulary.
@@ -236,31 +243,107 @@ class _GraphMeta(type):
         obj = object.__new__(cls)
         # bound handles as instance attributes -- they shadow the class templates,
         # so `spec.acts` is the inlined node at runtime and typed at check time.
-        for nm, h in t.handles.items():
-            setattr(obj, nm, bind(h, subs))
-        obj._out = bind(t.output, subs)
+        handle_refs = {nm: bind(h, subs) for nm, h in t.handles.items()}
+        for nm, h in handle_refs.items():
+            setattr(obj, nm, h)
+        # keep bound sub-graphs as navigable children (structure, not flattened):
+        # spec.norm_model.y_pred_norm works (D-02).
+        subgraphs = {nm: bindings[nm] for nm in t.sub_slots if nm in bindings}
+        for nm, child in subgraphs.items():
+            setattr(obj, nm, child)
+        obj._setup(handle_refs, bind(t.output, subs), subgraphs)
         return obj
 
 
 @dataclass_transform(field_specifiers=(arg, op_slot, sub_slot))
 class GraphSpec(metaclass=_GraphMeta):
-    """Base for a graph template. Subclasses declare slots as annotated fields
-    and wire the body; constructing binds the slots and exposes the bound handles
-    as instance attributes (``spec.acts`` is typed, and a typo errors)."""
+    """A graph: the authoring surface *and* the runnable context.
 
+    Subclasses declare slots as annotated fields and wire the body; constructing
+    binds the slots and exposes the bound handles as typed instance attributes
+    (``g.acts``; a typo errors). The instance is then **the graph**: run it with
+    ``g.forward_values(x)`` (a fused, memoized, multi-output pass), pull bubbled-up
+    sites with ``g.collect(SiteType)``, and register its parameters/buffers onto
+    an owning ``nn.Module`` with ``g.register_into(module)``. Bound sub-graphs are
+    kept as navigable children (``g.norm_model.y_pred_norm``), not flattened.
+
+    A ref means something only relative to its graph -- so always reach handles
+    through the graph, never pass them around bare.
+    """
+
+    def _setup(
+        self,
+        handle_refs: dict[str, ValueRef],
+        out: ValueRef,
+        subgraphs: dict[str, GraphSpec],
+    ) -> None:
+        self._handle_refs = handle_refs
+        self._out = out
+        self._subgraphs = subgraphs
+        self._names = None  # lazy name map over the handle cones
+
+    @classmethod
+    def of(cls, output: ValueRef | None = None, **handles: ValueRef) -> GraphSpec:
+        """Build a graph dynamically from named handles -- for aggregates assembled
+        at runtime (e.g. the trainable's whole computation), where a class body
+        can't enumerate a runtime-sized set. Handles are typed-attribute-accessed
+        (``g.total_loss``); ``output`` (or a handle named ``output``) is the
+        default ``forward`` output."""
+        obj = object.__new__(GraphSpec)
+        out = output if output is not None else handles.get("output")
+        if out is None:
+            raise TypeError("GraphSpec.of needs an `output` handle")
+        for nm, h in handles.items():
+            setattr(obj, nm, h)
+        obj._setup(dict(handles), out, {})
+        return obj
+
+    # -- the graph as context ---------------------------------------------------
     @property
     def out(self) -> ValueRef:
         return self._out
 
-    def __call__(self, x: ValueRef) -> Self:
+    @property
+    def names(self) -> dict:
+        if self._names is None:
+            self._names = _name_map(_toposort(*self._targets()))
+        return self._names
+
+    def _targets(self) -> tuple[ValueRef, ...]:
+        return (self._out, *self._handle_refs.values())
+
+    def forward_values(self, x, *, cache, **kwargs) -> _SaveSession:
+        """One fused pass: ``save(handle)`` realizes a handle (memoized across
+        saves), ``save.after(h, fn)`` defers a side-effect to block exit."""
+        return _SaveSession(self, x, cache, kwargs)
+
+    def collect(self, site_type: type) -> list[ValueRef]:
+        """Bubble up: nodes in this graph's cone whose producer is ``site_type``."""
+        return collect(list(self._targets()), site_type)
+
+    def register_into(self, module) -> GraphSpec:
+        """Register this graph's leaf producers (params/buffers/modules) onto an
+        owning ``nn.Module`` so ``.parameters()`` / ``.to()`` / ``state_dict`` see
+        them. The graph runs off live refs; this is just nn.Module bookkeeping."""
+        _register_producers(module, _toposort(*self._targets()), self.names)
+        return module
+
+    def forward(self, x, *, cache, **kwargs):
+        with self.forward_values(x, cache=cache, **kwargs) as save:
+            return save(self._out)
+
+    def apply_to(self, x: ValueRef) -> Self:
         """Apply this (bound) graph to a new input: a view whose handles read
-        ``x`` instead of ``Input``. The standalone form of a sub-model slot's
-        ``m(x)`` -- so a graph composes into another by being applied."""
+        ``x`` instead of ``Input`` -- the standalone form of a sub-model slot's
+        ``m(x)``."""
         clone = object.__new__(type(self))
-        for nm in type(self)._template.handles:
-            setattr(clone, nm, bind(getattr(self, nm), {Input: x}))
-        clone._out = bind(self._out, {Input: x})
+        refs = {nm: bind(h, {Input: x}) for nm, h in self._handle_refs.items()}
+        for nm, h in refs.items():
+            setattr(clone, nm, h)
+        clone._setup(refs, bind(self._out, {Input: x}), {})
         return clone
+
+    __call__ = apply_to
 
     def produce(self, ref: ValueRef) -> Graph:
         """A Graph targeting one handle -- runs only that handle's cone."""

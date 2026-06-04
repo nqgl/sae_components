@@ -54,3 +54,10 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled PYTHONPATH=research/src:research/expe
 
 - (start) Scaffolded docs (INDEX/DECISIONS/PROGRESS), recorded D-01..D-03,
   committed prior bubble-up work. Beginning #1.
+- **#1 DONE.** `GraphSpec` is now the runnable context: `forward_values`,
+  `collect`, `forward`, `register_into`, `.of(**handles)` (dynamic aggregate),
+  `apply_to`/`__call__`=apply. `ValueGraph` retired. Trainable builds its graph
+  via `GraphSpec.of(...)` + `register_into(self)`, runs `self.graph.forward_values`.
+  D-01 mechanism corrected (plain object + register_into, not nn.Module, because
+  nn.Module.__call__ collides with g(x)=apply). All demos + CPU smoke + GPU green
+  (trains identically). Next: #2.

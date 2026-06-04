@@ -21,14 +21,20 @@ context is the graph. Bundling handles + registration + run into one object make
 "access the handle through its graph" literal and kills the `ValueGraph(output,
 (extras...))` hand-assembly smell. Matches "everything is a graph."
 
-**Mechanism:** `_GraphMeta` becomes `ABCMeta`-based so `GraphSpec(cl.Module)` is
-legal; the metaclass `__call__` inits the nn.Module, binds handles as instance
-attrs, registers leaf producers from the union of handle cones, and keeps bound
-sub-graphs as navigable children.
+**Mechanism (as built):** `GraphSpec` stays a *plain object* (not an nn.Module).
+It runs off the *live* module references its nodes already hold (no registration
+needed to compute), so it gets `forward_values`/`collect`/`forward` directly. For
+the nn.Module bookkeeping a trainable needs (`.parameters()`/`.to()`/state_dict),
+`g.register_into(module)` walks the cone and registers the leaf producers onto the
+owning module. `GraphSpec.of(**handles)` builds one dynamically for runtime-sized
+aggregates (the trainable's whole computation). `ValueGraph` retired.
 
-**Alternative not taken:** keep `GraphSpec` a plain object that lazily builds a
-hidden runner. Rejected — the trainable (an nn.Module) couldn't register params
-by holding a plain object, reintroducing the split.
+**Why not nn.Module:** the original plan (make `_GraphMeta` ABCMeta-based,
+`GraphSpec(cl.Module)`) collides head-on with `g(x)` = *apply* (D-02 composition):
+`nn.Module.__call__` is *run*. Keeping `g(x)` = apply (so `model(x).acts`
+composes) and separating "run" (`g.forward_values`) from "register"
+(`g.register_into`) is cleaner and avoids the conflict. The trainable registers
+by calling `self.graph.register_into(self)`.
 
 ---
 

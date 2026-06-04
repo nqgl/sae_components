@@ -28,7 +28,6 @@ from saeco_research.cgraph2.core import (
     Input,
     Op,
     OpRef,
-    ValueGraph,
     ValueRef,
     bind,
     op,
@@ -304,16 +303,17 @@ class GraphTrainable(Trainable):
         # decode: acts -> raw recon (treat acts as the input, then denormalize)
         self._decode = normalizer.denormalize(bind(main.recon, {main.acts: Input}))
 
-        self.graph = ValueGraph(
-            self._output,
-            (
-                self._acts,
-                self._l0,
-                self._l1,
-                *self._loss_terms.values(),
-                *self._metric_terms.values(),
-            ),
+        # the whole training computation as one graph; handles reached through it,
+        # producers registered onto this Trainable (so .parameters()/.to() work).
+        self.graph = GraphSpec.of(
+            output=self._output,
+            acts=self._acts,
+            L0=self._l0,
+            L1=self._l1,
+            **self._loss_terms,
+            **self._metric_terms,
         )
+        self.graph.register_into(self)
 
         self.resampler = resampler
         resampler.assign_model(self)
@@ -350,7 +350,7 @@ class GraphTrainable(Trainable):
         if isinstance(x, SAETrainBatch):
             x = x.input
         x, shape = self.rearrange(x)
-        return self.dearrange(self.graph(x, cache=cache), shape)
+        return self.dearrange(self.graph.forward(x, cache=cache), shape)
 
     @make_cache_optional
     def get_acts(self, x, cache=None, pre_acts=False):

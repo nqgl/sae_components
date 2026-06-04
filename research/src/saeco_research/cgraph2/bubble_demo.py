@@ -13,7 +13,6 @@ from saeco_research.cgraph2 import (
     GraphSpec,
     Input,
     Op,
-    ValueGraph,
     op,
     op_slot,
 )
@@ -52,7 +51,7 @@ def main():
     torch.manual_seed(0)
     enc, dec = Lin(8, 16), Lin(16, 8)
     sae = SAESpec(encoder=enc, decoder=dec)
-    g = ValueGraph(sae.recon)
+    g = sae  # the spec is itself the runnable graph
     x = torch.randn(32, 8)
 
     # bubble up the sites from the graph (the outside never reached "inside")
@@ -102,7 +101,7 @@ def main():
         output = recon
 
     s2 = SAE2(encoder=enc, decoder=dec)
-    g2 = ValueGraph(s2.recon)
+    g2 = s2
     fn2 = g2.collect(FreqTracker)[0]
     with g2.forward_values(torch.randn(32, 8), cache=cl.Cache()) as save:
         save(s2.recon)
