@@ -33,6 +33,7 @@ from saeco_research.cgraph2.core import (
     ValueRef,
     bind,
     collect,
+    field,
     op,
     ref,
 )
@@ -315,9 +316,11 @@ class NormalizedModel(GraphSpec):
     normalize: OpRef = op_slot()
     denorm: OpRef = op_slot()
 
-    applied = model(normalize(Input))  # the model, run on the normalized input
-    x_norm = normalize(Input)
-    y_norm = x_norm  # autoencoding target == input
+    x_in = field("input")  # boundary fields: the batch's source + recon target
+    y_in = field("target")
+    applied = model(normalize(x_in))  # the model, run on the normalized input
+    x_norm = normalize(x_in)
+    y_norm = normalize(y_in)  # transcoder: target may differ from input (else == x)
     y_pred_norm = applied.recon
     acts = applied.acts
     out = denorm(y_pred_norm)  # denormalized reconstruction (inference)
@@ -416,16 +419,24 @@ class GraphTrainable(Trainable):
         # decode: acts -> raw recon (treat acts as the input, then denormalize)
         self._decode = normalizer.denormalize(bind(main.recon, {main.acts: Input}))
 
+        # total_loss is a first-class graph handle: each term times a per-loss
+        # weight *field* (`field("w_<name>")`), summed. The weights are graph
+        # inputs seeded fresh from `coeffs` each step -- device-clean, unlike the
+        # captured weight buffers that broke D-04 (a field is an extraction node,
+        # not a tensor orphaned by `.to(device)`). One fused pass either way.
+        self._total_loss = reduce(
+            lambda a, b: a + b,
+            (field(f"w_{k}") * term for k, term in self._loss_terms.items()),
+        )
+
         # the whole training computation as one graph; handles reached through it,
         # producers registered onto this Trainable (so .parameters()/.to() work).
-        # The loss terms share this one fused pass; the (dynamic) coeff weighting
-        # is applied in Python -- a graph weight source-node would capture a buffer
-        # that .to(device) orphans, so weights await true graph inputs (D-04).
         self.graph = GraphSpec.of(
             output=self._output,
             acts=self._acts,
             L0=self._l0,
             L1=self._l1,
+            total_loss=self._total_loss,
             **self._loss_terms,
             **self._metric_terms,
         )
@@ -438,23 +449,31 @@ class GraphTrainable(Trainable):
         resampler.assign_model(self)
 
     # -- training contract -----------------------------------------------------
-    def loss(self, x, *, cache, y=None, coeffs=None):
+    def _batch(self, x, y=None, coeffs=None) -> dict:
+        """The boundary input batch: the source, the recon target (==source for an
+        autoencoder), and a per-loss weight field seeded from ``coeffs``."""
         if isinstance(x, SAETrainBatch):
             x = x.input
-        coeffs = dict(coeffs) if coeffs is not None else {}
-        with self.graph.forward_values(x, cache=cache) as save:
-            terms = {k: save(t) for k, t in self._loss_terms.items()}
+        if isinstance(y, SAETrainBatch):
+            y = y.input
+        coeffs = coeffs or {}
+        return {
+            "input": x,
+            "target": x if y is None else y,
+            **{f"w_{k}": coeffs.get(k, 1.0) for k in self._loss_terms},
+        }
+
+    def loss(self, x, *, cache, y=None, coeffs=None):
+        with self.graph.forward_values(self._batch(x, y, coeffs), cache=cache) as save:
+            total = save(self.graph.total_loss)  # weighted sum -- a graph handle
+            terms = {k: save(t) for k, t in self._loss_terms.items()}  # unweighted
             for k, t in self._metric_terms.items():
                 setattr(cache, k, save(t))
             cache.L0, cache.L1 = save(self.graph.L0), save(self.graph.L1)
             for site in self._freq_sites:  # deferred EMA update after the pass
                 ft = site.producer
                 ft.update(ft.updated(site.inputs[0]))
-        # the loss terms shared one fused pass; weight + sum in Python (coeffs are
-        # dynamic). cache.<lossname> = unweighted (logging), cache.loss = total.
-        total = reduce(
-            lambda a, b: a + b, (m * coeffs.get(k, 1.0) for k, m in terms.items())
-        )
+        # cache.<lossname> = unweighted (logging); cache.loss = the weighted total.
         for k, m in terms.items():
             setattr(cache, k, m)
         cache.loss = total.item()
@@ -478,12 +497,13 @@ class GraphTrainable(Trainable):
         if isinstance(x, SAETrainBatch):
             x = x.input
         x, shape = self.rearrange(x)
-        return self.dearrange(self.graph.forward(x, cache=cache), shape)
+        # inference reads `field("input")`; seed a batch (fail-loud on bad fields)
+        return self.dearrange(self.graph.forward({"input": x}, cache=cache), shape)
 
     @make_cache_optional
     def get_acts(self, x, cache=None, pre_acts=False):
         x, shape = self.rearrange(x)
-        return self.dearrange(Graph(self._acts)(x, cache=cache), shape)
+        return self.dearrange(Graph(self._acts)({"input": x}, cache=cache), shape)
 
     @make_cache_optional
     def encode(self, x, cache=None):

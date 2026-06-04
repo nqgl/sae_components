@@ -13,6 +13,7 @@ and composition is typed arrow composition. The DictBatch contracts are the type
 the field *names* are the structural glue that interns/fuses the wiring.
 """
 
+# ruff: noqa  -- non-runnable sketch: mid-file imports / bare exprs are intentional
 from __future__ import annotations
 
 from typing import Any
@@ -158,10 +159,11 @@ class Model2(
 class Ref: ...
 
 
+from typing import dataclass_transform
+
+from returns.interfaces import bindable
 from returns.primitives.container import BaseContainer
 from returns.primitives.hkt import SupportsKind1
-from typing import dataclass_transform
-from returns.interfaces import bindable
 
 
 @dataclass_transform()
@@ -177,7 +179,7 @@ class ContractBatch[T](
     loss: T
 
 
-from returns.primitives.hkt import kinded, Kind1
+from returns.primitives.hkt import Kind1, kinded
 
 
 @kinded

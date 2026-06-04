@@ -291,3 +291,35 @@ than function composition into a typed contract, and harder to type).
 
 14 pytest + 6 demos + ruff green; `dictbatch.py` + demo pyright-clean on the user
 surface. Trainable migration (D-08's open items) still pending greenlight.
+
+---
+
+## D-10 — Trainable migration: total_loss is a graph handle; transcoder target
+
+**Call:** With multi-input primitives built (D-08/D-09), migrate the trainable off
+Python loss-weighting + hardcoded `y_norm = x_norm`.
+
+**Choice:** Done, on the existing `field`/`bind`/`forward_values` machinery — no new
+mechanism (per refinement 2, this is all wiring):
+
+- `NormalizedModel` reads `field("input")` and `field("target")`; `y_norm =
+  normalize(field("target"))` (was `= x_norm`). Transcoders (`y != x`) fall out;
+  an autoencoder just seeds `target == input`.
+- `GraphTrainable` builds `total_loss = Σ field("w_<k>") * term_k` as a **first-class
+  graph handle**. `loss()` seeds a boundary batch `{input, target, w_<k>}` (weights
+  from `coeffs`), runs one `forward_values`, and `save(total_loss)` is the backprop
+  loss. The terms are still saved unweighted for logging.
+- Inference paths (`forward`/`get_acts`) seed `{"input": x}` (fail-loud, not a
+  silent bare-tensor fall-through).
+
+**Why this is the clean D-04 resurrection:** the loss weights are now graph
+**inputs** (seeded fresh from `coeffs` every step), not captured buffers — so there
+is nothing for `.to(device)` to orphan. The dynamic L0-targeting sparsity weight
+flows in as the `w_sparsity_loss` field. Validated: GPU through the real Trainer
+trains identically (L2 ~0.02, cosim ~0.99, L0-targeting bends L0), 16 pytest + 6
+demos + ruff green, plus a focused test asserting `total == Σ coeff·term` and that
+a `target != input` changes the recon loss.
+
+**Still deferred:** the bubble-up *logging* recipe (the output-side dual) — the
+cache-write is still hand-listed in `loss()`. That's the next slice when we want
+inside-metrics to appear without the outside naming them (D-03).

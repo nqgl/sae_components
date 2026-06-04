@@ -240,6 +240,93 @@ def test_affine_normalizer_rejects_dynamic_aggregations() -> None:
         AffineNormalizer(8, cfg=GNConfig(std_e=Aggregation.BATCH_AVG))
 
 
+def _build_gated_trainable(d=16):
+    import saeco.components.features as ft
+    from saeco.components.resampling.anthropic_resampling import (
+        AnthResampler,
+        AnthResamplerConfig,
+    )
+    from saeco.initializer.initializer import Initializer
+    from saeco_research.architectures.gated_graph.model import (
+        GatedAuxSpec,
+        GatedModelSpec,
+    )
+    from saeco_research.cgraph2.sae import (
+        AffineNormalizer,
+        FreqTracker,
+        GraphL2Loss,
+        GraphNormalizer,
+        GraphSparsityLoss,
+        GraphTrainable,
+    )
+
+    init = Initializer(d, dict_mult=4, l0_target=8)
+    init._encoder.bias = False
+    init._decoder.add_wrapper(ft.NormFeatures)
+    init._decoder.add_wrapper(ft.OrthogonalizeFeatureGrads)
+
+    class _B:
+        def __init__(self, t):
+            self.input = t
+
+    def buf():
+        while True:
+            yield _B(torch.randn(32, d) * 4 + 1)
+
+    norm = AffineNormalizer(d)
+    norm.prime_normalizer(buf())
+    enc = init.encoder
+    gate_b, mag_b, log_r = (
+        init.new_encoder_bias(),
+        init.new_encoder_bias(),
+        init.dict_bias(),
+    )
+    main = GatedModelSpec(
+        encoder=enc, gate_bias=gate_b, mag_bias=mag_b, decoder=init.decoder, log_r=log_r
+    )
+    aux = GatedAuxSpec(
+        encoder=enc,
+        gate_bias=gate_b,
+        decoder=init._decoder.detached,
+        freqs=FreqTracker(init.d_dict),
+    ).set_to_aux_model("model_aux")
+    losses = {
+        "L2_loss": GraphL2Loss.on(main),
+        "L2_aux_loss": GraphL2Loss.on(aux),
+        "sparsity_loss": GraphSparsityLoss.on(aux),
+    }
+    tr = GraphTrainable(
+        [main, aux], AnthResampler(AnthResamplerConfig(expected_biases=2)),
+        losses, GraphNormalizer(norm),
+    )
+    return tr, d
+
+
+def test_total_loss_handle_weights_and_transcoder() -> None:
+    from saeco.trainer.train_cache import TrainCache
+
+    torch.manual_seed(0)
+    tr, d = _build_gated_trainable()
+    names = tr.get_losses_and_metrics_names()
+    coeffs = {"sparsity_loss": 3e-5, "L2_loss": 1.0, "L2_aux_loss": 1.0}
+    x = torch.randn(32, d) * 4 + 1
+
+    # total_loss (a graph handle, weights = fields) == sum of weighted terms
+    cache = TrainCache()
+    cache._watch(names)
+    total = tr.loss(x, cache=cache, y=x, coeffs=coeffs)
+    expected = sum(coeffs[k] * float(cache.get(k)) for k in tr._loss_terms)
+    assert abs(float(total) - expected) < 1e-3
+
+    # transcoder: target != input flows through (different recon target -> diff L2)
+    c_ae, c_tc = TrainCache(), TrainCache()
+    c_ae._watch(names)
+    c_tc._watch(names)
+    tr.loss(x, cache=c_ae, y=x, coeffs=coeffs)  # autoencoder: target == input
+    tr.loss(x, cache=c_tc, y=torch.randn(32, d), coeffs=coeffs)  # target != input
+    assert abs(float(c_ae.get("L2_loss")) - float(c_tc.get("L2_loss"))) > 1e-4
+
+
 def test_gated_graph_trains_one_step_cpu() -> None:
     import saeco.components.features as ft
     from saeco.components.resampling.anthropic_resampling import (
