@@ -315,6 +315,23 @@ class GraphSpec(metaclass=_GraphMeta):
     def out(self) -> ValueRef:
         return self._out
 
+    def __repr__(self) -> str:
+        n = len(_toposort(*self._targets()))
+        return f"<{type(self).__name__}: {', '.join(self._handle_refs)} | {n} nodes>"
+
+    def describe(self, indent: int = 0) -> str:
+        """A readable tree of this graph's handles and its (kept) sub-graph
+        children -- ``print(g.describe())`` shows the nested structure (D-02)."""
+        pad = "  " * indent
+        lines = [f"{pad}{type(self).__name__}  handles: {list(self._handle_refs)}"]
+        for nm, child in self._subgraphs.items():
+            if isinstance(child, GraphSpec):
+                lines.append(f"{pad}  {nm}:")
+                lines.append(child.describe(indent + 2))
+            else:
+                lines.append(f"{pad}  {nm}: {child!r}")
+        return "\n".join(lines)
+
     @property
     def names(self) -> dict:
         if self._names is None:
