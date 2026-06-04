@@ -6,6 +6,7 @@ from saeco_research.cgraph2.core import (
     ValueGraph,
     ValueRef,
     at,
+    collect,
     op,
     ref,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "ValueRef",
     "arg",
     "at",
+    "collect",
     "op",
     "op_slot",
     "ref",

@@ -21,12 +21,18 @@ never a display label.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextvars import ContextVar
 
+import torch
 import torch.nn as nn
 from attrs import define, field
 
 import saeco.core as cl
 from saeco_research.cgraph2.funcstd import standardize
+
+# The forward_values session in scope, so a bubbled-up site (e.g. a freq tracker)
+# can defer a stateful update onto it from inside the `with` block.
+_ACTIVE_SESSION: ContextVar = ContextVar("cgraph_forward_values", default=None)
 
 # Global intern table: (producer_key, input-node-ids) -> the canonical ValueRef.
 _INTERN: dict = {}
@@ -231,7 +237,7 @@ def _eval_node(n: ValueRef, args: list, cache: cl.Cache, name: str, kwargs: dict
     p = n.producer
     if isinstance(p, cl.Module):
         return p(*args, cache=cache[name], **kwargs)
-    if isinstance(p, nn.Parameter):
+    if isinstance(p, torch.Tensor):  # a parameter or buffer used as a value source
         return p
     return p(*args)
 
@@ -290,13 +296,18 @@ class ValueGraph(cl.Module):
     def __init__(self, output: ValueRef, extra: tuple[ValueRef, ...] = ()):
         super().__init__()
         self._output = output
-        order = _toposort(output, *extra)
+        self._targets = (output, *extra)
+        order = _toposort(*self._targets)
         self._names = _names(order)
         _register_producers(self, order, self._names)
 
     @property
     def output_ref(self) -> ValueRef:
         return self._output
+
+    def collect(self, site_type: type) -> list[ValueRef]:
+        """Bubble up: the nodes in this graph whose producer is a ``site_type``."""
+        return collect(self._targets, site_type)
 
     def forward_values(self, x, *, cache: cl.Cache, **kwargs) -> _SaveSession:
         return _SaveSession(self, x, cache, kwargs)
@@ -306,27 +317,53 @@ class ValueGraph(cl.Module):
             return save(self.output_ref)
 
 
+def collect(targets, site_type: type) -> list[ValueRef]:
+    """Walk the cone of ``targets`` (apply-style, over the DAG) and return the
+    nodes whose producer is an instance of ``site_type``. The graph-native form
+    of ``Module.apply`` -- a value 'bubbles up' to the outside without anything
+    in between knowing where it lives. The caller derives handles from each
+    node's producer (the site) and inputs (e.g. ``site.handles(node.inputs[0])``)."""
+    if isinstance(targets, ValueRef):
+        targets = (targets,)
+    return [n for n in _toposort(*targets) if isinstance(n.producer, site_type)]
+
+
 @define
 class _SaveSession:
-    """Context manager backing ``ValueGraph.forward_values``. Yields a ``save``
-    callable; each ``save(ref)`` evaluates that ref's cone, memoizing shared
-    upstream nodes across calls so the whole ``with`` block is one fused pass."""
+    """Context manager backing ``ValueGraph.forward_values``. The yielded object
+    is callable -- ``save(ref)`` evaluates that ref's cone, memoizing shared
+    upstream nodes across calls so the whole ``with`` block is one fused pass.
+    ``save.after(ref, fn)`` defers ``fn(save(ref))`` to block exit -- a bubbled-up
+    site (freq tracker) uses it to run its stateful update after the pass."""
 
     graph: ValueGraph
     x: object
     cache: cl.Cache
     kwargs: dict
     results: dict = field(init=False)
+    deferred: list = field(init=False, factory=list)
+    token: object = field(init=False, default=None)
 
     @results.default
     def _seed_results(self) -> dict:
         return {Input: self.x}
 
     def __enter__(self):
-        return self.save
+        self.token = _ACTIVE_SESSION.set(self)
+        return self
 
     def __exit__(self, *exc):
+        for target, callback in self.deferred:
+            callback(self.save(target))
+        _ACTIVE_SESSION.reset(self.token)
         return False
+
+    def __call__(self, target: ValueRef):
+        return self.save(target)
+
+    def after(self, target: ValueRef, callback: Callable) -> None:
+        """Defer ``callback(value-of-target)`` until the ``with`` block exits."""
+        self.deferred.append((target, callback))
 
     def save(self, target: ValueRef):
         names = self.graph._names

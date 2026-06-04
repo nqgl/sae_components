@@ -32,6 +32,7 @@ from saeco_research.cgraph2.core import (
     ValueRef,
     bind,
     op,
+    ref,
 )
 from saeco_research.cgraph2.spec import GraphSpec, op_slot, sub_slot
 
@@ -51,6 +52,65 @@ def _l1(a):
 
 def _cosim(a, b):
     return torch.cosine_similarity(a, b, dim=-1).mean()
+
+
+# --- bubble-up sites: passthrough nodes on `acts` that expose extra handles ----
+# A site is collected from a graph cone (apply-style, `collect()`); the outside
+# pulls its handles without anything in between knowing where it lives -- the
+# graph-native version of saeco's ActMetrics "bubbling up" to the cache.
+@define(eq=False)
+class ActMetrics:
+    """A passthrough metrics site on ``acts``. ``handles(acts)`` are the L0/L1
+    nodes (derived from whatever acts flow into the site's node, so they track
+    rebinding e.g. normalization)."""
+
+    def __call__(self, x):
+        return x
+
+    def handles(self, acts: ValueRef) -> dict[str, ValueRef]:
+        return {"L0": op(_l0)(acts), "L1": op(_l1)(acts)}
+
+
+def act_metrics(acts: ValueRef) -> ValueRef:
+    """Splice an :class:`ActMetrics` site onto ``acts`` (passthrough); collectable
+    from any cone that includes the returned node."""
+    return ref(ActMetrics(), (acts,))
+
+
+class FreqTracker(cl.Module):
+    """A passthrough freq site on ``acts``: tracks an EMA of per-feature firing
+    rate. ``updated(acts)`` is the handle for the new freqs given this step's
+    acts; ``update(new)`` writes them back. Called with a handle inside a
+    ``forward_values`` block, ``update`` *defers* the write to block exit -- so
+    you can write ``ft.update(ft.updated(acts))`` inline and it runs after the
+    pass (the principled before/after-update split: ``freqs`` and ``updated_freqs``
+    are distinct nodes; only an explicit update advances the state)."""
+
+    def __init__(self, d_dict: int, decay: float = 0.99):
+        super().__init__()
+        self.decay = decay
+        self.register_buffer("freqs", torch.zeros(d_dict))
+
+    def forward(self, x, *, cache: cl.Cache, **kwargs):
+        return x  # passthrough
+
+    def updated(self, acts: ValueRef) -> ValueRef:
+        ema = OpRef(Op.create(self._ema, "freq_ema", key=("freq_ema", id(self))))
+        return ema(ref(self.freqs, ()), acts)
+
+    def _ema(self, freqs, acts):
+        firing = (acts != 0).float().mean(0)
+        return freqs * self.decay + firing * (1 - self.decay)
+
+    @torch.no_grad()
+    def update(self, new_freqs) -> None:
+        from saeco_research.cgraph2.core import _ACTIVE_SESSION
+
+        session = _ACTIVE_SESSION.get()
+        if isinstance(new_freqs, ValueRef) and session is not None:
+            session.after(new_freqs, self.update)  # defer to the block's exit
+            return
+        self.freqs.copy_(new_freqs)
 
 
 class SAEModel(Protocol):
@@ -167,6 +227,8 @@ class GraphLoss(GraphSpec):
     """Abstract loss base. ``.on(model)`` returns the ``(model, loss_type)`` pair
     a ``@loss_prop`` declares; the trainable resolves it against the model's
     :class:`NormalizedModel`."""
+
+    norm_model: NormalizedModel
 
     @classmethod
     def on(cls, model: SAEModel) -> "LossRef":
