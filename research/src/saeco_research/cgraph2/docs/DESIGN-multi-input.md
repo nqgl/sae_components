@@ -1,9 +1,16 @@
 # Design proposal — multi-input graphs (DictBatch) & the `total_loss` handle
 
-**Status:** the **`field()` primitive is built, tested, demoed** (D-08); the
-**migration is the proposal awaiting greenlight.** Written + the primitive landed
-during the overnight run because this is the biggest repeatedly-deferred item and
-it gates two things we keep wanting (a true `total_loss` handle, transcoders).
+> **Read the bottom section first** ("Update after Glen's review") — it supersedes
+> the original proposal below with what's now BUILT (typed `DictBatch` contracts,
+> D-09), the resolved converter fork, and the multi-output/logging design. The
+> sections below are the original overnight proposal, kept for history.
+
+**Status:** the **`field()` primitive + typed `DictBatch` contracts are built,
+tested, demoed** (D-08, D-09); the **trainable migration** (`total_loss` handle,
+transcoder `target`, bubble-up logging) is the proposal awaiting greenlight.
+Written + the primitive landed during the overnight run because this is the biggest
+repeatedly-deferred item and it gates two things we keep wanting (a true
+`total_loss` handle, transcoders).
 
 What I built autonomously (safe, purely additive — zero existing behavior changed):
 `field(name)` in `core.py` (a stateless `_Field` producer that reads a named field
@@ -106,3 +113,115 @@ nodes exist. `at(handle, x)` stays the single-input sugar (`{Input: x}`).
 If this looks right I'll implement B-on-A behind the existing single-input path,
 land the `total_loss` handle first (smallest, highest-value slice), then the
 transcoder `target`. Each its own commit, each validated GPU-through-Trainer.
+
+---
+
+# Update after Glen's review — typed contracts, the converter fork, multi-output
+
+Glen reviewed and asked for **typed `DictBatch` contracts, no string accesses**, an
+**override escape hatch**, **converters**, and raised a deeper reframe (converter
+on the front vs. batch-unpacking baked into the graph; and the symmetric
+multi-output/logging case). His central worry: *is the typed surface expressible?*
+
+## Feasibility: CONFIRMED (with evidence) — and BUILT
+
+`field(Batch.input)` type-checks. A `_BatchMeta` metaclass makes each class-level
+field a typed `FieldRef`; **pyright reports `Batch.input: Tensor`, `Batch.weight:
+float`** (probed directly), and `field(Any) -> ValueRef` accepts it. `DictBatch` is
+`dataclass_transform`'d, so `Batch(input=…, target=…, weight=…)` is *typed
+construction* — pyright catches wrong field types and missing fields. A
+constructed instance exposes values as instance attributes (`b.input` is the
+tensor); a declared-but-unprovided field fails loud on access (a `__getattribute__`
+guard catches the would-be class-`FieldRef` fallback). All shipped (commit after
+this doc): `dictbatch.py`, `field()` duck-typing `str | FieldRef`, the rewritten
+typed `multi_input_demo.py`, a unit test — `dictbatch.py` + the demo are
+**pyright-clean on the user surface**. This realizes Glen's exact sketch.
+
+**Override** (his "set y and w, pass z=Input"): no new mechanism — declare a field
+as a slot defaulting to the batch read, `x: Arg = arg(default=field(Batch.input))`,
+and bind `x` to a plain value at construction to bypass the batch. Demoed + tested.
+
+## The converter fork dissolves — it's function composition into a typed contract
+
+Glen's tension was: does the spec *bake in* `Batch -> x,y,w`, or declare abstract
+inputs `x,y,w` with a *converter* on the front? Tested empirically (`/tmp` probe):
+**a graph reads its own typed input-contract `DictBatch`, and a converter is just a
+typed function `Source -> InputContract`.** No new graph machinery:
+
+    class AEInputs(DictBatch):          # the graph's INPUT CONTRACT
+        x: torch.Tensor
+        target: torch.Tensor
+    class Recon(GraphSpec):
+        xn = field(AEInputs.x); y = field(AEInputs.target)
+        output = op(_l2)(op(torch.tanh)(xn), y)
+
+    def autoencoder(src) -> AEInputs: return AEInputs(x=src, target=src)   # y == x
+    def transcoder(a, b) -> AEInputs: return AEInputs(x=a, target=b)       # y != x
+    g.forward(autoencoder(raw))   # one graph...
+    g.forward(transcoder(a, b))   # ...two converters, both typed, verified
+
+So "baked-in vs converter-front" is a false dichotomy: the graph names *its own
+contract's* fields (its interface), and converters typed `Source -> Contract` adapt
+any external data to it — reusability **and** full typing. The graph is coupled
+only to its own input contract, which is exactly what an interface should be. This
+answers the transcoder case (`y_norm != x_norm`) too: it's a different converter,
+not a different graph. (Resolves open-question #3 — missing-`target` is the
+converter's job, so `field` stays fail-loud.)
+
+## Multi-output: the dual (and where Glen's D-03 note lands)
+
+Glen: outputs are the mirror image — "a recipe for taking a forward pass and
+turning it into a DictBatch; the mapping between fields and which valuerefs' outputs
+go into them," and *logging is one such recipe built dynamically by bubble-up,
+executed inside a `forward_values` block.* And his D-03 note: bubble-up matters
+precisely because we log metrics we **can't plan from outside**, so we need a
+**contract for passing what-to-log up from the inside**.
+
+These are the same thing. Proposed design (the symmetric half):
+
+- An **output recipe** is a typed map `{field_name -> ValueRef}` targeting an output
+  `DictBatch`. The statically-known outputs (e.g. `recon`, `acts`, `loss`) are a
+  typed `DictBatch`; running the graph fills it. This is `GraphSpec.of(**handles)`
+  generalized to *produce a typed batch* instead of a bare graph.
+- **Logging is a dynamically-built output recipe.** Bubble-up (`collect`, already
+  built — D-03/D-05) walks the graph and gathers each site's `(name, handle)`; that
+  set *is* the recipe; executing it in the `forward_values` block writes the logged
+  `DictBatch` / cache. The fields aren't known from outside — hence Glen's
+  `@DictBatch.auto_other_fields`: the logging batch has its known fields **plus**
+  whatever bubbled up. So `auto_other_fields` is exactly the typed-core +
+  dynamic-tail contract the logging case needs.
+- This subsumes today's `GraphTrainable.loss` cache-writing: instead of hand-listing
+  `cache.L0 = save(...)`, the trainable runs the bubbled-up output recipe, and new
+  inside-metrics appear in the log without the outside naming them — which is the
+  whole point of D-03.
+
+**Type-system caveat (the honest part):** the *static* outputs type cleanly (a
+`DictBatch` of handles). The *dynamic* bubbled-up tail can't be statically typed
+(discovered at runtime) — `auto_other_fields` is deliberately the untyped escape
+valve. That's the right place to give up static typing, since "metrics you can't
+plan from outside" are by definition not statically known.
+
+## Revised plan (smallest valuable slices, each its own commit, GPU-validated)
+
+1. **DONE** — typed `DictBatch` + `field(Batch.x)` + override + converter framing.
+2. **`total_loss` handle** — the trainable builds a typed input `DictBatch`
+   (`input`, `target`, per-loss `w_*`), reads weights as fields, exposes
+   `total = Σ field(w_k)·term_k` as a handle. Device-clean (fields are extraction
+   nodes, not the stale buffers that killed D-04). Smallest migration; biggest win.
+3. **Transcoder `target`** — `NormalizedModel` reads `field(Inputs.target)`;
+   autoencoder converter sets `target=input`. Unlocks `y_norm != x_norm`.
+4. **Output recipe + bubble-up logging** — generalize `GraphSpec.of` to produce a
+   typed output `DictBatch`; the trainable's cache-write becomes a bubbled-up
+   output recipe (the D-03 contract). Largest; do last, likely its own design pass.
+
+## Decisions still genuinely yours
+
+- **Input-contract location.** A cgraph-side `DictBatch` the trainable builds and
+  `SAETrainBatch` adapts into (keeps cgraph decoupled — my lean), vs. having
+  `SAETrainBatch` *be* a `DictBatch`. The converter framing makes the adapter trivial.
+- **Weights:** per-loss `w_{k}` fields (readable — my lean) vs. one weight vector
+  field (fewer nodes, positional). With `auto_other_fields` the per-loss fields cost
+  nothing structurally.
+- **How far to push output recipes now** — just the `total_loss` slice (#2), or the
+  full bubble-up logging contract (#4) in this pass? #4 reshapes the cache path, so
+  I'd want your nod on its shape before building.

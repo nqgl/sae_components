@@ -76,6 +76,8 @@ stateful case too (freq tracker's deferred update).
 
 **Alternative:** (b) was simpler but Glen explicitly wants bubble-up.
 
+
+>> to give more context on this, if the only metrics under consideration were L0 and L1 then (b) would totally be superior. But I think it's important to be able to collect and log metrics from the inside that we can't plan for from the outside, so as I see it there needs to be some sort of contract that enables passing up what needs to be logged from the inside to the outside. 
 ---
 
 ## D-04 — Total loss is a fused graph handle (weights as scalar source-nodes)
@@ -241,3 +243,51 @@ surface; the struct/`field` surface matches saeco's already-structured
 
 All cgraph2 demos (now 6) + 13 pytest + ruff green; existing GPU run unaffected
 (the primitive isn't on the trainable's path yet).
+
+---
+
+## D-09 — Typed `DictBatch` contracts (`field(Batch.input)`, no string accesses)
+
+**Call:** Glen wants the multi-input surface *typed* — `field(Batch.input)`, not
+`field("input")` — with typed batch construction, an override escape hatch, and
+converters. His worry: is the typed surface expressible to the type checker?
+
+**Choice:** Yes, and built (`dictbatch.py`). A `DictBatch` subclass declares fields
+as annotations; a `_BatchMeta` metaclass makes each *class-level* field a typed
+`FieldRef` (pyright reports the annotation type — `Batch.input: Tensor`, verified by
+probe), while a *constructed* `Batch(input=…)` exposes the values as instance
+attributes. `dataclass_transform` gives typed construction (pyright checks field
+types + missing fields). A declared-but-unprovided field fails loud on instance
+access (a `__getattribute__` guard catches the class-`FieldRef` fallback that would
+otherwise be a silent wrong value). `field()` duck-types `str | FieldRef`, so
+`field("x")` and `field(Batch.x)` coincide. `dictbatch.py` + the typed demo are
+pyright-clean on the user surface.
+
+- **Override** (Glen's "not forced onto the dictbatch input"): no new mechanism —
+  `x: Arg = arg(default=field(Batch.input))` makes the field an overridable slot;
+  bind `x` at construction to bypass the batch. Just `field` + `arg` composed.
+- **Converters** (Glen's "throw a converter in"): no new mechanism either — a
+  converter is a typed function `Source -> InputContract` (the graph's input
+  `DictBatch`). Verified: one graph runs under an autoencoder converter
+  (`target=input`) and a transcoder converter (`target≠input`). This dissolves the
+  "baked-in unpacking vs converter-on-front" fork — the graph names *its own input
+  contract's* fields (its interface) and converters adapt external data to it.
+- **Multi-output / logging** (Glen's dual + his D-03 note): proposed, not built —
+  an output recipe `{field -> ValueRef}` producing a typed output `DictBatch`, with
+  logging as a *dynamically* bubble-up-built recipe (`collect`), and
+  `@DictBatch.auto_other_fields` as the typed-core + dynamic-tail contract for
+  "metrics you can't plan from outside." Design in `docs/DESIGN-multi-input.md`.
+
+**Why:** typed contracts are what make the batch a real interface (catch wrong
+types / missing fields at author time), and the metaclass "lie" (class field typed
+as its value type, runtime `FieldRef`) is the same pattern the codebase already uses
+(`Swept[T]`, the GraphSpec slots). The dynamic logging tail is the one place static
+typing is rightly surrendered — those metrics are by definition not known outside.
+
+**Alternative not taken:** string-keyed `field("input")` only (untyped, rename-
+invisible — against the repo's "don't restate a symbol as a string" convention);
+abstract input slots + a separate converter-into-slots mechanism (more machinery
+than function composition into a typed contract, and harder to type).
+
+14 pytest + 6 demos + ruff green; `dictbatch.py` + demo pyright-clean on the user
+surface. Trainable migration (D-08's open items) still pending greenlight.
