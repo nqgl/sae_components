@@ -106,6 +106,7 @@ def test_gated_graph_trains_one_step_cpu() -> None:
     )
     from saeco_research.cgraph2.sae import (
         AffineNormalizer,
+        FreqTracker,
         GraphL2Loss,
         GraphNormalizer,
         GraphSparsityLoss,
@@ -140,8 +141,12 @@ def test_gated_graph_trains_one_step_cpu() -> None:
     main = GatedModelSpec(
         encoder=enc, gate_bias=gate_b, mag_bias=mag_b, decoder=init.decoder, log_r=log_r
     )
+    ftrack = FreqTracker(init.d_dict)
     aux = GatedAuxSpec(
-        encoder=enc, gate_bias=gate_b, decoder=init._decoder.detached
+        encoder=enc,
+        gate_bias=gate_b,
+        decoder=init._decoder.detached,
+        freqs=ftrack,
     ).set_to_aux_model("model_aux")
     losses = {
         "L2_loss": GraphL2Loss.on(main),
@@ -165,6 +170,11 @@ def test_gated_graph_trains_one_step_cpu() -> None:
     assert calls[0] == 1
     for key in ("L2_loss", "L2_aux_loss", "sparsity_loss", "L0", "cosim", "loss"):
         assert cache.get(key) is not None  # the trainer-facing cache is populated
+
+    # the freq tracker bubbled up: its EMA advanced (deferred update) and the
+    # below_* freq metrics got written
+    assert float(ftrack.freqs.sum()) > 0.0
+    assert cache.get("below_3e-5") is not None
 
     # and it learns
     opt = torch.optim.Adam(tr.parameters(), lr=1e-3)

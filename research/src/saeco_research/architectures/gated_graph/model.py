@@ -24,6 +24,7 @@ from saeco.components.resampling.anthropic_resampling import AnthResampler
 from saeco_research.cgraph2 import Arg, Input, Op, arg, op, op_slot
 from saeco_research.cgraph2.sae import (
     AffineNormalizer,
+    FreqTracker,
     GraphL2Loss,
     GraphNormalizer,
     GraphSparsityLoss,
@@ -68,9 +69,10 @@ class GatedAuxSpec(SAEGraphSpec):
     encoder: Op = op_slot()
     gate_bias: Op = op_slot()
     decoder: Op = op_slot()
+    freqs: Op = op_slot()  # a FreqTracker passthrough -- bubbles up the EMA freqs
     x: Arg = arg(default=Input)
 
-    acts = op(torch.relu)(gate_bias(encoder(x)))
+    acts = freqs(op(torch.relu)(gate_bias(encoder(x))))
     recon = decoder(acts)
     output = recon
 
@@ -96,6 +98,10 @@ class GatedGraphSAE(Architecture[GatedGraphConfig]):
     def _log_r(self):
         return self.init.dict_bias()
 
+    @cached_property
+    def _freqs(self):  # EMA firing-frequency tracker on the gate/aux acts
+        return FreqTracker(self.init.d_dict)
+
     @model_prop
     def gated_model(self) -> GatedModelSpec:
         if self.cfg.pre_bias:
@@ -115,6 +121,7 @@ class GatedGraphSAE(Architecture[GatedGraphConfig]):
             encoder=self.init.encoder,
             gate_bias=self._gate_bias,
             decoder=decoder,
+            freqs=self._freqs,
         )
 
     @loss_prop

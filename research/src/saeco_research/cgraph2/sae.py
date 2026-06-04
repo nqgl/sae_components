@@ -55,6 +55,16 @@ def _cosim(a, b):
     return torch.cosine_similarity(a, b, dim=-1).mean()
 
 
+# the freq thresholds the trainer logs (fraction of features below each freq)
+_BELOW = (
+    ("below_3e-5", 3e-5),
+    ("below_1e-5", 1e-5),
+    ("below_3e-6", 3e-6),
+    ("below_1e-6", 1e-6),
+    ("below_1e-8", 1e-8),
+)
+
+
 # --- bubble-up sites: passthrough markers on `acts` that expose extra handles --
 # A site is collected from a graph cone (apply-style, `collect()`); the outside
 # pulls its handles without anything in between knowing where it lives -- the
@@ -370,6 +380,11 @@ class GraphTrainable(Trainable):
         for k, m in terms.items():
             setattr(cache, k, m)
         cache.loss = total.item()
+        # below_* freq metrics, from the (now-updated) bubbled-up freq trackers
+        for site in self._freq_sites:
+            freqs = site.producer.freqs
+            for name, thr in _BELOW:
+                setattr(cache, name, (freqs < thr).float().mean())
         return total
 
     def get_losses_and_metrics_names(self) -> list[str]:
@@ -377,7 +392,7 @@ class GraphTrainable(Trainable):
             list(self._loss_terms)
             + list(self._metric_terms)
             + ["L0", "L1"]
-            + ["below_3e-5", "below_1e-5", "below_3e-6", "below_1e-6", "below_1e-8"]
+            + [name for name, _ in _BELOW]
         )
 
     @make_cache_optional
