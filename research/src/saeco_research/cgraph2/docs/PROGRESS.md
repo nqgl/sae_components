@@ -96,3 +96,32 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled PYTHONPATH=research/src:research/expe
   finally-reset (P1), weight buffers (P1, already done), sub_slot inheritance
   re-pointing (P2), register_into bare buffers (P2), empty-loss guard (P2). Added
   an arg-independence regression test (9 tests now). All green incl GPU.
+
+## Tonight's deliverables (summary @ d6bb664)
+
+#1 GraphSpec-is-runnable, #2 fused total (reverted to device-safe Python weighting
+per D-04), #3 ActMetrics-as-graph + bubble-up metrics, the device-bug fix, 6
+review-pass fixes (D-06, incl. the real arg-slot-identity P1), GraphSpec
+repr/describe, and a live FreqTracker + below_* metrics in the gated arch. Docs:
+INDEX/DECISIONS(D-01..D-06)/ARCHITECTURE/PROGRESS; 10 pytest in
+research/tests/test_cgraph2.py. All green: pytest + demos + ruff + GPU (trains
+identically, L0-targeting + freq EMA working).
+
+## NEXT TASK (concrete) — GNConfig normalizer (Glen's TODO)
+
+Make `AffineNormalizer` consume a `GNConfig` and match `GeneralizedNormalizer` for
+the static-invertible configs. Keep the clean combined representation: `mu` (d,)
+and `scale` (d,), with `forward=(x-mu)/scale`, `invert=x*scale+mu` (device-safe --
+the module reads its own buffers). `prime(buffer, cfg)` computes, sequentially
+like GeneralizedNormalizer: mu_e=x.mean(0) if PRIMED else 0; x-=mu_e;
+mu_s=x.mean() if PRIMED else 0; x-=mu_s; std_e=x.std(0,unbiased=False)+eps if
+PRIMED else 1; x/=std_e; std_s=(x.std(-1,unbiased=False)+eps).mean() if PRIMED
+else 1; then `mu=mu_e+mu_s`, `scale=std_e*std_s`. Support {DONTUSE, PRIMED} for
+all four aggs; raise NotImplementedError (pointing here) for RUNNING_AVG/LEARNED/
+SAMPLE/BATCH_AVG (those need separate components / per-batch cache -- not the
+static form). Signature `AffineNormalizer(d_data, cfg=GNConfig(), eps=...)`; the
+arch passes `self.run_cfg.normalizer_cfg`. Add a test asserting it matches
+`StaticInvertibleGeneralizedNormalizer` to ~1e-5 on the default cfg AND on
+mu_e=PRIMED. Then update TODO.md. Validate (tests+demos+ruff+GPU), commit.
+After that: aux-model metrics (L0_aux), or run the saeco library test suite to
+confirm no repo-wide breakage (only research/ was touched).
