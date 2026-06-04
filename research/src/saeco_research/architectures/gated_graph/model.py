@@ -142,7 +142,9 @@ class GatedGraphSAE(Architecture[GatedGraphConfig]):
 
     @cached_property
     def normalizer(self) -> GraphNormalizer:  # type: ignore[override]  # graph-native
-        norm = AffineNormalizer(self.init.d_data).to(device=self.device)
+        norm = AffineNormalizer(
+            self.init.d_data, cfg=self.run_cfg.normalizer_cfg
+        ).to(device=self.device)
         if self.state_dict is None:
             norm.prime_normalizer(self.data)
         return GraphNormalizer(norm)

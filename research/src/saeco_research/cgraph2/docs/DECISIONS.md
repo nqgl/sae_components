@@ -166,3 +166,42 @@ surfaced and fixed:
 - **P2 empty-loss guard (sae.py).** `GraphTrainable` raises if `losses` is empty.
 
 All cgraph2 demos + 9 pytest + ruff + GPU green after the fixes.
+
+---
+
+## D-07 — `AffineNormalizer` is the *static collapse* of `GNConfig`; dynamic aggs raise
+
+**Call:** Glen's TODO — make the normalizer consume a `GNConfig` and match
+`GeneralizedNormalizer`. How much of `GNConfig` does the clean graph-native
+normalizer cover, and what happens for the configs it doesn't?
+
+**Choice:** `AffineNormalizer(d_data, cfg=GNConfig(), eps=1e-7)` consumes a
+`GNConfig` and covers exactly the **static** aggregations `{DONTUSE, PRIMED}` for
+all four terms (`mu_e`/`mu_s`/`std_e`/`std_s`). It primes by replaying
+`GeneralizedNormalizer`'s sequential estimation (`mu_e -> mu_s -> std_e -> std_s`,
+each on the running-normalized data) and **folds the four factors into two primed
+buffers** `mu = mu_e + mu_s`, `scale = std_e * std_s` — so `forward = (x-mu)/scale`
+and `invert = x*scale + mu` are one affine map reading its own buffers (device-safe;
+no `mu_e(x)` cache-routing methods, no aggregation dispatch at run time). The
+dynamic aggregations (`RUNNING_AVG`, `BATCH_AVG`, `LEARNED`, `SAMPLE`) and
+`sandwich` raise `NotImplementedError` at construction, pointing back to the class.
+
+**Why:** the whole point of `StaticInvertibleGeneralizedNormalizer` is that, for
+static configs, the normalizer *is* a fixed affine map — so represent it as one
+(two buffers), not as a config-dispatching machine. That's the "small elegant
+interface over intricate machinery" principle. Matching the stock normalizer to
+<1e-5 (verified on the default cfg and `mu_e=PRIMED`) makes it a drop-in for the
+configs people actually sweep with the static-invertible normalizer. The four
+dynamic terms genuinely *aren't* a static affine map: BATCH_AVG/SAMPLE recompute
+per batch (need cache routing / a per-batch handle), RUNNING_AVG is a stateful EMA
+(the same bubble-up shape as the FreqTracker — a future graph component), LEARNED
+is a trained parameter. Failing loud at the boundary (principle 4) is the right
+call rather than silently approximating them with a frozen primed value.
+
+**Alternative not taken:** port the full `mu_e(x)`/`std_e(x)` cache-routed
+machinery into the graph normalizer. That re-imports the complexity the static
+collapse exists to remove; the dynamic cases are better served as their own graph
+components (deferred, per the bubble-up pattern) than as enum branches inside the
+affine map.
+
+All cgraph2 demos + 11 pytest + ruff + GPU (real Trainer, trains identically) green.

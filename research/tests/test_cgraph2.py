@@ -92,6 +92,55 @@ def test_arg_slots_are_independent() -> None:
     assert torch.allclose(out, torch.full((4,), -2.0))
 
 
+def test_affine_normalizer_matches_generalized() -> None:
+    # AffineNormalizer must reproduce StaticInvertibleGeneralizedNormalizer (the
+    # stock static normalizer) for the static {DONTUSE, PRIMED} configs -- on the
+    # default GNConfig *and* with a per-feature mean (mu_e=PRIMED).
+    import saeco.core as cl
+    from saeco.trainer.normalizers.normalizer import (
+        Aggregation,
+        GNConfig,
+        StaticInvertibleGeneralizedNormalizer,
+    )
+    from saeco_research.cgraph2.sae import AffineNormalizer
+
+    class _Init:
+        d_data = 32
+
+    class _B:
+        def __init__(self, t):
+            self.input = t
+
+    torch.manual_seed(0)
+    d = 32
+    samples = [torch.randn(64, d) * 4 + 1 for _ in range(20)]
+
+    for cfg in (GNConfig(), GNConfig(mu_e=Aggregation.PRIMED)):
+        ref = StaticInvertibleGeneralizedNormalizer(_Init, cfg, eps=1e-7)
+        ref.prime_normalizer(iter([_B(s) for s in samples]))
+        aff = AffineNormalizer(d, cfg=cfg, eps=1e-7)
+        aff.prime_normalizer(iter([_B(s) for s in samples]))
+
+        x = torch.randn(10, d) * 4 + 1
+        xn_ref = ref(x, cache=cl.Cache())
+        xn_aff = aff(x, cache=cl.Cache())
+        assert torch.allclose(xn_ref, xn_aff, atol=1e-5, rtol=1e-4), (
+            float((xn_ref - xn_aff).abs().max())
+        )
+        # invert is a true round-trip and matches the stock denormalization
+        xdn_aff = aff.invert(xn_aff)
+        assert torch.allclose(xdn_aff, x, atol=1e-4)
+        assert torch.allclose(ref.invert(xn_ref, cache=cl.Cache()), xdn_aff, atol=1e-5)
+
+
+def test_affine_normalizer_rejects_dynamic_aggregations() -> None:
+    from saeco.trainer.normalizers.normalizer import Aggregation, GNConfig
+    from saeco_research.cgraph2.sae import AffineNormalizer
+
+    with pytest.raises(NotImplementedError):
+        AffineNormalizer(8, cfg=GNConfig(std_e=Aggregation.BATCH_AVG))
+
+
 def test_gated_graph_trains_one_step_cpu() -> None:
     import saeco.components.features as ft
     from saeco.components.resampling.anthropic_resampling import (

@@ -125,3 +125,23 @@ arch passes `self.run_cfg.normalizer_cfg`. Add a test asserting it matches
 mu_e=PRIMED. Then update TODO.md. Validate (tests+demos+ruff+GPU), commit.
 After that: aux-model metrics (L0_aux), or run the saeco library test suite to
 confirm no repo-wide breakage (only research/ was touched).
+
+## Log (cont.)
+
+- **GNConfig normalizer DONE (D-07).** `AffineNormalizer` now takes
+  `cfg=GNConfig()` and is the *static collapse* of
+  `StaticInvertibleGeneralizedNormalizer`: priming replays the sequential
+  `mu_e -> mu_s -> std_e -> std_s` estimation (each on running-normalized data,
+  matching `GeneralizedNormalizer.prime_normalizer` incl. the `abs(std+eps)+1e-7`
+  std_e form) and folds them into two buffers `mu = mu_e+mu_s`,
+  `scale = std_e*std_s`; `forward=(x-mu)/scale`, `invert=x*scale+mu` (reads own
+  buffers → device-safe). Static `{DONTUSE, PRIMED}` for all four terms;
+  `NotImplementedError` (pointing at the class) for dynamic aggs
+  (RUNNING_AVG/BATCH_AVG/LEARNED/SAMPLE) + sandwich. Arch passes
+  `self.run_cfg.normalizer_cfg`. Two tests: matches the stock normalizer to <1e-5
+  on default cfg **and** `mu_e=PRIMED` (forward + invert round-trip), and the
+  dynamic-rejection guard. **11 pytest + 5 demos + ruff + GPU (real Trainer,
+  gated_graph_gemma4: L2 0.57→0.02, cosim 0.76→0.99, L0-targeting active) all
+  green.** TODO item checked off; D-07 recorded. Next candidates: aux-model
+  metrics (L0_aux) bubble-up, or run the saeco library suite (`pytest tests/`) to
+  confirm no repo-wide breakage (only research/ touched so far).

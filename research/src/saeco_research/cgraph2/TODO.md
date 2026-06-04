@@ -1,13 +1,21 @@
 # cgraph2 — todo
 
-- [ ] **Normalizer: match `GeneralizedNormalizer` + consume `GNConfig`.**
-  `AffineNormalizer` (in `sae.py`) currently reimplements only the *default*
-  static-invertible affine map (center by scalar mean, scale by per-feature std ×
-  scalar std), matching the old normalizer to ~7e-6. Generalize it to cover the
-  full `GNConfig` behavior (the `mu_e`/`mu_s`/`std_e`/`std_s` aggregations —
-  DONTUSE / PRIMED / RUNNING_AVG / BATCH_AVG / LEARNED / SAMPLE, sandwich) and
-  take a `GNConfig` so it's a drop-in for the configurations people actually
-  sweep. Keep the clean implementation (no cache-routed `mu_e(x)` methods).
+- [x] **Normalizer: match `GeneralizedNormalizer` + consume `GNConfig`.** DONE.
+  `AffineNormalizer(d_data, cfg=GNConfig(), eps=1e-7)` now consumes a `GNConfig`
+  and folds the four sequential factors (`mu_e -> mu_s -> std_e -> std_s`) into
+  the two primed buffers `mu`/`scale` — a clean static collapse of
+  `StaticInvertibleGeneralizedNormalizer` (no cache-routed `mu_e(x)` methods).
+  Covers the *static* aggregations `{DONTUSE, PRIMED}` for all four terms;
+  `NotImplementedError` (pointing back here) for the dynamic ones (RUNNING_AVG /
+  BATCH_AVG / LEARNED / SAMPLE) and `sandwich` — those aren't a single static
+  affine map (D-07). The arch passes `self.run_cfg.normalizer_cfg`. Tests assert
+  it matches the stock normalizer to <1e-5 on the default cfg *and* on
+  `mu_e=PRIMED`, plus the dynamic-rejection guard. Validated: 11 pytest + 5 demos
+  + ruff + GPU through the real Trainer (trains identically).
+  *Remaining (separate, deferred):* the dynamic aggregations would need either
+  per-batch cache routing (BATCH_AVG/SAMPLE), a stateful EMA component
+  (RUNNING_AVG — same shape as the FreqTracker bubble-up), or a learned param
+  (LEARNED). Not a static affine map, so out of scope for `AffineNormalizer`.
 
 - [ ] **Bubble-up metrics / freq-tracking / logging.** A site you pass `acts`
   into (L0, L1, acts, freqs, ...) that the trainable collects by walking the

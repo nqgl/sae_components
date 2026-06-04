@@ -23,6 +23,7 @@ from attrs import define
 
 import saeco.core as cl
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
+from saeco.trainer.normalizers.normalizer import GNConfig
 from saeco.trainer.trainable import Trainable, make_cache_optional
 from saeco_research.cgraph2.core import (
     Graph,
@@ -158,32 +159,102 @@ class SAEGraphSpec(GraphSpec):
         return self
 
 
+_Aggregation = GNConfig.Aggregation
+_SAggregation = GNConfig.SAggregation
+
+
 class AffineNormalizer(cl.Module):
-    """A clean, static, invertible affine normalizer: center by a scalar mean,
-    scale by a per-feature std times a scalar std (both primed from data).
+    """A clean, static, invertible affine normalizer driven by a ``GNConfig``.
 
-    This is the affine map saeco's ``StaticInvertibleGeneralizedNormalizer``
-    computes under its default config, minus the GNConfig/aggregation-enum/
-    cache-routing machinery. ``forward`` normalizes; ``invert`` (static -- reads
-    the primed buffers, no cache) denormalizes."""
+    Collapses saeco's ``StaticInvertibleGeneralizedNormalizer`` to the single
+    affine map it actually *is*: ``forward = (x - mu) / scale``, ``invert =
+    x * scale + mu``, both reading two primed buffers -- no aggregation-enum
+    dispatch and no cache routing at run time.
 
-    def __init__(self, d_data: int, eps: float = 1e-6):
+    Priming reproduces ``GeneralizedNormalizer``'s sequential estimation exactly
+    (``mu_e -> mu_s -> std_e -> std_s``, each computed on the running-normalized
+    data), then folds the four factors into the two buffers::
+
+        mu    = mu_e + mu_s        # per-feature offset + scalar offset
+        scale = std_e * std_s      # per-feature scale  * scalar scale
+
+    Only the *static* aggregations ``{DONTUSE, PRIMED}`` are supported (each term
+    is either off or primed-from-data) -- that's exactly the set
+    ``StaticInvertibleGeneralizedNormalizer`` allows for ``mu_s``/``std_s`` and a
+    static subset for ``mu_e``/``std_e``. The dynamic ones (RUNNING_AVG /
+    BATCH_AVG / LEARNED / SAMPLE) and ``sandwich`` aren't a single static affine
+    map and raise ``NotImplementedError`` pointing here; use the stock
+    ``GeneralizedNormalizer`` for those.
+    """
+
+    def __init__(self, d_data: int, cfg: GNConfig | None = None, eps: float = 1e-7):
         super().__init__()
+        self.cfg = cfg if cfg is not None else GNConfig()
+        self._require_static(self.cfg)
         self.eps = eps
         self.primed = False
-        self.register_buffer("mu", torch.zeros(()))
+        self.register_buffer("mu", torch.zeros(d_data))
         self.register_buffer("scale", torch.ones(d_data))
+
+    @staticmethod
+    def _require_static(cfg: GNConfig) -> None:
+        static_e = (_Aggregation.DONTUSE, _Aggregation.PRIMED)
+        static_s = (_SAggregation.DONTUSE, _SAggregation.PRIMED)
+        for name, val, ok in (
+            ("mu_e", cfg.mu_e, static_e),
+            ("std_e", cfg.std_e, static_e),
+            ("mu_s", cfg.mu_s, static_s),
+            ("std_s", cfg.std_s, static_s),
+        ):
+            if val not in ok:
+                raise NotImplementedError(
+                    f"AffineNormalizer supports only the static aggregations "
+                    f"{{DONTUSE, PRIMED}}; {name}={val!r} is dynamic/stateful and "
+                    f"isn't a single static affine map (see AffineNormalizer in "
+                    f"cgraph2/sae.py) -- use the stock GeneralizedNormalizer."
+                )
+        if cfg.sandwich:
+            raise NotImplementedError(
+                "AffineNormalizer does not support sandwich=True (not a single "
+                "static affine map); see AffineNormalizer in cgraph2/sae.py."
+            )
 
     @torch.no_grad()
     def prime_normalizer(self, buffer, n: int = 20):
+        cfg = self.cfg
         x = torch.cat([next(buffer).input for _ in range(n)], dim=0)
         x = x.to(self.scale.device).detach().float()
-        mu = x.mean(dim=-1, keepdim=True).mean()
-        xc = x - mu
-        std_e = xc.std(dim=0, unbiased=False) + self.eps  # per-feature
-        std_s = ((xc / std_e).std(dim=-1, unbiased=False) + self.eps).mean()  # scalar
-        self.mu.copy_(mu)
-        self.scale.copy_(std_e * std_s)
+        zero = torch.zeros((), device=x.device)
+        one = torch.ones((), device=x.device)
+
+        # Sequential, in GeneralizedNormalizer's order: each factor is estimated
+        # on the data already normalized by the previous factors.
+        # mu_e: per-feature mean over the batch dim.
+        mu_e = x.mean(dim=0, keepdim=True) if cfg.mu_e == _Aggregation.PRIMED else zero
+        x = x - mu_e
+        # mu_s: scalar -- per-sample (token) mean, averaged.
+        if cfg.mu_s == _SAggregation.PRIMED:
+            mu_s = x.mean(dim=-1, keepdim=True).mean()
+        else:
+            mu_s = zero
+        x = x - mu_s
+        # std_e: per-feature std over the batch dim. Matches GeneralizedNormalizer's
+        # std_e(): abs(elementwise_std + eps) + 1e-7.
+        if cfg.std_e == _Aggregation.PRIMED:
+            std_e = (x.std(dim=0, keepdim=True, unbiased=False) + self.eps).abs() + 1e-7
+        else:
+            std_e = one
+        x = x / std_e
+        # std_s: scalar std.
+        if cfg.std_s == _SAggregation.PRIMED:
+            std_s = (x.std(dim=-1, keepdim=True, unbiased=False) + self.eps).mean()
+        else:
+            std_s = one
+
+        mu = (mu_e + mu_s).reshape(-1)
+        scale = (std_e * std_s).reshape(-1)
+        self.mu.copy_(mu.expand_as(self.mu) if mu.numel() == 1 else mu)
+        self.scale.copy_(scale.expand_as(self.scale) if scale.numel() == 1 else scale)
         self.primed = True
         return self
 
