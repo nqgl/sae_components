@@ -37,6 +37,7 @@ from saeco_research.cgraph2.core import (
     op,
     ref,
 )
+from saeco_research.cgraph2.dictbatch import DictBatch
 from saeco_research.cgraph2.spec import GraphSpec, arg, op_slot, sub_slot
 
 
@@ -307,6 +308,17 @@ class GraphNormalizer:
         return self.normalizer.prime_normalizer(buffer, n=n)
 
 
+class SAEInputs(DictBatch):
+    """The model's boundary input contract: the source activations and the recon
+    target (== source for an autoencoder, != for a transcoder). Read via the typed
+    ``field(SAEInputs.input)`` -- no string keys (D-09). Per-loss weight fields
+    (``w_<lossname>``) are the *dynamic* tail (they vary with the loss set), kept as
+    derived names rather than declared here."""
+
+    input: torch.Tensor
+    target: torch.Tensor
+
+
 class NormalizedModel(GraphSpec):
     """``normalizer[model]`` as a graph: normalize the input, run the model on it,
     denormalize the output. Exposes the normalized handles a loss reads
@@ -316,8 +328,8 @@ class NormalizedModel(GraphSpec):
     normalize: OpRef = op_slot()
     denorm: OpRef = op_slot()
 
-    x_in = field("input")  # boundary fields: the batch's source + recon target
-    y_in = field("target")
+    x_in = field(SAEInputs.input)  # typed boundary fields: source + recon target
+    y_in = field(SAEInputs.target)
     applied = model(normalize(x_in))  # the model, run on the normalized input
     x_norm = normalize(x_in)
     y_norm = normalize(y_in)  # transcoder: target may differ from input (else == x)
@@ -449,19 +461,19 @@ class GraphTrainable(Trainable):
         resampler.assign_model(self)
 
     # -- training contract -----------------------------------------------------
-    def _batch(self, x, y=None, coeffs=None) -> dict:
-        """The boundary input batch: the source, the recon target (==source for an
-        autoencoder), and a per-loss weight field seeded from ``coeffs``."""
+    def _batch(self, x, y=None, coeffs=None) -> SAEInputs:
+        """The boundary input batch: the typed source + recon target (==source for
+        an autoencoder), plus a per-loss weight field (the dynamic ``w_<k>`` tail)
+        seeded from ``coeffs``."""
         if isinstance(x, SAETrainBatch):
             x = x.input
         if isinstance(y, SAETrainBatch):
             y = y.input
         coeffs = coeffs or {}
-        return {
-            "input": x,
-            "target": x if y is None else y,
-            **{f"w_{k}": coeffs.get(k, 1.0) for k in self._loss_terms},
-        }
+        batch = SAEInputs(input=x, target=x if y is None else y)
+        for k in self._loss_terms:  # dynamic per-loss weight fields
+            setattr(batch, f"w_{k}", coeffs.get(k, 1.0))
+        return batch
 
     def loss(self, x, *, cache, y=None, coeffs=None):
         with self.graph.forward_values(self._batch(x, y, coeffs), cache=cache) as save:
@@ -497,13 +509,15 @@ class GraphTrainable(Trainable):
         if isinstance(x, SAETrainBatch):
             x = x.input
         x, shape = self.rearrange(x)
-        # inference reads `field("input")`; seed a batch (fail-loud on bad fields)
-        return self.dearrange(self.graph.forward({"input": x}, cache=cache), shape)
+        # inference reads SAEInputs.input; target is unused on the out path (== x)
+        batch = SAEInputs(input=x, target=x)
+        return self.dearrange(self.graph.forward(batch, cache=cache), shape)
 
     @make_cache_optional
     def get_acts(self, x, cache=None, pre_acts=False):
         x, shape = self.rearrange(x)
-        return self.dearrange(Graph(self._acts)({"input": x}, cache=cache), shape)
+        batch = SAEInputs(input=x, target=x)
+        return self.dearrange(Graph(self._acts)(batch, cache=cache), shape)
 
     @make_cache_optional
     def encode(self, x, cache=None):
