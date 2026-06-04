@@ -35,6 +35,11 @@ architectures/gated_graph/  the gated SAE, assembled like stock saeco
   once, and supports `save.after(h, fn)` deferred side-effects.
 - **`collect(targets, SiteType)`** is the graph-native `Module.apply`: walk the
   cone and bubble up nodes whose producer is a site.
+- **`field(name)`** reads a named field off a *structured* input seeded at `Input`
+  (the multi-input primitive, D-08): a graph reads either `Input` as the value
+  (single-input, every current graph) or `field("x")`/`field("target")` off a
+  struct. Additive; the migration onto it (the `total_loss` handle, transcoders)
+  is proposed in `docs/DESIGN-multi-input.md`.
 
 ### spec — GraphSpec is the graph
 
@@ -54,6 +59,10 @@ body; the instance is the graph (D-01):
 - **Runnable:** `g.forward_values` / `g.collect` / `g.forward`; `g.register_into(
   module)` registers leaf producers onto an owning `nn.Module`. `GraphSpec.of(
   **handles)` builds one dynamically for runtime-sized aggregates.
+- **Views:** `g.describe()` shows the nested-subgraph structure (the navigable
+  children, D-02); `g.render()` shows the flat **deduped DAG** — every node printed
+  once, so a shared node (the encoder, the normalize op) appears a single time.
+  The structure view and the execution view, side by side.
 
 ### sae — the SAE, graph-native
 
@@ -61,8 +70,11 @@ The normalization win: instead of saeco's `normalizer[loss[model]]`, we get
 `loss[normalizer[model]]`.
 
 - **`SAEGraphSpec`** — base for model graphs (define `acts`/`recon`/`output`).
-- **`AffineNormalizer`** — a clean static invertible affine normalizer (replaces
-  `StaticInvertibleGeneralizedNormalizer`; matches it to ~7e-6). `GraphNormalizer`
+- **`AffineNormalizer`** — a clean static invertible affine normalizer that
+  consumes a `GNConfig` and is the *static collapse* of
+  `StaticInvertibleGeneralizedNormalizer` (folds the four sequential factors into
+  two primed buffers `mu`/`scale`). **Codex-verified value-identical across all 16
+  `{DONTUSE,PRIMED}` configs** (D-07); dynamic aggs raise. `GraphNormalizer`
   composes it into graphs (`normalize` node + a stably-consed `denorm` op).
 - **`NormalizedModel(GraphSpec)`** — `normalizer[model]`: `model(normalize(Input))`,
   exposing `y_norm`/`y_pred_norm`/`acts` and a denormalized `out`.
@@ -74,9 +86,13 @@ The normalization win: instead of saeco's `normalizer[loss[model]]`, we get
   *deferred* update onto the loss pass (D-03/D-05).
 - **`GraphTrainable(Trainable)`** — init mirrors stock `Trainable(models,
   resampler, losses, normalizer)`. It wraps each model in a `NormalizedModel`,
-  resolves losses, builds the whole computation as one `GraphSpec.of` graph
-  (with a fused `total_loss` handle, D-04), registers it, and `loss()` runs one
-  `forward_values` pass writing the cache the trainer reads.
+  resolves losses, builds the whole computation as one `GraphSpec.of` graph,
+  registers it, and `loss()` runs one `forward_values` pass writing the cache the
+  trainer reads. The loss terms share that one fused pass; the (dynamic) coeff
+  weighting is applied **in Python** — `total = Σ term·coeff` — because a graph
+  weight source-node would capture a buffer that `.to(device)` orphans (D-04 was
+  superseded by this device-safe form; a true `total_loss` *handle* awaits weights
+  as graph **inputs** via `field()`, see below).
 
 ### the arch — like stock saeco
 
@@ -89,8 +105,12 @@ data (L2 0.6→0.02, cosim 0.76→0.99, L0-targeting active).
 
 ## What's deferred (see TODO.md / DECISIONS.md)
 
-- True multi-input (`DictBatch`) — needed for the transcoder `y_norm != x_norm`
-  case and for loss weights as real graph inputs (D-04).
-- Resampling: the freq-tracker bubble-up + deferred update is built and ready, but
-  the gated arch splices no tracker yet, and `below_*` freq metrics aren't logged.
-- `AffineNormalizer` covers the default config; full `GNConfig` is a TODO.
+- **Multi-input migration.** The `field()` primitive is built (D-08); the migration
+  onto it — `NormalizedModel` reading a `target` field (transcoder `y_norm !=
+  x_norm`) and the trainable exposing a real `total_loss` handle (loss weights as
+  graph inputs, resurrecting D-04 device-clean) — is proposed and awaits greenlight
+  (`docs/DESIGN-multi-input.md`, open questions at the bottom).
+- **Resampling reset path.** The freq-tracker bubble-up + deferred EMA update is
+  built and *live* in the gated arch (a `FreqTracker` is spliced and `below_*` freq
+  metrics are logged); the resampler's dead-feature *reset* path is not yet wired.
+- **Retire cgraph v1** (`../../cgraph/`) once nothing references it.
