@@ -13,7 +13,11 @@ Central plan for the cgraph2 documentation. Read this first.
 - **PROGRESS.md** — chronological work log + the **resume protocol** for autonomous
   runs. Each work session appends what it did, what's green, what's next. This is
   the doc to read to pick up where things left off.
-- **../TODO.md** — short forward-looking task list (normalizer/GNConfig, etc.).
+- **DESIGN-multi-input.md** — a *proposal* (not yet built): multi-input graphs via
+  a DictBatch, unlocking a true `total_loss` handle and transcoders
+  (`y_norm != x_norm`). Awaiting Glen's greenlight; it touches `core.py`'s `Input`
+  singleton, so it's flagged as a fork rather than done autonomously.
+- **../TODO.md** — short forward-looking task list.
 - **../glen-inbox.md** — Glen's thoughts dump (his; don't rewrite, only append a
   `> resolution` note when an item is addressed).
 

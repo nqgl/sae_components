@@ -185,6 +185,13 @@ class AffineNormalizer(cl.Module):
     BATCH_AVG / LEARNED / SAMPLE) and ``sandwich`` aren't a single static affine
     map and raise ``NotImplementedError`` pointing here; use the stock
     ``GeneralizedNormalizer`` for those.
+
+    Verified value-identical to the stock normalizer across all 16 static
+    ``{DONTUSE, PRIMED}`` configs. Operates on batched ``(..., d)`` activations
+    (what the training pipeline always feeds, post-``rearrange``) and returns the
+    same shape -- the buffers are folded to ``(d,)``, so unlike the stock
+    normalizer it does *not* introduce a spurious leading singleton dim for a bare
+    unbatched ``(d,)`` input (the values are identical either way).
     """
 
     def __init__(self, d_data: int, cfg: GNConfig | None = None, eps: float = 1e-7):
