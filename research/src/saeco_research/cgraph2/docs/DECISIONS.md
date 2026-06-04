@@ -205,3 +205,39 @@ components (deferred, per the bubble-up pattern) than as enum branches inside th
 affine map.
 
 All cgraph2 demos + 11 pytest + ruff + GPU (real Trainer, trains identically) green.
+
+---
+
+## D-08 — `field()`: the multi-input primitive (built); the migration is proposed
+
+**Call:** The single global `Input` node means a graph reads only one runtime
+value — blocking a true `total_loss` handle (weights as inputs) and transcoders
+(`y_norm != x_norm`). How to add multi-input, and how much to do autonomously?
+
+**Choice:** Build the *primitive* now, propose the *migration*. `field(name)` is a
+stateless `_Field` producer node `ref(_Field(name), (Input,))`, interned per name,
+that extracts a named field off a **structured input** seeded at `Input` (`dict` →
+subscript, else `getattr`; fail-loud on a missing field). It's the Option-B
+("one structured input / DictBatch") surface over the low-level named-input
+mechanism. Purely additive: the bare-tensor `Input` path is untouched, so every
+existing graph, the 5 prior demos, and the trainable are unchanged; a graph either
+reads `Input` as the value or reads `field(...)` off a struct. Shipped with
+`multi_input_demo.py` (a transcoder-shaped weighted loss reading `input` /
+`target` / `weight` as three fused fields). Full design + the deferred migration
+in `docs/DESIGN-multi-input.md`.
+
+**Why:** the primitive is near-zero-risk and proves the foundation (fusion +
+device-clean, since fields are plain extraction nodes, not the stale buffers that
+killed D-04). The *migration* — `NormalizedModel` reading a `target` field, the
+trainable packing `coeffs` into the batch to expose a `total_loss` handle — changes
+working behavior and has real open questions (DictBatch type, per-loss vs vector
+weights, missing-`target` policy), so per "let done mean done" it awaits Glen's
+greenlight rather than a guessed autonomous migration.
+
+**Alternative not taken:** named positional input nodes (`input_node("y")`) seeded
+via extra `forward_values` args. That's the same mechanism with a positional-soup
+surface; the struct/`field` surface matches saeco's already-structured
+`SAETrainBatch` and adds fields without changing any graph that doesn't read them.
+
+All cgraph2 demos (now 6) + 13 pytest + ruff green; existing GPU run unaffected
+(the primitive isn't on the trainable's path yet).

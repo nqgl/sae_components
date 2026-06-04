@@ -1,11 +1,19 @@
 # Design proposal — multi-input graphs (DictBatch) & the `total_loss` handle
 
-**Status:** proposal, awaiting Glen's greenlight. Not implemented. Written during
-the overnight run because it's the biggest repeatedly-deferred item and it gates
-two things we keep wanting (a true `total_loss` handle, transcoders). I did *not*
-start implementing it autonomously — it touches `core.py`'s `Input` singleton and
-is a real fork I'd rather you weigh in on. Below is the recommendation + mechanism
-+ migration so you can say yes/no/adjust quickly.
+**Status:** the **`field()` primitive is built, tested, demoed** (D-08); the
+**migration is the proposal awaiting greenlight.** Written + the primitive landed
+during the overnight run because this is the biggest repeatedly-deferred item and
+it gates two things we keep wanting (a true `total_loss` handle, transcoders).
+
+What I built autonomously (safe, purely additive — zero existing behavior changed):
+`field(name)` in `core.py` (a stateless `_Field` producer that reads a named field
+off a structured input seeded at `Input`), exported, rendered (`field[name]`), with
+`cgraph2/multi_input_demo.py` (a transcoder-shaped weighted loss reading three
+distinct fields — `input` / `target` / `weight` — that all fuse into one pass) in
+the CI suite. **What I deliberately did *not* do:** migrate `NormalizedModel` /
+the trainable onto fields, or add the `total_loss` handle — that's the part with
+the open questions below, and it changes working behavior, so it's yours to
+greenlight. Below is the recommendation + mechanism + migration.
 
 ## Why
 
@@ -51,12 +59,13 @@ nodes exist. `at(handle, x)` stays the single-input sugar (`{Input: x}`).
 
 ## Mechanism (sketch)
 
-- `core.py`: add `_Field(name)` producer and `field(name) -> ref(_Field(name),
-  (Input,))`, interned by name (a module-level `dict[str, ValueRef]`). `_eval_node`
-  for a `_Field` does `batch[name]` (or `getattr`), reading the struct seeded at
-  `Input`. Keep `Input` as today: for a bare-tensor input it *is* the value (so all
-  current single-input graphs and the 5 demos are untouched); for a struct input,
-  `field(...)` nodes pull from it.
+- `core.py` **(BUILT)**: `_Field(name)` producer + `field(name) -> ref(_Field(name),
+  (Input,))`, interned per name (module-level `_FIELDS`). A `_Field` reads
+  `batch[name]` for a dict / `getattr(batch, name)` otherwise (fail-loud on a
+  missing field), via the generic callable path in `_eval_node` (no change needed
+  there). `Input` is unchanged: a bare-tensor input still *is* the value (all
+  current single-input graphs + demos untouched); a struct input is read by
+  `field(...)` nodes. Done; see `multi_input_demo.py`.
 - `_SaveSession` / `Graph.forward`: accept either a tensor (seed `{Input: x}`, as
   now) or a batch struct (seed `{Input: batch}`, fields read lazily). No change to
   the memoized-pass machinery.

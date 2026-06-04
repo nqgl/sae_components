@@ -19,6 +19,7 @@ import torch
         "saeco_research.cgraph2.funcstd_demo",
         "saeco_research.cgraph2.inherit_subslot_demo",
         "saeco_research.cgraph2.bubble_demo",
+        "saeco_research.cgraph2.multi_input_demo",
     ],
 )
 def test_cgraph2_demo_runs(module_name: str) -> None:

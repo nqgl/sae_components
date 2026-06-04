@@ -25,7 +25,8 @@ from contextvars import ContextVar
 
 import torch
 import torch.nn as nn
-from attrs import define, field
+from attrs import define
+from attrs import field as _attr_field
 
 import saeco.core as cl
 from saeco_research.cgraph2.funcstd import standardize
@@ -160,6 +161,46 @@ Input: ValueRef = ref(INPUT, ())
 
 
 @define(eq=False, repr=False)
+class _Field:
+    """Producer that extracts a named field from the (structured) input value.
+    The primitive under multi-input graphs (docs/DESIGN-multi-input.md): seed one
+    batch struct at ``Input`` and read its fields with ``field("x")`` /
+    ``field("target")``. Stateless (nothing to register); fails loud on a missing
+    field."""
+
+    name: str
+
+    def __call__(self, batch):
+        if isinstance(batch, dict):
+            return batch[self.name]  # KeyError if absent -- fail loud
+        return getattr(batch, self.name)  # AttributeError if absent -- fail loud
+
+    def __repr__(self):
+        return f"field[{self.name}]"
+
+
+_FIELDS: dict[str, _Field] = {}
+
+
+def field(name: str) -> ValueRef:
+    """Read a named field of the structured input (``field("x")``, ``field(
+    "target")``). Seed the input with a dict / struct -- ``forward_values(batch)``
+    -- and each field is extracted lazily, so a graph reading only ``field("x")``
+    realizes only that, and two reads of the same field fuse to one node.
+
+    The multi-input primitive: it makes a graph able to read *several* distinct
+    runtime values (x, target, per-loss weights), which is what a true
+    ``total_loss`` handle and transcoders (``y_norm != x_norm``) need. The
+    single-tensor ``Input`` path is unchanged -- a graph either reads ``Input`` as
+    the value or reads ``field(...)`` off a struct, not both. See
+    docs/DESIGN-multi-input.md."""
+    f = _FIELDS.get(name)
+    if f is None:
+        f = _FIELDS[name] = _Field(name)
+    return ref(f, (Input,))
+
+
+@define(eq=False, repr=False)
 class OpRef:
     """An applyable producer handle. ``op(x)`` interns a node applying the
     producer to ``x``. A producer slot is an OpRef wrapping a slot marker."""
@@ -180,6 +221,8 @@ def op(producer, *, label: str | None = None) -> OpRef:
 def _producer_label(p) -> str:
     if p is INPUT:
         return "input"
+    if isinstance(p, _Field):
+        return repr(p)
     if isinstance(p, nn.Parameter):
         return "param"
     if isinstance(p, Op):
@@ -306,9 +349,9 @@ class _SaveSession:
     x: object
     cache: cl.Cache
     kwargs: dict
-    results: dict = field(init=False)
-    deferred: list = field(init=False, factory=list)
-    token: object = field(init=False, default=None)
+    results: dict = _attr_field(init=False)
+    deferred: list = _attr_field(init=False, factory=list)
+    token: object = _attr_field(init=False, default=None)
 
     @results.default
     def _seed_results(self) -> dict:
