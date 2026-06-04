@@ -145,3 +145,51 @@ confirm no repo-wide breakage (only research/ was touched).
   green.** TODO item checked off; D-07 recorded. Next candidates: aux-model
   metrics (L0_aux) bubble-up, or run the saeco library suite (`pytest tests/`) to
   confirm no repo-wide breakage (only research/ touched so far).
+- **Library suite confirmed clean.** `pytest tests/` = **218 passed** — the
+  research-side changes don't break the saeco library.
+- **`GraphSpec.render()`** — the flat deduped DAG view: every node in the cone of
+  all handles printed once, tagged with the handle name(s) pointing at it. On the
+  gated trainable: the whole main+aux+3-losses+2-metrics computation is **23 nodes**
+  with the encoder (`LinearMixed`) and the `AffineNormalizer` each appearing
+  *once* (normalize shared across the model path and every loss). The fusion, made
+  visible; complements `describe()`'s nested view. Test asserts a shared node
+  renders once.
+- **`field()` — the multi-input primitive (D-08).** A stateless `_Field` producer
+  `ref(_Field(name), (Input,))`, interned per name, reading a named field off a
+  *structured* input seeded at `Input` (dict→subscript / else getattr; fail-loud).
+  Purely additive — the bare-tensor `Input` path is untouched, so all existing
+  graphs/demos/the trainable are unchanged. Ships `multi_input_demo.py` (a
+  transcoder-shaped weighted loss reading `input`/`target`/`weight` as three fused
+  fields) in CI. This is the Option-B (DictBatch) surface from
+  `docs/DESIGN-multi-input.md`; the *migration* (NormalizedModel `target`, the
+  `total_loss` handle) is deliberately deferred for greenlight — it changes working
+  behavior and has open questions.
+
+## Overnight session 2 summary (@ HEAD after `field()`)
+
+Picked up from the GNConfig-normalizer plan and delivered, all committed + green
+(13 pytest, 6 demos, ruff, 218 library tests; GPU re-confirmed):
+
+1. **GNConfig normalizer** (`a22e2ab`, D-07) — `AffineNormalizer(d, cfg=GNConfig())`
+   is the static collapse of `StaticInvertibleGeneralizedNormalizer`; **codex
+   brute-forced all 16 `{DONTUSE,PRIMED}` configs → value-identical**. Arch passes
+   `run_cfg.normalizer_cfg`. Dynamic aggs raise `NotImplementedError`.
+2. **Normalizer boundary doc + multi-input design note** (`1353516`) — codex review
+   pass; `DESIGN-multi-input.md` proposal.
+3. **`GraphSpec.render()`** (`d5afc92`) — deduped DAG visualization.
+4. **`field()` multi-input primitive** (`d31ed10`, D-08) — additive; proves the
+   `total_loss`/transcoder foundation without migrating the trainable.
+
+**For Glen in the morning:** the one thing awaiting your call is the multi-input
+*migration* (`docs/DESIGN-multi-input.md`, open questions at the bottom: DictBatch
+type, per-loss vs vector weights, missing-`target` policy). The `field()`
+primitive under it is built + demoed, so it's a quick "yes, do the migration like
+that" / "adjust X" decision. Everything else (the normalizer TODO) is done.
+
+## NEXT TASK (concrete) — multi-input migration, IF greenlit
+Per `docs/DESIGN-multi-input.md`: land the `total_loss` handle first (smallest,
+highest-value slice — pack `coeffs` into the batch as `w_*` fields, `total =
+Σ field("w_k")*term_k`, resurrecting D-04 device-clean), then the transcoder
+`target` field on `NormalizedModel`. Each its own commit, each validated GPU-
+through-Trainer. If NOT greenlit: aux-model metrics (L0_aux) bubble-up, or retire
+cgraph v1.
