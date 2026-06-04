@@ -25,6 +25,7 @@ from saeco.components.resampling import Resampler
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.trainer.normalizers.normalizer import GNConfig
 from saeco.trainer.trainable import Trainable, make_cache_optional
+from saeco_research.cgraph2.components import weighted_sum
 from saeco_research.cgraph2.core import (
     Graph,
     Input,
@@ -42,12 +43,6 @@ from saeco_research.cgraph2.spec import GraphSpec, arg, op_slot, sub_slot
 
 
 # --- graph-leaf math (module-level so consing keys on function structure) -----
-def _weighted_sum(*terms):
-    # a single N-ary reduce over all weighted terms (one fused op, not a pairwise
-    # tree) -- flat structure, and torch reduces the stack in one go.
-    return torch.stack(torch.broadcast_tensors(*terms)).sum(0)
-
-
 def _mse(a, b):
     return ((a - b) ** 2).mean()
 
@@ -451,28 +446,24 @@ class GraphTrainable(Trainable):
             bind(main.recon, {main.acts: Input})
         )
 
-        # total_loss is a first-class graph handle: each term times a per-loss
-        # weight *field* (`field("w_<name>")`), reduced by a single N-ary node (flat,
-        # not a pairwise add-tree). The weights are graph inputs seeded fresh from
-        # `coeffs` each step -- device-clean, unlike the captured weight buffers that
-        # broke D-04 (a field is an extraction node, not a tensor orphaned by
-        # `.to(device)`). One fused pass either way.
-        self._total_loss: ValueRef = op(_weighted_sum)(
-            *(field(f"w_{k}") * term for k, term in self._loss_terms.items())
-        )
+        # total_loss is a first-class graph handle, built by the reusable
+        # `weighted_sum` reduce *component* over the dynamic loss set: a single flat
+        # N-ary node `Σ field("w_<k>") · term_k`. The weights are graph inputs seeded
+        # fresh from `coeffs` each step -- device-clean, unlike the captured weight
+        # buffers that broke D-04 (a field is an extraction node, not a tensor
+        # orphaned by `.to(device)`).
+        self._total_loss: ValueRef = weighted_sum(self._loss_terms)
 
-        # the whole training computation as one graph; handles reached through it,
-        # producers registered onto this Trainable (so .parameters()/.to() work --
-        # GraphSpec is a plain object, not an nn.Module, so assignment alone does
-        # NOT register its leaf producers; register_into does that bookkeeping).
+        # The OUTER graph is mostly static: just `total_loss` (the backprop target)
+        # and `output` (inference recon). The per-loss/metric/L0/L1 terms are
+        # dynamic (their count/keys are unknown), so they are NOT declared handles
+        # here -- they're looked up by handle inside the `forward_values` block in
+        # `loss()` (still interned, still one fused pass). total_loss's cone already
+        # covers every model producer (it sums all loss terms), so register_into
+        # over this static pair registers everything (GraphSpec is a plain object,
+        # not an nn.Module, so assignment alone wouldn't register its producers).
         self.graph: GraphSpec = GraphSpec.of(
-            output=self._output,
-            acts=self._acts,
-            L0=self._l0,
-            L1=self._l1,
-            total_loss=self._total_loss,
-            **self._loss_terms,
-            **self._metric_terms,
+            output=self._output, total_loss=self._total_loss
         )
         self.graph.register_into(self)
         # freq-tracker sites bubble up too: their stateful EMA update is deferred
@@ -499,17 +490,20 @@ class GraphTrainable(Trainable):
 
     def loss(self, x, *, cache, y=None, coeffs=None):
         with self.graph.forward_values(self._batch(x, y, coeffs), cache=cache) as save:
-            total = save(self.graph.total_loss)  # weighted sum -- a graph handle
-            terms = {k: save(t) for k, t in self._loss_terms.items()}  # unweighted
-            for k, t in self._metric_terms.items():
-                setattr(cache, k, save(t))
-            cache.L0, cache.L1 = save(self.graph.L0), save(self.graph.L1)
+            total = save(self.graph.total_loss)  # the one static backprop handle
+            # dynamic lookups: the per-loss / metric / L0 / L1 handles aren't on the
+            # (mostly-static) graph -- they're saved here by handle, sharing the one
+            # fused memoized pass (the model is computed once and reused).
+            logged = {k: save(t) for k, t in self._loss_terms.items()}  # unweighted
+            logged.update({k: save(t) for k, t in self._metric_terms.items()})
+            l0, l1 = save(self._l0), save(self._l1)
             for site in self._freq_sites:  # deferred EMA update after the pass
                 ft = site.producer
                 ft.update(ft.updated(site.inputs[0]))
-        # cache.<lossname> = unweighted (logging); cache.loss = the weighted total.
-        for k, m in terms.items():
+        # cache.<lossname>/<metric> = unweighted (logging); cache.loss = the total.
+        for k, m in logged.items():
             setattr(cache, k, m)
+        cache.L0, cache.L1 = l0, l1
         cache.loss = total.item()
         # below_* freq metrics, from the (now-updated) bubbled-up freq trackers
         for site in self._freq_sites:

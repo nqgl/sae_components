@@ -1,3 +1,4 @@
+from saeco_research.cgraph2.components import reduce_sum, weighted_sum
 from saeco_research.cgraph2.core import (
     Graph,
     Input,
@@ -31,6 +32,8 @@ __all__ = [
     "op",
     "op_slot",
     "ref",
+    "reduce_sum",
     "standardize",
     "sub_slot",
+    "weighted_sum",
 ]

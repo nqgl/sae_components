@@ -6,6 +6,17 @@ parked questions/tasks we explicitly don't want to lose, not the active plan
 
 ---
 
+## ▸ ValueRef[T] generic over producer  (pushed 2026-06-04, Glen)
+
+Make `ValueRef` generic in its producer type — `ValueRef[T]` with `producer: T` —
+so `collect(targets, SiteType)` can return `list[ValueRef[SiteType]]` and
+`site.producer` types correctly (fixes the `_freq_sites` typing). Additive
+(generics erase at runtime; interning unaffected). Touch points: `core.ValueRef`,
+`ref()` (`-> ValueRef[T]`), `collect()` / `GraphSpec.collect()` signatures. Should
+be contained; do as a focused typing-only change.
+
+---
+
 ## ▸ NormalizedModel[T] generic — typed model-prop returns  (pushed 2026-06-04, Glen)
 
 (uncertain if good) Make `NormalizedModel` generic — `NormalizedModel[T]` — so a
