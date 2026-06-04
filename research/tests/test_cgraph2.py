@@ -134,6 +134,43 @@ def test_typed_dictbatch_fields_and_overrides() -> None:
     )
 
 
+def test_field_slot_override_ignores_batch_field() -> None:
+    # Overriding a field-slot must win over the batch: the field is read from the
+    # binding, not the batch -- whether or not the batch carries that field.
+    import saeco.core as cl
+    from saeco_research.cgraph2 import DictBatch, GraphSpec, arg, field
+    from saeco_research.cgraph2.core import _Field, _toposort
+    from saeco_research.cgraph2.spec import Arg
+
+    class B(DictBatch):
+        a: torch.Tensor
+        b: torch.Tensor
+
+    class G(GraphSpec):
+        a = field(B.a)
+        b: Arg = arg(default=field(B.b))  # overridable; defaults to batch.b
+        output = a + b
+
+    g = G(b=torch.full((3,), 100.0))  # override b
+    # override wins even when the batch lacks b...
+    out_missing = g.forward(B(a=torch.ones(3)), cache=cl.Cache())  # type: ignore[call-arg]
+    assert torch.equal(out_missing, torch.full((3,), 101.0))
+    # ...and even when the batch *has* b (it must be ignored)
+    full_batch = B(a=torch.ones(3), b=torch.full((3,), -999.0))
+    out_present = g.forward(full_batch, cache=cl.Cache())
+    assert torch.equal(out_present, torch.full((3,), 101.0))
+    # structurally: field(B.b) is gone from the bound cone
+    nodes = _toposort(*g._targets())
+    assert not any(
+        isinstance(n.producer, _Field) and n.producer.name == "b" for n in nodes
+    )
+    # default (no override) reads the batch
+    assert torch.equal(
+        G().forward(B(a=torch.ones(3), b=torch.full((3,), 5.0)), cache=cl.Cache()),
+        torch.full((3,), 6.0),
+    )
+
+
 def test_render_shows_deduped_shared_nodes() -> None:
     # render() is the flat execution view: a node shared by several handles
     # appears exactly once (the fusion made visible).
