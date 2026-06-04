@@ -225,3 +225,37 @@ plan from outside" are by definition not statically known.
 - **How far to push output recipes now** — just the `total_loss` slice (#2), or the
   full bubble-up logging contract (#4) in this pass? #4 reshapes the cache path, so
   I'd want your nod on its shape before building.
+
+---
+
+# Refinement 2 (Glen) — contracts live only at the I/O boundary; inside it is ref-piping
+
+A sharpening of the converter/contract picture. The realization: **internal
+composition needs no contracts at all.** When a subgraph is embedded in an outer
+graph, you do not bundle its inputs into a DictBatch and you do not give it an
+output type — you just **pipe refs**: bind the subgraph's input slots to the outer
+graph's refs, and the outer graph reads whichever of the subgraph's handles it
+wants. That is exactly what `arg()` + `bind` + `sub_slot` already do.
+
+So the model is:
+
+- **A graph's inputs are `arg()` slots.** Binding a slot is the universal input
+  mechanism. You bind it to: an outer graph's ref (composition), a `field(Batch.x)`
+  read (a real batch at the boundary — D-09), or a constant (override — D-09).
+  These are all the same `bind`; `field`/`DictBatch` is just boundary sugar.
+- **An "input contract" (when you want a *named* multi-input interface) is just a
+  simple spec of only `arg()`s** — an interface other graphs read and callers bind.
+  For the trivial case the "contract" is just a bare tensor `Input`.
+- **A subgraph needs NO output contract / return type.** What matters is which of
+  its nodes the outer graph reads (its handles stay navigable — D-02). Output
+  *contracts* (DictBatch) matter only at the true outer boundary, where you coerce
+  the result into a typed batch for an external consumer / the log (`produce(spec,
+  Contract, batch) -> Contract`, point-3 design).
+
+Net: `DictBatch` contracts are a *boundary* concern (real batch in, typed log out),
+not a *composition* concern. Inside, it is refs binding to slots — already built.
+The remaining new surface is small: the boundary coercion (`produce`) + the
+input-side compose (`with_inputs`, which is just binding outer refs to inner slots
+by name), both on `GraphSpec`.
+
+(Parked, see STACK.md: check subgraph node-name duplication in the name maps.)
