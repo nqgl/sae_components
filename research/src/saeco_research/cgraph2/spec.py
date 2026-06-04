@@ -35,6 +35,7 @@ from saeco_research.cgraph2.core import (
     Input,
     OpRef,
     ValueRef,
+    _producer_label,
     _register_producers,
     _SaveSession,
     _toposort,
@@ -330,6 +331,37 @@ class GraphSpec(metaclass=_GraphMeta):
                 lines.append(child.describe(indent + 2))
             else:
                 lines.append(f"{pad}  {nm}: {child!r}")
+        return "\n".join(lines)
+
+    def render(self) -> str:
+        """A flat, deduped view of the whole graph: every node in the cone of all
+        handles printed *once* (so a shared node -- the encoder, the normalize op
+        -- appears a single time), each tagged with the handle name(s) pointing at
+        it. The execution view (D-02), and the picture that makes "it all fuses to
+        one pass" visible. ``describe()`` is the complementary nested-structure
+        view; this is the deduped DAG."""
+        order = _toposort(*self._targets())
+        aliases: dict[int, list[str]] = {}
+        for nm, h in self._handle_refs.items():
+            aliases.setdefault(id(h), []).append(nm)
+        name: dict[int, str] = {}
+        for i, n in enumerate(order):
+            if n is Input:
+                name[id(n)] = "input"
+            elif id(n) in aliases:
+                name[id(n)] = aliases[id(n)][0]
+            else:
+                name[id(n)] = f"n{i}"
+        width = max((len(v) for v in name.values()), default=4)
+        lines = [f"{type(self).__name__} ({len(order)} nodes):"]
+        for n in order:
+            ins = ", ".join(name[id(i)] for i in n.inputs)
+            arrow = f"  <- {ins}" if ins else ""
+            primary = name[id(n)]
+            others = [a for a in aliases.get(id(n), []) if a != primary]
+            tag = f"   [{', '.join(others)}]" if others else ""
+            label = _producer_label(n.producer)
+            lines.append(f"  {primary:<{width}} = {label}{arrow}{tag}")
         return "\n".join(lines)
 
     @property

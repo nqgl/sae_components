@@ -92,6 +92,26 @@ def test_arg_slots_are_independent() -> None:
     assert torch.allclose(out, torch.full((4,), -2.0))
 
 
+def test_render_shows_deduped_shared_nodes() -> None:
+    # render() is the flat execution view: a node shared by several handles
+    # appears exactly once (the fusion made visible).
+    import torch.nn as nn
+
+    from saeco_research.cgraph2 import GraphSpec, Input, Op, op, op_slot
+
+    class Spec(GraphSpec):
+        encoder: Op = op_slot()
+        h = encoder(Input)  # one node, read by both branches below
+        a = op(torch.relu)(h)
+        b = op(torch.sigmoid)(h)
+        output = a + b
+
+    r = Spec(encoder=nn.Linear(4, 4)).render()
+    assert r.count("= Linear") == 1  # the shared encoder node is printed once
+    for handle in ("h", "a", "b", "output"):
+        assert handle in r  # handles are named/tagged in the view
+
+
 def test_affine_normalizer_matches_generalized() -> None:
     # AffineNormalizer must reproduce StaticInvertibleGeneralizedNormalizer (the
     # stock static normalizer) for the static {DONTUSE, PRIMED} configs -- on the
