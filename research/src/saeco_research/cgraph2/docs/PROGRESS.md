@@ -82,3 +82,11 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled PYTHONPATH=research/src:research/expe
   ON NEXT WAKE: read that file, address any real (P1/P2) findings, then continue
   polish (ideas: GraphSpec repr/structure viz; aux-model metrics bubble-up;
   GNConfig normalizer per TODO; below_* freq metrics with a spliced FreqTracker).
+- **Self-review caught a real device bug (a8c1c05).** D-04's weight *buffers*
+  go stale across `.to(device)` (buffers get reassigned, orphaning the graph
+  node's capture on CPU; verified on GPU). Reverted to device-safe Python
+  weighting; loss terms still share one fused pass. Superseded D-04 with the
+  lesson: a graph node captures a *tensor*, and only `nn.Parameter` survives
+  `.to()` in place -- never reference a bare registered buffer from a node.
+  (The FreqTracker is fine: its `ref(self.freqs,())` is re-created each step
+  post-`.to()` and `copy_` is in-place.) Codex review still running in bg.
