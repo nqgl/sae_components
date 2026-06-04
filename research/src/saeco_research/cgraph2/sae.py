@@ -15,7 +15,6 @@ Assembly mirrors stock saeco: ``@model_prop`` returns a model graph (an
 :class:`NormalizedModel` and resolves every loss against it.
 """
 
-from functools import reduce
 from typing import Protocol
 
 import torch
@@ -43,6 +42,12 @@ from saeco_research.cgraph2.spec import GraphSpec, arg, op_slot, sub_slot
 
 
 # --- graph-leaf math (module-level so consing keys on function structure) -----
+def _weighted_sum(*terms):
+    # a single N-ary reduce over all weighted terms (one fused op, not a pairwise
+    # tree) -- flat structure, and torch reduces the stack in one go.
+    return torch.stack(torch.broadcast_tensors(*terms)).sum(0)
+
+
 def _mse(a, b):
     return ((a - b) ** 2).mean()
 
@@ -447,13 +452,13 @@ class GraphTrainable(Trainable):
         )
 
         # total_loss is a first-class graph handle: each term times a per-loss
-        # weight *field* (`field("w_<name>")`), summed. The weights are graph
-        # inputs seeded fresh from `coeffs` each step -- device-clean, unlike the
-        # captured weight buffers that broke D-04 (a field is an extraction node,
-        # not a tensor orphaned by `.to(device)`). One fused pass either way.
-        self._total_loss: ValueRef = reduce(
-            lambda a, b: a + b,
-            (field(f"w_{k}") * term for k, term in self._loss_terms.items()),
+        # weight *field* (`field("w_<name>")`), reduced by a single N-ary node (flat,
+        # not a pairwise add-tree). The weights are graph inputs seeded fresh from
+        # `coeffs` each step -- device-clean, unlike the captured weight buffers that
+        # broke D-04 (a field is an extraction node, not a tensor orphaned by
+        # `.to(device)`). One fused pass either way.
+        self._total_loss: ValueRef = op(_weighted_sum)(
+            *(field(f"w_{k}") * term for k, term in self._loss_terms.items())
         )
 
         # the whole training computation as one graph; handles reached through it,
