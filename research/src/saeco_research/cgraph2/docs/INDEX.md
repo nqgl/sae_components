@@ -5,6 +5,8 @@ Central plan for the cgraph2 documentation. Read this first.
 ## The docs
 
 - **INDEX.md** (this file) — what each doc is for. Keep the active-docs list current.
+- **ARCHITECTURE.md** — the shape of the system (layers, key types, what's deferred).
+  The doc to read for the big picture.
 - **DECISIONS.md** — the design-decisions log. Every significant design call gets
   an entry: the question, the options, the choice, and *why*. Append-only;
   supersede rather than rewrite (note "superseded by D-NN").
