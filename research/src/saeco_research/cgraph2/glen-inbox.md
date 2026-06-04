@@ -42,3 +42,10 @@ standardize(lambda x: math.log(x + 1)) == standardize(lambda z: zzz(z + 1))
 # function for the block used by namespace vs class
 I think we do need it to be class bc having access to __prepare__ is nice and it's nice to have it be a namespace that's exposed to the outside once instantiate the graph, eg its easy to point to graph.acts or whatever from the outside. But on the other hand it kind of wants to have inputs and return values and be able to express input types and return types which is a little tricky to do
 - not actionable right now but wanted to make note and track thoughts on this
+
+> RESOLVED (overnight). `GraphSpec` is the class-block, and it's both the
+> namespace *and* the runnable context (D-01): `graph.acts` is exposed and typed
+> from outside; inputs are the slots (`op_slot`/`arg`/`sub_slot`, typed via
+> `dataclass_transform`) and outputs are the handles (typed `ValueRef`s; a typo
+> errors). The "inputs and return types" wish is met by typed slots + typed
+> handles; `GraphSpec.of(**handles)` covers the dynamic (non-class-body) case.

@@ -74,3 +74,11 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled PYTHONPATH=research/src:research/expe
   the loss pass (ready for resampling; no tracker spliced in the gated arch yet).
   All demos + CPU smoke + GPU green (L0-targeting bends L0 3288->2661). Next:
   polish + codex review.
+- **Polish underway.** Committed ARCHITECTURE.md + research/tests/test_cgraph2.py
+  (8 tests green). Resolved glen-inbox item 2 (class-vs-namespace -> GraphSpec is
+  the runnable namespace). Ran codex review: `--base master` was too broad (whole
+  branch diff incl. unrelated pre-existing files like matryoshka_clt.py); switched
+  to a focused `codex exec` review of the 4 core files -> /tmp/codex_exec_review.txt.
+  ON NEXT WAKE: read that file, address any real (P1/P2) findings, then continue
+  polish (ideas: GraphSpec repr/structure viz; aux-model metrics bubble-up;
+  GNConfig normalizer per TODO; below_* freq metrics with a spliced FreqTracker).
