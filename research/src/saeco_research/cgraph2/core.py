@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextvars import ContextVar
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -182,11 +183,14 @@ class _Field:
 _FIELDS: dict[str, _Field] = {}
 
 
-def field(name: str) -> ValueRef:
-    """Read a named field of the structured input (``field("x")``, ``field(
-    "target")``). Seed the input with a dict / struct -- ``forward_values(batch)``
-    -- and each field is extracted lazily, so a graph reading only ``field("x")``
-    realizes only that, and two reads of the same field fuse to one node.
+def field(spec: Any) -> ValueRef:
+    """Read a named field of the structured input. Pass a field name (``field(
+    "target")``) or a typed ``DictBatch`` field (``field(Batch.target)``, which
+    reads as the field's value type to the checker -- see ``cgraph2.dictbatch``).
+
+    Seed the input with a dict / struct -- ``forward_values(batch)`` -- and each
+    field is extracted lazily, so a graph reading only ``field("x")`` realizes only
+    that, and two reads of the same field fuse to one node.
 
     The multi-input primitive: it makes a graph able to read *several* distinct
     runtime values (x, target, per-loss weights), which is what a true
@@ -194,6 +198,7 @@ def field(name: str) -> ValueRef:
     single-tensor ``Input`` path is unchanged -- a graph either reads ``Input`` as
     the value or reads ``field(...)`` off a struct, not both. See
     docs/DESIGN-multi-input.md."""
+    name = spec if isinstance(spec, str) else spec.name  # str | FieldRef
     f = _FIELDS.get(name)
     if f is None:
         f = _FIELDS[name] = _Field(name)

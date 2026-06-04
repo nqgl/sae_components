@@ -93,6 +93,47 @@ def test_arg_slots_are_independent() -> None:
     assert torch.allclose(out, torch.full((4,), -2.0))
 
 
+def test_typed_dictbatch_fields_and_overrides() -> None:
+    # DictBatch: class-level field is a FieldRef (spec-building handle); an
+    # instance exposes the value; a missing declared field fails loud; and a
+    # field can be an overridable slot (arg(default=field(...))).
+    from saeco_research.cgraph2 import DictBatch, FieldRef, GraphSpec, arg, field, op
+    from saeco_research.cgraph2.spec import Arg
+
+    class Batch(DictBatch):
+        input: torch.Tensor
+        target: torch.Tensor
+
+    # class access -> FieldRef carrying the name; field() reads it (== field("name"))
+    assert isinstance(Batch.input, FieldRef)
+    assert Batch.input.name == "input"
+    assert field(Batch.input) is field("input")
+
+    b = Batch(input=torch.ones(2, 3), target=torch.zeros(2, 3))
+    assert torch.equal(b.input, torch.ones(2, 3))  # instance access -> value
+
+    incomplete = Batch(input=torch.ones(2, 3))  # type: ignore[call-arg]
+    assert incomplete.missing_fields() == ["target"]
+    with pytest.raises(AttributeError):  # accessing an unprovided field is loud
+        _ = incomplete.target
+
+    class Sub(GraphSpec):
+        x: Arg = arg(default=field(Batch.input))  # overridable; defaults to batch
+        output = op(torch.relu)(x)
+
+    import saeco.core as cl
+
+    # default path: reads the batch's input field
+    assert torch.equal(
+        Sub().forward(b, cache=cl.Cache()), torch.ones(2, 3)
+    )
+    # override path: bind x to a fixed value, bypassing the batch
+    fixed = torch.full((2, 3), -5.0)
+    assert torch.equal(
+        Sub(x=fixed).forward(b, cache=cl.Cache()), torch.zeros(2, 3)
+    )
+
+
 def test_render_shows_deduped_shared_nodes() -> None:
     # render() is the flat execution view: a node shared by several handles
     # appears exactly once (the fusion made visible).
