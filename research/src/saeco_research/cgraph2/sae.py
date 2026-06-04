@@ -31,10 +31,11 @@ from saeco_research.cgraph2.core import (
     OpRef,
     ValueRef,
     bind,
+    collect,
     op,
     ref,
 )
-from saeco_research.cgraph2.spec import GraphSpec, op_slot, sub_slot
+from saeco_research.cgraph2.spec import GraphSpec, arg, op_slot, sub_slot
 
 
 # --- graph-leaf math (module-level so consing keys on function structure) -----
@@ -54,27 +55,40 @@ def _cosim(a, b):
     return torch.cosine_similarity(a, b, dim=-1).mean()
 
 
-# --- bubble-up sites: passthrough nodes on `acts` that expose extra handles ----
+# --- bubble-up sites: passthrough markers on `acts` that expose extra handles --
 # A site is collected from a graph cone (apply-style, `collect()`); the outside
 # pulls its handles without anything in between knowing where it lives -- the
-# graph-native version of saeco's ActMetrics "bubbling up" to the cache.
+# graph-native version of saeco's ActMetrics "bubbling up" to the cache (D-03/D-05).
+class ActMetrics(GraphSpec):
+    """Metrics on activations, as a graph: ``acts`` in, ``L0`` / ``L1`` out (and
+    the passthrough ``output``). Applied to whatever acts flow through its site,
+    so it tracks rebinding (e.g. normalization)."""
+
+    acts: ValueRef = arg()
+    L0 = op(_l0)(acts)
+    L1 = op(_l1)(acts)
+    output = acts
+
+
 @define(eq=False)
-class ActMetrics:
-    """A passthrough metrics site on ``acts``. ``handles(acts)`` are the L0/L1
-    nodes (derived from whatever acts flow into the site's node, so they track
-    rebinding e.g. normalization)."""
+class _MetricsSite:
+    """A passthrough marker spliced onto ``acts`` (``metered(acts)``). Collected by
+    ``collect(_MetricsSite)``; ``site.at(acts)`` applies the carried metrics graph
+    to the (already-rebound) acts flowing through it."""
+
+    metrics: type = ActMetrics
 
     def __call__(self, x):
         return x
 
-    def handles(self, acts: ValueRef) -> dict[str, ValueRef]:
-        return {"L0": op(_l0)(acts), "L1": op(_l1)(acts)}
+    def at(self, acts: ValueRef) -> "GraphSpec":
+        return self.metrics(acts=acts)
 
 
-def act_metrics(acts: ValueRef) -> ValueRef:
-    """Splice an :class:`ActMetrics` site onto ``acts`` (passthrough); collectable
-    from any cone that includes the returned node."""
-    return ref(ActMetrics(), (acts,))
+def metered(acts: ValueRef, metrics: type = ActMetrics) -> ValueRef:
+    """Splice a metrics site onto ``acts`` (passthrough); bubble it up with
+    ``collect(_MetricsSite)``."""
+    return ref(_MetricsSite(metrics), (acts,))
 
 
 class FreqTracker(cl.Module):
@@ -297,9 +311,17 @@ class GraphTrainable(Trainable):
         self._metric_terms = {
             k: t(norm_model=main_nm).out for k, t in metric_types.items()
         }
-        self._l0 = op(_l0)(main_nm.acts)
-        self._l1 = op(_l1)(main_nm.acts)
         self._acts = main_nm.acts
+        # bubble up the main model's metrics site (L0/L1) -- it lives on the
+        # model's acts wherever the model put it; we collect it and apply it to
+        # the rebound (normalized) acts (D-03/D-05). Fall back to computing
+        # directly if the model didn't splice one.
+        sites = collect([main_nm.acts], _MetricsSite)
+        if sites:
+            metrics = sites[0].producer.at(sites[0].inputs[0])
+            self._l0, self._l1 = metrics.L0, metrics.L1
+        else:
+            self._l0, self._l1 = op(_l0)(main_nm.acts), op(_l1)(main_nm.acts)
         self._output = main_nm.out  # denormalized recon (inference)
         # decode: acts -> raw recon (treat acts as the input, then denormalize)
         self._decode = normalizer.denormalize(bind(main.recon, {main.acts: Input}))
@@ -327,6 +349,9 @@ class GraphTrainable(Trainable):
             **self._metric_terms,
         )
         self.graph.register_into(self)
+        # freq-tracker sites bubble up too: their stateful EMA update is deferred
+        # onto each loss pass (ready for resampling; no-op if none spliced).
+        self._freq_sites = self.graph.collect(FreqTracker)
 
         self.resampler = resampler
         resampler.assign_model(self)
@@ -346,6 +371,9 @@ class GraphTrainable(Trainable):
             for k, t in self._metric_terms.items():
                 setattr(cache, k, save(t))
             cache.L0, cache.L1 = save(self.graph.L0), save(self.graph.L1)
+            for site in self._freq_sites:  # deferred EMA update after the pass
+                ft = site.producer
+                ft.update(ft.updated(site.inputs[0]))
         cache.loss = total.item()
         return total
 

@@ -66,3 +66,11 @@ CUDA_VISIBLE_DEVICES=0 WANDB_MODE=disabled PYTHONPATH=research/src:research/expe
   runs one `forward_values`, `save(graph.total_loss)` is the backprop loss, terms
   saved unweighted for logging. L0-targeting's dynamic sparsity weight flows in;
   GPU run trains identically (L0 bends 3288->2774). Next: #3.
+- **#3 DONE.** `ActMetrics` is a `GraphSpec` (acts -> L0/L1); a thin `_MetricsSite`
+  passthrough (`metered(acts)`) is spliced on the gated model's acts and bubbled
+  up via `collect` in the trainable, applied to the rebound (normalized) acts
+  (D-05). L0/L1 are no longer hand-coded in the trainable -- they come from the
+  model's site. Freq-tracker sites are collected + their EMA update deferred onto
+  the loss pass (ready for resampling; no tracker spliced in the gated arch yet).
+  All demos + CPU smoke + GPU green (L0-targeting bends L0 3288->2661). Next:
+  polish + codex review.

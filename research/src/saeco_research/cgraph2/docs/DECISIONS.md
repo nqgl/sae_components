@@ -98,3 +98,28 @@ way), but `total_loss` becomes a first-class handle, which is the graph-native f
 **Note:** weights are scalar *buffers* synced each step — a pragmatic stand-in for
 true graph *inputs*. The cleaner form passes the weight vector as an input node,
 which awaits multi-input/`DictBatch`. Recorded for later.
+
+---
+
+## D-05 — ActMetrics is a GraphSpec; a thin site marker makes it bubble-up-able
+
+**Call:** "Make ActMetrics a GraphSpec" (Glen) vs. it must be `collect`-able as a
+site. Tension: a `GraphSpec` *inlines* when composed (no marker node to collect),
+and a `GraphSpec` instance can't be a passthrough producer (its `__call__` is
+apply, not identity).
+
+**Choice:** Split the two roles. `ActMetrics(GraphSpec)` is the reusable metric
+*computation* (`acts -> L0/L1`, passthrough `output`). A thin `_MetricsSite`
+producer (real passthrough) is what gets spliced onto `acts` (`metered(acts)`) and
+`collect`ed; it carries the metrics graph class and, on collection, applies it to
+the *rebound* acts (`site.at(node.inputs[0])`) — so the metric is computed in the
+full normalized context (the site node sits on the recon path, so it rebinds with
+the model). Metrics thus bubble up (D-03): the model buries a site on its acts, the
+trainable `collect`s it, and nothing in between declares L0/L1.
+
+**Why:** keeps the metric a clean composable graph *and* collectable *and*
+full-context. The site marker is plumbing; `ActMetrics` is the graph.
+
+**Alternative not taken:** make the GraphSpec instance itself the producer
+(breaks: `__call__` = apply) or tag the passthrough with `self` in the class body
+(breaks: no instance at class-def time).

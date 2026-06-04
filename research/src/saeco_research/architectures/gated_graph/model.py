@@ -29,6 +29,7 @@ from saeco_research.cgraph2.sae import (
     GraphSparsityLoss,
     GraphTrainable,
     SAEGraphSpec,
+    metered,
 )
 from sweepable import SweepableConfig
 
@@ -56,7 +57,7 @@ class GatedModelSpec(SAEGraphSpec):
     h = encoder(x)
     gate_acts = op(torch.relu)(gate_bias(h))
     mag = op(torch.relu)(mag_bias(h * op(torch.exp)(log_r)))
-    acts = mag * op(_thresh)(gate_acts)
+    acts = metered(mag * op(_thresh)(gate_acts))  # metrics site bubbles up L0/L1
     recon = decoder(acts)
     output = recon
 

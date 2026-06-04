@@ -16,7 +16,7 @@ from saeco_research.cgraph2 import (
     op,
     op_slot,
 )
-from saeco_research.cgraph2.sae import ActMetrics, FreqTracker, act_metrics
+from saeco_research.cgraph2.sae import FreqTracker, _MetricsSite, metered
 
 
 class Lin(cl.Module):
@@ -37,7 +37,7 @@ class SAESpec(GraphSpec):
     encoder: Op = op_slot()
     decoder: Op = op_slot()
     raw = op(torch.relu)(encoder(Input))
-    acts = op(freqs)(act_metrics(raw))  # ActMetrics then FreqTracker, passthrough
+    acts = op(freqs)(metered(raw))  # metrics site then freq site, passthrough
     recon = decoder(acts)
     output = recon
 
@@ -55,14 +55,14 @@ def main():
     x = torch.randn(32, 8)
 
     # bubble up the sites from the graph (the outside never reached "inside")
-    metric_nodes = g.collect(ActMetrics)
+    metric_nodes = g.collect(_MetricsSite)
     freq_nodes = g.collect(FreqTracker)
-    ok("collected one ActMetrics site", len(metric_nodes) == 1)
+    ok("collected one metrics site", len(metric_nodes) == 1)
     ok("collected one FreqTracker site", len(freq_nodes) == 1)
 
     # each site derives handles from its node's input (so they track rebinding)
     mnode = metric_nodes[0]
-    metric_handles = mnode.producer.handles(mnode.inputs[0])
+    metric_handles = mnode.producer.at(mnode.inputs[0])  # ActMetrics graph in context
     fnode = freq_nodes[0]
     ft = fnode.producer
 
@@ -71,8 +71,8 @@ def main():
     # one fused pass: produce recon + L0/L1, and defer the freq update inline
     with g.forward_values(x, cache=cl.Cache()) as save:
         recon = save(sae.recon)
-        l0 = save(metric_handles["L0"])
-        l1 = save(metric_handles["L1"])
+        l0 = save(metric_handles.L0)
+        l1 = save(metric_handles.L1)
         # the freqs are still zero here -- update is deferred to block exit
         inside_zero = float(freqs.freqs.sum()) == 0.0
         ok("freqs still zero *inside* the block (deferred)", inside_zero)
