@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Self, dataclass_transform
 
-from attrs import define
+from attrs import define, field
 
 from saeco_research.cgraph2.core import (
     Graph,
@@ -148,12 +148,23 @@ class _MapReduceOverSlots:
 class SubSlots[T]:
     """The typed annotation for a ``sub_slots()`` field (``losses: SubSlots[
     GraphLoss]``). Generic in the sub-graph type ``T`` so ``losses.reduce`` is bound
-    and ``per_item``'s ``loss`` is typed ``T``. At runtime this is the variadic-slot
-    marker; ``reduce(per_item, combine)`` builds a deferred fold over the
-    (eventually-bound) dict of sub-graphs -- ``per_item(key, subgraph)`` makes each
-    term, ``combine`` (e.g. ``reduce_sum``) folds them into one flat node."""
+    and ``per_item``'s ``loss`` is typed ``T``.
 
-    slots: _SubSlots
+    In a class body it's the variadic-slot *marker*; ``reduce(per_item, combine)``
+    builds a deferred fold over the (eventually-bound) dict of sub-graphs --
+    ``per_item(key, subgraph)`` makes each term, ``combine`` (e.g. ``reduce_sum``)
+    folds them into one flat node. ``SubSlots.from_dict(d)`` wraps a concrete dict
+    so it can be *bound* to the slot at construction without a cast (the metaclass
+    also accepts a bare dict)."""
+
+    slots: _SubSlots = field(factory=_SubSlots)
+    bound: dict[str, T] | None = field(default=None)
+
+    @classmethod
+    def from_dict(cls, subgraphs: dict[str, T]) -> SubSlots[T]:
+        """Wrap a concrete dict of sub-graphs for binding to a ``sub_slots()`` field
+        (a typed alternative to passing the bare dict)."""
+        return cls(bound=dict(subgraphs))
 
     def reduce(
         self,
@@ -164,6 +175,14 @@ class SubSlots[T]:
 
 
 _SubSlotsRef = SubSlots  # internal alias (the metaclass collects by this type)
+
+
+def _bound_dict(binding) -> dict:
+    """The concrete dict from a ``sub_slots`` binding (a ``SubSlots.from_dict`` or a
+    bare dict)."""
+    if isinstance(binding, SubSlots):
+        return dict(binding.bound or {})
+    return dict(binding)
 
 
 def arg(default=_NODEFAULT) -> Any:
@@ -186,10 +205,11 @@ def sub_slot() -> Any:
 
 
 def sub_slots() -> Any:
-    """A *variadic* sub-model slot: bound to a ``dict`` of sub-graphs at
-    construction; fold over them declaratively in the class body with
-    ``.reduce(per_item, combine)`` (e.g. a weighted loss sum over a dynamic set)."""
-    return _SubSlotsRef(_SubSlots())
+    """A *variadic* sub-model slot: bound to a ``dict`` of sub-graphs at construction
+    (bare or via ``SubSlots.from_dict``); fold over them declaratively in the class
+    body with ``.reduce(per_item, combine)`` (e.g. a weighted loss sum over a
+    dynamic set)."""
+    return SubSlots()
 
 
 @define
@@ -320,7 +340,7 @@ class _GraphMeta(type):
                 raise TypeError(f"{cls.__name__} missing required sub-model {nm!r}")
         for nm, msref in t.multi_slots.items():
             if nm in bindings:
-                subs[msref.slots] = dict(bindings[nm])  # the bound dict of sub-graphs
+                subs[msref.slots] = _bound_dict(bindings[nm])  # the bound sub-graphs
             else:
                 raise TypeError(f"{cls.__name__} missing required sub-models {nm!r}")
         obj = object.__new__(cls)
@@ -336,7 +356,7 @@ class _GraphMeta(type):
             setattr(obj, nm, child)
         for nm in t.multi_slots:  # variadic children: a navigable dict of sub-graphs
             if nm in bindings:
-                setattr(obj, nm, dict(bindings[nm]))
+                setattr(obj, nm, _bound_dict(bindings[nm]))
         obj._setup(handle_refs, bind(t.output, subs), subgraphs)
         return obj
 

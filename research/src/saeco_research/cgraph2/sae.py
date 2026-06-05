@@ -485,11 +485,8 @@ class GraphTrainable(Trainable):
         # the main recon. register_into over it covers every producer (total_loss's
         # cone is all the loss sub-graphs). GraphSpec is a plain object (not an
         # nn.Module), so register_into does the param/buffer bookkeeping explicitly.
-        # the bound dict satisfies the sub_slots runtime; the marker-vs-bound-value
-        # type gap is the standard slot-binding one (cf. binding a value to an arg).
         self.graph: TrainGraph = TrainGraph(
-            losses=self._loss_graphs,  # type: ignore[arg-type]
-            main=main_nm,
+            losses=SubSlots.from_dict(self._loss_graphs), main=main_nm
         )
         self._total_loss: ValueRef = self.graph.total_loss
         self.graph.register_into(self)
