@@ -492,7 +492,8 @@ class GraphTrainable(Trainable):
         self.graph.register_into(self)
         # freq-tracker sites bubble up too: their stateful EMA update is deferred
         # onto each loss pass (ready for resampling; no-op if none spliced).
-        self._freq_sites: list[ValueRef] = self.graph.collect(FreqTracker)
+        # typed via the generic collect: site.producer is a FreqTracker
+        self._freq_sites: list[ValueRef[FreqTracker]] = self.graph.collect(FreqTracker)
 
         self.resampler: Resampler = resampler
         resampler.assign_model(self)

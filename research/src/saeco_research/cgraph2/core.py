@@ -108,28 +108,30 @@ def _detach(a):
 
 
 @define(frozen=True, eq=False, repr=False)
-class ValueRef:
+class ValueRef[T]:
     """An interned value node: ``(producer, inputs)``. Immutable; identity is
-    structural (interned). Never construct directly -- use ``ref()`` / operators
-    / ``OpRef.__call__`` so it goes through the intern table."""
+    structural (interned). Generic in the *producer* type ``T``, so ``node.producer``
+    is typed (e.g. ``collect(FreqTracker)`` yields ``ValueRef[FreqTracker]`` and
+    ``site.producer`` is a ``FreqTracker``). Never construct directly -- use
+    ``ref()`` / operators / ``OpRef.__call__`` so it goes through the intern table."""
 
-    producer: object
+    producer: T
     inputs: tuple
     name: str | None = None  # display only; not part of identity
 
-    def __mul__(self, o) -> ValueRef:
+    def __mul__(self, o) -> ValueRef[Any]:
         return _binop(_mul, "Mul", self, o)
 
-    def __add__(self, o) -> ValueRef:
+    def __add__(self, o) -> ValueRef[Any]:
         return _binop(_add, "Add", self, o)
 
-    def __sub__(self, o) -> ValueRef:
+    def __sub__(self, o) -> ValueRef[Any]:
         return _binop(_sub, "Sub", self, o)
 
-    def __truediv__(self, o) -> ValueRef:
+    def __truediv__(self, o) -> ValueRef[Any]:
         return _binop(_div, "Div", self, o)
 
-    def detach(self) -> ValueRef:
+    def detach(self) -> ValueRef[Any]:
         return ref(Op.create(_detach, "Detach"), (self,))
 
     def build(self) -> Graph:
@@ -140,7 +142,9 @@ class ValueRef:
         return f"ValueRef({self.name or _producer_label(self.producer)})"
 
 
-def ref(producer, inputs: tuple[ValueRef, ...], name: str | None = None) -> ValueRef:
+def ref[T](
+    producer: T, inputs: tuple[ValueRef, ...], name: str | None = None
+) -> ValueRef[T]:
     """Intern a node: return the canonical ValueRef for ``(producer, inputs)``."""
     key = (_producer_key(producer), tuple(id(i) for i in inputs))
     hit = _INTERN.get(key)
@@ -329,12 +333,13 @@ class Graph(cl.Module):
         return "\n".join(lines)
 
 
-def collect(targets, site_type: type) -> list[ValueRef]:
+def collect[S](targets, site_type: type[S]) -> list[ValueRef[S]]:
     """Walk the cone of ``targets`` (apply-style, over the DAG) and return the
-    nodes whose producer is an instance of ``site_type``. The graph-native form
-    of ``Module.apply`` -- a value 'bubbles up' to the outside without anything
-    in between knowing where it lives. The caller derives handles from each
-    node's producer (the site) and inputs (e.g. ``site.handles(node.inputs[0])``)."""
+    nodes whose producer is an instance of ``site_type`` -- typed ``ValueRef[S]``,
+    so ``node.producer`` is an ``S``. The graph-native form of ``Module.apply`` --
+    a value 'bubbles up' to the outside without anything in between knowing where
+    it lives. The caller derives handles from each node's producer (the site) and
+    inputs (e.g. ``site.handles(node.inputs[0])``)."""
     if isinstance(targets, ValueRef):
         targets = (targets,)
     return [n for n in _toposort(*targets) if isinstance(n.producer, site_type)]

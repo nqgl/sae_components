@@ -471,8 +471,9 @@ class GraphSpec(metaclass=_GraphMeta):
         saves), ``save.after(h, fn)`` defers a side-effect to block exit."""
         return _SaveSession(self, x, cache, kwargs)
 
-    def collect(self, site_type: type) -> list[ValueRef]:
-        """Bubble up: nodes in this graph's cone whose producer is ``site_type``."""
+    def collect[S](self, site_type: type[S]) -> list[ValueRef[S]]:
+        """Bubble up: nodes in this graph's cone whose producer is ``site_type``
+        (typed ``ValueRef[S]``, so ``node.producer`` is an ``S``)."""
         return collect(list(self._targets()), site_type)
 
     def register_into(self, module) -> GraphSpec:
