@@ -134,6 +134,12 @@ class ValueRef[T]:
     def detach(self) -> ValueRef[Any]:
         return ref(Op.create(_detach, "Detach"), (self,))
 
+    def __call__(self, *args):
+        hook = getattr(self.producer, "__partial_call__", None)
+        if hook is None:
+            raise TypeError(f"{self!r} is not callable")
+        return hook(self, *args)
+
     def build(self) -> Graph:
         """Freeze a runnable Graph targeting this value (its cone only)."""
         return Graph(self)

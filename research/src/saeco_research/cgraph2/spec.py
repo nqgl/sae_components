@@ -95,6 +95,10 @@ class _SubGet:
         (x_node,) = inputs  # construction: splice the bound sub-graph
         return bind(getattr(bound, self.attr), {Input: x_node})
 
+    def __partial_call__(self, node: ValueRef, value: ValueRef):
+        (x,) = node.inputs
+        return _AppliedPartial(self.slot, self.attr, x, value)
+
 
 class _AppliedSub:
     """``sub_model(x)`` at template time; ``.attr`` yields a deferred sub-get."""
@@ -117,6 +121,40 @@ class _SubSlotRef:
 
     def __call__(self, x: ValueRef) -> Any:
         return _AppliedSub(self.slot, x)
+
+
+@define(eq=False)
+class _PartialComplete:
+    slot: _SubSlot
+    attr: str
+    handle: str
+
+    def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
+        x_node, value_node = inputs
+        bound = subs.get(self.slot, None)
+        if bound is None:  # outer slot not bound here: keep the deferred node
+            return ref(self, inputs)
+        if isinstance(bound, _SubSlot):  # inheritance re-point: swap the marker
+            return ref(_PartialComplete(bound, self.attr, self.handle), inputs)
+        partial = getattr(bound, self.attr)
+        rebound = partial.rebind({Input: x_node})
+        completed = rebound(value_node)
+        return getattr(completed, self.handle)
+
+
+@define(eq=False)
+class _AppliedPartial:
+    slot: _SubSlot
+    attr: str
+    x: ValueRef
+    value: ValueRef
+
+    def __getattr__(self, handle_name: str) -> ValueRef:
+        if handle_name.startswith("_"):
+            raise AttributeError(handle_name)
+        return ref(
+            _PartialComplete(self.slot, self.attr, handle_name), (self.x, self.value)
+        )
 
 
 @define(eq=False)
@@ -220,6 +258,7 @@ class _Template:
     sub_slots: dict[str, _SubSlotRef]
     multi_slots: dict[str, _SubSlotsRef]
     handles: dict[str, ValueRef]
+    partials: dict[str, _PartialGraph]
 
 
 @define(frozen=True)
@@ -299,7 +338,14 @@ class _PartialGraph:
 
 
 def _merge_templates(templates: list[_Template]) -> _Template:
-    value_slots, op_slots, sub_slots, multi_slots, handles = {}, {}, {}, {}, {}
+    value_slots, op_slots, sub_slots, multi_slots, handles, partials = (
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+    )
     output = None
     for t in templates:
         value_slots.update(t.value_slots)
@@ -307,9 +353,12 @@ def _merge_templates(templates: list[_Template]) -> _Template:
         sub_slots.update(t.sub_slots)
         multi_slots.update(t.multi_slots)
         handles.update(t.handles)
+        partials.update(t.partials)
         if t.output is not None:
             output = t.output
-    return _Template(output, value_slots, op_slots, sub_slots, multi_slots, handles)
+    return _Template(
+        output, value_slots, op_slots, sub_slots, multi_slots, handles, partials
+    )
 
 
 def _iter_slots(t: _Template):
@@ -440,6 +489,7 @@ class _GraphMeta(type):
             elif isinstance(v, ValueRef):
                 own_value[slot_name] = v
         own_handles = {k: v for k, v in ns.items() if isinstance(v, ValueRef)}
+        own_partials = {k: v for k, v in ns.items() if isinstance(v, _PartialGraph)}
         own_out = ns.get("output")
         own_output = own_out if isinstance(own_out, ValueRef) else None
 
@@ -464,6 +514,8 @@ class _GraphMeta(type):
                     subs[base.sub_slots[nm].slot] = sref.slot
             handles = {k: bind(h, subs) for k, h in base.handles.items()}
             handles.update(own_handles)
+            partials = {k: p.rebind(subs) for k, p in base.partials.items()}
+            partials.update(own_partials)
             output = (
                 own_output
                 if own_output is not None
@@ -477,9 +529,10 @@ class _GraphMeta(type):
             value_slots, op_slots, sub_slots = own_value, own_op, own_sub
             multi_slots = own_multi
             handles, output = own_handles, own_output
+            partials = own_partials
 
         cls._template = _Template(
-            output, value_slots, op_slots, sub_slots, multi_slots, handles
+            output, value_slots, op_slots, sub_slots, multi_slots, handles, partials
         )
         return cls
 
@@ -496,13 +549,18 @@ class _GraphMeta(type):
         handle_refs = {nm: bind(h, resolved.subs) for nm, h in t.handles.items()}
         for nm, h in handle_refs.items():
             setattr(obj, nm, h)
+        partial_refs = {nm: p.rebind(resolved.subs) for nm, p in t.partials.items()}
+        for nm, partial in partial_refs.items():
+            setattr(obj, nm, partial)
         # keep bound sub-graphs as navigable children (structure, not flattened):
         # spec.norm_model.y_pred_norm works (D-02).
         for nm, child in resolved.subgraphs.items():
             setattr(obj, nm, child)
         for nm, children in resolved.multi_subgraphs.items():
             setattr(obj, nm, children)
-        obj._setup(handle_refs, bind(t.output, resolved.subs), resolved.subgraphs)
+        obj._setup(
+            handle_refs, bind(t.output, resolved.subs), resolved.subgraphs, partial_refs
+        )
         return obj
 
 
@@ -527,10 +585,12 @@ class GraphSpec(metaclass=_GraphMeta):
         handle_refs: dict[str, ValueRef],
         out: ValueRef,
         subgraphs: dict[str, GraphSpec],
+        partials: dict[str, _PartialGraph] | None = None,
     ) -> None:
         self._handle_refs = handle_refs
         self._out = out
         self._subgraphs = subgraphs
+        self._partials = partials or {}
         self._names = None  # lazy name map over the handle cones
 
     @classmethod
@@ -662,7 +722,10 @@ class GraphSpec(metaclass=_GraphMeta):
         refs = {nm: bind(h, {Input: x}) for nm, h in self._handle_refs.items()}
         for nm, h in refs.items():
             setattr(clone, nm, h)
-        clone._setup(refs, bind(self._out, {Input: x}), {})
+        partials = {nm: p.rebind({Input: x}) for nm, p in self._partials.items()}
+        for nm, partial in partials.items():
+            setattr(clone, nm, partial)
+        clone._setup(refs, bind(self._out, {Input: x}), {}, partials)
         return clone
 
     __call__ = apply_to

@@ -11,6 +11,14 @@ import pytest
 import torch
 
 
+def _cgraph2_double(x):
+    return x * 2
+
+
+def _cgraph2_mul(a, b):
+    return a * b
+
+
 @pytest.mark.parametrize(
     "module_name",
     [
@@ -238,6 +246,56 @@ def test_partial_completed_exposes_output_and_rebinds_defaults() -> None:
     done2 = p.rebind({Input: field("x")}).complete()  # a resolves to field("x")
     out2 = done2.forward({"x": torch.tensor([3.0])}, cache=cl.Cache())
     assert torch.allclose(out2, torch.tensor([13.0]))  # a=x=3, b=10
+
+
+def test_embedded_partial_subgraph() -> None:
+    import saeco.core as cl
+    from saeco_research.cgraph2 import GraphSpec, Input, arg, field, op, sub_slot
+    from saeco_research.cgraph2.spec import Arg
+
+    class Inner(GraphSpec):
+        value: Arg = arg()
+        scale: Arg = arg()
+        output = op(_cgraph2_mul)(value, scale)
+
+    class Outer(GraphSpec):
+        s = op(_cgraph2_double)(Input)
+        finish = Inner.partial(scale=s)
+        output = Input
+
+    class User(GraphSpec):
+        outer: Outer = sub_slot()
+        x_in = field("input")
+        x_other = field("other")
+        recon = field("recon")
+        alt = field("alt")
+        out = outer(x_in).finish(recon).output
+        out_alt = outer(x_in).finish(alt).output
+        out_other = outer(x_other).finish(recon).output
+        output = out
+
+    g = User(outer=Outer())
+    assert g.out is not g.out_alt
+    assert g.out is not g.out_other
+    batch = {
+        "input": torch.tensor([2.0, 3.0]),
+        "other": torch.tensor([5.0, 7.0]),
+        "recon": torch.tensor([11.0, 13.0]),
+        "alt": torch.tensor([17.0, 19.0]),
+    }
+
+    with g.forward_values(batch, cache=cl.Cache()) as save:
+        out = save(g.out)
+        out_alt = save(g.out_alt)
+        out_other = save(g.out_other)
+
+    assert torch.allclose(out, batch["recon"] * 2 * batch["input"])
+    assert torch.allclose(out_alt, batch["alt"] * 2 * batch["input"])
+    assert torch.allclose(out_other, batch["recon"] * 2 * batch["other"])
+
+    direct = g.outer(field("other")).finish(field("alt")).output
+    direct_out = GraphSpec.of(output=direct).forward(batch, cache=cl.Cache())
+    assert torch.allclose(direct_out, batch["alt"] * 2 * batch["other"])
 
 
 def test_render_shows_deduped_shared_nodes() -> None:
