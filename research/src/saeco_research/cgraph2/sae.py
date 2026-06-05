@@ -25,7 +25,7 @@ from saeco.components.resampling import Resampler
 from saeco.data.training_data.sae_train_batch import SAETrainBatch
 from saeco.trainer.normalizers.normalizer import GNConfig
 from saeco.trainer.trainable import Trainable, make_cache_optional
-from saeco_research.cgraph2.components import weighted_sum
+from saeco_research.cgraph2.components import reduce_sum
 from saeco_research.cgraph2.core import (
     Graph,
     Input,
@@ -39,7 +39,7 @@ from saeco_research.cgraph2.core import (
     ref,
 )
 from saeco_research.cgraph2.dictbatch import DictBatch
-from saeco_research.cgraph2.spec import GraphSpec, arg, op_slot, sub_slot
+from saeco_research.cgraph2.spec import GraphSpec, arg, op_slot, sub_slot, sub_slots
 
 
 # --- graph-leaf math (module-level so consing keys on function structure) -----
@@ -383,8 +383,30 @@ class LossRef:
     model: SAEModel
     loss_type: type[GraphLoss]
 
+    def build_graph(self, norm_model: NormalizedModel) -> GraphLoss:
+        return self.loss_type(norm_model=norm_model)
+
     def build(self, norm_model: NormalizedModel) -> ValueRef:
-        return self.loss_type(norm_model=norm_model).out
+        return self.build_graph(norm_model).out
+
+
+class TrainGraph(GraphSpec):
+    """The trainable's outer computation, as a (mostly static) class block.
+
+    ``total_loss`` (the backprop target) is a *declarative* weighted fold over a
+    **dynamic** set of loss sub-graphs: ``Σ field("w_<k>") · loss.out``, reduced by
+    ``reduce_sum`` into one flat N-ary node. ``output`` is the main model's
+    denormalized recon (inference). The per-loss / metric / L0 / L1 *logging* values
+    are looked up dynamically in ``GraphTrainable.loss`` (not declared here) -- so
+    this class stays static while being parameterized by the dynamic losses."""
+
+    losses: dict[str, GraphLoss] = sub_slots()
+    main: NormalizedModel = sub_slot()
+
+    total_loss = losses.reduce(
+        lambda name, loss: field(f"w_{name}") * loss.out, reduce_sum
+    )
+    output = main(Input).out  # the main model reads its own fields; Input is a no-op
 
 
 class GraphTrainable(Trainable):
@@ -417,9 +439,14 @@ class GraphTrainable(Trainable):
         }
         main_nm: NormalizedModel = norm[id(main)]
 
-        # resolve (model, loss_type) -> loss term over that model's NormalizedModel
+        # resolve (model, loss_type) -> a loss *sub-graph* over that model's
+        # NormalizedModel (kept whole so TrainGraph can fold them); `.out` is the
+        # per-loss value handle we log.
+        self._loss_graphs: dict[str, GraphLoss] = {
+            k: lr.build_graph(norm[id(lr.model)]) for k, lr in losses.items()
+        }
         self._loss_terms: dict[str, ValueRef] = {
-            k: lr.build(norm[id(lr.model)]) for k, lr in losses.items()
+            k: g.out for k, g in self._loss_graphs.items()
         }
         metric_types: dict[str, type[GraphLoss]] = {"cosim": GraphCosimLoss}
         if "L2_loss" not in losses:
@@ -446,25 +473,13 @@ class GraphTrainable(Trainable):
             bind(main.recon, {main.acts: Input})
         )
 
-        # total_loss is a first-class graph handle, built by the reusable
-        # `weighted_sum` reduce *component* over the dynamic loss set: a single flat
-        # N-ary node `Σ field("w_<k>") · term_k`. The weights are graph inputs seeded
-        # fresh from `coeffs` each step -- device-clean, unlike the captured weight
-        # buffers that broke D-04 (a field is an extraction node, not a tensor
-        # orphaned by `.to(device)`).
-        self._total_loss: ValueRef = weighted_sum(self._loss_terms)
-
-        # The OUTER graph is mostly static: just `total_loss` (the backprop target)
-        # and `output` (inference recon). The per-loss/metric/L0/L1 terms are
-        # dynamic (their count/keys are unknown), so they are NOT declared handles
-        # here -- they're looked up by handle inside the `forward_values` block in
-        # `loss()` (still interned, still one fused pass). total_loss's cone already
-        # covers every model producer (it sums all loss terms), so register_into
-        # over this static pair registers everything (GraphSpec is a plain object,
-        # not an nn.Module, so assignment alone wouldn't register its producers).
-        self.graph: GraphSpec = GraphSpec.of(
-            output=self._output, total_loss=self._total_loss
-        )
+        # the outer graph as a (mostly static) class block: `total_loss` is the
+        # declarative weighted fold over the dynamic loss sub-graphs, `output` is
+        # the main recon. register_into over it covers every producer (total_loss's
+        # cone is all the loss sub-graphs). GraphSpec is a plain object (not an
+        # nn.Module), so register_into does the param/buffer bookkeeping explicitly.
+        self.graph: TrainGraph = TrainGraph(losses=self._loss_graphs, main=main_nm)
+        self._total_loss: ValueRef = self.graph.total_loss
         self.graph.register_into(self)
         # freq-tracker sites bubble up too: their stateful EMA update is deferred
         # onto each loss pass (ready for resampling; no-op if none spliced).

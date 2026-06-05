@@ -323,3 +323,45 @@ a `target != input` changes the recon loss.
 **Still deferred:** the bubble-up *logging* recipe (the output-side dual) — the
 cache-write is still hand-listed in `loss()`. That's the next slice when we want
 inside-metrics to appear without the outside naming them (D-03).
+
+---
+
+## D-11 — `sub_slots()` + deferred `.reduce()`: dynamic folds in a class block
+
+**Call:** Glen wants the trainable's outer graph (incl. the `total_loss` reduce over
+a *dynamic* set of losses) expressed as a real `GraphSpec` **class block**, not the
+imperative `GraphSpec.of(...)`. The blocker: a class body runs at class-def, but the
+loss collection is bound at construction — you can't iterate a slot that isn't
+bound yet (`for k, loss in losses.items()` can't work in the body).
+
+**Choice:** A variadic sub-model slot `sub_slots()` (bound to a `dict` of
+sub-graphs) plus a **deferred fold**: `losses.reduce(per_item, combine)` returns a
+`_MapReduceOverSlots` node whose `__graph_rebind__` — at construction, when the
+slot is bound — runs `per_item(key, subgraph)` for each bound sub-graph and folds
+with `combine`. So the class body is static and declarative:
+
+    class TrainGraph(GraphSpec):
+        losses: dict[str, GraphLoss] = sub_slots()
+        main: NormalizedModel = sub_slot()
+        total_loss = losses.reduce(lambda k, l: field(f"w_{k}") * l.out, reduce_sum)
+        output = main(Input).out
+
+The iteration is *deferred* to construction and re-interned there, so the result is
+one flat N-ary node (via `reduce_sum`), as fused/deduped as any static graph. The
+bound dict is a navigable child (`g.losses["L2_loss"]`). The trainable now builds
+its graph as `TrainGraph(losses=loss_graphs, main=main_nm)`.
+
+**Why:** this is the declarative class-block form Glen asked for, and it's the
+minimal mechanism for it — `.reduce(per_item, combine)` is a deferred map-reduce
+HOF (the per-item lambda is the template, run per bound item at construction),
+reusing the existing `__graph_rebind__` splice path rather than a new template
+engine. It generalizes beyond total_loss (any fold over a dynamic sub-graph set).
+
+**Alternative not taken:** keep building the reduce imperatively in the trainable
+(`weighted_sum(self._loss_terms)` via `GraphSpec.of`) — works, but buries the
+structure in trainable code instead of a legible class block; and a full
+`branch_over` template engine — more machinery than the deferred-reduce HOF needs.
+
+Validated: 17 pytest (+ a focused `sub_slots` test) + 6 demos + ruff + GPU through
+the real Trainer trains identically. `weighted_sum` stays as an exported component
+for the imperative case; `reduce_sum` is the fold combiner.

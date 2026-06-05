@@ -26,6 +26,7 @@ Two composition features beyond plain slots:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Self, dataclass_transform
 
 from attrs import define
@@ -118,6 +119,44 @@ class _SubSlotRef:
         return _AppliedSub(self.slot, x)
 
 
+@define(eq=False)
+class _SubSlots:
+    """Marker for a *variadic* sub-model slot, bound to a ``dict`` of sub-graphs."""
+
+
+@define(eq=False)
+class _MapReduceOverSlots:
+    """Producer of a deferred fold over a variadic sub-slot. At construction (when
+    the slot is bound to a concrete ``dict`` of sub-graphs) it runs
+    ``per_item(key, subgraph)`` for each and combines the terms with ``combine`` --
+    the declarative way to map/reduce a *dynamic* collection in a class body (the
+    body can't iterate a slot that's only bound later, so the iteration is deferred
+    here and re-interned at construction, staying flat/fused)."""
+
+    slots: _SubSlots
+    per_item: Callable
+    combine: Callable
+
+    def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
+        bound = subs.get(self.slots, None)
+        if bound is None:  # slot not bound here: keep the deferred node
+            return ref(self, inputs)
+        return self.combine([self.per_item(k, g) for k, g in bound.items()])
+
+
+@define(eq=False)
+class _SubSlotsRef:
+    """What ``sub_slots()`` returns: a variadic sub-model slot. ``reduce(per_item,
+    combine)`` expresses a deferred fold over the (eventually-bound) dict of
+    sub-graphs -- ``per_item(key, subgraph)`` builds each term, ``combine`` (e.g.
+    ``reduce_sum``) folds them into one flat node."""
+
+    slots: _SubSlots
+
+    def reduce(self, per_item: Callable, combine: Callable) -> Any:
+        return ref(_MapReduceOverSlots(self.slots, per_item, combine), ())
+
+
 def arg(default=_NODEFAULT) -> Any:
     """A value-input slot, as a *unique* slot node carrying its default. ``default``
     is what it resolves to when left unbound: usually ``Input`` (the global input),
@@ -137,29 +176,38 @@ def sub_slot() -> Any:
     return _SubSlotRef(_SubSlot())
 
 
+def sub_slots() -> Any:
+    """A *variadic* sub-model slot: bound to a ``dict`` of sub-graphs at
+    construction; fold over them declaratively in the class body with
+    ``.reduce(per_item, combine)`` (e.g. a weighted loss sum over a dynamic set)."""
+    return _SubSlotsRef(_SubSlots())
+
+
 @define
 class _Template:
     output: ValueRef | None  # None == abstract (cannot be constructed)
     value_slots: dict[str, ValueRef]
     op_slots: dict[str, OpRef]
     sub_slots: dict[str, _SubSlotRef]
+    multi_slots: dict[str, _SubSlotsRef]
     handles: dict[str, ValueRef]
 
 
 def _merge_templates(templates: list[_Template]) -> _Template:
-    value_slots, op_slots, sub_slots, handles = {}, {}, {}, {}
+    value_slots, op_slots, sub_slots, multi_slots, handles = {}, {}, {}, {}, {}
     output = None
     for t in templates:
         value_slots.update(t.value_slots)
         op_slots.update(t.op_slots)
         sub_slots.update(t.sub_slots)
+        multi_slots.update(t.multi_slots)
         handles.update(t.handles)
         if t.output is not None:
             output = t.output
-    return _Template(output, value_slots, op_slots, sub_slots, handles)
+    return _Template(output, value_slots, op_slots, sub_slots, multi_slots, handles)
 
 
-@dataclass_transform(field_specifiers=(arg, op_slot, sub_slot))
+@dataclass_transform(field_specifiers=(arg, op_slot, sub_slot, sub_slots))
 class _GraphMeta(type):
     def __new__(mcs, name, bases, ns, **kw):
         # keep the body refs as class attributes (the *templates*): a type
@@ -168,7 +216,7 @@ class _GraphMeta(type):
         cls = super().__new__(mcs, name, bases, dict(ns))
         if not any(isinstance(b, _GraphMeta) for b in bases):
             return cls  # the GraphSpec base itself
-        own_value, own_op, own_sub = {}, {}, {}
+        own_value, own_op, own_sub, own_multi = {}, {}, {}, {}
         for slot_name in ns.get("__annotations__", {}):
             if slot_name == "output" or slot_name.startswith("_"):
                 continue
@@ -177,6 +225,8 @@ class _GraphMeta(type):
                 own_op[slot_name] = v
             elif isinstance(v, _SubSlotRef):
                 own_sub[slot_name] = v
+            elif isinstance(v, _SubSlotsRef):
+                own_multi[slot_name] = v
             elif isinstance(v, ValueRef):
                 own_value[slot_name] = v
         own_handles = {k: v for k, v in ns.items() if isinstance(v, ValueRef)}
@@ -212,18 +262,24 @@ class _GraphMeta(type):
             value_slots = {**base.value_slots, **own_value}
             op_slots = {**base.op_slots, **own_op}
             sub_slots = {**base.sub_slots, **own_sub}
+            multi_slots = {**base.multi_slots, **own_multi}
         else:
             value_slots, op_slots, sub_slots = own_value, own_op, own_sub
+            multi_slots = own_multi
             handles, output = own_handles, own_output
 
-        cls._template = _Template(output, value_slots, op_slots, sub_slots, handles)
+        cls._template = _Template(
+            output, value_slots, op_slots, sub_slots, multi_slots, handles
+        )
         return cls
 
     def __call__(cls, **bindings):
         t: _Template = cls._template
         if t.output is None:
             raise TypeError(f"{cls.__name__} is abstract (no `output`)")
-        known = set(t.value_slots) | set(t.op_slots) | set(t.sub_slots)
+        known = (
+            set(t.value_slots) | set(t.op_slots) | set(t.sub_slots) | set(t.multi_slots)
+        )
         for nm in bindings:
             if nm not in known:
                 raise TypeError(f"{cls.__name__} has no slot {nm!r}")
@@ -253,6 +309,11 @@ class _GraphMeta(type):
                 subs[sref.slot] = bindings[nm]  # the bound sub-graph bundle
             else:
                 raise TypeError(f"{cls.__name__} missing required sub-model {nm!r}")
+        for nm, msref in t.multi_slots.items():
+            if nm in bindings:
+                subs[msref.slots] = dict(bindings[nm])  # the bound dict of sub-graphs
+            else:
+                raise TypeError(f"{cls.__name__} missing required sub-models {nm!r}")
         obj = object.__new__(cls)
         # bound handles as instance attributes -- they shadow the class templates,
         # so `spec.acts` is the inlined node at runtime and typed at check time.
@@ -264,11 +325,14 @@ class _GraphMeta(type):
         subgraphs = {nm: bindings[nm] for nm in t.sub_slots if nm in bindings}
         for nm, child in subgraphs.items():
             setattr(obj, nm, child)
+        for nm in t.multi_slots:  # variadic children: a navigable dict of sub-graphs
+            if nm in bindings:
+                setattr(obj, nm, dict(bindings[nm]))
         obj._setup(handle_refs, bind(t.output, subs), subgraphs)
         return obj
 
 
-@dataclass_transform(field_specifiers=(arg, op_slot, sub_slot))
+@dataclass_transform(field_specifiers=(arg, op_slot, sub_slot, sub_slots))
 class GraphSpec(metaclass=_GraphMeta):
     """A graph: the authoring surface *and* the runnable context.
 

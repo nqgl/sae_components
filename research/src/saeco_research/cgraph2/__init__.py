@@ -13,7 +13,14 @@ from saeco_research.cgraph2.core import (
 )
 from saeco_research.cgraph2.dictbatch import DictBatch, FieldRef
 from saeco_research.cgraph2.funcstd import standardize
-from saeco_research.cgraph2.spec import Arg, GraphSpec, arg, op_slot, sub_slot
+from saeco_research.cgraph2.spec import (
+    Arg,
+    GraphSpec,
+    arg,
+    op_slot,
+    sub_slot,
+    sub_slots,
+)
 
 __all__ = [
     "Arg",
@@ -35,5 +42,6 @@ __all__ = [
     "reduce_sum",
     "standardize",
     "sub_slot",
+    "sub_slots",
     "weighted_sum",
 ]

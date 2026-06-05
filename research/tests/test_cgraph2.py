@@ -302,6 +302,34 @@ def _build_gated_trainable(d=16):
     return tr, d
 
 
+def test_sub_slots_deferred_reduce() -> None:
+    # sub_slots() + .reduce(per_item, combine): a class body folds a *dynamic* dict
+    # of sub-graphs into one flat node, bound at construction.
+    import saeco.core as cl
+    from saeco_research.cgraph2 import GraphSpec, field, op, reduce_sum, sub_slots
+    from saeco_research.cgraph2.core import _toposort
+
+    class Loss(GraphSpec):
+        x = field("v")
+        out = op(lambda a: a.sum())(x)
+        output = out
+
+    class Total(GraphSpec):
+        losses: dict = sub_slots()
+        total = losses.reduce(lambda k, loss: field(f"w_{k}") * loss.out, reduce_sum)
+        output = total
+
+    g = Total(losses={"a": Loss(), "b": Loss()})
+    batch = {"v": torch.tensor([1.0, 2.0, 3.0]), "w_a": 2.0, "w_b": 3.0}
+    out = g.forward(batch, cache=cl.Cache())
+    assert abs(float(out) - 30.0) < 1e-5  # (2 + 3) * sum([1,2,3])
+    assert sorted(g.losses) == ["a", "b"]  # the bound dict is a navigable child
+    # the fold is ONE flat N-ary node, not a pairwise tree
+    nodes = _toposort(g.total)
+    n_reduce = sum(1 for n in nodes if getattr(n.producer, "label", "") == "_stack_sum")
+    assert n_reduce == 1
+
+
 def test_total_loss_handle_weights_and_transcoder() -> None:
     from saeco.trainer.train_cache import TrainCache
 
