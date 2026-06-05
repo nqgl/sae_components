@@ -162,6 +162,12 @@ class SAEGraphSpec(GraphSpec):
     """Base for SAE model graphs. Subclasses define ``acts`` / ``recon`` /
     ``output`` handles; this adds the model-level hook the framework needs."""
 
+    # the model contract (annotation-only; subclasses set these as handles, the
+    # metaclass ignores bare annotations). Declaring them makes an SAEGraphSpec
+    # statically satisfy the SAEModel protocol (so it can be wrapped/typed).
+    acts: ValueRef
+    recon: ValueRef
+
     name = None
 
     def set_to_aux_model(self, name: str):
@@ -299,7 +305,7 @@ class GraphNormalizer:
         key = ("denorm", id(self.normalizer))
         return OpRef(Op.create(self._invert, "denorm", key=key))
 
-    def wrap(self, model: SAEModel) -> "NormalizedModel":
+    def wrap[T: SAEModel](self, model: T) -> "NormalizedModel[T]":
         return NormalizedModel(
             model=model, normalize=self.normalizer, denorm=self.denorm
         )
@@ -327,12 +333,14 @@ class SAEInputs(DictBatch):
     target: torch.Tensor
 
 
-class NormalizedModel(GraphSpec):
+class NormalizedModel[T: SAEModel](GraphSpec):
     """``normalizer[model]`` as a graph: normalize the input, run the model on it,
     denormalize the output. Exposes the normalized handles a loss reads
-    (``y_norm`` / ``y_pred_norm`` / ``acts``) and the denormalized ``out``."""
+    (``y_norm`` / ``y_pred_norm`` / ``acts``) and the denormalized ``out``. Generic
+    in the wrapped model type ``T`` so ``nm.model`` is typed and a ``@model_prop``
+    can return ``NormalizedModel[T]`` (the normalized wrapper) rather than ``T``."""
 
-    model: SAEModel = sub_slot()
+    model: T = sub_slot()
     normalize: OpRef = op_slot()
     denorm: OpRef = op_slot()
 

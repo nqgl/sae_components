@@ -6,25 +6,22 @@ parked questions/tasks we explicitly don't want to lose, not the active plan
 
 ---
 
-## ▸ ValueRef[T] generic over producer  (pushed 2026-06-04, Glen)
+## ~~ValueRef[T] generic over producer~~  DONE (2026-06-05, commit 69f1877)
 
-Make `ValueRef` generic in its producer type — `ValueRef[T]` with `producer: T` —
-so `collect(targets, SiteType)` can return `list[ValueRef[SiteType]]` and
-`site.producer` types correctly (fixes the `_freq_sites` typing). Additive
-(generics erase at runtime; interning unaffected). Touch points: `core.ValueRef`,
-`ref()` (`-> ValueRef[T]`), `collect()` / `GraphSpec.collect()` signatures. Should
-be contained; do as a focused typing-only change.
+`ValueRef[T]` (producer: T); `ref[T] -> ValueRef[T]`; `collect[S](…, type[S]) ->
+list[ValueRef[S]]` + `GraphSpec.collect[S]`. `collect(FreqTracker)` is now
+`list[ValueRef[FreqTracker]]` and `site.producer` is a `FreqTracker`
+(pyright-confirmed); `_freq_sites` typed.
 
 ---
 
-## ▸ NormalizedModel[T] generic — typed model-prop returns  (pushed 2026-06-04, Glen)
+## ~~NormalizedModel[T] generic~~  DONE (2026-06-05)
 
-(uncertain if good) Make `NormalizedModel` generic — `NormalizedModel[T]` — so a
-`@model_prop` could return `NormalizedModel[T]` rather than `T`. I.e. parametrize
-the wrapper by the model graph type it wraps, so the typed handles flow through the
-normalization wrapper. Explore whether this types cleanly (the wrapper exposes
-`acts`/`y_norm`/… ; parametrizing by the inner model's contract may or may not be
-expressible) and whether it's worth the generic machinery.
+`NormalizedModel[T: SAEModel]` (`model: T`); `GraphNormalizer.wrap[T](model: T) ->
+NormalizedModel[T]`. Declared `acts`/`recon` on `SAEGraphSpec` so it statically
+satisfies `SAEModel` (annotation-only; metaclass ignores bare annotations). Ready
+for a `@model_prop` to return `NormalizedModel[T]` if/when we want it (deferred --
+it's an arch-API change).
 
 ---
 
