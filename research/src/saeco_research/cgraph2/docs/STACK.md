@@ -6,6 +6,25 @@ parked questions/tasks we explicitly don't want to lose, not the active plan
 
 ---
 
+## ▸ pass a config to a GraphSpec  (pushed 2026-06-05, Glen)
+
+Sometimes a GraphSpec needs a config (e.g. the normalizer's GNConfig, thresholds,
+flags) — figure out how a config flows into a class-block GraphSpec. Options: a
+plain `__init__`-style arg the metaclass threads through; a `config` slot; or pass
+it to the producers (modules) before binding. Decide the idiom.
+
+---
+
+## ▸ do we need an `output` handle?  (pushed 2026-06-05, Glen)
+
+Re-examine whether every GraphSpec must declare `output` (the default `forward`
+target / what makes it non-abstract). For a spec used only for its named handles
+(a model read via `.acts`/`.recon`, a converter read by field name, an interface
+provider), a single `output` is arbitrary. Could non-abstract-ness come from
+"has ≥1 handle" instead, with `forward` requiring an explicit target?
+
+---
+
 ## ~~ValueRef[T] generic over producer~~  DONE (2026-06-05, commit 69f1877)
 
 `ValueRef[T]` (producer: T); `ref[T] -> ValueRef[T]`; `collect[S](…, type[S]) ->
