@@ -171,6 +171,75 @@ def test_field_slot_override_ignores_batch_field() -> None:
     )
 
 
+def test_partial_application() -> None:
+    import saeco.core as cl
+    from saeco_research.cgraph2 import GraphSpec, Input, arg, op
+    from saeco_research.cgraph2.spec import Arg
+
+    def _mul(a, b):
+        return a * b
+
+    def _add(a, b):
+        return a + b
+
+    class Denorm(GraphSpec):
+        value: Arg = arg()
+        scale: Arg = arg()
+        shift: Arg = arg()
+        output = op(_add)(op(_mul)(value, scale), shift)
+
+    p = Denorm.partial(
+        scale=op(lambda x: x * 0 + 2.0)(Input),
+        shift=op(lambda x: x * 0 + 1.0)(Input),
+    )
+    p2 = p.rebind({Input: op(lambda b: b["input"])(Input)})
+    done = p2(op(lambda b: b["recon"])(Input))
+
+    out = done.forward(
+        {"input": torch.tensor([9.0]), "recon": torch.tensor([5.0])},
+        cache=cl.Cache(),
+    )
+    assert torch.allclose(out, torch.tensor([11.0]))
+
+    out2 = done.forward(
+        {"input": torch.tensor([100.0]), "recon": torch.tensor([5.0])},
+        cache=cl.Cache(),
+    )
+    assert torch.allclose(out2, torch.tensor([11.0]))
+
+
+def test_partial_completed_exposes_output_and_rebinds_defaults() -> None:
+    # regression for two partial-application bugs:
+    #  (1) a completed partial must expose `.output` (not just `.out`).
+    #  (2) rebind() must rebase a still-open slot's ValueRef default, so a default
+    #      like arg(default=Input) follows the same rebase as the rest.
+    import saeco.core as cl
+    from saeco_research.cgraph2 import GraphSpec, Input, arg, field, op
+    from saeco_research.cgraph2.spec import Arg
+
+    def _add(a, b):
+        return a + b
+
+    class G(GraphSpec):
+        a: Arg = arg(default=Input)  # open; defaults to the (rebindable) Input
+        b: Arg = arg()
+        output = op(_add)(a, b)
+
+    # (1) completed partial exposes `.output` (both slots bound to constants)
+    done = G.partial(b=torch.tensor([4.0])).complete(a=torch.tensor([3.0]))
+    assert done.output is not None
+    out = done.forward(torch.zeros(1), cache=cl.Cache())  # a/b are constants
+    assert torch.allclose(out, torch.tensor([7.0]))
+
+    # (2) close `b` over a constant; `a` stays open with its Input default. Rebind
+    # the Input that default rests on, then complete (a uses its *rebound* default).
+    # A stale default would feed the whole batch dict into _add and blow up.
+    p = G.partial(b=torch.tensor([10.0]))
+    done2 = p.rebind({Input: field("x")}).complete()  # a resolves to field("x")
+    out2 = done2.forward({"x": torch.tensor([3.0])}, cache=cl.Cache())
+    assert torch.allclose(out2, torch.tensor([13.0]))  # a=x=3, b=10
+
+
 def test_render_shows_deduped_shared_nodes() -> None:
     # render() is the flat execution view: a node shared by several handles
     # appears exactly once (the fusion made visible).

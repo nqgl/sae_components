@@ -222,6 +222,82 @@ class _Template:
     handles: dict[str, ValueRef]
 
 
+@define(frozen=True)
+class _SlotSpec:
+    name: str
+    kind: str
+    marker: object
+    default: object = _NODEFAULT
+    required: bool = True
+
+
+@define
+class _ResolvedSlots:
+    subs: dict
+    open_slots: dict[str, _SlotSpec]
+    subgraphs: dict[str, object]
+    multi_subgraphs: dict[str, dict]
+
+
+@define
+class _PartialGraph:
+    source: type
+    handles: dict[str, ValueRef]
+    out: ValueRef | None
+    open_slots: dict[str, _SlotSpec]
+
+    def __getattr__(self, name: str) -> ValueRef:
+        try:
+            return self.handles[name]
+        except KeyError as e:
+            raise AttributeError(name) from e
+
+    @property
+    def output(self) -> ValueRef:
+        if "output" in self.handles:
+            return self.handles["output"]
+        if self.out is not None:
+            return self.out
+        raise AttributeError("output")
+
+    def rebind(self, subs: dict) -> _PartialGraph:
+        # rebind the materialized handles AND any still-open slot's ValueRef default,
+        # so an omitted default (e.g. arg(default=Input)) follows the same structural
+        # rebase as the rest of the partial rather than resolving to the stale node.
+        def _rebind_slot(s: _SlotSpec) -> _SlotSpec:
+            if isinstance(s.default, ValueRef):
+                d = bind(s.default, subs)
+                return _SlotSpec(s.name, s.kind, s.marker, d, s.required)
+            return s
+
+        return _PartialGraph(
+            self.source,
+            {nm: bind(h, subs) for nm, h in self.handles.items()},
+            bind(self.out, subs) if self.out is not None else None,
+            {nm: _rebind_slot(s) for nm, s in self.open_slots.items()},
+        )
+
+    def complete(self, **bindings) -> GraphSpec:
+        resolved = _resolve_slots(
+            self.source.__name__, self.open_slots, bindings, require_all=True
+        )
+        if self.out is None:
+            raise TypeError(f"{self.source.__name__} has no `output` to complete")
+        handles = {nm: bind(h, resolved.subs) for nm, h in self.handles.items()}
+        out = bind(self.out, resolved.subs)
+        handles.setdefault("output", out)
+        return GraphSpec.of(**handles)
+
+    def __call__(self, value) -> GraphSpec:
+        if len(self.open_slots) != 1:
+            raise TypeError(
+                f"{self.source.__name__} partial has {len(self.open_slots)} "
+                "open slots; positional completion requires exactly one"
+            )
+        (name,) = self.open_slots
+        return self.complete(**{name: value})
+
+
 def _merge_templates(templates: list[_Template]) -> _Template:
     value_slots, op_slots, sub_slots, multi_slots, handles = {}, {}, {}, {}, {}
     output = None
@@ -234,6 +310,111 @@ def _merge_templates(templates: list[_Template]) -> _Template:
         if t.output is not None:
             output = t.output
     return _Template(output, value_slots, op_slots, sub_slots, multi_slots, handles)
+
+
+def _iter_slots(t: _Template):
+    for nm, oref in t.op_slots.items():
+        marker = oref.producer
+        default = marker.default if isinstance(marker, _OpSlot) else _NODEFAULT
+        required = isinstance(marker, _OpSlot) and default is _NODEFAULT
+        yield _SlotSpec(nm, "op", marker, default, required)
+    for nm, vref in t.value_slots.items():
+        marker = vref.producer
+        default = marker.default if isinstance(marker, _ArgSlot) else _NODEFAULT
+        yield _SlotSpec(nm, "value", vref, default, default is _NODEFAULT)
+    for nm, sref in t.sub_slots.items():
+        yield _SlotSpec(nm, "sub", sref.slot)
+    for nm, msref in t.multi_slots.items():
+        yield _SlotSpec(nm, "multi", msref.slots)
+
+
+def _slot_map(t: _Template) -> dict[str, _SlotSpec]:
+    return {slot.name: slot for slot in _iter_slots(t)}
+
+
+def _slot_substitution(slot: _SlotSpec, binding) -> tuple[object, object]:
+    if slot.kind == "op":
+        producer = (
+            binding.producer if isinstance(binding, OpRef) else op(binding).producer
+        )
+        return slot.marker, producer
+    if slot.kind == "value":
+        value = binding if isinstance(binding, ValueRef) else ref(binding, ())
+        return slot.marker, value
+    if slot.kind == "sub":
+        return slot.marker, binding
+    if slot.kind == "multi":
+        return slot.marker, _bound_dict(binding)
+    raise AssertionError(f"unknown slot kind {slot.kind!r}")
+
+
+def _slot_default_substitution(slot: _SlotSpec) -> tuple[object, object]:
+    if slot.kind == "op":
+        return slot.marker, op(slot.default).producer
+    if slot.kind == "value":
+        default = slot.default
+        value = default if isinstance(default, ValueRef) else ref(default, ())
+        return slot.marker, value
+    raise AssertionError(f"{slot.kind!r} slots do not have defaults")
+
+
+def _missing_required_message(source_name: str, slot: _SlotSpec) -> str:
+    if slot.kind == "value":
+        return f"{source_name} missing required value slot {slot.name!r}"
+    if slot.kind == "sub":
+        return f"{source_name} missing required sub-model {slot.name!r}"
+    if slot.kind == "multi":
+        return f"{source_name} missing required sub-models {slot.name!r}"
+    return f"{source_name} missing required slot {slot.name!r}"
+
+
+def _resolve_slots(
+    source_name: str,
+    slots: dict[str, _SlotSpec],
+    bindings: dict,
+    *,
+    require_all: bool,
+) -> _ResolvedSlots:
+    for nm in bindings:
+        if nm not in slots:
+            raise TypeError(f"{source_name} has no open slot {nm!r}")
+    subs: dict = {}
+    open_slots: dict[str, _SlotSpec] = {}
+    subgraphs: dict[str, object] = {}
+    multi_subgraphs: dict[str, dict] = {}
+    for nm, slot in slots.items():
+        if nm in bindings:
+            key, value = _slot_substitution(slot, bindings[nm])
+            subs[key] = value
+            if slot.kind == "sub":
+                subgraphs[nm] = value
+            elif slot.kind == "multi":
+                multi_subgraphs[nm] = value
+            continue
+        if not require_all:
+            open_slots[nm] = slot
+            continue
+        if slot.default is not _NODEFAULT:
+            key, value = _slot_default_substitution(slot)
+            subs[key] = value
+            continue
+        if slot.required:
+            raise TypeError(_missing_required_message(source_name, slot))
+    return _ResolvedSlots(subs, open_slots, subgraphs, multi_subgraphs)
+
+
+def _resolve_template_bindings(
+    cls: type,
+    t: _Template,
+    bindings: dict,
+    *,
+    require_all: bool,
+) -> _ResolvedSlots:
+    slots = _slot_map(t)
+    for nm in bindings:
+        if nm not in slots:
+            raise TypeError(f"{cls.__name__} has no slot {nm!r}")
+    return _resolve_slots(cls.__name__, slots, bindings, require_all=require_all)
 
 
 @dataclass_transform(field_specifiers=(arg, op_slot, sub_slot, sub_slots))
@@ -306,58 +487,22 @@ class _GraphMeta(type):
         t: _Template = cls._template
         if t.output is None:
             raise TypeError(f"{cls.__name__} is abstract (no `output`)")
-        known = (
-            set(t.value_slots) | set(t.op_slots) | set(t.sub_slots) | set(t.multi_slots)
+        resolved = _resolve_template_bindings(
+            cls, t, bindings, require_all=True
         )
-        for nm in bindings:
-            if nm not in known:
-                raise TypeError(f"{cls.__name__} has no slot {nm!r}")
-        subs: dict = {}
-        for nm, oref in t.op_slots.items():
-            marker = oref.producer
-            if nm in bindings:
-                b = bindings[nm]
-                subs[marker] = b.producer if isinstance(b, OpRef) else op(b).producer
-            elif isinstance(marker, _OpSlot) and marker.default is not _NODEFAULT:
-                subs[marker] = op(marker.default).producer
-            elif isinstance(marker, _OpSlot):
-                raise TypeError(f"{cls.__name__} missing required slot {nm!r}")
-        for nm, vref in t.value_slots.items():
-            marker = vref.producer  # _ArgSlot
-            if nm in bindings:
-                b = bindings[nm]
-                # bind to a handle/Input directly, or wrap a raw param/tensor.
-                subs[vref] = b if isinstance(b, ValueRef) else ref(b, ())
-            elif marker.default is _NODEFAULT:
-                raise TypeError(f"{cls.__name__} missing required value slot {nm!r}")
-            else:  # resolve the unbound slot to its default (Input / param / handle)
-                d = marker.default
-                subs[vref] = d if isinstance(d, ValueRef) else ref(d, ())
-        for nm, sref in t.sub_slots.items():
-            if nm in bindings:
-                subs[sref.slot] = bindings[nm]  # the bound sub-graph bundle
-            else:
-                raise TypeError(f"{cls.__name__} missing required sub-model {nm!r}")
-        for nm, msref in t.multi_slots.items():
-            if nm in bindings:
-                subs[msref.slots] = _bound_dict(bindings[nm])  # the bound sub-graphs
-            else:
-                raise TypeError(f"{cls.__name__} missing required sub-models {nm!r}")
         obj = object.__new__(cls)
         # bound handles as instance attributes -- they shadow the class templates,
         # so `spec.acts` is the inlined node at runtime and typed at check time.
-        handle_refs = {nm: bind(h, subs) for nm, h in t.handles.items()}
+        handle_refs = {nm: bind(h, resolved.subs) for nm, h in t.handles.items()}
         for nm, h in handle_refs.items():
             setattr(obj, nm, h)
         # keep bound sub-graphs as navigable children (structure, not flattened):
         # spec.norm_model.y_pred_norm works (D-02).
-        subgraphs = {nm: bindings[nm] for nm in t.sub_slots if nm in bindings}
-        for nm, child in subgraphs.items():
+        for nm, child in resolved.subgraphs.items():
             setattr(obj, nm, child)
-        for nm in t.multi_slots:  # variadic children: a navigable dict of sub-graphs
-            if nm in bindings:
-                setattr(obj, nm, _bound_dict(bindings[nm]))
-        obj._setup(handle_refs, bind(t.output, subs), subgraphs)
+        for nm, children in resolved.multi_subgraphs.items():
+            setattr(obj, nm, children)
+        obj._setup(handle_refs, bind(t.output, resolved.subs), resolved.subgraphs)
         return obj
 
 
@@ -389,6 +534,25 @@ class GraphSpec(metaclass=_GraphMeta):
         self._names = None  # lazy name map over the handle cones
 
     @classmethod
+    def partial(cls, **bindings) -> _PartialGraph:
+        """Bind a subset of this spec's slots, leaving the rest as open markers.
+
+        The returned partial exposes the same handle names, can be structurally
+        rebound with ``.rebind(...)``, and can be completed once every required
+        open slot has a binding.
+        """
+        t: _Template = cls._template
+        resolved = _resolve_template_bindings(
+            cls, t, bindings, require_all=False
+        )
+        return _PartialGraph(
+            cls,
+            {nm: bind(h, resolved.subs) for nm, h in t.handles.items()},
+            bind(t.output, resolved.subs) if t.output is not None else None,
+            resolved.open_slots,
+        )
+
+    @classmethod
     def of(cls, output: ValueRef | None = None, **handles: ValueRef) -> GraphSpec:
         """Build a graph dynamically from named handles -- for aggregates assembled
         at runtime (e.g. the trainable's whole computation), where a class body
@@ -399,9 +563,12 @@ class GraphSpec(metaclass=_GraphMeta):
         out = output if output is not None else handles.get("output")
         if out is None:
             raise TypeError("GraphSpec.of needs an `output` handle")
+        # expose `output` as a handle too (so `g.output` works like a normal spec,
+        # not just `g.out`) -- whether it came in as the param or in **handles.
+        handles = {"output": out, **handles}
         for nm, h in handles.items():
             setattr(obj, nm, h)
-        obj._setup(dict(handles), out, {})
+        obj._setup(handles, out, {})
         return obj
 
     # -- the graph as context ---------------------------------------------------
