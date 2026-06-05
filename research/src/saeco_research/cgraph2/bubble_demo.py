@@ -90,7 +90,10 @@ def main():
         ft.update(ft.updated(fnode.inputs[0]))
     ok("freqs change again next step (EMA)", not torch.allclose(before, freqs.freqs))
 
-    # the explicit form works too: save.after(handle, callback)
+    # the low-level primitive `save.after(handle, callback)` defers a plain callback
+    # to block exit (the materialized handle value is passed in). `ft.update` itself
+    # is a @deferred_execution training callback, so its idiom is the direct
+    # `ft.update(ft.updated(acts))` above; `after` is for an arbitrary callback.
     freqs2 = FreqTracker(16)
 
     class SAE2(GraphSpec):
@@ -103,9 +106,14 @@ def main():
     s2 = SAE2(encoder=enc, decoder=dec)
     g2 = s2
     fn2 = g2.collect(FreqTracker)[0]
+
+    @torch.no_grad()
+    def write_freqs(v):
+        freqs2.freqs.copy_(v)
+
     with g2.forward_values(torch.randn(32, 8), cache=cl.Cache()) as save:
         save(s2.recon)
-        save.after(fn2.producer.updated(fn2.inputs[0]), fn2.producer.update)
+        save.after(fn2.producer.updated(fn2.inputs[0]), write_freqs)
     ok("explicit save.after also updates freqs", float(freqs2.freqs.sum()) > 0.0)
 
     print("\nall checks passed.")

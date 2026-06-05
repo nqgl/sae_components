@@ -693,10 +693,14 @@ class GraphSpec(metaclass=_GraphMeta):
     def _targets(self) -> tuple[ValueRef, ...]:
         return (self._out, *self._handle_refs.values())
 
-    def forward_values(self, x, *, cache, **kwargs) -> _SaveSession:
+    def forward_values(
+        self, x, *, cache, training: bool = True, **kwargs
+    ) -> _SaveSession:
         """One fused pass: ``save(handle)`` realizes a handle (memoized across
-        saves), ``save.after(h, fn)`` defers a side-effect to block exit."""
-        return _SaveSession(self, x, cache, kwargs)
+        saves), ``save.after(h, fn)`` defers a side-effect to block exit. Pass
+        ``training=False`` (an eval pass) to skip training-only deferrals -- e.g. so
+        an EMA tracker doesn't advance during validation."""
+        return _SaveSession(self, x, cache, kwargs, training=training)
 
     def collect[S](self, site_type: type[S]) -> list[ValueRef[S]]:
         """Bubble up: nodes in this graph's cone whose producer is ``site_type``

@@ -424,3 +424,54 @@ Validated: 21 pytest (incl. `test_graph_normalizer_embeds_its_inverse` — round
 + `AffineNormalizer.invert` identity + consing/distinctness — and the gated-graph
 trainable tests) + 6 demos + ruff clean + GPU through the real Trainer trains
 identically (L2 ~0.02, cosim ~0.99, L0 ~3300 then falling).
+
+---
+
+## D-13 — deferred side-effects are training callbacks: `@deferred_execution` + a session `training` gate
+
+**Call:** A stateful site (the freq tracker) writes its EMA back *after* the pass —
+so the handle it reads is the pre-update state — by deferring onto the
+`forward_values` session. The first cut put that logic *inside* `FreqTracker.update`:
+it reached into `_ACTIVE_SESSION`, and `update` dispatched on its own argument type
+(a `ValueRef` meant "schedule me", a tensor meant "run me"), re-entering itself at
+block exit. Two problems: (1) the self-dispatch-on-arg-type is a confusing overload;
+(2) `Trainer.eval_step` calls `loss` under `.eval()`, and the loop advanced the EMA
+unconditionally, contaminating the dead-feature freqs that resampling / the `below_*`
+metrics read.
+
+**Choice:** make "deferred, training-only" a first-class session concept.
+- `_SaveSession` carries a `training: bool` (passed via `forward_values(...,
+  training=...)`; the trainable passes `self.training`). On clean exit it runs each
+  deferral, **skipping training-only ones when `not training`** — still two-phase
+  (materialize every deferred value in the clean memoized pass, then run the side
+  effects), preserving the earlier ordering fix.
+- `@deferred_execution` (a decorator) marks a method as a training callback: inside
+  a session it's collected and run at block exit with any `ValueRef` args
+  materialized; outside a session it runs immediately. `FreqTracker.update` becomes a
+  plain `self.freqs.copy_(new_freqs)` under the decorator — no `_ACTIVE_SESSION`, no
+  arg-type dispatch.
+- `save.after(handle, callback)` stays the low-level, *always-run* primitive (an
+  arbitrary one-off callback); `@deferred_execution` is the training-only,
+  method-level surface.
+
+**Why:** Glen asked for "a way to collect *training* callbacks that get executed
+inside the `with forward_values` block", and to either let the context manager manage
+the deferral or at least have an explicit `deferred_execution` decorator. This does
+both: the *session* owns the deferral + the training gate (the context manager
+managing it), and the *decorator* is the explicit, declarative registration surface —
+so the side-effecting method reads like a normal method and the deferral / eval-gating
+is out of its body. It fixes the eval-contamination bug as a property of the
+mechanism, not a one-off `if self.training`.
+
+**Alternative not taken:** a bare `if self.training:` guard around the freq loop in
+`loss` — fixes the symptom but leaves the `_ACTIVE_SESSION` self-dispatch in `update`
+and doesn't generalize; and fully auto-collecting every site's update at block exit
+(no explicit call in `loss`) — cleaner still, but that belongs to the freq-tracker
+migration (it needs the site/handle wiring settled first), so the decorator is the
+right increment now. `@deferred_execution` is training-only with no opt-out for
+simplicity (YAGNI); add a flag if a non-training deferred method ever appears.
+
+Validated: 58 pytest (incl. `test_deferred_execution_training_gate`,
+`test_freq_tracker_eval_pass_does_not_advance_ema`,
+`test_batch_honors_transcoder_target`) + 6 demos + ruff clean + GPU trains
+identically.

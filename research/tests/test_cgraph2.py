@@ -622,3 +622,84 @@ def test_gated_graph_trains_one_step_cpu() -> None:
         opt.step()
         hist.append(float(loss))
     assert hist[-1] < hist[0]
+
+
+def test_deferred_execution_training_gate() -> None:
+    # A @deferred_execution method runs at block exit on a *training* pass (skipped
+    # on eval), and immediately when there's no active forward_values session.
+    import saeco.core as cl
+    from saeco_research.cgraph2.core import Input, deferred_execution, op
+    from saeco_research.cgraph2.spec import GraphSpec
+
+    class Counter:
+        def __init__(self) -> None:
+            self.n = 0
+
+        @deferred_execution
+        def bump(self, by) -> None:
+            self.n += by
+
+    class G(GraphSpec):
+        output = op(lambda x: x)(Input)
+
+    g = G()
+    c = Counter()
+    with g.forward_values(torch.tensor(1.0), cache=cl.Cache(), training=True) as save:
+        save(g.output)
+        c.bump(5)
+        assert c.n == 0  # deferred -- not run yet, inside the block
+    assert c.n == 5  # ran at block exit (training pass)
+
+    with g.forward_values(torch.tensor(1.0), cache=cl.Cache(), training=False) as save:
+        save(g.output)
+        c.bump(5)
+    assert c.n == 5  # skipped on an eval pass
+
+    c.bump(3)  # no active session -> runs immediately
+    assert c.n == 8
+
+
+def test_freq_tracker_eval_pass_does_not_advance_ema() -> None:
+    # B: the EMA writeback is a training callback, so an eval-mode forward_values
+    # pass must not advance freqs; a training pass does.
+    import saeco.core as cl
+    from saeco_research.cgraph2.core import Input, op
+    from saeco_research.cgraph2.sae import FreqTracker
+    from saeco_research.cgraph2.spec import GraphSpec, Op, op_slot
+
+    ft = FreqTracker(8)
+
+    class G(GraphSpec):
+        enc: Op = op_slot()
+        acts = op(ft)(op(torch.relu)(enc(Input)))
+        output = acts
+
+    g = G(enc=torch.nn.Linear(8, 8))
+    site = g.collect(FreqTracker)[0]
+    x = torch.randn(16, 8)
+
+    with g.forward_values(x, cache=cl.Cache(), training=False) as save:
+        save(g.acts)
+        ft.update(ft.updated(site.inputs[0]))
+    assert float(ft.freqs.sum()) == 0.0  # eval: EMA did not advance
+
+    with g.forward_values(x, cache=cl.Cache(), training=True) as save:
+        save(g.acts)
+        ft.update(ft.updated(site.inputs[0]))
+    assert float(ft.freqs.sum()) > 0.0  # training: EMA advanced
+
+
+def test_batch_honors_transcoder_target() -> None:
+    # C: an SAETrainBatch with distinct target_sites must not be flattened to an
+    # autoencoder target; an explicit y still wins.
+    from saeco.data.training_data.sae_train_batch import SAETrainBatch
+
+    tr, d = _build_gated_trainable()
+    src, tgt = torch.randn(8, d), torch.randn(8, d)
+    stb = SAETrainBatch(src=src, tgt=tgt, input_sites=["src"], target_sites=["tgt"])
+    batch = tr._batch(stb)
+    assert torch.allclose(batch.input, src)
+    assert torch.allclose(batch.target, tgt)  # honors target_sites, not == input
+    assert not torch.allclose(batch.input, batch.target)
+    y = torch.randn(8, d)
+    assert torch.allclose(tr._batch(stb, y=y).target, y)  # explicit y wins

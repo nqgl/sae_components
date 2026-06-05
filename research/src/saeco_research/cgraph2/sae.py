@@ -35,6 +35,7 @@ from saeco_research.cgraph2.core import (
     ValueRef,
     bind,
     collect,
+    deferred_execution,
     field,
     op,
     ref,
@@ -115,12 +116,13 @@ def metered(acts: ValueRef, metrics: type = ActMetrics) -> ValueRef:
 
 class FreqTracker(cl.Module):
     """A passthrough freq site on ``acts``: tracks an EMA of per-feature firing
-    rate. ``updated(acts)`` is the handle for the new freqs given this step's
-    acts; ``update(new)`` writes them back. Called with a handle inside a
-    ``forward_values`` block, ``update`` *defers* the write to block exit -- so
-    you can write ``ft.update(ft.updated(acts))`` inline and it runs after the
-    pass (the principled before/after-update split: ``freqs`` and ``updated_freqs``
-    are distinct nodes; only an explicit update advances the state)."""
+    rate. ``updated(acts)`` is the handle for the new freqs given this step's acts;
+    ``update(new)`` writes them back. ``update`` is a :func:`deferred_execution`
+    *training callback* -- written inline as ``ft.update(ft.updated(acts))``, it
+    materializes after the pass (so the handle it reads is the *pre*-update state)
+    and is skipped on eval, so validation passes don't advance the EMA. The
+    principled before/after split: ``freqs`` and ``updated`` are distinct nodes;
+    only a training update advances the state."""
 
     def __init__(self, d_dict: int, decay: float = 0.99):
         super().__init__()
@@ -138,14 +140,11 @@ class FreqTracker(cl.Module):
         firing = (acts != 0).float().mean(0)
         return freqs * self.decay + firing * (1 - self.decay)
 
+    @deferred_execution
     @torch.no_grad()
     def update(self, new_freqs) -> None:
-        from saeco_research.cgraph2.core import _ACTIVE_SESSION
-
-        session = _ACTIVE_SESSION.get()
-        if isinstance(new_freqs, ValueRef) and session is not None:
-            session.after(new_freqs, self.update)  # defer to the block's exit
-            return
+        # inside a forward_values block this defers to block exit (new_freqs, a
+        # handle, is materialized first) and only fires on a training pass.
         self.freqs.copy_(new_freqs)
 
 
@@ -555,21 +554,30 @@ class GraphTrainable(Trainable):
 
     # -- training contract -----------------------------------------------------
     def _batch(self, x, y=None, coeffs=None) -> SAEInputs:
-        """The boundary input batch: the typed source + recon target (==source for
-        an autoencoder), plus a per-loss weight field (the dynamic ``w_<k>`` tail)
-        seeded from ``coeffs``."""
+        """The boundary input batch: the typed source + recon target, plus a per-loss
+        weight field (the dynamic ``w_<k>`` tail) seeded from ``coeffs``. The target
+        defaults to the source (autoencoder), but an ``SAETrainBatch`` may carry
+        distinct ``target_sites`` (transcoder/crosscoder) -- honor those when no
+        explicit ``y`` is given; an explicit ``y`` always wins."""
+        target = x.target if isinstance(x, SAETrainBatch) else x
         if isinstance(x, SAETrainBatch):
             x = x.input
         if isinstance(y, SAETrainBatch):
             y = y.input
+        if y is not None:
+            target = y
         coeffs = coeffs or {}
-        batch = SAEInputs(input=x, target=x if y is None else y)
+        batch = SAEInputs(input=x, target=target)
         for k in self._loss_graphs:  # dynamic per-loss weight fields
             setattr(batch, f"w_{k}", coeffs.get(k, 1.0))
         return batch
 
     def loss(self, x, *, cache, y=None, coeffs=None):
-        with self.graph.forward_values(self._batch(x, y, coeffs), cache=cache) as save:
+        # training=self.training gates the freq-tracker EMA: an eval-mode loss pass
+        # (Trainer.eval_step under .eval()) won't advance the dead-feature freqs.
+        with self.graph.forward_values(
+            self._batch(x, y, coeffs), cache=cache, training=self.training
+        ) as save:
             total = save(self.graph.total_loss)  # the one static backprop handle
             # dynamic lookups: the per-loss / metric / L0 / L1 handles aren't on the
             # (mostly-static) graph -- they're saved here by handle, sharing the one

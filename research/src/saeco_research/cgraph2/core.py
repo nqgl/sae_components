@@ -20,6 +20,7 @@ never a display label.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any
@@ -356,8 +357,9 @@ class _SaveSession:
     """Context manager backing ``GraphSpec.forward_values``. The yielded object
     is callable -- ``save(ref)`` evaluates that ref's cone, memoizing shared
     upstream nodes across calls so the whole ``with`` block is one fused pass.
-    ``save.after(ref, fn)`` defers ``fn(save(ref))`` to block exit -- a bubbled-up
-    site (freq tracker) uses it to run its stateful update after the pass.
+    ``save.after(ref, fn)`` defers ``fn(save(ref))`` to block exit; a method marked
+    :func:`deferred_execution` defers itself the same way. ``training`` gates the
+    training-only deferrals (an EMA update runs after a training pass, not eval).
 
     ``graph`` is anything with a ``.names`` map (a ``GraphSpec``)."""
 
@@ -365,7 +367,9 @@ class _SaveSession:
     x: object
     cache: cl.Cache
     kwargs: dict
+    training: bool = True
     results: dict = _attr_field(init=False)
+    # each deferral is (materialize(session) -> value, run(value), training_only)
     deferred: list = _attr_field(init=False, factory=list)
     token: object = _attr_field(init=False, default=None)
 
@@ -380,12 +384,18 @@ class _SaveSession:
     def __exit__(self, exc_type, exc_value, tb):
         try:
             if exc_type is None:
-                # materialize every deferred value first (within the still-clean
-                # memoized pass), THEN run the side-effecting callbacks -- so one
-                # callback can't mutate state a later deferred target reads.
-                pending = [(cb, self.save(target)) for target, cb in self.deferred]
-                for callback, value in pending:
-                    callback(value)
+                # training-only deferrals (e.g. EMA updates) run only on a training
+                # pass, so eval passes don't advance tracker state. Materialize every
+                # deferred value first (within the still-clean memoized pass), THEN
+                # run the side effects -- so one can't mutate state a later deferred
+                # target reads.
+                pending = [
+                    (run, materialize(self))
+                    for materialize, run, training_only in self.deferred
+                    if self.training or not training_only
+                ]
+                for run, value in pending:
+                    run(value)
         finally:
             _ACTIVE_SESSION.reset(self.token)
         return False
@@ -394,8 +404,28 @@ class _SaveSession:
         return self.save(target)
 
     def after(self, target: ValueRef, callback: Callable) -> None:
-        """Defer ``callback(value-of-target)`` until the ``with`` block exits."""
-        self.deferred.append((target, callback))
+        """Defer ``callback(value-of-target)`` until the ``with`` block exits (always,
+        on clean exit). For a *training-only* stateful update that auto-defers, mark
+        the method :func:`deferred_execution` instead."""
+        self.deferred.append((lambda s: s.save(target), callback, False))
+
+    def defer_call(self, method, instance, args, kwargs) -> None:
+        """Defer a training-only method call to block exit; ``ValueRef`` arguments
+        are materialized in the (memoized) pass. Backs :func:`deferred_execution`."""
+
+        def materialize(s):
+            mats = tuple(s.save(a) if isinstance(a, ValueRef) else a for a in args)
+            matk = {
+                k: (s.save(v) if isinstance(v, ValueRef) else v)
+                for k, v in kwargs.items()
+            }
+            return mats, matk
+
+        def run(materialized):
+            mats, matk = materialized
+            method(instance, *mats, **matk)
+
+        self.deferred.append((materialize, run, True))
 
     def save(self, target: ValueRef):
         names = self.graph.names
@@ -407,6 +437,34 @@ class _SaveSession:
             name = names.get(n) or f"node{id(n)}"
             results[n] = _eval_node(n, args, self.cache, name, self.kwargs)
         return results[target]
+
+
+def deferred_execution(method):
+    """Mark a stateful side-effecting method as a *training callback*: inside a
+    ``forward_values`` block it is collected and run at block exit -- only on a
+    training pass (``session.training``), with any ``ValueRef`` arguments
+    materialized in the memoized pass; outside a session it runs immediately.
+
+    The clean replacement for reaching into ``_ACTIVE_SESSION`` by hand: a freq
+    tracker's EMA writes back *after* the pass (so the handle it reads is the
+    pre-update state), and not at all during eval. Decorate the writer::
+
+        @deferred_execution
+        @torch.no_grad()
+        def update(self, new_freqs) -> None:
+            self.freqs.copy_(new_freqs)
+
+    and call ``tracker.update(tracker.updated(acts))`` inline in the block."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        session = _ACTIVE_SESSION.get()
+        if session is None:
+            return method(self, *args, **kwargs)
+        session.defer_call(method, self, args, kwargs)
+        return None
+
+    return wrapper
 
 
 def bind(target: ValueRef, subs: dict) -> ValueRef:
