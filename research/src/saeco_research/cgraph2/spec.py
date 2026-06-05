@@ -145,16 +145,25 @@ class _MapReduceOverSlots:
 
 
 @define(eq=False)
-class _SubSlotsRef:
-    """What ``sub_slots()`` returns: a variadic sub-model slot. ``reduce(per_item,
-    combine)`` expresses a deferred fold over the (eventually-bound) dict of
-    sub-graphs -- ``per_item(key, subgraph)`` builds each term, ``combine`` (e.g.
-    ``reduce_sum``) folds them into one flat node."""
+class SubSlots[T]:
+    """The typed annotation for a ``sub_slots()`` field (``losses: SubSlots[
+    GraphLoss]``). Generic in the sub-graph type ``T`` so ``losses.reduce`` is bound
+    and ``per_item``'s ``loss`` is typed ``T``. At runtime this is the variadic-slot
+    marker; ``reduce(per_item, combine)`` builds a deferred fold over the
+    (eventually-bound) dict of sub-graphs -- ``per_item(key, subgraph)`` makes each
+    term, ``combine`` (e.g. ``reduce_sum``) folds them into one flat node."""
 
     slots: _SubSlots
 
-    def reduce(self, per_item: Callable, combine: Callable) -> Any:
+    def reduce(
+        self,
+        per_item: Callable[[str, T], ValueRef],
+        combine: Callable[[list[ValueRef]], ValueRef],
+    ) -> ValueRef:
         return ref(_MapReduceOverSlots(self.slots, per_item, combine), ())
+
+
+_SubSlotsRef = SubSlots  # internal alias (the metaclass collects by this type)
 
 
 def arg(default=_NODEFAULT) -> Any:

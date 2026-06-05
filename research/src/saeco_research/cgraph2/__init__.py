@@ -16,6 +16,7 @@ from saeco_research.cgraph2.funcstd import standardize
 from saeco_research.cgraph2.spec import (
     Arg,
     GraphSpec,
+    SubSlots,
     arg,
     op_slot,
     sub_slot,
@@ -29,6 +30,7 @@ __all__ = [
     "Graph",
     "GraphSpec",
     "Input",
+    "SubSlots",
     "Op",
     "OpRef",
     "ValueRef",

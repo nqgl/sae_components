@@ -39,7 +39,14 @@ from saeco_research.cgraph2.core import (
     ref,
 )
 from saeco_research.cgraph2.dictbatch import DictBatch
-from saeco_research.cgraph2.spec import GraphSpec, arg, op_slot, sub_slot, sub_slots
+from saeco_research.cgraph2.spec import (
+    GraphSpec,
+    SubSlots,
+    arg,
+    op_slot,
+    sub_slot,
+    sub_slots,
+)
 
 
 # --- graph-leaf math (module-level so consing keys on function structure) -----
@@ -400,7 +407,7 @@ class TrainGraph(GraphSpec):
     are looked up dynamically in ``GraphTrainable.loss`` (not declared here) -- so
     this class stays static while being parameterized by the dynamic losses."""
 
-    losses: dict[str, GraphLoss] = sub_slots()
+    losses: SubSlots[GraphLoss] = sub_slots()
     main: NormalizedModel = sub_slot()
 
     total_loss = losses.reduce(
@@ -478,7 +485,12 @@ class GraphTrainable(Trainable):
         # the main recon. register_into over it covers every producer (total_loss's
         # cone is all the loss sub-graphs). GraphSpec is a plain object (not an
         # nn.Module), so register_into does the param/buffer bookkeeping explicitly.
-        self.graph: TrainGraph = TrainGraph(losses=self._loss_graphs, main=main_nm)
+        # the bound dict satisfies the sub_slots runtime; the marker-vs-bound-value
+        # type gap is the standard slot-binding one (cf. binding a value to an arg).
+        self.graph: TrainGraph = TrainGraph(
+            losses=self._loss_graphs,  # type: ignore[arg-type]
+            main=main_nm,
+        )
         self._total_loss: ValueRef = self.graph.total_loss
         self.graph.register_into(self)
         # freq-tracker sites bubble up too: their stateful EMA update is deferred
