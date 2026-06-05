@@ -289,38 +289,70 @@ class AffineNormalizer(cl.Module):
         return x * self.scale + self.mu
 
 
-@define
-class GraphNormalizer:
-    """Wraps an :class:`AffineNormalizer` module; supplies the producers a
-    :class:`NormalizedModel` plugs in -- the normalizer module itself and a
-    stably-consed denorm op (keyed by the normalizer, not the bound method)."""
+class Denormalizer(GraphSpec):
+    """The inverse affine map as an *embeddable* sub-graph: ``value * scale +
+    shift`` (== :meth:`AffineNormalizer.invert`). A normalizer embeds it *partially
+    applied* -- ``scale``/``shift`` closed over its primed factors, ``value`` left
+    open -- so a model can denormalize its output through the normalizer
+    (``nx.denormalize(recon).output``) without ever naming scale/shift (D-12)."""
 
-    normalizer: AffineNormalizer
+    value: ValueRef = arg()
+    scale: ValueRef = arg()
+    shift: ValueRef = arg()
+    output = value * scale + shift
 
-    def _invert(self, x):
-        # static-invertible normalizer: invert() reads primed state, not cache
-        return self.normalizer.invert(x, cache=None)
 
-    @property
-    def denorm(self) -> OpRef:
-        key = ("denorm", id(self.normalizer))
-        return OpRef(Op.create(self._invert, "denorm", key=key))
+class GraphNormalizer(GraphSpec):
+    """``normalize`` plus its encapsulated inverse, as a graph (D-12).
+
+    ``normalized = affine(Input)`` is the :class:`AffineNormalizer` forward (a
+    ``cl.Module`` node, so its primed buffers register + cache); ``scale``/``shift``
+    are constant handles reading those primed buffers *live*; and ``denormalize`` is
+    a :class:`Denormalizer` partial closed over them with ``value`` left open. A
+    :class:`NormalizedModel` plugs this into a ``sub_slot`` and completes the partial
+    with the model's recon -- so the normalizer owns its own inverse and the model
+    never references scale/shift. Build one with :meth:`of` (wires the buffer
+    readers, stably consed by ``id(normalizer)`` so forward + inverse fuse);
+    priming stays on the wrapped :class:`AffineNormalizer`."""
+
+    affine: OpRef = op_slot()
+    scale: ValueRef = arg()
+    shift: ValueRef = arg()
+    normalized = affine(Input)
+    denormalize = Denormalizer.partial(scale=scale, shift=shift)
+    output = normalized
+
+    @classmethod
+    def of(cls, normalizer: AffineNormalizer) -> "GraphNormalizer":
+        """Wire a :class:`GraphNormalizer` around a (primed) ``AffineNormalizer``:
+        ``scale``/``shift`` read its live ``scale``/``mu`` buffers (0-ary ops, so
+        robust to ``.to(device)``), stably consed by ``id(normalizer)`` so the
+        forward and the inverse share them."""
+        nid = id(normalizer)
+        scale_op = OpRef(
+            Op.create(lambda: normalizer.scale, "scale", key=("scale", nid))
+        )
+        shift_op = OpRef(Op.create(lambda: normalizer.mu, "shift", key=("shift", nid)))
+        gn = cls(affine=normalizer, scale=scale_op(), shift=shift_op())
+        gn._affine = normalizer
+        return gn
 
     def wrap[T: SAEModel](self, model: T) -> "NormalizedModel[T]":
-        return NormalizedModel(
-            model=model, normalize=self.normalizer, denorm=self.denorm
-        )
+        """``normalizer[model]`` -- the model normalized end-to-end."""
+        return NormalizedModel(model=model, normalizer=self)
 
-    def denormalize(self, handle: ValueRef) -> ValueRef:
-        return self.denorm(handle)
+    def denormalize_value(self, value: ValueRef) -> ValueRef:
+        """Complete the embedded inverse on ``value`` -- the standalone form of
+        ``nx.denormalize(value).output`` (used for the trainable's decode path)."""
+        return self.denormalize(value).output
 
-    # -- trainer-facing passthrough --
+    # -- trainer-facing passthrough to the wrapped AffineNormalizer --
     @property
     def primed(self) -> bool:
-        return self.normalizer.primed
+        return self._affine.primed
 
     def prime_normalizer(self, buffer, n: int = 20):
-        return self.normalizer.prime_normalizer(buffer, n=n)
+        return self._affine.prime_normalizer(buffer, n=n)
 
 
 class SAEInputs(DictBatch):
@@ -342,17 +374,17 @@ class NormalizedModel[T: SAEModel](GraphSpec):
     can return ``NormalizedModel[T]`` (the normalized wrapper) rather than ``T``."""
 
     model: T = sub_slot()
-    normalize: OpRef = op_slot()
-    denorm: OpRef = op_slot()
+    normalizer: GraphNormalizer = sub_slot()
 
     x_in = field(SAEInputs.input)  # typed boundary fields: source + recon target
     y_in = field(SAEInputs.target)
-    applied = model(normalize(x_in))  # the model, run on the normalized input
-    x_norm = normalize(x_in)
-    y_norm = normalize(y_in)  # transcoder: target may differ from input (else == x)
+    nx = normalizer(x_in)  # the normalizer, applied to the input
+    applied = model(nx.normalized)  # the model, run on the normalized input
+    x_norm = nx.normalized
+    y_norm = normalizer(y_in).normalized  # transcoder: target may differ from input
     y_pred_norm = applied.recon
     acts = applied.acts
-    out = denorm(y_pred_norm)  # denormalized reconstruction (inference)
+    out = nx.denormalize(applied.recon).output  # the normalizer's own inverse
     output = out
 
 
@@ -499,7 +531,7 @@ class GraphTrainable(Trainable):
         self._acts: ValueRef = main_nm.acts  # inference: encode
         self._output: ValueRef = main_nm.out  # inference: denormalized recon
         # decode: acts -> raw recon (treat acts as the input, then denormalize)
-        self._decode: ValueRef = normalizer.denormalize(
+        self._decode: ValueRef = normalizer.denormalize_value(
             bind(main.recon, {main.acts: Input})
         )
 

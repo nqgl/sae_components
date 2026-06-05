@@ -359,6 +359,50 @@ def test_affine_normalizer_matches_generalized() -> None:
         assert torch.allclose(ref.invert(xn_ref, cache=cl.Cache()), xdn_aff, atol=1e-5)
 
 
+def test_graph_normalizer_embeds_its_inverse() -> None:
+    # D-12: GraphNormalizer embeds a Denormalizer partial closed over its primed
+    # scale/shift; completing it (gn.denormalize_value(v)) must equal the wrapped
+    # AffineNormalizer.invert, round-trip to identity, and stably cons (so forward
+    # + inverse fuse) -- while a *different* normalizer's inverse shares no nodes.
+    import saeco.core as cl
+    from saeco_research.cgraph2.core import Input
+    from saeco_research.cgraph2.sae import AffineNormalizer, GraphNormalizer
+
+    class _B:
+        def __init__(self, t):
+            self.input = t
+
+    def buf(d):
+        while True:
+            yield _B(torch.randn(32, d) * 3 + 2)
+
+    torch.manual_seed(0)
+    d = 8
+    norm = AffineNormalizer(d)
+    norm.prime_normalizer(buf(d))
+    gn = GraphNormalizer.of(norm)
+    x = torch.randn(5, d) * 2 - 1
+
+    # denormalize_value(Input) == AffineNormalizer.invert (the embedded inverse)
+    got = gn.denormalize_value(Input).build()(x, cache=cl.Cache())
+    assert torch.allclose(got, norm.invert(x), atol=1e-6)
+
+    # round-trip: denormalize(normalize(x)) == x
+    roundtrip = gn.denormalize_value(gn.normalized).build()(x, cache=cl.Cache())
+    assert torch.allclose(roundtrip, x, atol=1e-5)
+
+    # the scale/shift readers are stably consed (keyed by id(normalizer)), so the
+    # completed inverse is one interned node -- two completions are the same object.
+    assert gn.denormalize_value(Input) is gn.denormalize_value(Input)
+    # a distinct normalizer's inverse is a distinct node (no cross-leak).
+    norm2 = AffineNormalizer(d)
+    norm2.prime_normalizer(buf(d))
+    gn2 = GraphNormalizer.of(norm2)
+    assert gn2.denormalize_value(Input) is not gn.denormalize_value(Input)
+    got2 = gn2.denormalize_value(Input).build()(x, cache=cl.Cache())
+    assert torch.allclose(got2, norm2.invert(x), atol=1e-6)
+
+
 def test_affine_normalizer_rejects_dynamic_aggregations() -> None:
     from saeco.trainer.normalizers.normalizer import Aggregation, GNConfig
     from saeco_research.cgraph2.sae import AffineNormalizer
@@ -424,7 +468,7 @@ def _build_gated_trainable(d=16):
     }
     tr = GraphTrainable(
         [main, aux], AnthResampler(AnthResamplerConfig(expected_biases=2)),
-        losses, GraphNormalizer(norm),
+        losses, GraphNormalizer.of(norm),
     )
     return tr, d
 
@@ -520,7 +564,7 @@ def test_gated_graph_trains_one_step_cpu() -> None:
 
     norm = AffineNormalizer(d)
     norm.prime_normalizer(buf())
-    gn = GraphNormalizer(norm)
+    gn = GraphNormalizer.of(norm)
 
     enc = init.encoder
     gate_b, mag_b, log_r = (

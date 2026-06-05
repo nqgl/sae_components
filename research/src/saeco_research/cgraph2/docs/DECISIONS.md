@@ -365,3 +365,62 @@ structure in trainable code instead of a legible class block; and a full
 Validated: 17 pytest (+ a focused `sub_slots` test) + 6 demos + ruff + GPU through
 the real Trainer trains identically. `weighted_sum` stays as an exported component
 for the imperative case; `reduce_sum` is the fold combiner.
+
+---
+
+## D-12 — the normalizer embeds its own inverse (partial sub-graph), so the model never names scale/shift
+
+**Call:** How should `NormalizedModel` denormalize the model's output? The inverse
+of an affine normalizer isn't a plain `ValueRef` you can write down up front: you
+can't invert until the forward has produced `scale`/`shift`. The old wiring leaked
+this — `NormalizedModel` took the normalizer's `denorm` as a second `op_slot` and
+applied it (`out = denorm(y_pred_norm)`), so the model had to know the normalizer
+exposes an inverse op.
+
+**Choice:** "B-full" — embeddable, partially-applied sub-graphs. A `Denormalizer`
+GraphSpec is the inverse map `value * scale + shift`; the normalizer embeds it
+*partially applied* over its own primed factors, leaving `value` open:
+
+    class GraphNormalizer(GraphSpec):
+        affine: Op = op_slot(); scale: Arg = arg(); shift: Arg = arg()
+        normalized  = affine(Input)
+        denormalize = Denormalizer.partial(scale=scale, shift=shift)   # value open
+        output      = normalized
+
+    class NormalizedModel[T: SAEModel](GraphSpec):
+        model: T = sub_slot(); normalizer: GraphNormalizer = sub_slot()
+        nx      = normalizer(x_in)
+        applied = model(nx.normalized)
+        out     = nx.denormalize(applied.recon).output     # complete the partial
+
+So `NormalizedModel` plugs the normalizer into a `sub_slot`, and completes its
+embedded partial with the model's recon — the normalizer **owns its own inverse**
+and the model never references scale/shift. `nx.denormalize(recon)` resolves at
+construction (once `normalizer` is bound) to the embedded partial rebound to the
+applied input, completed on `recon`, exposing `.output`. The decode path uses the
+standalone form `normalizer.denormalize_value(acts→Input)`. `scale`/`shift` are
+0-ary ops reading the `AffineNormalizer`'s live buffers, stably consed by
+`id(normalizer)` so forward + inverse fuse. `GraphNormalizer.of(affine)` wires it;
+`primed`/`prime_normalizer` stay passthroughs to the wrapped `AffineNormalizer`
+(the trainer primes through them).
+
+**Why:** the inverse genuinely depends on the forward's factors, so the principled
+shape is a sub-graph closed over those factors with one open input — exactly what
+partial application + embedding gives. It removes the cross-component leak (the
+model no longer needs to be handed an inverse op) and the mechanism (Steps 1/2a:
+`GraphSpec.partial` → `_PartialGraph`; `nx.attr(value).output` via
+`_SubGet.__partial_call__`/`_AppliedPartial`/`_PartialComplete`) is general — any
+GraphSpec can embed a partially-applied sub-graph and complete it through a
+`sub_slot` application, not just the normalizer.
+
+**Alternative not taken:** keep the two-`op_slot` `normalize`/`denorm` wiring — it
+works but leaks the inverse across the component boundary and can't express "invert
+through the factors this forward produced" for a non-static normalizer; and a
+bespoke "invertible module" protocol — more special-casing than the general embed
+mechanism, which we wanted anyway (Glen: "being able to embed subgraphs like that
+could be very useful in other situations… the principled solution").
+
+Validated: 21 pytest (incl. `test_graph_normalizer_embeds_its_inverse` — round-trip
++ `AffineNormalizer.invert` identity + consing/distinctness — and the gated-graph
+trainable tests) + 6 demos + ruff clean + GPU through the real Trainer trains
+identically (L2 ~0.02, cosim ~0.99, L0 ~3300 then falling).
