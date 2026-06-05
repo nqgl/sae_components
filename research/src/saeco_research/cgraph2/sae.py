@@ -15,6 +15,7 @@ Assembly mirrors stock saeco: ``@model_prop`` returns a model graph (an
 :class:`NormalizedModel` and resolves every loss against it.
 """
 
+from functools import cached_property
 from typing import Protocol
 
 import torch
@@ -423,6 +424,41 @@ class TrainGraph(GraphSpec):
     )
     output = main(Input).out  # the main model reads its own fields; Input is a no-op
 
+    # -- the logging handles, derived from the bound losses/main (cached). The
+    # trainable `save()`s these in its forward_values pass; deriving them here keeps
+    # the assembly with the structure that has the losses + main, not in the
+    # trainable's __init__.
+    @cached_property
+    def loss_terms(self) -> dict[str, ValueRef]:
+        """Per-loss (unweighted) value handles -- what the trainer logs."""
+        return {k: loss.out for k, loss in self.losses.items()}
+
+    @cached_property
+    def metric_terms(self) -> dict[str, ValueRef]:
+        """Metric handles over the main model: cosim, plus L2 if it isn't a loss."""
+        types: dict[str, type[GraphLoss]] = {"cosim": GraphCosimLoss}
+        if "L2_loss" not in self.losses:
+            types["L2_loss"] = GraphL2Loss
+        return {k: t(norm_model=self.main).out for k, t in types.items()}
+
+    @cached_property
+    def _l0_l1(self) -> tuple[ValueRef, ValueRef]:
+        # bubble up the main model's metrics site (D-03/D-05), applied to the
+        # rebound (normalized) acts; fall back to computing directly if no site.
+        sites = collect([self.main.acts], _MetricsSite)
+        if sites:
+            m = sites[0].producer.at(sites[0].inputs[0])
+            return m.L0, m.L1
+        return op(_l0)(self.main.acts), op(_l1)(self.main.acts)
+
+    @property
+    def l0(self) -> ValueRef:
+        return self._l0_l1[0]
+
+    @property
+    def l1(self) -> ValueRef:
+        return self._l0_l1[1]
+
 
 class GraphTrainable(Trainable):
     """``Trainable`` whose forward/loss are one fused interned graph.
@@ -455,34 +491,13 @@ class GraphTrainable(Trainable):
         main_nm: NormalizedModel = norm[id(main)]
 
         # resolve (model, loss_type) -> a loss *sub-graph* over that model's
-        # NormalizedModel (kept whole so TrainGraph can fold them); `.out` is the
-        # per-loss value handle we log.
+        # NormalizedModel (kept whole so TrainGraph can fold them + derive the
+        # per-loss logging handles); the trainable just builds + runs the graph.
         self._loss_graphs: dict[str, GraphLoss] = {
             k: lr.build_graph(norm[id(lr.model)]) for k, lr in losses.items()
         }
-        self._loss_terms: dict[str, ValueRef] = {
-            k: g.out for k, g in self._loss_graphs.items()
-        }
-        metric_types: dict[str, type[GraphLoss]] = {"cosim": GraphCosimLoss}
-        if "L2_loss" not in losses:
-            metric_types["L2_loss"] = GraphL2Loss
-        self._metric_terms: dict[str, ValueRef] = {
-            k: t(norm_model=main_nm).out for k, t in metric_types.items()
-        }
-        self._acts: ValueRef = main_nm.acts
-        # bubble up the main model's metrics site (L0/L1) -- it lives on the
-        # model's acts wherever the model put it; we collect it and apply it to
-        # the rebound (normalized) acts (D-03/D-05). Fall back to computing
-        # directly if the model didn't splice one.
-        self._l0: ValueRef
-        self._l1: ValueRef
-        sites = collect([main_nm.acts], _MetricsSite)
-        if sites:
-            metrics = sites[0].producer.at(sites[0].inputs[0])
-            self._l0, self._l1 = metrics.L0, metrics.L1
-        else:
-            self._l0, self._l1 = op(_l0)(main_nm.acts), op(_l1)(main_nm.acts)
-        self._output: ValueRef = main_nm.out  # denormalized recon (inference)
+        self._acts: ValueRef = main_nm.acts  # inference: encode
+        self._output: ValueRef = main_nm.out  # inference: denormalized recon
         # decode: acts -> raw recon (treat acts as the input, then denormalize)
         self._decode: ValueRef = normalizer.denormalize(
             bind(main.recon, {main.acts: Input})
@@ -490,13 +505,13 @@ class GraphTrainable(Trainable):
 
         # the outer graph as a (mostly static) class block: `total_loss` is the
         # declarative weighted fold over the dynamic loss sub-graphs, `output` is
-        # the main recon. register_into over it covers every producer (total_loss's
-        # cone is all the loss sub-graphs). GraphSpec is a plain object (not an
-        # nn.Module), so register_into does the param/buffer bookkeeping explicitly.
+        # the main recon, and the logging handles (loss_terms/metric_terms/l0/l1)
+        # are its cached properties. register_into over it covers every producer
+        # (total_loss's cone is all the loss sub-graphs); GraphSpec is a plain
+        # object (not an nn.Module), so register_into does the bookkeeping.
         self.graph: TrainGraph = TrainGraph(
             losses=SubSlots.from_dict(self._loss_graphs), main=main_nm
         )
-        self._total_loss: ValueRef = self.graph.total_loss
         self.graph.register_into(self)
         # freq-tracker sites bubble up too: their stateful EMA update is deferred
         # onto each loss pass (ready for resampling; no-op if none spliced).
@@ -517,7 +532,7 @@ class GraphTrainable(Trainable):
             y = y.input
         coeffs = coeffs or {}
         batch = SAEInputs(input=x, target=x if y is None else y)
-        for k in self._loss_terms:  # dynamic per-loss weight fields
+        for k in self._loss_graphs:  # dynamic per-loss weight fields
             setattr(batch, f"w_{k}", coeffs.get(k, 1.0))
         return batch
 
@@ -527,9 +542,9 @@ class GraphTrainable(Trainable):
             # dynamic lookups: the per-loss / metric / L0 / L1 handles aren't on the
             # (mostly-static) graph -- they're saved here by handle, sharing the one
             # fused memoized pass (the model is computed once and reused).
-            logged = {k: save(t) for k, t in self._loss_terms.items()}  # unweighted
-            logged.update({k: save(t) for k, t in self._metric_terms.items()})
-            l0, l1 = save(self._l0), save(self._l1)
+            logged = {k: save(t) for k, t in self.graph.loss_terms.items()}  # unwtd
+            logged.update({k: save(t) for k, t in self.graph.metric_terms.items()})
+            l0, l1 = save(self.graph.l0), save(self.graph.l1)
             for site in self._freq_sites:  # deferred EMA update after the pass
                 ft = site.producer
                 ft.update(ft.updated(site.inputs[0]))
@@ -547,8 +562,8 @@ class GraphTrainable(Trainable):
 
     def get_losses_and_metrics_names(self) -> list[str]:
         return (
-            list(self._loss_terms)
-            + list(self._metric_terms)
+            list(self.graph.loss_terms)
+            + list(self.graph.metric_terms)
             + ["L0", "L1"]
             + [name for name, _ in _BELOW]
         )

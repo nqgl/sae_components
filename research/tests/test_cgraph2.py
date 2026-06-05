@@ -343,7 +343,7 @@ def test_total_loss_handle_weights_and_transcoder() -> None:
     cache = TrainCache()
     cache._watch(names)
     total = tr.loss(x, cache=cache, y=x, coeffs=coeffs)
-    expected = sum(coeffs[k] * float(cache.get(k)) for k in tr._loss_terms)
+    expected = sum(coeffs[k] * float(cache.get(k)) for k in tr.graph.loss_terms)
     assert abs(float(total) - expected) < 1e-3
 
     # transcoder: target != input flows through (different recon target -> diff L2)
