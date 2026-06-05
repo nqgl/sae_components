@@ -38,15 +38,29 @@ class _BailError(Exception):
 _NULL = ("\0null",)  # sentinel for a self/NULL slot on the symbolic stack
 
 
+class _IdentityKey:
+    __slots__ = ("_id", "obj")
+
+    def __init__(self, obj):
+        self.obj = obj
+        self._id = id(obj)
+
+    def __eq__(self, other):
+        return isinstance(other, _IdentityKey) and self.obj is other.obj
+
+    def __hash__(self):
+        return self._id
+
+
 def _obj_key(obj):
     """A stable identity for a referenced (non-inlined) object: its
     module+qualname when available (so the same builtin reached via different
-    aliases keys alike), else its ``id``."""
+    aliases keys alike), else an object-identity key."""
     mod = getattr(obj, "__module__", None)
     qual = getattr(obj, "__qualname__", None)
     if mod is not None and qual is not None:
         return ("q", mod, qual)
-    return ("id", id(obj))
+    return ("id", _IdentityKey(obj))
 
 
 def _resolve_global(fn, name):
@@ -148,18 +162,45 @@ def _expr_tree(fn, seen):
 def _make_call(callee, args, seen):
     if isinstance(callee, tuple) and callee[0] == "ref":
         obj = callee[1]
-        if _is_analyzable(obj) and id(obj) not in seen:
+        if _is_analyzable(obj):
+            if id(obj) in seen:
+                raise _BailError
             inner = _expr_tree(obj, seen | {id(obj)})
             return _subst(inner, args)
         return ("call", _obj_key(obj), tuple(args))
     return ("call", callee, tuple(args))
 
 
+def _collect_arg_indexes(tree, out):
+    if not isinstance(tree, tuple):
+        return
+    if tree and tree[0] == "arg":
+        out.add(tree[1])
+        return
+    if tree and tree[0] in ("const", "ref"):
+        return
+    children = tree[1:] if tree and isinstance(tree[0], str) else tree
+    for child in children:
+        _collect_arg_indexes(child, out)
+
+
+def _uses_all_positional_args(tree, argcount):
+    used = set()
+    _collect_arg_indexes(tree, used)
+    return used == set(range(argcount))
+
+
 def _try_expr_tree(fn):
     if not _is_analyzable(fn):
         return None
+    # Top-level defaults affect omitted call-site behavior but are not in the
+    # expression tree. Inlined callees stay governed by _subst arity checks.
+    if getattr(fn, "__defaults__", None) or getattr(fn, "__kwdefaults__", None):
+        return None
     try:
         tree = _expr_tree(fn, {id(fn)})
+        if not _uses_all_positional_args(tree, fn.__code__.co_argcount):
+            return None
         hash(tree)  # canonical key must be hashable to cons on
     except Exception:  # _BailError or any analysis failure -> identity fallback
         return None
@@ -171,4 +212,4 @@ def standardize(fn):
     tree = _try_expr_tree(fn)
     if tree is not None:
         return ("expr", tree)
-    return ("id", id(fn))
+    return ("id", _IdentityKey(fn))
