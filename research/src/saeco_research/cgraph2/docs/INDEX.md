@@ -13,6 +13,10 @@ Central plan for the cgraph2 documentation. Read this first.
 - **PROGRESS.md** — chronological work log + the **resume protocol** for autonomous
   runs. Each work session appends what it did, what's green, what's next. This is
   the doc to read to pick up where things left off.
+- **PROD_READINESS.md** — forward-looking correctness/completeness concerns that
+  must be resolved (or consciously accepted) before promoting cgraph2 into
+  `src/saeco/`. Carried over from v1 when it was retired; add to it whenever a
+  corner is cut.
 - **DESIGN-multi-input.md** — a *proposal* (not yet built): multi-input graphs via
   a DictBatch, unlocking a true `total_loss` handle and transcoders
   (`y_norm != x_norm`). Awaiting Glen's greenlight; it touches `core.py`'s `Input`
