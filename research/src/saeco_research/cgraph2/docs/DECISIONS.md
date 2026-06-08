@@ -475,3 +475,81 @@ Validated: 58 pytest (incl. `test_deferred_execution_training_gate`,
 `test_freq_tracker_eval_pass_does_not_advance_ema`,
 `test_batch_honors_transcoder_target`) + 6 demos + ruff clean + GPU trains
 identically.
+
+---
+
+## D-14 — slots are descriptors; `ValueRef` carries a value type; `module_slot()` plugs a leaf module in
+
+**Call:** D-12 let the normalizer own its inverse but wired it badly: a
+`GraphNormalizer.of(norm)` factory reached into the module to *build the buffer-reader
+ops by hand* and fed them through an `op_slot` + two `arg()` slots. The normalizer was
+disassembled and re-wired externally. The deeper problem this exposed: **a slot has
+three faces** — what you *pass at construction*, what you *use in the class body*, and
+what the *bound instance attribute* is — and they can each want a different type. A leaf
+`cl.Module` is the extreme case (forward + named buffers, not a multi-handle graph), but
+every slot has the shape, and several already threw construction type-errors because of
+it (`Linear` → `Op`, `Tensor` → `Arg`, `.reduce` on a bound `dict`).
+
+**Rejected on the way:** (a) `__graph_apply__`, a hook *on the module* returning a
+stringly-keyed dict — type-dead and the wrong layer (the module shouldn't carry graph
+machinery). (b) A spec-time **proxy typed AS the module** + a `get(x) -> ValueRef`
+launder — the proxy's *forward* then type-lies as `Tensor` (it's a ref), and `get()` is
+a no-op that only exists to relaunder a type: a smell. (c) A `converter=`-on-the-field
+idiom that splits construction-type from attribute-type — works, but verbose/distasteful
+and leaves the instance-attr face (`self.normalizer.primed`) mistyped.
+
+**Choice — the slot *is a descriptor*** (its three methods are exactly the three faces),
+plus a value-typed `ValueRef`:
+
+    class GraphNormalizer(GraphSpec):
+        normalizer: ModuleSlot[AffineNormalizer] = module_slot()
+        normalized = normalizer(Input)                 # body  __call__ -> ValueRef[Tensor]
+        scale = normalizer.get(lambda n: n.scale)      # body  get(λ)   -> ValueRef[R], typo-checked
+        shift = normalizer.get(lambda n: n.shift)
+        denormalize = Denormalizer.partial(scale=scale, shift=shift)
+        output = normalized
+        @property
+        def primed(self): return self.normalizer.primed   # instance __get__ -> the module
+
+`ModuleSlot[M].__call__`/`get` are the **body** face (build nodes); `get(fn: Callable[[M],
+R]) -> ValueRef[R]` checks the lambda against the real `M` and carries `R` through (no
+string keys, no per-module view, no launder). `__get__ -> M` is the **instance** face, so
+passthroughs type-check. `__set__(value: M)` is the **construction** face — and the lucky
+hinge is that the metaclass's existing `setattr(obj, name, bound)` *routes through*
+`__set__`, so construction binds with no wrapper. `module_slot`/`sub_slots` are
+real-instance descriptors (`__set__` stores, `__get__` returns — the bound module / the
+`dict`, so `g.losses["k"]` is typed); `op_slot`/`arg` are *type-only* descriptors (bound
+by substitution into the nodes, so `__set__` only declares the wide construction type —
+`nn.Module | Callable | OpRef`, `ValueRef | Tensor`). `arg`/`op_slot`'s runtime markers
+stay plain interned `ValueRef`/`OpRef` (interning is load-bearing for re-binding open
+slots — a non-interned marker diverges and the raw marker reaches eval); `ArgSlot` /
+`OpSlot` exist only as the `Arg` / `Op` annotation types. (`Op` the annotation ≠ `Op` the
+core runtime class; `gated.py` imports the latter from `core` for its `isinstance`.)
+
+`ValueRef` gained a **value type param**, value-first so `collect` is untouched:
+`ValueRef[V = Any, P = Any]` (`V` = the runtime value, carried by `.get`; `P` = the
+producer, used by `collect`). This is what makes `.get(lambda n: n.scale) ->
+ValueRef[Tensor]` pay off — the "`ValueRef[T]`" question, now earning its keep.
+
+The `AffineNormalizer` buffer `mu` is renamed `shift` so the graph reads `normalizer.shift`
+directly; `of()` and the hand-built readers are gone; `GraphNormalizer(normalizer=norm)`
+is the whole construction; `primed`/`prime_normalizer` delegate to the bound module.
+
+**Why:** descriptors are *literally* the "one thing at class time, another on the
+instance" tool (Glen's observation), and our metaclass already behaved that way
+dynamically — making it a real descriptor just gets pyright to agree. The result: the
+module stays a plain `cl.Module`; every face type-checks (no lies, no launder); and the
+whole "you passed a `Module`/`Tensor`/`dict` but the field is typed `Op`/`Arg`/`SubSlots`"
+construction-error class is gone across the slot vocabulary.
+
+**Alternatives not taken:** unify `module_slot` with `sub_slot` — a leaf module (one
+forward + buffers) and a sub-graph (named handles) are different *body* shapes
+(`m(x)` is the value vs `m(x).handle`), fixed when you write the slot, so no parsimonious
+union yet (kept separate). Threading the value type through `op`/operators/`field` so
+*every* handle is `ValueRef[Tensor]` — a larger follow-on; this pass types the slot
+surface, where the construction errors and the `get()` smell were.
+
+Validated: 59 pytest (incl. `test_module_slot_forward_and_param_reads`, the embedded-
+inverse, sub_slots/total_loss, and the gated-trainable tests) + 6 demos + ruff clean +
+construction type-errors across slots eliminated + GPU train-identically through the real
+Trainer.

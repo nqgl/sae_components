@@ -19,7 +19,8 @@ from attrs import define
 
 import saeco.core as cl
 from saeco.trainer.trainable import Trainable
-from saeco_research.cgraph2 import Input, Op, ValueRef, op, ref
+from saeco_research.cgraph2 import Input, ValueRef, op, ref
+from saeco_research.cgraph2.core import Op  # the runtime Op class (for isinstance)
 
 
 class CountLinear(cl.Module):

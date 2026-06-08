@@ -380,7 +380,7 @@ def test_graph_normalizer_embeds_its_inverse() -> None:
     d = 8
     norm = AffineNormalizer(d)
     norm.prime_normalizer(buf(d))
-    gn = GraphNormalizer.of(norm)
+    gn = GraphNormalizer(normalizer=norm)
     x = torch.randn(5, d) * 2 - 1
 
     # denormalize_value(Input) == AffineNormalizer.invert (the embedded inverse)
@@ -397,10 +397,53 @@ def test_graph_normalizer_embeds_its_inverse() -> None:
     # a distinct normalizer's inverse is a distinct node (no cross-leak).
     norm2 = AffineNormalizer(d)
     norm2.prime_normalizer(buf(d))
-    gn2 = GraphNormalizer.of(norm2)
+    gn2 = GraphNormalizer(normalizer=norm2)
     assert gn2.denormalize_value(Input) is not gn.denormalize_value(Input)
     got2 = gn2.denormalize_value(Input).build()(x, cache=cl.Cache())
     assert torch.allclose(got2, norm2.invert(x), atol=1e-6)
+
+
+def test_module_slot_forward_and_param_reads() -> None:
+    # D-14: module_slot() plugs a leaf cl.Module in as a ModuleSlot descriptor -- m(x)
+    # is its forward, m.get(lambda n: n.w) reads a buffer as a typed graph ref (consed
+    # by module identity); on the instance m is the bound module. A typo'd attr fails
+    # the type checker (statically) and loud at eval (lazily) -- never a wrong value.
+    import saeco.core as cl
+    from saeco_research.cgraph2.core import Input
+    from saeco_research.cgraph2.spec import GraphSpec, ModuleSlot, module_slot
+
+    class Scale(cl.Module):
+        def __init__(self, w):
+            super().__init__()
+            self.register_buffer("w", torch.tensor(w))
+
+        def forward(self, x, *, cache, **kw):
+            return x * self.w
+
+    class G(GraphSpec):
+        m: ModuleSlot[Scale] = module_slot()
+        out = m(Input)
+        w = m.get(lambda n: n.w)
+        output = out
+
+    s = Scale([2.0, 3.0])
+    g = G(m=s)
+    x = torch.tensor([1.0, 1.0])
+    assert g.out.build()(x, cache=cl.Cache()).tolist() == [2.0, 3.0]  # forward x*w
+    assert g.w.build()(x, cache=cl.Cache()).tolist() == [2.0, 3.0]  # buffer read
+    assert g.m is s  # the module is a navigable child
+    assert G(m=s).w is g.w  # same module -> the reader node is consed
+    assert G(m=Scale([2.0, 3.0])).w is not g.w  # distinct module -> distinct node
+
+    # an attr the module doesn't have is type-illegal (pyright); at runtime the read
+    # is lazy and fails loud at eval (never a silent wrong value).
+    class Bad(GraphSpec):
+        m: ModuleSlot[Scale] = module_slot()
+        nope = m.get(lambda n: n.not_a_buffer)  # type: ignore[attr-defined]
+        output = m(Input)
+
+    with pytest.raises(AttributeError):
+        Bad(m=s).nope.build()(x, cache=cl.Cache())
 
 
 def test_affine_normalizer_rejects_dynamic_aggregations() -> None:
@@ -468,7 +511,7 @@ def _build_gated_trainable(d=16):
     }
     tr = GraphTrainable(
         [main, aux], AnthResampler(AnthResamplerConfig(expected_biases=2)),
-        losses, GraphNormalizer.of(norm),
+        losses, GraphNormalizer(normalizer=norm),
     )
     return tr, d
 
@@ -564,7 +607,7 @@ def test_gated_graph_trains_one_step_cpu() -> None:
 
     norm = AffineNormalizer(d)
     norm.prime_normalizer(buf())
-    gn = GraphNormalizer.of(norm)
+    gn = GraphNormalizer(normalizer=norm)
 
     enc = init.encoder
     gate_b, mag_b, log_r = (

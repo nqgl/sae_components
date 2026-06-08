@@ -147,7 +147,7 @@ class GatedGraphSAE(Architecture[GatedGraphConfig]):
         ).to(device=self.device)
         if self.state_dict is None:
             norm.prime_normalizer(self.data)
-        return GraphNormalizer.of(norm)
+        return GraphNormalizer(normalizer=norm)
 
     def make_trainable(self) -> GraphTrainable:
         if not self._instantiated:
