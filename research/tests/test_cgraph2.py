@@ -345,10 +345,18 @@ def test_render_shows_deduped_shared_nodes() -> None:
         b = op(torch.sigmoid)(h)
         output = a + b
 
-    r = Spec(encoder=nn.Linear(4, 4)).render()
+    g = Spec(encoder=nn.Linear(4, 4))
+    r = g.render()
     assert r.count("= Linear") == 1  # the shared encoder node is printed once
     for handle in ("h", "a", "b", "output"):
         assert handle in r  # handles are named/tagged in the view
+
+    # iter_nodes() is the public "walk my cone" op: deduped (the shared encoder node
+    # appears once), in dependency order (an input precedes the node that reads it).
+    nodes = list(g.iter_nodes())
+    assert len(nodes) == len({id(n) for n in nodes})  # deduped, no repeats
+    assert nodes.index(g.h) < nodes.index(g.a)  # h (input) before a (reads it)
+    assert nodes.index(g.h) < nodes.index(g.output)
 
 
 def test_affine_normalizer_matches_generalized() -> None:

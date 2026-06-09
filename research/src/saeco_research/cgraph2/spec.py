@@ -26,7 +26,7 @@ Two composition features beyond plain slots:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, Self, cast, dataclass_transform, overload
 
 import torch
@@ -36,6 +36,7 @@ from saeco_research.cgraph2.core import (
     Graph,
     Input,
     OpRef,
+    Subs,
     ValueRef,
     _producer_label,
     _register_producers,
@@ -118,7 +119,7 @@ class _SlotHandle:
     slot: _SlotMarker
     attr: str
 
-    def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
+    def __graph_rebind__(self, inputs: tuple[ValueRef, ...], subs: Subs) -> ValueRef:
         bound = subs.get(self.slot, None)
         if bound is None:  # slot not in subs: keep the node (re-interned inputs)
             return ref(self, inputs)
@@ -132,10 +133,11 @@ class _SlotHandle:
         return _AppliedPartial(self.slot, self.attr, x, value)
 
 
-class _AppliedSlot(ValueRef):
-    """The result of ``slot(x)`` -- a ``ValueRef`` (so a leaf module/op slot's forward
-    value is usable directly) that *also* exposes ``.attr`` for a sub-graph slot's
-    named handles (``slot(x).recon``). The two faces of applying a slot, in one node:
+class _AppliedSlot(ValueRef[torch.Tensor]):
+    """The result of ``slot(x)`` -- a ``ValueRef[Tensor]`` (so a leaf module/op slot's
+    forward value is a usable tensor handle) that *also* exposes ``.attr`` for a
+    sub-graph slot's named handles (``slot(x).recon``). The two faces of applying a
+    slot, in one node:
 
     * **leaf module / op** -- ``slot(x)`` is the forward value; its producer (the slot
       marker) binds to the bound module/op, so it evaluates like any node.
@@ -145,7 +147,7 @@ class _AppliedSlot(ValueRef):
 
     Interned (via ``ref_as``) so repeated ``slot(x)`` fuse, exactly like any node."""
 
-    def __getattr__(self, attr: str) -> ValueRef:
+    def __getattr__(self, attr: str) -> ValueRef[torch.Tensor]:
         if attr.startswith("_"):
             raise AttributeError(attr)
         return ref(_SlotHandle(self.producer, attr), self.inputs)
@@ -170,7 +172,7 @@ class _SlotGet:
     slot: _SlotMarker
     fn: Callable
 
-    def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
+    def __graph_rebind__(self, inputs: tuple[ValueRef, ...], subs: Subs) -> ValueRef:
         bound = subs.get(self.slot, None)
         if bound is None:
             return ref(self, inputs)
@@ -235,7 +237,7 @@ class _PartialComplete:
     attr: str
     handle: str
 
-    def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
+    def __graph_rebind__(self, inputs: tuple[ValueRef, ...], subs: Subs) -> ValueRef:
         x_node, value_node = inputs
         bound = subs.get(self.slot, None)
         if bound is None:  # outer slot not bound here: keep the deferred node
@@ -281,7 +283,7 @@ class _MapReduceOverSlots:
     per_item: Callable
     combine: Callable
 
-    def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
+    def __graph_rebind__(self, inputs: tuple[ValueRef, ...], subs: Subs) -> ValueRef:
         bound = subs.get(self.slots, None)
         if bound is None:  # slot not bound here: keep the deferred node
             return ref(self, inputs)
@@ -413,34 +415,38 @@ class _SlotSpec:
 
 @define
 class _ResolvedSlots:
-    subs: dict
+    subs: Subs
     open_slots: dict[str, _SlotSpec]
     bound_slots: dict[str, object]  # slot -> raw binding (the typed `self.x` / child)
-    multi_subgraphs: dict[str, dict]
+    multi_subgraphs: dict[str, dict[str, GraphSpec]]
 
 
 @define
-class _PartialGraph:
-    source: type
+class _PartialGraph[T]:
+    """A partially-bound ``GraphSpec`` (some slots closed, some still open), generic
+    over the spec type ``T`` it is a partial *of* -- so ``Denormalizer.partial(...)``
+    is a ``_PartialGraph[Denormalizer]`` and ``.source`` is ``type[Denormalizer]``."""
+
+    source: type[T]
     handles: dict[str, ValueRef]
     out: ValueRef | None
     open_slots: dict[str, _SlotSpec]
 
-    def __getattr__(self, name: str) -> ValueRef:
+    def __getattr__(self, name: str) -> ValueRef[torch.Tensor]:
         try:
             return self.handles[name]
         except KeyError as e:
             raise AttributeError(name) from e
 
     @property
-    def output(self) -> ValueRef:
+    def output(self) -> ValueRef[torch.Tensor]:
         if "output" in self.handles:
             return self.handles["output"]
         if self.out is not None:
             return self.out
         raise AttributeError("output")
 
-    def rebind(self, subs: dict) -> _PartialGraph:
+    def rebind(self, subs: Subs) -> _PartialGraph[T]:
         # rebind the materialized handles AND any still-open slot's ValueRef default,
         # so an omitted default (e.g. arg(default=Input)) follows the same structural
         # rebase as the rest of the partial rather than resolving to the stale node.
@@ -546,14 +552,14 @@ def _missing_required_message(source_name: str, slot: _SlotSpec) -> str:
 def _resolve_slots(
     source_name: str,
     slots: dict[str, _SlotSpec],
-    bindings: dict,
+    bindings: dict[str, Any],
     *,
     require_all: bool,
 ) -> _ResolvedSlots:
     for nm in bindings:
         if nm not in slots:
             raise TypeError(f"{source_name} has no open slot {nm!r}")
-    subs: dict = {}
+    subs: Subs = {}
     open_slots: dict[str, _SlotSpec] = {}
     bound_slots: dict[str, object] = {}
     multi_subgraphs: dict[str, dict] = {}
@@ -581,7 +587,7 @@ def _resolve_slots(
 def _resolve_template_bindings(
     cls: type,
     t: _Template,
-    bindings: dict,
+    bindings: dict[str, Any],
     *,
     require_all: bool,
 ) -> _ResolvedSlots:
@@ -639,7 +645,7 @@ class _GraphMeta(type):
             base = _merge_templates([b._template for b in spec_bases])
             # an overridden slot's handle references the *base* marker; re-point
             # those references to this class's marker (so e.g. a new default wins)
-            subs: dict = {}
+            subs: Subs = {}
             for nm, slot in own_slot.items():  # overridden slot: re-point its marker
                 if nm in base.slots:
                     subs[base.slots[nm]._marker] = slot._marker
@@ -730,7 +736,7 @@ class GraphSpec(metaclass=_GraphMeta):
         self._names = None  # lazy name map over the handle cones
 
     @classmethod
-    def partial(cls, **bindings) -> _PartialGraph:
+    def partial(cls, **bindings) -> _PartialGraph[Self]:
         """Bind a subset of this spec's slots, leaving the rest as open markers.
 
         The returned partial exposes the same handle names, can be structurally
@@ -812,13 +818,20 @@ class GraphSpec(metaclass=_GraphMeta):
         return "\n".join(lines)
 
     @property
-    def names(self) -> dict:
+    def names(self) -> dict[ValueRef, str]:
         if self._names is None:
             self._names = _name_map(_toposort(*self._targets()))
         return self._names
 
     def _targets(self) -> tuple[ValueRef, ...]:
         return (self._out, *self._handle_refs.values())
+
+    def iter_nodes(self) -> Iterator[ValueRef]:
+        """Iterate this graph's nodes in dependency order (inputs first) -- every node
+        in the cone of all handles, deduped (a shared node appears once). The "walk my
+        cone" op behind ``render()`` / ``collect()`` / ``register_into()``, exposed for
+        introspection and filtering."""
+        return iter(_toposort(*self._targets()))
 
     def forward_values(
         self, x, *, cache, training: bool = True, **kwargs
@@ -865,14 +878,14 @@ class GraphSpec(metaclass=_GraphMeta):
         """A Graph targeting one handle -- runs only that handle's cone."""
         return ref.build()
 
-    def __add__(self, o) -> ValueRef:
+    def __add__(self, o) -> ValueRef[torch.Tensor]:
         return self._out + (o.out if isinstance(o, GraphSpec) else o)
 
-    def __mul__(self, o) -> ValueRef:
+    def __mul__(self, o) -> ValueRef[torch.Tensor]:
         return self._out * (o.out if isinstance(o, GraphSpec) else o)
 
-    def __sub__(self, o) -> ValueRef:
+    def __sub__(self, o) -> ValueRef[torch.Tensor]:
         return self._out - (o.out if isinstance(o, GraphSpec) else o)
 
-    def __truediv__(self, o) -> ValueRef:
+    def __truediv__(self, o) -> ValueRef[torch.Tensor]:
         return self._out / (o.out if isinstance(o, GraphSpec) else o)
