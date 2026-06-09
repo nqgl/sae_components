@@ -415,8 +415,7 @@ class _SlotSpec:
 class _ResolvedSlots:
     subs: dict
     open_slots: dict[str, _SlotSpec]
-    bound_slots: dict[str, object]  # op/module slot -> raw binding (the typed `self.x`)
-    subgraphs: dict[str, object]
+    bound_slots: dict[str, object]  # slot -> raw binding (the typed `self.x` / child)
     multi_subgraphs: dict[str, dict]
 
 
@@ -557,16 +556,13 @@ def _resolve_slots(
     subs: dict = {}
     open_slots: dict[str, _SlotSpec] = {}
     bound_slots: dict[str, object] = {}
-    subgraphs: dict[str, object] = {}
     multi_subgraphs: dict[str, dict] = {}
     for nm, slot in slots.items():
         if nm in bindings:
             key, value = _slot_substitution(slot, bindings[nm])
             subs[key] = value
-            if slot.kind == "slot":
-                bound_slots[nm] = bindings[nm]  # raw binding -> the typed `self.x`
-                if isinstance(value, GraphSpec):  # a sub-graph -> navigable child
-                    subgraphs[nm] = value
+            if slot.kind == "slot":  # the typed `self.x` (module/op or sub-graph child)
+                bound_slots[nm] = bindings[nm]
             elif slot.kind == "multi":
                 multi_subgraphs[nm] = value
             continue
@@ -579,7 +575,7 @@ def _resolve_slots(
             continue
         if slot.required:
             raise TypeError(_missing_required_message(source_name, slot))
-    return _ResolvedSlots(subs, open_slots, bound_slots, subgraphs, multi_subgraphs)
+    return _ResolvedSlots(subs, open_slots, bound_slots, multi_subgraphs)
 
 
 def _resolve_template_bindings(
@@ -694,9 +690,7 @@ class _GraphMeta(type):
             setattr(obj, nm, comp)
         for nm, children in resolved.multi_subgraphs.items():
             setattr(obj, nm, children)
-        obj._setup(
-            handle_refs, bind(t.output, resolved.subs), resolved.subgraphs, partial_refs
-        )
+        obj._setup(handle_refs, bind(t.output, resolved.subs), partial_refs)
         return obj
 
 
@@ -720,12 +714,10 @@ class GraphSpec(metaclass=_GraphMeta):
         self,
         handle_refs: dict[str, ValueRef],
         out: ValueRef,
-        subgraphs: dict[str, GraphSpec],
         partials: dict[str, _PartialGraph] | None = None,
     ) -> None:
         self._handle_refs = handle_refs
         self._out = out
-        self._subgraphs = subgraphs
         self._partials = partials or {}
         self._names = None  # lazy name map over the handle cones
 
@@ -764,7 +756,7 @@ class GraphSpec(metaclass=_GraphMeta):
         handles = {"output": out, **handles}
         for nm, h in handles.items():
             setattr(obj, nm, h)
-        obj._setup(handles, out, {})
+        obj._setup(handles, out)
         return obj
 
     # -- the graph as context ---------------------------------------------------
@@ -776,26 +768,12 @@ class GraphSpec(metaclass=_GraphMeta):
         n = len(_toposort(*self._targets()))
         return f"<{type(self).__name__}: {', '.join(self._handle_refs)} | {n} nodes>"
 
-    def describe(self, indent: int = 0) -> str:
-        """A readable tree of this graph's handles and its (kept) sub-graph
-        children -- ``print(g.describe())`` shows the nested structure (D-02)."""
-        pad = "  " * indent
-        lines = [f"{pad}{type(self).__name__}  handles: {list(self._handle_refs)}"]
-        for nm, child in self._subgraphs.items():
-            if isinstance(child, GraphSpec):
-                lines.append(f"{pad}  {nm}:")
-                lines.append(child.describe(indent + 2))
-            else:
-                lines.append(f"{pad}  {nm}: {child!r}")
-        return "\n".join(lines)
-
     def render(self) -> str:
         """A flat, deduped view of the whole graph: every node in the cone of all
         handles printed *once* (so a shared node -- the encoder, the normalize op
         -- appears a single time), each tagged with the handle name(s) pointing at
         it. The execution view (D-02), and the picture that makes "it all fuses to
-        one pass" visible. ``describe()`` is the complementary nested-structure
-        view; this is the deduped DAG."""
+        one pass" visible -- the deduped DAG."""
         order = _toposort(*self._targets())
         aliases: dict[int, list[str]] = {}
         for nm, h in self._handle_refs.items():
@@ -865,7 +843,7 @@ class GraphSpec(metaclass=_GraphMeta):
         partials = {nm: p.rebind({Input: x}) for nm, p in self._partials.items()}
         for nm, partial in partials.items():
             setattr(clone, nm, partial)
-        clone._setup(refs, bind(self._out, {Input: x}), {}, partials)
+        clone._setup(refs, bind(self._out, {Input: x}), partials)
         return clone
 
     __call__ = apply_to

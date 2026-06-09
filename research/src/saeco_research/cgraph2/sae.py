@@ -16,7 +16,7 @@ Assembly mirrors stock saeco: ``@model_prop`` returns a model graph (an
 """
 
 from functools import cached_property
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 import torch
 from attrs import define
@@ -153,10 +153,14 @@ class FreqTracker(cl.Module):
 
 class SAEModel(Protocol):
     """Typing protocol for a model graph: ``acts`` / ``recon`` handles, and
-    appliable to an input (``model(x)``). Any :class:`SAEGraphSpec` satisfies it."""
+    appliable to an input (``model(x)``). Any :class:`SAEGraphSpec` satisfies it.
 
-    acts: ValueRef
-    recon: ValueRef
+    ``acts`` / ``recon`` are ``ClassVar`` to match how a ``GraphSpec`` declares its
+    handle contract -- on the class, not as a per-construction field (see
+    :class:`SAEGraphSpec`)."""
+
+    acts: ClassVar[ValueRef]
+    recon: ClassVar[ValueRef]
 
     def __call__(self, x: ValueRef) -> "SAEModel": ...
 
@@ -165,11 +169,13 @@ class SAEGraphSpec(GraphSpec):
     """Base for SAE model graphs. Subclasses define ``acts`` / ``recon`` /
     ``output`` handles; this adds the model-level hook the framework needs."""
 
-    # the model contract (annotation-only; subclasses set these as handles, the
-    # metaclass ignores bare annotations). Declaring them makes an SAEGraphSpec
-    # statically satisfy the SAEModel protocol (so it can be wrapped/typed).
-    acts: ValueRef
-    recon: ValueRef
+    # The model contract -- declared ``ClassVar`` so it statically satisfies the
+    # :class:`SAEModel` protocol (``g.acts`` / ``g.recon`` are typed) *without* being
+    # read as required construction fields by ``dataclass_transform`` (a bare
+    # ``acts: ValueRef`` would make every ``GatedModelSpec(...)`` demand ``acts=``).
+    # Subclasses wire them as handles; the metaclass sets them per instance.
+    acts: ClassVar[ValueRef]
+    recon: ClassVar[ValueRef]
 
     name = None
 

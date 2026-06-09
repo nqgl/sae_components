@@ -545,7 +545,9 @@ construction-error class is gone across the slot vocabulary.
 **Alternatives not taken:** unify `module_slot` with `sub_slot` — a leaf module (one
 forward + buffers) and a sub-graph (named handles) are different *body* shapes
 (`m(x)` is the value vs `m(x).handle`), fixed when you write the slot, so no parsimonious
-union yet (kept separate). Threading the value type through `op`/operators/`field` so
+union yet (kept separate). *(Reversed in [D-15]: one `Slot[M]` serves all three, the
+`m(x)`-vs-`m(x).handle` difference absorbed by a single `_AppliedSlot` return type.)*
+Threading the value type through `op`/operators/`field` so
 *every* handle is `ValueRef[Tensor]` — a larger follow-on; this pass types the slot
 surface, where the construction errors and the `get()` smell were.
 
@@ -553,3 +555,71 @@ Validated: 59 pytest (incl. `test_module_slot_forward_and_param_reads`, the embe
 inverse, sub_slots/total_loss, and the gated-trainable tests) + 6 demos + ruff clean +
 construction type-errors across slots eliminated + GPU train-identically through the real
 Trainer.
+
+
+## D-15 — one `Slot[M]` subsumes `op_slot` / `module_slot` / `sub_slot` (supersedes D-14's per-slot descriptors)
+
+**Call:** D-14 made each slot a descriptor but kept three *types* — `OpSlot` (a
+producer), `ModuleSlot[M]` (a leaf module), `_SubSlotRef` (a sub-graph) — and left
+"unify `module_slot` with `sub_slot`" explicitly not-taken, reasoning the *body* shapes
+differ (`m(x)` a value vs `m(x).handle`). On reflection they are the **same idea**: a
+typed reference to a callable you also read attributes/handles off. The differences are
+all *surface*, and dissolve under one generic `Slot[M]`:
+
+    class GraphNormalizer(GraphSpec):
+        normalizer: Slot[AffineNormalizer] = module_slot()
+        normalized = normalizer(Input)               # leaf forward  -> ValueRef
+        scale = normalizer.get(lambda n: n.scale)    # buffer read   -> ValueRef[Tensor]
+    class NormalizedReconLoss(GraphLoss):
+        loss_fn: Slot = op_slot()                    # an op; enc.get(λ m: m.weight) also works now
+    class NormalizedModel[T: SAEModel](GraphSpec):
+        model: T = sub_slot()                        # a sub-graph
+        applied = model(nx.normalized)
+        y_pred_norm = applied.recon                  # named handle  -- no .get
+
+**Choice — collapse the three ref-types into one `Slot[M]` over a shared `_SlotMarker`:**
+
+* **Forward apply needs no special producer.** `slot(x)` is `ref(marker, (x,))`; binding
+  substitutes `marker -> bound producer` via the *generic* producer-substitution path in
+  `bind` (which already evaluates `cl.Module` producers). So `_ModuleApply` retires
+  outright — a module and an op rebind identically. Only `.get` keeps a `__graph_rebind__`
+  producer (`_SlotGet`), and op slots **gain** `.get` for free (`enc.get(λ m: m.weight)`).
+* **One return type, no overload, for the sub-graph face.** `slot(x)` returns an
+  `_AppliedSlot` — a `ValueRef` subclass (so a leaf's forward value is usable directly)
+  that *also* carries `__getattr__ -> _SlotHandle` for a sub-graph's named handles. So
+  `enc(x)` is a value and `model(x).recon` is a handle from the *same* type, and a
+  sub-graph slot needs no `.get` (Glen's ask). Interned via the new `core.ref_as` so
+  repeated `slot(x)` fuse like any node.
+* **Bind-time dispatch on the bound type.** A sub-graph binds *raw* (the `GraphSpec`, for
+  `_SlotHandle` to splice `bind(bound.attr, {Input: x})`); a module/op normalizes to a
+  producer. A body handle that binds to a `GraphSpec` producer is a sub-application proxy
+  (`nx = normalizer(x)`), **not** a value — filtered out of `_handle_refs` at construction
+  (a whole sub-graph isn't a single value); its `.attr` handles are separate nodes and
+  survive. `self.model` is the navigable sub-graph child (via the `Slot` descriptor).
+
+Net ref-type reduction: `OpSlot`+`ModuleSlot`+`_SubSlotRef` → `Slot`; `_ModuleApply`+
+`_ModuleGet`+`_SubGet` → `_SlotGet`+`_SlotHandle`; `_OpSlot`+`_SubSlot` → `_SlotMarker`;
+the `op_slots`/`sub_slots` template buckets and the `"op"`/`"sub"` slot-kinds → one
+`slots` bucket / `"slot"` kind. `arg` (the value face) and `sub_slots()`/`SubSlots` (the
+*variadic* fold) stay — different mechanisms. The `Op = OpSlot` annotation alias is gone
+(no more collision with core's `Op` class).
+
+**Why:** the three were one idea wearing three coats; collapsing them removes the entire
+"why is `Op` different from `Module`?" question, gives op slots typed attribute reads, and
+drops code rather than adding it — the parsimony D-14 deferred, now that the descriptor
+machinery made it reachable. Threading the value type `V` through `op`/operators (so
+*every* handle is `ValueRef[Tensor]`, not just `.get` results) remains the out-of-scope
+follow-on.
+
+**Also (cleanup along the way):** dropped dead `weighted_sum` (`components.py`, exported
+but never called) and `describe()`/`_subgraphs` (`spec.py`, never called — `render()` is
+the used view; navigable children come from the `Slot` descriptor now). Fixed the
+`SAEGraphSpec` `acts`/`recon` contract: declared `ClassVar[ValueRef]` (matched on the
+`SAEModel` protocol) so they satisfy the protocol statically *without* `dataclass_transform`
+reading them as required construction fields (every `GatedModelSpec(...)` used to
+spuriously demand `acts=`/`recon=`).
+
+Validated: 59 pytest + 6 demos + ruff clean + GPU train-identical (step 400 cosim 0.99 /
+L2 0.02 / L0 ~3250) + pyright probes confirming both faces — leaf `.get`
+(`ValueRef[Tensor]`) and sub-graph `.recon` (no `.get`) — with 0 errors and construction
+taking the plugged component.
