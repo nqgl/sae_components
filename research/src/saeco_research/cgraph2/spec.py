@@ -53,17 +53,21 @@ from saeco_research.cgraph2.core import (
     _names as _name_map,
 )
 
-# The annotation aliases `Arg` / `Op` point at the slot *descriptors* `ArgSlot` /
-# `OpSlot` (defined just below, once their marker producers exist) -- so a field
-# `x: Arg = arg()` / `enc: Op = op_slot()` gets the descriptor's construction face.
+# The annotation alias `Arg` points at the value-slot descriptor `ArgSlot` (defined
+# just below) -- so a field `x: Arg = arg()` gets the descriptor's construction face.
+# Op/module/sub slots share one descriptor `Slot[T]` (defined further down).
 
 _NODEFAULT = object()
 
 
 @define(eq=False)
-class _OpSlot:
-    """Marker producer for an unbound producer slot; ``default`` (if set) is the
-    producer used when the slot is left unbound at construction."""
+class _SlotMarker:
+    """Marker producer for an op/module slot: a per-slot identity token bound to a
+    concrete producer (a ``cl.Module`` / ``Op`` / callable) at construction. The
+    forward apply ``slot(x)`` is the node ``ref(marker, (x,))``; binding substitutes
+    ``marker -> producer`` (generic producer-substitution in ``bind``), so no special
+    apply-producer is needed. ``default`` (if set) is the producer used when the slot
+    is left unbound. ``.get(fn)`` reads ``fn(producer)`` via a separate ``_SlotGet``."""
 
     default: object = _NODEFAULT
 
@@ -75,26 +79,6 @@ class _ArgSlot:
     marker, so binding one slot never disturbs another (or the global ``Input``)."""
 
     default: object = _NODEFAULT
-
-
-class OpSlot(OpRef):
-    """What ``op_slot()`` returns, and a descriptor (D-14). Body-time it's an ``OpRef``
-    (``enc(x)`` builds a node); its construction face (``__set__``) takes whatever you
-    plug in -- a raw ``nn.Module``, a callable, or an ``OpRef``. Op slots are bound by
-    substitution into the nodes (no stored instance attr), so ``__set__`` is type-only
-    and ``__get__`` just hands back the slot."""
-
-    @overload
-    def __get__(self, obj: None, objtype: Any = None) -> OpSlot: ...
-    @overload
-    def __get__(self, obj: object, objtype: Any = None) -> OpRef: ...
-    def __get__(self, obj: object | None, objtype: Any = None) -> OpRef:
-        return self
-
-    def __set__(
-        self, obj: object, value: torch.nn.Module | Callable[..., Any] | OpRef
-    ) -> None:
-        pass  # type-only: op slots are bound by substitution, not setattr
 
 
 class ArgSlot(ValueRef):
@@ -117,9 +101,9 @@ class ArgSlot(ValueRef):
         obj.__dict__[f"__arg_{id(self)}"] = value
 
 
-# The annotation aliases point at the descriptors (see note above _NODEFAULT).
+# The `Arg` annotation alias points at the value-slot descriptor (see note above
+# `_NODEFAULT`); `Slot[T]` (op/module/sub) is defined further down.
 Arg = ArgSlot
-Op = OpSlot
 
 
 @define(eq=False)
@@ -172,93 +156,80 @@ class _SubSlotRef:
         return _AppliedSub(self.slot, x)
 
 
-# --- module slots: plug a leaf cl.Module in, not a sub-graph (kept separate, D-14) -
-@define(eq=False)
-class _ModuleApply:
-    """Producer of ``module_proxy(x)``: at bind time (the slot bound to a
-    ``cl.Module``), the module's forward applied to ``x``."""
-
-    slot: _SubSlot
-
-    def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
-        bound = subs.get(self.slot, None)
-        if bound is None:  # slot not bound here: keep the deferred node
-            return ref(self, inputs)
-        if isinstance(bound, _SubSlot):  # inheritance re-point: swap the marker
-            return ref(_ModuleApply(bound), inputs)
-        (x_node,) = inputs
-        return op(bound)(x_node)  # the module's forward applied to x
-
-
-def _module_get_ref(module, fn: Callable) -> ValueRef:
-    """A 0-ary node that reads ``fn(module)`` *live* at eval (so it follows
-    ``.to(device)`` / priming), consed by ``(id(module), id(fn))``. ``fn`` is created
+def _slot_get_ref(producer, fn: Callable) -> ValueRef:
+    """A 0-ary node that reads ``fn(producer)`` *live* at eval (so it follows
+    ``.to(device)`` / priming), consed by ``(id(producer), id(fn))``. ``fn`` is created
     once in the class body (it lives in the template), so its id is stable -- repeated
-    reads and two specs over the same module fuse; a different module doesn't."""
-    reader = _CoreOp.create(lambda: fn(module), "get", key=(id(module), id(fn)))
+    reads and two specs over the same producer fuse; a different one doesn't."""
+    reader = _CoreOp.create(lambda: fn(producer), "get", key=(id(producer), id(fn)))
     return OpRef(reader)()
 
 
 @define(eq=False)
-class _ModuleGet:
-    """Producer of ``module_ref.get(fn)``: at bind time, a 0-ary node reading
-    ``fn(bound_module)`` (e.g. ``lambda n: n.scale``)."""
+class _SlotGet:
+    """Producer of ``slot.get(fn)``: at bind time, a 0-ary node reading
+    ``fn(bound_producer)`` (e.g. ``lambda n: n.scale`` -- a buffer; or
+    ``lambda m: m.weight`` -- an op's param). The attr-read face shared by op and
+    module slots, carrying ``fn``'s return type into ``ValueRef[R]``."""
 
-    slot: _SubSlot
+    slot: _SlotMarker
     fn: Callable
 
     def __graph_rebind__(self, inputs: tuple, subs: dict) -> ValueRef:
         bound = subs.get(self.slot, None)
         if bound is None:
             return ref(self, inputs)
-        if isinstance(bound, _SubSlot):  # inheritance re-point
-            return ref(_ModuleGet(bound, self.fn), inputs)
-        return _module_get_ref(bound, self.fn)
+        if isinstance(bound, _SlotMarker):  # inheritance re-point
+            return ref(_SlotGet(bound, self.fn), inputs)
+        return _slot_get_ref(bound, self.fn)
 
 
-class ModuleSlot[M]:
-    """What ``module_slot()`` returns: a leaf ``cl.Module`` (type ``M``) plugged into a
-    graph. It is **a descriptor** -- which is what reconciles the three faces a module
-    slot has (D-14):
+class Slot[M]:
+    """What ``op_slot()`` / ``module_slot()`` / ``sub_slot()`` return: one typed
+    reference to a callable+attributed component (type ``M``) plugged into a graph.
+    It is **a descriptor** -- which is what reconciles the three faces a slot has:
 
-    * *class-body time* it is itself -- ``mod(x)`` is the module's forward on ``x`` (a
-      node), ``mod.get(lambda n: n.scale)`` reads a param/buffer as a *typed* graph ref
-      (the lambda is checked against the real ``M``; its return ``R`` carries through to
-      ``ValueRef[R]`` -- no string keys, no per-module view, no type-laundering);
-    * *constructed instance* ``self.mod`` is the bound module ``M`` (so a passthrough
-      like ``self.mod.primed`` type-checks) -- via ``__get__``;
-    * *construction* ``Spec(mod=module)`` takes the module ``M`` -- via ``__set__`` (the
-      metaclass's ``setattr`` of the bound module routes through it).
+    * *class-body time* it is itself -- ``slot(x)`` applies the component (a module's
+      forward, an op's call) and ``slot.get(lambda c: c.weight)`` reads a param/buffer
+      as a *typed* graph ref (the lambda is checked against the real ``M``; its return
+      ``R`` carries through to ``ValueRef[R]`` -- no string keys, no type-laundering);
+    * *constructed instance* ``self.slot`` is the bound component ``M`` (so a
+      passthrough like ``self.norm.primed`` type-checks) -- via ``__get__``;
+    * *construction* ``Spec(enc=module)`` takes the component ``M`` -- via ``__set__``
+      (the metaclass's ``setattr`` of the bound component routes through it).
 
-    Distinct from ``sub_slot`` (a sub-graph with named handles): a leaf module is one
-    forward + buffers, kept separate deliberately."""
+    One ``Slot[M]`` subsumes the former ``OpSlot`` (a producer) and ``ModuleSlot[M]``
+    (a leaf module): a module and an op are the same idea -- a callable you also read
+    attributes off -- so they share this descriptor. The forward apply ``slot(x)`` is
+    just ``ref(marker, (x,))``; binding substitutes the marker for the bound producer
+    (generic producer-substitution in ``bind``)."""
 
-    def __init__(self, slot: _SubSlot):
-        self.slot = slot
-        self._name = "module"
+    def __init__(self, marker: _SlotMarker):
+        self._marker = marker
+        self._name = "slot"
 
     def __set_name__(self, owner: type, name: str) -> None:
         self._name = name
 
     # -- class-body proxy: build template nodes --
-    def __call__(self, x: ValueRef) -> ValueRef[torch.Tensor]:
-        return ref(_ModuleApply(self.slot), (x,))
+    def __call__(self, *x: ValueRef) -> ValueRef[torch.Tensor]:
+        return ref(self._marker, x)
 
     def get[R](self, getter: Callable[[M], R]) -> ValueRef[R]:
-        return cast("ValueRef[R]", ref(_ModuleGet(self.slot, getter), ()))
+        return cast("ValueRef[R]", ref(_SlotGet(self._marker, getter), ()))
 
-    # -- descriptor: class access -> the slot; instance access -> the bound module --
+    # -- descriptor: class access -> the slot; instance access -> the bound component
     @overload
-    def __get__(self, obj: None, objtype: Any = None) -> ModuleSlot[M]: ...
+    def __get__(self, obj: None, objtype: Any = None) -> Slot[M]: ...
     @overload
     def __get__(self, obj: object, objtype: Any = None) -> M: ...
-    def __get__(self, obj: object | None, objtype: Any = None) -> ModuleSlot[M] | M:
+    def __get__(self, obj: object | None, objtype: Any = None) -> Slot[M] | M:
         if obj is None:
             return self
-        return obj.__dict__[f"__module_{self._name}"]
+        return obj.__dict__[f"__slot_{self._name}"]
 
     def __set__(self, obj: object, value: M) -> None:
-        obj.__dict__[f"__module_{self._name}"] = value
+        obj.__dict__[f"__slot_{self._name}"] = value
 
 
 @define(eq=False)
@@ -386,11 +357,13 @@ def arg(default=_NODEFAULT) -> Any:
     return ref(_ArgSlot(default), ())
 
 
-def op_slot(default=_NODEFAULT) -> Any:
-    """A producer slot, optionally defaulting to a concrete producer. (The runtime
-    marker is a plain ``OpRef``; ``OpSlot`` is the type-only descriptor the ``Op``
-    annotation resolves to.)"""
-    return OpRef(_OpSlot(default))
+def op_slot[M](default=_NODEFAULT) -> Slot[M]:
+    """A producer slot (a ``cl.Module`` / ``Op`` / callable), optionally defaulting to
+    a concrete producer when left unbound. Returns a :class:`Slot` -- in the body
+    ``enc(x)`` applies it and ``enc.get(lambda m: m.weight)`` reads a param; construct
+    with ``Spec(enc=module_or_fn)``. The same descriptor as ``module_slot()`` -- an op
+    and a leaf module are one idea (a callable you also read attributes off)."""
+    return Slot(_SlotMarker(default))
 
 
 def sub_slot() -> Any:
@@ -406,23 +379,22 @@ def sub_slots() -> Any:
     return SubSlots()
 
 
-def module_slot[M]() -> ModuleSlot[M]:
-    """A *module* slot: a leaf ``cl.Module`` plugged into a graph as a
-    :class:`ModuleSlot` descriptor. Declare it ``norm: ModuleSlot[AffineNormalizer] =
-    module_slot()`` and construct with ``Spec(norm=module)`` (the descriptor ``__set__``
-    takes the module). In the body ``norm(x)`` is its forward and ``norm.get(lambda n:
-    n.scale)`` reads a param/buffer as a typed graph ref; on the constructed instance
-    ``self.norm`` is the bound module (so ``self.norm.primed`` type-checks). Distinct
-    from ``sub_slot()`` (a sub-graph with named handles) -- a leaf module is one forward
-    + buffers, kept separate deliberately (D-14)."""
-    return ModuleSlot(_SubSlot())
+def module_slot[M]() -> Slot[M]:
+    """A *module* slot: a leaf ``cl.Module`` plugged into a graph as a :class:`Slot`
+    descriptor. Declare it ``norm: Slot[AffineNormalizer] = module_slot()`` and
+    construct with ``Spec(norm=module)`` (the descriptor ``__set__`` takes the module).
+    In the body ``norm(x)`` is its forward and ``norm.get(lambda n: n.scale)`` reads a
+    param/buffer as a typed graph ref; on the constructed instance ``self.norm`` is the
+    bound module (so ``self.norm.primed`` type-checks). The same descriptor as
+    ``op_slot()`` -- a leaf module is just a producer you also read buffers off."""
+    return Slot(_SlotMarker())
 
 
 @define
 class _Template:
     output: ValueRef | None  # None == abstract (cannot be constructed)
     value_slots: dict[str, ValueRef]
-    op_slots: dict[str, OpRef]
+    slots: dict[str, Slot]  # op + module slots (one unified `Slot` descriptor)
     sub_slots: dict[str, _SubSlotRef]
     multi_slots: dict[str, _SubSlotsRef]
     handles: dict[str, ValueRef]
@@ -442,6 +414,7 @@ class _SlotSpec:
 class _ResolvedSlots:
     subs: dict
     open_slots: dict[str, _SlotSpec]
+    bound_slots: dict[str, object]  # op/module slot -> raw binding (the typed `self.x`)
     subgraphs: dict[str, object]
     multi_subgraphs: dict[str, dict]
 
@@ -506,7 +479,7 @@ class _PartialGraph:
 
 
 def _merge_templates(templates: list[_Template]) -> _Template:
-    value_slots, op_slots, sub_slots, multi_slots, handles, partials = (
+    value_slots, slots, sub_slots, multi_slots, handles, partials = (
         {},
         {},
         {},
@@ -517,7 +490,7 @@ def _merge_templates(templates: list[_Template]) -> _Template:
     output = None
     for t in templates:
         value_slots.update(t.value_slots)
-        op_slots.update(t.op_slots)
+        slots.update(t.slots)
         sub_slots.update(t.sub_slots)
         multi_slots.update(t.multi_slots)
         handles.update(t.handles)
@@ -525,16 +498,15 @@ def _merge_templates(templates: list[_Template]) -> _Template:
         if t.output is not None:
             output = t.output
     return _Template(
-        output, value_slots, op_slots, sub_slots, multi_slots, handles, partials
+        output, value_slots, slots, sub_slots, multi_slots, handles, partials
     )
 
 
 def _iter_slots(t: _Template):
-    for nm, oref in t.op_slots.items():
-        marker = oref.producer
-        default = marker.default if isinstance(marker, _OpSlot) else _NODEFAULT
-        required = isinstance(marker, _OpSlot) and default is _NODEFAULT
-        yield _SlotSpec(nm, "op", marker, default, required)
+    for nm, slot in t.slots.items():
+        marker = slot._marker
+        default = marker.default
+        yield _SlotSpec(nm, "slot", marker, default, default is _NODEFAULT)
     for nm, vref in t.value_slots.items():
         marker = vref.producer
         default = marker.default if isinstance(marker, _ArgSlot) else _NODEFAULT
@@ -550,7 +522,7 @@ def _slot_map(t: _Template) -> dict[str, _SlotSpec]:
 
 
 def _slot_substitution(slot: _SlotSpec, binding) -> tuple[object, object]:
-    if slot.kind == "op":
+    if slot.kind == "slot":
         producer = (
             binding.producer if isinstance(binding, OpRef) else op(binding).producer
         )
@@ -566,7 +538,7 @@ def _slot_substitution(slot: _SlotSpec, binding) -> tuple[object, object]:
 
 
 def _slot_default_substitution(slot: _SlotSpec) -> tuple[object, object]:
-    if slot.kind == "op":
+    if slot.kind == "slot":
         return slot.marker, op(slot.default).producer
     if slot.kind == "value":
         default = slot.default
@@ -597,13 +569,16 @@ def _resolve_slots(
             raise TypeError(f"{source_name} has no open slot {nm!r}")
     subs: dict = {}
     open_slots: dict[str, _SlotSpec] = {}
+    bound_slots: dict[str, object] = {}
     subgraphs: dict[str, object] = {}
     multi_subgraphs: dict[str, dict] = {}
     for nm, slot in slots.items():
         if nm in bindings:
             key, value = _slot_substitution(slot, bindings[nm])
             subs[key] = value
-            if slot.kind == "sub":
+            if slot.kind == "slot":
+                bound_slots[nm] = bindings[nm]  # raw binding -> the typed `self.x`
+            elif slot.kind == "sub":
                 subgraphs[nm] = value
             elif slot.kind == "multi":
                 multi_subgraphs[nm] = value
@@ -617,7 +592,7 @@ def _resolve_slots(
             continue
         if slot.required:
             raise TypeError(_missing_required_message(source_name, slot))
-    return _ResolvedSlots(subs, open_slots, subgraphs, multi_subgraphs)
+    return _ResolvedSlots(subs, open_slots, bound_slots, subgraphs, multi_subgraphs)
 
 
 def _resolve_template_bindings(
@@ -643,18 +618,14 @@ class _GraphMeta(type):
         cls = super().__new__(mcs, name, bases, dict(ns))
         if not any(isinstance(b, _GraphMeta) for b in bases):
             return cls  # the GraphSpec base itself
-        own_value, own_op, own_sub, own_multi = {}, {}, {}, {}
+        own_value, own_slot, own_sub, own_multi = {}, {}, {}, {}
         for slot_name in ns.get("__annotations__", {}):
             if slot_name == "output" or slot_name.startswith("_"):
                 continue
             v = ns.get(slot_name)
-            if isinstance(v, OpRef):
-                own_op[slot_name] = v
-            elif isinstance(v, (_SubSlotRef, ModuleSlot)):
-                # a module slot reuses the sub-slot binding path (marker -> bound module
-                # in subs); the descriptor's __set__ catches the metaclass's setattr of
-                # the bound module, __get__ hands it back. Only its body proxy + the
-                # deferred producers (_ModuleApply/_ModuleGet) differ from a sub_slot.
+            if isinstance(v, Slot):  # op + module slots (one `Slot` descriptor)
+                own_slot[slot_name] = v
+            elif isinstance(v, _SubSlotRef):
                 own_sub[slot_name] = v
             elif isinstance(v, _SubSlotsRef):
                 own_multi[slot_name] = v
@@ -675,9 +646,9 @@ class _GraphMeta(type):
             # an overridden slot's handle references the *base* marker; re-point
             # those references to this class's marker (so e.g. a new default wins)
             subs: dict = {}
-            for nm, oref in own_op.items():
-                if nm in base.op_slots:
-                    subs[base.op_slots[nm].producer] = oref.producer
+            for nm, slot in own_slot.items():
+                if nm in base.slots:
+                    subs[base.slots[nm]._marker] = slot._marker
             for nm, vref in own_value.items():
                 if nm in base.value_slots:
                     subs[base.value_slots[nm]] = vref
@@ -694,17 +665,17 @@ class _GraphMeta(type):
                 else (bind(base.output, subs) if base.output is not None else None)
             )
             value_slots = {**base.value_slots, **own_value}
-            op_slots = {**base.op_slots, **own_op}
+            slots = {**base.slots, **own_slot}
             sub_slots = {**base.sub_slots, **own_sub}
             multi_slots = {**base.multi_slots, **own_multi}
         else:
-            value_slots, op_slots, sub_slots = own_value, own_op, own_sub
+            value_slots, slots, sub_slots = own_value, own_slot, own_sub
             multi_slots = own_multi
             handles, output = own_handles, own_output
             partials = own_partials
 
         cls._template = _Template(
-            output, value_slots, op_slots, sub_slots, multi_slots, handles, partials
+            output, value_slots, slots, sub_slots, multi_slots, handles, partials
         )
         return cls
 
@@ -724,6 +695,10 @@ class _GraphMeta(type):
         partial_refs = {nm: p.rebind(resolved.subs) for nm, p in t.partials.items()}
         for nm, partial in partial_refs.items():
             setattr(obj, nm, partial)
+        # bound op/module components as typed instance attrs (`self.norm` is the
+        # module) -- routed through the `Slot` descriptor's __set__.
+        for nm, comp in resolved.bound_slots.items():
+            setattr(obj, nm, comp)
         # keep bound sub-graphs as navigable children (structure, not flattened):
         # spec.norm_model.y_pred_norm works (D-02).
         for nm, child in resolved.subgraphs.items():

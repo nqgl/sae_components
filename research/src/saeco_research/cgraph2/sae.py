@@ -44,8 +44,7 @@ from saeco_research.cgraph2.dictbatch import DictBatch
 from saeco_research.cgraph2.spec import (
     Arg,
     GraphSpec,
-    ModuleSlot,
-    OpSlot,
+    Slot,
     SubSlots,
     arg,
     module_slot,
@@ -325,7 +324,7 @@ class GraphNormalizer(GraphSpec):
     ``GraphNormalizer(normalizer=norm)``; priming delegates to the bound
     :class:`AffineNormalizer`."""
 
-    normalizer: ModuleSlot[AffineNormalizer] = module_slot()
+    normalizer: Slot[AffineNormalizer] = module_slot()
     normalized = normalizer(Input)
     scale = normalizer.get(lambda n: n.scale)
     shift = normalizer.get(lambda n: n.shift)
@@ -399,22 +398,22 @@ class GraphLoss(GraphSpec):
 
 class NormalizedReconLoss(GraphLoss):
     norm_model: NormalizedModel = sub_slot()
-    loss_fn: OpSlot = op_slot()
+    loss_fn: Slot = op_slot()
     applied = norm_model(Input)  # plug the normalized model in
     output = loss_fn(applied.y_norm, applied.y_pred_norm)
 
 
 class GraphL2Loss(NormalizedReconLoss):
-    loss_fn: OpSlot = op_slot(default=_mse)
+    loss_fn: Slot = op_slot(default=_mse)
 
 
 class GraphCosimLoss(NormalizedReconLoss):
-    loss_fn: OpSlot = op_slot(default=_cosim)
+    loss_fn: Slot = op_slot(default=_cosim)
 
 
 class GraphSparsityLoss(GraphLoss):
     norm_model: NormalizedModel = sub_slot()
-    penalty: OpSlot = op_slot(default=_l1)
+    penalty: Slot = op_slot(default=_l1)
     applied = norm_model(Input)
     output = penalty(applied.acts)
 

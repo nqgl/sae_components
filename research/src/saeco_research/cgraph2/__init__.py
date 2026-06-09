@@ -15,9 +15,7 @@ from saeco_research.cgraph2.funcstd import standardize
 from saeco_research.cgraph2.spec import (
     Arg,
     GraphSpec,
-    ModuleSlot,
-    Op,  # the op-slot *annotation* (the OpSlot descriptor), not core's Op class
-    OpSlot,
+    Slot,  # the one op/module/sub-slot descriptor (annotation + body proxy)
     SubSlots,
     arg,
     module_slot,
@@ -33,11 +31,9 @@ __all__ = [
     "Graph",
     "GraphSpec",
     "Input",
-    "ModuleSlot",
+    "Slot",
     "SubSlots",
-    "Op",
     "OpRef",
-    "OpSlot",
     "ValueRef",
     "module_slot",
     "arg",

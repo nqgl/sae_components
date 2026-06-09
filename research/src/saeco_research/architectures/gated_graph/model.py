@@ -21,7 +21,7 @@ import saeco.components.features as ft
 from saeco.architecture import aux_model_prop, loss_prop, model_prop
 from saeco.architecture.sae_architecture import Architecture
 from saeco.components.resampling.anthropic_resampling import AnthResampler
-from saeco_research.cgraph2 import Arg, Input, Op, arg, op, op_slot
+from saeco_research.cgraph2 import Arg, Input, Slot, arg, op, op_slot
 from saeco_research.cgraph2.sae import (
     AffineNormalizer,
     FreqTracker,
@@ -48,10 +48,10 @@ def _thresh(t):
 class GatedModelSpec(SAEGraphSpec):
     """main model: acts = relu(W x * exp(r) + b_mag) * 1[relu(W x + b_gate) > 0]."""
 
-    encoder: Op = op_slot()
-    gate_bias: Op = op_slot()
-    mag_bias: Op = op_slot()
-    decoder: Op = op_slot()
+    encoder: Slot = op_slot()
+    gate_bias: Slot = op_slot()
+    mag_bias: Slot = op_slot()
+    decoder: Slot = op_slot()
     log_r: Arg = arg()
     x: Arg = arg(default=Input)
 
@@ -66,10 +66,10 @@ class GatedModelSpec(SAEGraphSpec):
 class GatedAuxSpec(SAEGraphSpec):
     """aux model: acts = relu(W x + b_gate); recon = decoder(acts)."""
 
-    encoder: Op = op_slot()
-    gate_bias: Op = op_slot()
-    decoder: Op = op_slot()
-    freqs: Op = op_slot()  # a FreqTracker passthrough -- bubbles up the EMA freqs
+    encoder: Slot = op_slot()
+    gate_bias: Slot = op_slot()
+    decoder: Slot = op_slot()
+    freqs: Slot = op_slot()  # a FreqTracker passthrough -- bubbles up the EMA freqs
     x: Arg = arg(default=Input)
 
     acts = freqs(op(torch.relu)(gate_bias(encoder(x))))
