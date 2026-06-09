@@ -16,7 +16,7 @@ Assembly mirrors stock saeco: ``@model_prop`` returns a model graph (an
 """
 
 from functools import cached_property
-from typing import Protocol
+from typing import Any, Protocol
 
 import torch
 from attrs import define
@@ -42,9 +42,13 @@ from saeco_research.cgraph2.core import (
 )
 from saeco_research.cgraph2.dictbatch import DictBatch
 from saeco_research.cgraph2.spec import (
+    Arg,
     GraphSpec,
+    ModuleSlot,
+    OpSlot,
     SubSlots,
     arg,
+    module_slot,
     op_slot,
     sub_slot,
     sub_slots,
@@ -87,7 +91,7 @@ class ActMetrics(GraphSpec):
     the passthrough ``output``). Applied to whatever acts flow through its site,
     so it tracks rebinding (e.g. normalization)."""
 
-    acts: ValueRef = arg()
+    acts: Arg = arg()
     L0 = op(_l0)(acts)
     L1 = op(_l1)(acts)
     output = acts
@@ -183,15 +187,16 @@ class AffineNormalizer(cl.Module):
     """A clean, static, invertible affine normalizer driven by a ``GNConfig``.
 
     Collapses saeco's ``StaticInvertibleGeneralizedNormalizer`` to the single
-    affine map it actually *is*: ``forward = (x - mu) / scale``, ``invert =
-    x * scale + mu``, both reading two primed buffers -- no aggregation-enum
-    dispatch and no cache routing at run time.
+    affine map it actually *is*: ``forward = (x - shift) / scale``, ``invert =
+    x * scale + shift``, both reading two primed buffers -- no aggregation-enum
+    dispatch and no cache routing at run time. (The buffers are named ``scale`` and
+    ``shift`` so the graph reads them directly via the module slot -- D-14.)
 
     Priming reproduces ``GeneralizedNormalizer``'s sequential estimation exactly
     (``mu_e -> mu_s -> std_e -> std_s``, each computed on the running-normalized
     data), then folds the four factors into the two buffers::
 
-        mu    = mu_e + mu_s        # per-feature offset + scalar offset
+        shift = mu_e + mu_s        # per-feature offset + scalar offset
         scale = std_e * std_s      # per-feature scale  * scalar scale
 
     Only the *static* aggregations ``{DONTUSE, PRIMED}`` are supported (each term
@@ -210,13 +215,16 @@ class AffineNormalizer(cl.Module):
     unbatched ``(d,)`` input (the values are identical either way).
     """
 
+    scale: torch.Tensor  # primed buffers (annotated so the graph reads them typed)
+    shift: torch.Tensor
+
     def __init__(self, d_data: int, cfg: GNConfig | None = None, eps: float = 1e-7):
         super().__init__()
         self.cfg = cfg if cfg is not None else GNConfig()
         self._require_static(self.cfg)
         self.eps = eps
         self.primed = False
-        self.register_buffer("mu", torch.zeros(d_data))
+        self.register_buffer("shift", torch.zeros(d_data))
         self.register_buffer("scale", torch.ones(d_data))
 
     @staticmethod
@@ -274,18 +282,18 @@ class AffineNormalizer(cl.Module):
         else:
             std_s = one
 
-        mu = (mu_e + mu_s).reshape(-1)
+        shift = (mu_e + mu_s).reshape(-1)
         scale = (std_e * std_s).reshape(-1)
-        self.mu.copy_(mu.expand_as(self.mu) if mu.numel() == 1 else mu)
+        self.shift.copy_(shift.expand_as(self.shift) if shift.numel() == 1 else shift)
         self.scale.copy_(scale.expand_as(self.scale) if scale.numel() == 1 else scale)
         self.primed = True
         return self
 
     def forward(self, x, *, cache: cl.Cache, **kwargs):
-        return (x - self.mu) / self.scale
+        return (x - self.shift) / self.scale
 
     def invert(self, x, *, cache=None, **kwargs):
-        return x * self.scale + self.mu
+        return x * self.scale + self.shift
 
 
 class Denormalizer(GraphSpec):
@@ -295,46 +303,34 @@ class Denormalizer(GraphSpec):
     open -- so a model can denormalize its output through the normalizer
     (``nx.denormalize(recon).output``) without ever naming scale/shift (D-12)."""
 
-    value: ValueRef = arg()
-    scale: ValueRef = arg()
-    shift: ValueRef = arg()
+    value: Arg = arg()
+    scale: Arg = arg()
+    shift: Arg = arg()
     output = value * scale + shift
 
 
 class GraphNormalizer(GraphSpec):
-    """``normalize`` plus its encapsulated inverse, as a graph (D-12).
+    """``normalize`` plus its encapsulated inverse, as a graph (D-12, D-14).
 
-    ``normalized = affine(Input)`` is the :class:`AffineNormalizer` forward (a
-    ``cl.Module`` node, so its primed buffers register + cache); ``scale``/``shift``
-    are constant handles reading those primed buffers *live*; and ``denormalize`` is
-    a :class:`Denormalizer` partial closed over them with ``value`` left open. A
-    :class:`NormalizedModel` plugs this into a ``sub_slot`` and completes the partial
-    with the model's recon -- so the normalizer owns its own inverse and the model
-    never references scale/shift. Build one with :meth:`of` (wires the buffer
-    readers, stably consed by ``id(normalizer)`` so forward + inverse fuse);
-    priming stays on the wrapped :class:`AffineNormalizer`."""
+    The :class:`AffineNormalizer` is plugged in via a ``module_slot()`` and handed to
+    the body as a :class:`ModuleRef` typed over the module, so access is checked against
+    it. ``normalizer(Input)`` is its forward (normalized output; a ``cl.Module`` node
+    so its primed buffers register + cache); ``normalizer.get(lambda n: n.scale)`` /
+    ``.get(lambda n: n.shift)`` read those primed buffers live as *typed* refs
+    (``ValueRef[Tensor]``; 0-ary, consed by the module's identity so forward + the
+    inverse fuse). ``denormalize`` is a :class:`Denormalizer` partial over scale/shift
+    with ``value`` left open. A :class:`NormalizedModel` plugs this into a ``sub_slot``
+    and completes the partial with the model's recon -- so the normalizer owns its own
+    inverse and the model never references scale/shift. Build it with
+    ``GraphNormalizer(normalizer=norm)``; priming delegates to the bound
+    :class:`AffineNormalizer`."""
 
-    affine: OpRef = op_slot()
-    scale: ValueRef = arg()
-    shift: ValueRef = arg()
-    normalized = affine(Input)
+    normalizer: ModuleSlot[AffineNormalizer] = module_slot()
+    normalized = normalizer(Input)
+    scale = normalizer.get(lambda n: n.scale)
+    shift = normalizer.get(lambda n: n.shift)
     denormalize = Denormalizer.partial(scale=scale, shift=shift)
     output = normalized
-
-    @classmethod
-    def of(cls, normalizer: AffineNormalizer) -> "GraphNormalizer":
-        """Wire a :class:`GraphNormalizer` around a (primed) ``AffineNormalizer``:
-        ``scale``/``shift`` read its live ``scale``/``mu`` buffers (0-ary ops, so
-        robust to ``.to(device)``), stably consed by ``id(normalizer)`` so the
-        forward and the inverse share them."""
-        nid = id(normalizer)
-        scale_op = OpRef(
-            Op.create(lambda: normalizer.scale, "scale", key=("scale", nid))
-        )
-        shift_op = OpRef(Op.create(lambda: normalizer.mu, "shift", key=("shift", nid)))
-        gn = cls(affine=normalizer, scale=scale_op(), shift=shift_op())
-        gn._affine = normalizer
-        return gn
 
     def wrap[T: SAEModel](self, model: T) -> "NormalizedModel[T]":
         """``normalizer[model]`` -- the model normalized end-to-end."""
@@ -342,16 +338,17 @@ class GraphNormalizer(GraphSpec):
 
     def denormalize_value(self, value: ValueRef) -> ValueRef:
         """Complete the embedded inverse on ``value`` -- the standalone form of
-        ``nx.denormalize(value).output`` (used for the trainable's decode path)."""
-        return self.denormalize(value).output
+        ``nx.denormalize(value).output`` (used for the trainable's decode path).
+        Reads the completed graph's ``.out`` (the typed output property)."""
+        return self.denormalize(value).out
 
-    # -- trainer-facing passthrough to the wrapped AffineNormalizer --
+    # -- trainer-facing passthrough to the bound AffineNormalizer (a child) --
     @property
     def primed(self) -> bool:
-        return self._affine.primed
+        return self.normalizer.primed
 
     def prime_normalizer(self, buffer, n: int = 20):
-        return self._affine.prime_normalizer(buffer, n=n)
+        return self.normalizer.prime_normalizer(buffer, n=n)
 
 
 class SAEInputs(DictBatch):
@@ -402,22 +399,22 @@ class GraphLoss(GraphSpec):
 
 class NormalizedReconLoss(GraphLoss):
     norm_model: NormalizedModel = sub_slot()
-    loss_fn: OpRef = op_slot()
+    loss_fn: OpSlot = op_slot()
     applied = norm_model(Input)  # plug the normalized model in
     output = loss_fn(applied.y_norm, applied.y_pred_norm)
 
 
 class GraphL2Loss(NormalizedReconLoss):
-    loss_fn: OpRef = op_slot(default=_mse)
+    loss_fn: OpSlot = op_slot(default=_mse)
 
 
 class GraphCosimLoss(NormalizedReconLoss):
-    loss_fn: OpRef = op_slot(default=_cosim)
+    loss_fn: OpSlot = op_slot(default=_cosim)
 
 
 class GraphSparsityLoss(GraphLoss):
     norm_model: NormalizedModel = sub_slot()
-    penalty: OpRef = op_slot(default=_l1)
+    penalty: OpSlot = op_slot(default=_l1)
     applied = norm_model(Input)
     output = penalty(applied.acts)
 
@@ -547,7 +544,9 @@ class GraphTrainable(Trainable):
         # freq-tracker sites bubble up too: their stateful EMA update is deferred
         # onto each loss pass (ready for resampling; no-op if none spliced).
         # typed via the generic collect: site.producer is a FreqTracker
-        self._freq_sites: list[ValueRef[FreqTracker]] = self.graph.collect(FreqTracker)
+        self._freq_sites: list[ValueRef[Any, FreqTracker]] = self.graph.collect(
+            FreqTracker
+        )
 
         self.resampler: Resampler = resampler
         resampler.assign_model(self)

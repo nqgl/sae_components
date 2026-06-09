@@ -52,7 +52,15 @@ def _callable_name(fn) -> str:
     if isinstance(fn, nn.Module):
         return fn._get_name()
     name = getattr(fn, "__name__", None)
-    return name if name and name != "<lambda>" else "op"
+    return (
+        name
+        if name and name != "<lambda>"
+        else (
+            str(clsname)
+            if (clsname := getattr(type(fn), "__name__", None))
+            else str(type(fn))
+        )
+    )
 
 
 @define(eq=False, repr=False)
@@ -109,14 +117,16 @@ def _detach(a):
 
 
 @define(frozen=True, eq=False, repr=False)
-class ValueRef[T]:
+class ValueRef[V = Any, P = Any]:
     """An interned value node: ``(producer, inputs)``. Immutable; identity is
-    structural (interned). Generic in the *producer* type ``T``, so ``node.producer``
-    is typed (e.g. ``collect(FreqTracker)`` yields ``ValueRef[FreqTracker]`` and
-    ``site.producer`` is a ``FreqTracker``). Never construct directly -- use
-    ``ref()`` / operators / ``OpRef.__call__`` so it goes through the intern table."""
+    structural (interned). Two type params, both defaulting to ``Any``: ``V`` is the
+    *value* the node yields at runtime (``ValueRef[Tensor]`` -- carried by
+    ``ModuleRef.get(lambda n: n.scale)``), and ``P`` is the *producer* type (so
+    ``collect(FreqTracker)`` yields ``ValueRef[Any, FreqTracker]`` and ``site.producer``
+    is a ``FreqTracker``). Never construct directly -- use ``ref()`` / operators /
+    ``OpRef.__call__`` so it goes through the intern table."""
 
-    producer: T
+    producer: P
     inputs: tuple
     name: str | None = None  # display only; not part of identity
 
@@ -149,9 +159,9 @@ class ValueRef[T]:
         return f"ValueRef({self.name or _producer_label(self.producer)})"
 
 
-def ref[T](
-    producer: T, inputs: tuple[ValueRef, ...], name: str | None = None
-) -> ValueRef[T]:
+def ref[P](
+    producer: P, inputs: tuple[ValueRef, ...], name: str | None = None
+) -> ValueRef[Any, P]:
     """Intern a node: return the canonical ValueRef for ``(producer, inputs)``."""
     key = (_producer_key(producer), tuple(id(i) for i in inputs))
     hit = _INTERN.get(key)
@@ -340,9 +350,9 @@ class Graph(cl.Module):
         return "\n".join(lines)
 
 
-def collect[S](targets, site_type: type[S]) -> list[ValueRef[S]]:
+def collect[S](targets, site_type: type[S]) -> list[ValueRef[Any, S]]:
     """Walk the cone of ``targets`` (apply-style, over the DAG) and return the
-    nodes whose producer is an instance of ``site_type`` -- typed ``ValueRef[S]``,
+    nodes whose producer is an instance of ``site_type`` -- typed ``ValueRef[Any, S]``,
     so ``node.producer`` is an ``S``. The graph-native form of ``Module.apply`` --
     a value 'bubbles up' to the outside without anything in between knowing where
     it lives. The caller derives handles from each node's producer (the site) and
