@@ -592,6 +592,14 @@ def _resolve_template_bindings(
     return _resolve_slots(cls.__name__, slots, bindings, require_all=require_all)
 
 
+def _is_subgraph_proxy(node) -> bool:
+    """A bound handle whose producer is a whole ``GraphSpec`` is a sub-graph
+    application proxy (``nx = normalizer(x)``), not a value -- its ``.attr`` handles
+    are the real nodes. Excluded from a spec's handles, uniformly across construction
+    paths (``GraphSpec(...)`` and ``GraphSpec.of(...)`` / ``partial().complete()``)."""
+    return isinstance(getattr(node, "producer", None), GraphSpec)
+
+
 @dataclass_transform(field_specifiers=(arg, op_slot, sub_slot, sub_slots, module_slot))
 class _GraphMeta(type):
     def __new__(mcs, name, bases, ns, **kw):
@@ -677,7 +685,7 @@ class _GraphMeta(type):
         handle_refs = {}
         for nm, h in t.handles.items():
             bound = bind(h, resolved.subs)
-            if isinstance(bound.producer, GraphSpec):
+            if _is_subgraph_proxy(bound):
                 continue
             handle_refs[nm] = bound
             setattr(obj, nm, bound)
@@ -752,8 +760,13 @@ class GraphSpec(metaclass=_GraphMeta):
         if out is None:
             raise TypeError("GraphSpec.of needs an `output` handle")
         # expose `output` as a handle too (so `g.output` works like a normal spec,
-        # not just `g.out`) -- whether it came in as the param or in **handles.
-        handles = {"output": out, **handles}
+        # not just `g.out`) -- whether it came in as the param or in **handles. Drop
+        # sub-application proxies, same as `GraphSpec(...)` (so `partial().complete()`
+        # and direct construction agree).
+        handles = {
+            "output": out,
+            **{nm: h for nm, h in handles.items() if not _is_subgraph_proxy(h)},
+        }
         for nm, h in handles.items():
             setattr(obj, nm, h)
         obj._setup(handles, out)

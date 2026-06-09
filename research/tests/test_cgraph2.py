@@ -298,6 +298,39 @@ def test_embedded_partial_subgraph() -> None:
     assert torch.allclose(direct_out, batch["alt"] * 2 * batch["other"])
 
 
+def test_subgraph_proxy_filtered_consistently_across_construction_paths() -> None:
+    # A sub-application proxy (`nx = sub(x)`) is a ValueRef (so a leaf slot's forward
+    # value is usable), but a whole sub-graph is not a single value -- so it must NOT
+    # become a handle. This has to hold *uniformly* across `Spec(...)`, `GraphSpec.of`,
+    # and `partial().complete()` (D-15), else the construction paths disagree.
+    import saeco.core as cl
+    from saeco_research.cgraph2 import GraphSpec, Input, Slot, op, sub_slot
+
+    class Inner(GraphSpec):
+        doubled = op(_cgraph2_double)(Input)
+        output = doubled
+
+    class Outer(GraphSpec):
+        sub: Slot = sub_slot()
+        applied = sub(Input)  # a sub-application proxy -- NOT a value handle
+        real = applied.doubled  # a real named handle off the proxy -- survives
+        output = applied.output
+
+    full = Outer(sub=Inner())
+    completed = Outer.partial().complete(sub=Inner())
+    # the proxy is filtered in BOTH paths; the .attr handles survive in both
+    assert set(full._handle_refs) == set(completed._handle_refs)
+    assert "applied" not in full._handle_refs
+    assert "real" in full._handle_refs
+    assert "output" in full._handle_refs
+    # and the surviving handles actually run (the proxy never reaches eval)
+    x = torch.tensor([2.0, 5.0])
+    for g in (full, completed):
+        with g.forward_values(x, cache=cl.Cache()) as save:
+            assert torch.allclose(save(g.real), x * 2)
+            assert torch.allclose(save(g.output), x * 2)
+
+
 def test_render_shows_deduped_shared_nodes() -> None:
     # render() is the flat execution view: a node shared by several handles
     # appears exactly once (the fusion made visible).
