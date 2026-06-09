@@ -60,6 +60,7 @@ from saeco_research.cgraph2.core import (
 # Op/module/sub slots share one descriptor `Slot[T]` (defined further down).
 
 _NODEFAULT = object()
+_HANDLE_FIELD = object()  # sentinel returned by `handle()`; the metaclass ignores it
 
 
 @define(eq=False)
@@ -394,6 +395,19 @@ def module_slot[M]() -> Slot[M]:
     return Slot(_SlotMarker())
 
 
+def handle(*, init: bool = False) -> Any:
+    """Declare a GraphSpec *output-handle contract*: a typed instance attribute that
+    subclasses wire as a body handle (``recon = decoder(acts)``) and the metaclass
+    binds -- *not* a construction field. A ``dataclass_transform`` field-specifier
+    with ``init=False``, so the handle is typed on the base (and satisfies a structural
+    protocol) without being demanded at construction *and* without forcing an
+    annotation on every subclass handle. Runtime-inert: the base's ``recon: ValueRef =
+    handle()`` is a sentinel the metaclass skips, and a subclass's real handle node
+    (``recon = decoder(acts)``) shadows it. (The ``init`` parameter exists only so a
+    type checker reads the field as ``init=False``; callers write ``handle()``.)"""
+    return _HANDLE_FIELD
+
+
 @define
 class _Template:
     output: ValueRef | None  # None == abstract (cannot be constructed)
@@ -606,7 +620,9 @@ def _is_subgraph_proxy(node) -> bool:
     return isinstance(getattr(node, "producer", None), GraphSpec)
 
 
-@dataclass_transform(field_specifiers=(arg, op_slot, sub_slot, sub_slots, module_slot))
+@dataclass_transform(
+    field_specifiers=(arg, op_slot, sub_slot, sub_slots, module_slot, handle)
+)
 class _GraphMeta(type):
     def __new__(mcs, name, bases, ns, **kw):
         # keep the body refs as class attributes (the *templates*): a type
@@ -708,7 +724,9 @@ class _GraphMeta(type):
         return obj
 
 
-@dataclass_transform(field_specifiers=(arg, op_slot, sub_slot, sub_slots, module_slot))
+@dataclass_transform(
+    field_specifiers=(arg, op_slot, sub_slot, sub_slots, module_slot, handle)
+)
 class GraphSpec(metaclass=_GraphMeta):
     """A graph: the authoring surface *and* the runnable context.
 
