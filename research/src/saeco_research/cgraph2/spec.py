@@ -132,10 +132,11 @@ class _SlotHandle:
         return _AppliedPartial(self.slot, self.attr, x, value)
 
 
-class _AppliedSlot(ValueRef):
-    """The result of ``slot(x)`` -- a ``ValueRef`` (so a leaf module/op slot's forward
-    value is usable directly) that *also* exposes ``.attr`` for a sub-graph slot's
-    named handles (``slot(x).recon``). The two faces of applying a slot, in one node:
+class _AppliedSlot(ValueRef[torch.Tensor]):
+    """The result of ``slot(x)`` -- a ``ValueRef[Tensor]`` (so a leaf module/op slot's
+    forward value is a usable tensor handle) that *also* exposes ``.attr`` for a
+    sub-graph slot's named handles (``slot(x).recon``). The two faces of applying a
+    slot, in one node:
 
     * **leaf module / op** -- ``slot(x)`` is the forward value; its producer (the slot
       marker) binds to the bound module/op, so it evaluates like any node.
@@ -145,7 +146,7 @@ class _AppliedSlot(ValueRef):
 
     Interned (via ``ref_as``) so repeated ``slot(x)`` fuse, exactly like any node."""
 
-    def __getattr__(self, attr: str) -> ValueRef:
+    def __getattr__(self, attr: str) -> ValueRef[torch.Tensor]:
         if attr.startswith("_"):
             raise AttributeError(attr)
         return ref(_SlotHandle(self.producer, attr), self.inputs)
@@ -865,14 +866,14 @@ class GraphSpec(metaclass=_GraphMeta):
         """A Graph targeting one handle -- runs only that handle's cone."""
         return ref.build()
 
-    def __add__(self, o) -> ValueRef:
+    def __add__(self, o) -> ValueRef[torch.Tensor]:
         return self._out + (o.out if isinstance(o, GraphSpec) else o)
 
-    def __mul__(self, o) -> ValueRef:
+    def __mul__(self, o) -> ValueRef[torch.Tensor]:
         return self._out * (o.out if isinstance(o, GraphSpec) else o)
 
-    def __sub__(self, o) -> ValueRef:
+    def __sub__(self, o) -> ValueRef[torch.Tensor]:
         return self._out - (o.out if isinstance(o, GraphSpec) else o)
 
-    def __truediv__(self, o) -> ValueRef:
+    def __truediv__(self, o) -> ValueRef[torch.Tensor]:
         return self._out / (o.out if isinstance(o, GraphSpec) else o)

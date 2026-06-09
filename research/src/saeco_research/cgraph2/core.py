@@ -23,7 +23,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, cast, overload
 
 import torch
 import torch.nn as nn
@@ -38,7 +38,14 @@ from saeco_research.cgraph2.funcstd import standardize
 _ACTIVE_SESSION: ContextVar = ContextVar("cgraph_forward_values", default=None)
 
 # Global intern table: (producer_key, input-node-ids) -> the canonical ValueRef.
-_INTERN: dict = {}
+_INTERN: dict[tuple[tuple, tuple[int, ...]], ValueRef] = {}
+
+# A substitution map for `bind`. Deliberately heterogeneous: a key is EITHER a
+# slot-marker / producer object (substitute the producer) OR a `ValueRef` node
+# (substitute the whole node, e.g. `Input -> x`); the value is the matching
+# replacement producer or node. The two roles share one map so a single `bind`
+# pass resolves both -- hence `object`, not a tidy homogeneous type.
+type Subs = dict[object, object]
 
 
 class _Input:
@@ -130,19 +137,19 @@ class ValueRef[V = Any, P = Any]:
     inputs: tuple
     name: str | None = None  # display only; not part of identity
 
-    def __mul__(self, o) -> ValueRef[Any]:
+    def __mul__(self, o) -> ValueRef[torch.Tensor]:
         return _binop(_mul, "Mul", self, o)
 
-    def __add__(self, o) -> ValueRef[Any]:
+    def __add__(self, o) -> ValueRef[torch.Tensor]:
         return _binop(_add, "Add", self, o)
 
-    def __sub__(self, o) -> ValueRef[Any]:
+    def __sub__(self, o) -> ValueRef[torch.Tensor]:
         return _binop(_sub, "Sub", self, o)
 
-    def __truediv__(self, o) -> ValueRef[Any]:
+    def __truediv__(self, o) -> ValueRef[torch.Tensor]:
         return _binop(_div, "Div", self, o)
 
-    def detach(self) -> ValueRef[Any]:
+    def detach(self) -> ValueRef[torch.Tensor]:
         return ref(Op.create(_detach, "Detach"), (self,))
 
     def __call__(self, *args):
@@ -186,7 +193,7 @@ def ref[P](
     return ref_as(ValueRef, producer, inputs, name)
 
 
-def _binop(fn, label, a: ValueRef, b) -> ValueRef:
+def _binop(fn, label, a: ValueRef, b) -> ValueRef[torch.Tensor]:
     if isinstance(b, ValueRef):
         return ref(Op.create(fn, label), (a, b))
     return ref(Op.create(lambda x: fn(x, b), f"{label}(·, {b})", key=(id(fn), b)), (a,))
@@ -218,10 +225,19 @@ class _Field:
 _FIELDS: dict[str, _Field] = {}
 
 
+@overload
+def field(spec: str) -> ValueRef[Any]: ...
+@overload
+def field[T](spec: T) -> ValueRef[T]: ...
 def field(spec: Any) -> ValueRef:
     """Read a named field of the structured input. Pass a field name (``field(
     "target")``) or a typed ``DictBatch`` field (``field(Batch.target)``, which
     reads as the field's value type to the checker -- see ``cgraph2.dictbatch``).
+
+    A typed ``field(Batch.target)`` carries the field's value type through:
+    ``Batch.target`` reads as ``torch.Tensor`` (the annotation), so ``field(
+    Batch.target)`` is a ``ValueRef[torch.Tensor]``; a bare ``field("name")`` string
+    stays ``ValueRef[Any]``.
 
     Seed the input with a dict / struct -- ``forward_values(batch)`` -- and each
     field is extracted lazily, so a graph reading only ``field("x")`` realizes only
@@ -247,7 +263,10 @@ class OpRef:
 
     producer: object
 
-    def __call__(self, *inputs: ValueRef) -> ValueRef:
+    def __call__(self, *inputs: ValueRef) -> ValueRef[torch.Tensor]:
+        # graph ops yield tensors (this is a tensor-computation graph), so the value
+        # type is Tensor by default -- a non-tensor op would read as Tensor, but none
+        # exist here. (`.get(fn)` carries a real R for attribute reads.)
         return ref(self.producer, inputs)
 
 
@@ -491,11 +510,12 @@ def deferred_execution(method):
     return wrapper
 
 
-def bind(target: ValueRef, subs: dict) -> ValueRef:
+def bind[V](target: ValueRef[V], subs: Subs) -> ValueRef[V]:
     """Re-intern ``target``'s cone substituting producers/nodes per ``subs`` (a
     map from a slot-marker producer OR a node to its replacement). Because
     re-interning is global, two bindings producing the same structure share
-    nodes.
+    nodes. The value type ``V`` is preserved (re-interning rewrites structure, not
+    the value a node yields).
 
     A producer may define ``__graph_rebind__(self, bound_inputs, subs)`` to
     control how its node re-interns -- the hook a sub-model slot uses to splice
@@ -503,7 +523,7 @@ def bind(target: ValueRef, subs: dict) -> ValueRef:
     memo: dict[ValueRef, ValueRef] = {}
     for n in _toposort(target):
         if n in subs:  # a value-slot node (e.g. Input) bound to another ref
-            memo[n] = subs[n]
+            memo[n] = cast(ValueRef, subs[n])
             continue
         rebind = getattr(n.producer, "__graph_rebind__", None)
         if rebind is not None:  # producer-defined re-interning (e.g. sub-model)
@@ -515,12 +535,14 @@ def bind(target: ValueRef, subs: dict) -> ValueRef:
             continue
         ins = tuple(memo[i] for i in n.inputs)
         memo[n] = ref(producer, ins, n.name)
-    return memo[target]
+    return cast("ValueRef[V]", memo[target])
 
 
-def at(handle: ValueRef, x: ValueRef) -> ValueRef:
-    """Apply a sub-graph to a new input: rebind its ``Input`` to ``x``. The
-    graph-native "plug this sub-model in here" move -- e.g. running the SAE on a
-    normalized input, or treating a mid-graph node as the input (``decoder_cone``
-    does the latter with ``bind(recon, {acts: Input})``)."""
+def at[V](handle: ValueRef[V], x: ValueRef) -> ValueRef[V]:
+    """Apply a sub-graph to a new input: rebind its ``Input`` to ``x`` -- so
+    ``sae(src).acts`` is exactly ``at(sae.acts, src)``. Nothing is left unbound:
+    ``bind`` rewrites *every* ``Input`` in ``handle``'s cone to ``x`` (an exhaustive
+    substitution), preserving the value type. The graph-native "plug this sub-model
+    in here" move -- e.g. running the SAE on a normalized input, or treating a
+    mid-graph node as the input (``bind(recon, {acts: Input})``)."""
     return bind(handle, {Input: x})
