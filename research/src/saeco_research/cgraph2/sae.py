@@ -16,7 +16,7 @@ Assembly mirrors stock saeco: ``@model_prop`` returns a model graph (an
 """
 
 from functools import cached_property
-from typing import Any, ClassVar, Protocol
+from typing import Any, Protocol
 
 import torch
 from attrs import define
@@ -47,6 +47,7 @@ from saeco_research.cgraph2.spec import (
     Slot,
     SubSlots,
     arg,
+    handle,
     module_slot,
     op_slot,
     sub_slot,
@@ -153,14 +154,15 @@ class FreqTracker(cl.Module):
 
 class SAEModel(Protocol):
     """Typing protocol for a model graph: ``acts`` / ``recon`` handles, and
-    appliable to an input (``model(x)``). Any :class:`SAEGraphSpec` satisfies it.
+    appliable to an input (``model(x)``). Any :class:`SAEGraphSpec` satisfies it --
+    the metaclass binds the handles per instance. Declared as *read-only* properties
+    so a spec whose handle is a ``ValueRef`` subtype (e.g. a slot application) still
+    satisfies the protocol (a mutable attribute would demand the exact type)."""
 
-    ``acts`` / ``recon`` are ``ClassVar`` to match how a ``GraphSpec`` declares its
-    handle contract -- on the class, not as a per-construction field (see
-    :class:`SAEGraphSpec`)."""
-
-    acts: ClassVar[ValueRef]
-    recon: ClassVar[ValueRef]
+    @property
+    def acts(self) -> ValueRef: ...
+    @property
+    def recon(self) -> ValueRef: ...
 
     def __call__(self, x: ValueRef) -> "SAEModel": ...
 
@@ -169,13 +171,13 @@ class SAEGraphSpec(GraphSpec):
     """Base for SAE model graphs. Subclasses define ``acts`` / ``recon`` /
     ``output`` handles; this adds the model-level hook the framework needs."""
 
-    # The model contract -- declared ``ClassVar`` so it statically satisfies the
-    # :class:`SAEModel` protocol (``g.acts`` / ``g.recon`` are typed) *without* being
-    # read as required construction fields by ``dataclass_transform`` (a bare
-    # ``acts: ValueRef`` would make every ``GatedModelSpec(...)`` demand ``acts=``).
-    # Subclasses wire them as handles; the metaclass sets them per instance.
-    acts: ClassVar[ValueRef]
-    recon: ClassVar[ValueRef]
+    # The model contract, declared with `handle()` -- a typed instance-attribute
+    # handle (so `g.acts` / `g.recon` type-check and an SAEGraphSpec satisfies the
+    # `SAEModel` protocol) that is `init=False`, so `dataclass_transform` does NOT
+    # read it as a required construction field. Subclasses just wire `recon =
+    # decoder(acts)` (no annotation needed); the metaclass binds them per instance.
+    acts: ValueRef = handle()
+    recon: ValueRef = handle()
 
     name = None
 

@@ -18,6 +18,7 @@ from saeco_research.cgraph2.spec import (
     Slot,  # the one op/module/sub-slot descriptor (annotation + body proxy)
     SubSlots,
     arg,
+    handle,
     module_slot,
     op_slot,
     sub_slot,
@@ -40,6 +41,7 @@ __all__ = [
     "at",
     "collect",
     "field",
+    "handle",
     "op",
     "op_slot",
     "ref",
