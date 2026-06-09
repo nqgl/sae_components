@@ -316,10 +316,56 @@ def _names(order: list[ValueRef]) -> dict[ValueRef, str]:
     return names
 
 
+class _TensorSource(nn.Module):
+    """A 0-ary producer holding a bound tensor as its *own registered buffer* and
+    reading it live at eval -- the device-safe form of a bare-tensor value source.
+
+    The D-04/D-16 model: a node captures a *tensor object*. ``nn.Module._apply``
+    (``.to(device)`` / dtype moves) swaps a ``Parameter``'s ``.data`` **in place**
+    (identity preserved -- safe to capture) but **reassigns** a registered buffer to
+    a new tensor -- so a node that captured the buffer keeps reading the orphaned
+    original while the registry moves, a silent wrong-device/dtype. Holding the
+    tensor as this module's own buffer and reading ``self.value`` at call time means
+    ``.to()`` on the registered graph moves exactly what the node reads."""
+
+    value: torch.Tensor
+
+    def __init__(self, value: torch.Tensor):
+        super().__init__()
+        self.register_buffer("value", value)
+
+    def forward(self) -> torch.Tensor:
+        return self.value
+
+    def _get_name(self) -> str:
+        return "tensor"
+
+
+# one holder per bound tensor (by identity), so two bindings of the same tensor
+# fuse to one node -- same shape as the `_FIELDS` cache.
+_TENSOR_SOURCES: dict[int, _TensorSource] = {}
+
+
+def tensor_source(value: torch.Tensor) -> ValueRef[torch.Tensor]:
+    """A device-safe 0-ary source node for a bare tensor (see ``_TensorSource``).
+    The slot machinery routes every bound/default tensor through this; ``Parameter``
+    sources stay raw (in-place-safe and registered as parameters)."""
+    holder = _TENSOR_SOURCES.get(id(value))
+    if holder is None:
+        holder = _TENSOR_SOURCES[id(value)] = _TensorSource(value)
+    return ref(holder, ())
+
+
 def _register_producers(module: cl.Module, order, names) -> None:
     """Register the parameter/module producers in ``order`` on ``module`` so
     ``state_dict`` / ``parameters`` / hook-discovery see them. A producer is
-    registered once (interned identity), under its display name."""
+    registered once (interned identity), under its display name.
+
+    A bare non-``Parameter`` tensor producer is refused loudly: registering it as a
+    buffer is exactly the D-04 trap (``.to()`` reassigns the registry entry while the
+    node keeps reading the captured orphan -- the state_dict copy *lies*). The slot
+    machinery never produces one (bound tensors are wrapped in ``_TensorSource``);
+    this guards the raw ``ref(tensor, ())`` escape hatch."""
     registered: set[int] = set()
     for n in order:
         p = n.producer
@@ -329,10 +375,13 @@ def _register_producers(module: cl.Module, order, names) -> None:
         if isinstance(p, nn.Parameter):
             module.register_parameter(names[n], p)
         elif isinstance(p, torch.Tensor):
-            # a bare buffer used as a value source -- register it so .to()/state_dict
-            # see it. (Prefer a Parameter or a buffer-reading module for graph state:
-            # a node captures the *tensor*, and .to() reassigns buffers -- see D-04.)
-            module.register_buffer(names[n], p)
+            raise TypeError(
+                f"node {names[n]!r} captures a bare tensor as its producer; "
+                "registering it as a buffer would go stale on .to() (the registry "
+                "entry is reassigned while the node reads the captured orphan -- "
+                "D-04). Bind it through a slot (auto-wrapped device-safe), or use "
+                "nn.Parameter / a module reading its own buffer / slot.get(...)."
+            )
         elif isinstance(p, nn.Module):
             module.add_module(names[n], p)
 
