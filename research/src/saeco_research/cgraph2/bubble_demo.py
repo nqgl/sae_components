@@ -12,7 +12,7 @@ import saeco.core as cl
 from saeco_research.cgraph2 import (
     GraphSpec,
     Input,
-    Op,
+    Slot,
     op,
     op_slot,
 )
@@ -34,8 +34,8 @@ freqs = FreqTracker(16)
 
 
 class SAESpec(GraphSpec):
-    encoder: Op = op_slot()
-    decoder: Op = op_slot()
+    encoder: Slot = op_slot()
+    decoder: Slot = op_slot()
     raw = op(torch.relu)(encoder(Input))
     acts = op(freqs)(metered(raw))  # metrics site then freq site, passthrough
     recon = decoder(acts)
@@ -97,8 +97,8 @@ def main():
     freqs2 = FreqTracker(16)
 
     class SAE2(GraphSpec):
-        encoder: Op = op_slot()
-        decoder: Op = op_slot()
+        encoder: Slot = op_slot()
+        decoder: Slot = op_slot()
         acts = op(freqs2)(op(torch.relu)(encoder(Input)))
         recon = decoder(acts)
         output = recon

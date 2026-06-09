@@ -159,17 +159,31 @@ class ValueRef[V = Any, P = Any]:
         return f"ValueRef({self.name or _producer_label(self.producer)})"
 
 
-def ref[P](
-    producer: P, inputs: tuple[ValueRef, ...], name: str | None = None
+def ref_as[P](
+    node_cls: type,
+    producer: P,
+    inputs: tuple[ValueRef, ...],
+    name: str | None = None,
 ) -> ValueRef[Any, P]:
-    """Intern a node: return the canonical ValueRef for ``(producer, inputs)``."""
+    """Intern a node, constructing it as ``node_cls`` (a ``ValueRef`` subclass) on a
+    miss. The interning key is structural (producer + input identities), independent
+    of the class -- so ``node_cls`` only decides what an *uninterned* node becomes.
+    Used for the ``_AppliedSlot`` forward node, which is a ``ValueRef`` carrying a
+    ``__getattr__`` for sub-graph handle access (``m(x).recon``)."""
     key = (_producer_key(producer), tuple(id(i) for i in inputs))
     hit = _INTERN.get(key)
     if hit is not None:
         return hit
-    v = ValueRef(producer, inputs, name)
+    v = node_cls(producer, inputs, name)
     _INTERN[key] = v
     return v
+
+
+def ref[P](
+    producer: P, inputs: tuple[ValueRef, ...], name: str | None = None
+) -> ValueRef[Any, P]:
+    """Intern a node: return the canonical ValueRef for ``(producer, inputs)``."""
+    return ref_as(ValueRef, producer, inputs, name)
 
 
 def _binop(fn, label, a: ValueRef, b) -> ValueRef:

@@ -13,7 +13,7 @@ from saeco_research.cgraph2 import (
     Arg,
     GraphSpec,
     Input,
-    Op,
+    Slot,
     ValueRef,
     arg,
     at,
@@ -47,8 +47,8 @@ class CountLinear(cl.Module):
 
 # a model, as a GraphSpec
 class SAESpec(GraphSpec):
-    encoder: Op = op_slot()
-    decoder: Op = op_slot()
+    encoder: Slot = op_slot()
+    decoder: Slot = op_slot()
     x: Arg = arg(default=Input)
     acts = encoder(x)
     recon = decoder(acts)
@@ -59,29 +59,29 @@ class SAESpec(GraphSpec):
 # override the loss_fn default (exercising inheritance).
 class ReconLoss(GraphSpec):
     model: Any = sub_slot()
-    loss_fn: Op = op_slot()
+    loss_fn: Slot = op_slot()
     pred = model(Input)  # plug the sub-model in, applied to this spec's input
     output = loss_fn(Input, pred.recon)
 
 
 class L2Loss(ReconLoss):
-    loss_fn: Op = op_slot(default=_mse)
+    loss_fn: Slot = op_slot(default=_mse)
 
 
 class SumSqLoss(ReconLoss):
-    loss_fn: Op = op_slot(default=_sumsq)
+    loss_fn: Slot = op_slot(default=_sumsq)
 
 
 class SparsityLoss(GraphSpec):
     model: Any = sub_slot()
-    penalty: Op = op_slot(default=_l1)
+    penalty: Slot = op_slot(default=_l1)
     pred = model(Input)
     output = penalty(pred.acts)
 
 
 # an abstract base: no `output` -> cannot be constructed
 class AbstractBase(GraphSpec):
-    thing: Op = op_slot()
+    thing: Slot = op_slot()
 
 
 # a one-off spec that just exposes the sub-model's recon applied to an input,

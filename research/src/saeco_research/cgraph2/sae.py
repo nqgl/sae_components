@@ -16,7 +16,7 @@ Assembly mirrors stock saeco: ``@model_prop`` returns a model graph (an
 """
 
 from functools import cached_property
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 import torch
 from attrs import define
@@ -44,8 +44,7 @@ from saeco_research.cgraph2.dictbatch import DictBatch
 from saeco_research.cgraph2.spec import (
     Arg,
     GraphSpec,
-    ModuleSlot,
-    OpSlot,
+    Slot,
     SubSlots,
     arg,
     module_slot,
@@ -154,10 +153,14 @@ class FreqTracker(cl.Module):
 
 class SAEModel(Protocol):
     """Typing protocol for a model graph: ``acts`` / ``recon`` handles, and
-    appliable to an input (``model(x)``). Any :class:`SAEGraphSpec` satisfies it."""
+    appliable to an input (``model(x)``). Any :class:`SAEGraphSpec` satisfies it.
 
-    acts: ValueRef
-    recon: ValueRef
+    ``acts`` / ``recon`` are ``ClassVar`` to match how a ``GraphSpec`` declares its
+    handle contract -- on the class, not as a per-construction field (see
+    :class:`SAEGraphSpec`)."""
+
+    acts: ClassVar[ValueRef]
+    recon: ClassVar[ValueRef]
 
     def __call__(self, x: ValueRef) -> "SAEModel": ...
 
@@ -166,11 +169,13 @@ class SAEGraphSpec(GraphSpec):
     """Base for SAE model graphs. Subclasses define ``acts`` / ``recon`` /
     ``output`` handles; this adds the model-level hook the framework needs."""
 
-    # the model contract (annotation-only; subclasses set these as handles, the
-    # metaclass ignores bare annotations). Declaring them makes an SAEGraphSpec
-    # statically satisfy the SAEModel protocol (so it can be wrapped/typed).
-    acts: ValueRef
-    recon: ValueRef
+    # The model contract -- declared ``ClassVar`` so it statically satisfies the
+    # :class:`SAEModel` protocol (``g.acts`` / ``g.recon`` are typed) *without* being
+    # read as required construction fields by ``dataclass_transform`` (a bare
+    # ``acts: ValueRef`` would make every ``GatedModelSpec(...)`` demand ``acts=``).
+    # Subclasses wire them as handles; the metaclass sets them per instance.
+    acts: ClassVar[ValueRef]
+    recon: ClassVar[ValueRef]
 
     name = None
 
@@ -325,7 +330,7 @@ class GraphNormalizer(GraphSpec):
     ``GraphNormalizer(normalizer=norm)``; priming delegates to the bound
     :class:`AffineNormalizer`."""
 
-    normalizer: ModuleSlot[AffineNormalizer] = module_slot()
+    normalizer: Slot[AffineNormalizer] = module_slot()
     normalized = normalizer(Input)
     scale = normalizer.get(lambda n: n.scale)
     shift = normalizer.get(lambda n: n.shift)
@@ -399,22 +404,22 @@ class GraphLoss(GraphSpec):
 
 class NormalizedReconLoss(GraphLoss):
     norm_model: NormalizedModel = sub_slot()
-    loss_fn: OpSlot = op_slot()
+    loss_fn: Slot = op_slot()
     applied = norm_model(Input)  # plug the normalized model in
     output = loss_fn(applied.y_norm, applied.y_pred_norm)
 
 
 class GraphL2Loss(NormalizedReconLoss):
-    loss_fn: OpSlot = op_slot(default=_mse)
+    loss_fn: Slot = op_slot(default=_mse)
 
 
 class GraphCosimLoss(NormalizedReconLoss):
-    loss_fn: OpSlot = op_slot(default=_cosim)
+    loss_fn: Slot = op_slot(default=_cosim)
 
 
 class GraphSparsityLoss(GraphLoss):
     norm_model: NormalizedModel = sub_slot()
-    penalty: OpSlot = op_slot(default=_l1)
+    penalty: Slot = op_slot(default=_l1)
     applied = norm_model(Input)
     output = penalty(applied.acts)
 

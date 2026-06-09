@@ -16,7 +16,16 @@ import torch
 import torch.nn as nn
 
 import saeco.core as cl
-from saeco_research.cgraph2 import Arg, GraphSpec, Input, Op, ValueRef, arg, op, op_slot
+from saeco_research.cgraph2 import (
+    Arg,
+    GraphSpec,
+    Input,
+    Slot,
+    ValueRef,
+    arg,
+    op,
+    op_slot,
+)
 
 
 class CountLinear(cl.Module):
@@ -31,8 +40,8 @@ class CountLinear(cl.Module):
 
 
 class SAESpec(GraphSpec):
-    encoder: Op = op_slot()
-    decoder: Op = op_slot()
+    encoder: Slot = op_slot()
+    decoder: Slot = op_slot()
     x: Arg = arg(default=Input)  # defaults to the global Input
     acts = encoder(x)
     recon = decoder(acts)

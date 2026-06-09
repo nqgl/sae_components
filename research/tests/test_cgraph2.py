@@ -51,7 +51,7 @@ def test_forward_values_runs_each_node_once() -> None:
     import torch.nn as nn
 
     import saeco.core as cl
-    from saeco_research.cgraph2 import GraphSpec, Input, Op, op, op_slot
+    from saeco_research.cgraph2 import GraphSpec, Input, Slot, op, op_slot
 
     class Counter(cl.Module):
         def __init__(self):
@@ -66,7 +66,7 @@ def test_forward_values_runs_each_node_once() -> None:
     enc = Counter()
 
     class Spec(GraphSpec):
-        encoder: Op = op_slot()
+        encoder: Slot = op_slot()
         h = encoder(Input)
         a = op(torch.relu)(h)
         b = op(torch.sigmoid)(h)
@@ -298,15 +298,48 @@ def test_embedded_partial_subgraph() -> None:
     assert torch.allclose(direct_out, batch["alt"] * 2 * batch["other"])
 
 
+def test_subgraph_proxy_filtered_consistently_across_construction_paths() -> None:
+    # A sub-application proxy (`nx = sub(x)`) is a ValueRef (so a leaf slot's forward
+    # value is usable), but a whole sub-graph is not a single value -- so it must NOT
+    # become a handle. This has to hold *uniformly* across `Spec(...)`, `GraphSpec.of`,
+    # and `partial().complete()` (D-15), else the construction paths disagree.
+    import saeco.core as cl
+    from saeco_research.cgraph2 import GraphSpec, Input, Slot, op, sub_slot
+
+    class Inner(GraphSpec):
+        doubled = op(_cgraph2_double)(Input)
+        output = doubled
+
+    class Outer(GraphSpec):
+        sub: Slot = sub_slot()
+        applied = sub(Input)  # a sub-application proxy -- NOT a value handle
+        real = applied.doubled  # a real named handle off the proxy -- survives
+        output = applied.output
+
+    full = Outer(sub=Inner())
+    completed = Outer.partial().complete(sub=Inner())
+    # the proxy is filtered in BOTH paths; the .attr handles survive in both
+    assert set(full._handle_refs) == set(completed._handle_refs)
+    assert "applied" not in full._handle_refs
+    assert "real" in full._handle_refs
+    assert "output" in full._handle_refs
+    # and the surviving handles actually run (the proxy never reaches eval)
+    x = torch.tensor([2.0, 5.0])
+    for g in (full, completed):
+        with g.forward_values(x, cache=cl.Cache()) as save:
+            assert torch.allclose(save(g.real), x * 2)
+            assert torch.allclose(save(g.output), x * 2)
+
+
 def test_render_shows_deduped_shared_nodes() -> None:
     # render() is the flat execution view: a node shared by several handles
     # appears exactly once (the fusion made visible).
     import torch.nn as nn
 
-    from saeco_research.cgraph2 import GraphSpec, Input, Op, op, op_slot
+    from saeco_research.cgraph2 import GraphSpec, Input, Slot, op, op_slot
 
     class Spec(GraphSpec):
-        encoder: Op = op_slot()
+        encoder: Slot = op_slot()
         h = encoder(Input)  # one node, read by both branches below
         a = op(torch.relu)(h)
         b = op(torch.sigmoid)(h)
@@ -404,13 +437,13 @@ def test_graph_normalizer_embeds_its_inverse() -> None:
 
 
 def test_module_slot_forward_and_param_reads() -> None:
-    # D-14: module_slot() plugs a leaf cl.Module in as a ModuleSlot descriptor -- m(x)
-    # is its forward, m.get(lambda n: n.w) reads a buffer as a typed graph ref (consed
-    # by module identity); on the instance m is the bound module. A typo'd attr fails
+    # module_slot() plugs a leaf cl.Module in as a Slot descriptor -- m(x) is its
+    # forward, m.get(lambda n: n.w) reads a buffer as a typed graph ref (consed by
+    # module identity); on the instance m is the bound module. A typo'd attr fails
     # the type checker (statically) and loud at eval (lazily) -- never a wrong value.
     import saeco.core as cl
     from saeco_research.cgraph2.core import Input
-    from saeco_research.cgraph2.spec import GraphSpec, ModuleSlot, module_slot
+    from saeco_research.cgraph2.spec import GraphSpec, Slot, module_slot
 
     class Scale(cl.Module):
         def __init__(self, w):
@@ -421,7 +454,7 @@ def test_module_slot_forward_and_param_reads() -> None:
             return x * self.w
 
     class G(GraphSpec):
-        m: ModuleSlot[Scale] = module_slot()
+        m: Slot[Scale] = module_slot()
         out = m(Input)
         w = m.get(lambda n: n.w)
         output = out
@@ -438,7 +471,7 @@ def test_module_slot_forward_and_param_reads() -> None:
     # an attr the module doesn't have is type-illegal (pyright); at runtime the read
     # is lazy and fails loud at eval (never a silent wrong value).
     class Bad(GraphSpec):
-        m: ModuleSlot[Scale] = module_slot()
+        m: Slot[Scale] = module_slot()
         nope = m.get(lambda n: n.not_a_buffer)  # type: ignore[attr-defined]
         output = m(Input)
 
@@ -708,12 +741,12 @@ def test_freq_tracker_eval_pass_does_not_advance_ema() -> None:
     import saeco.core as cl
     from saeco_research.cgraph2.core import Input, op
     from saeco_research.cgraph2.sae import FreqTracker
-    from saeco_research.cgraph2.spec import GraphSpec, Op, op_slot
+    from saeco_research.cgraph2.spec import GraphSpec, Slot, op_slot
 
     ft = FreqTracker(8)
 
     class G(GraphSpec):
-        enc: Op = op_slot()
+        enc: Slot = op_slot()
         acts = op(ft)(op(torch.relu)(enc(Input)))
         output = acts
 

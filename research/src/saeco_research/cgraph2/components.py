@@ -9,11 +9,11 @@ fused / deduped as a static graph: a single variadic node (no pairwise add-tree)
 which torch reduces in one go and which you can use as a normal handle.
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 
 import torch
 
-from saeco_research.cgraph2.core import ValueRef, field, op
+from saeco_research.cgraph2.core import ValueRef, op
 
 
 def _stack_sum(*terms):
@@ -25,15 +25,3 @@ def _stack_sum(*terms):
 def reduce_sum(terms: Iterable[ValueRef]) -> ValueRef:
     """One flat N-ary node summing all ``terms`` at once (not a pairwise tree)."""
     return op(_stack_sum)(*terms)
-
-
-def weighted_sum(
-    terms: dict[str, ValueRef],
-    weight: Callable[[str], str] = lambda k: f"w_{k}",
-) -> ValueRef:
-    """``Σ field(weight(k)) · term_k`` as one flat N-ary node — the total-loss reduce
-    over a *dynamic* dict of named terms. ``weight(k)`` names the per-term weight
-    field (default ``w_<k>``), seeded at the boundary each step (device-clean: the
-    weights are graph inputs, not captured buffers — see D-04). The reduction is a
-    single node, so it's flat and torch-friendly."""
-    return reduce_sum(field(weight(k)) * term for k, term in terms.items())
