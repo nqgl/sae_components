@@ -651,6 +651,55 @@ def test_total_loss_handle_weights_and_transcoder() -> None:
     assert abs(float(c_ae.get("L2_loss")) - float(c_tc.get("L2_loss"))) > 1e-4
 
 
+def test_metered_site_log_handles_and_naming() -> None:
+    # D-18: a metrics site's log handles are the metrics spec's *computed* handles
+    # (its handles minus its slots minus `output` -- the spec's named outputs ARE
+    # its metrics); `name=` prefixes them so several sites can coexist.
+    from saeco_research.cgraph2 import GraphSpec, Input, op
+    from saeco_research.cgraph2.sae import _MetricsSite, metered
+
+    class M(GraphSpec):
+        acts = metered(op(torch.relu)(Input), name="aux")
+        output = acts
+
+    g = M()
+    (site,) = g.collect(_MetricsSite)
+    lh = site.producer.log_handles(site)
+    assert set(lh) == {"aux/L0", "aux/L1"}  # no 'acts' (slot), no 'output'
+
+    class Bare(GraphSpec):
+        acts = metered(op(torch.relu)(Input))  # unnamed: bare handle names
+        output = acts
+
+    (site2,) = Bare().collect(_MetricsSite)
+    assert set(site2.producer.log_handles(site2)) == {"L0", "L1"}
+
+
+def test_bubble_up_logging_recipe() -> None:
+    # D-18: the trainable saves/projects ONE assembled dict (graph.log_terms) --
+    # per-loss terms, standing metrics, and the metered() site that lives INSIDE
+    # GatedModelSpec -- without loss() naming any of them.
+    from saeco.trainer.train_cache import TrainCache
+    from saeco_research.cgraph2.sae import _MetricsSite
+
+    torch.manual_seed(0)
+    tr, d = _build_gated_trainable()
+    lt = tr.graph.log_terms
+    assert set(tr.graph.loss_terms) <= set(lt)  # per-loss unweighted terms
+    assert {"cosim", "L0", "L1"} <= set(lt)  # standing metrics + site terms
+    # L0/L1 came from the bubbled-up metered() site (not the fallback): the site
+    # is collected from the whole graph cone and contributes via site_terms.
+    assert tr.graph.collect(_MetricsSite)
+    assert "L0" in tr.graph.site_terms
+    # one loss() pass writes EVERY advertised name to the cache
+    names = tr.get_losses_and_metrics_names()
+    cache = TrainCache()
+    cache._watch(names)
+    tr.loss(torch.randn(32, d), cache=cache)
+    for nm in names:
+        assert cache.get(nm) is not None, nm
+
+
 def test_gated_graph_trains_one_step_cpu() -> None:
     import saeco.components.features as ft
     from saeco.components.resampling.anthropic_resampling import (

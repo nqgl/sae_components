@@ -32,19 +32,19 @@
   (weights now one seeded `weights: dict[str, float]` field indexed by loss name —
   D-16; device-clean, the D-04 resurrection); transcoder `target` via
   `field(SAEInputs.target)`; GPU trains identically. Remaining:
-  - [ ] **(4) bubble-up logging recipe** — the output-side dual. The cache-write in
-    `loss()` is still hand-listed; make it a bubble-up-built output recipe so
-    inside-metrics appear without the outside naming them (D-03; Glen's note).
-    Per refinement 2 + point-3, this is `forward_values` + projecting collected
-    site `(name, handle)` pairs into a (boundary) DictBatch — no `produce` method.
+  - [x] **(4) bubble-up logging recipe** — DONE (D-18). `TrainGraph.log_terms` is
+    the one assembled dict (per-loss terms | standing metrics | bubbled-up site
+    handles, collected from the whole cone); `loss()` saves and projects it
+    generically, naming nothing. Site handles are the metrics spec's *computed*
+    handles (handles − slots − `output`), `metered(..., name=)` prefixes for
+    multi-site; freq below_* stats are named by `FreqTracker.log_state()`.
   - [ ] **converter-as-GraphSpec** (`with_inputs`) — only if/when internal
     multi-output sharing needs fusion across a converter (refinement 2: internal
     composition is already just `arg`/`bind`/`sub_slot` ref-piping). Low priority.
 
-- [~] **Bubble-up metrics / freq-tracking / logging.** Metrics + freq-tracking
-  DONE (D-03/D-05/D-13): `_MetricsSite` bubble-up, `collect(FreqTracker)`, and the
-  `@deferred_execution` training-gated EMA update (`tracker.update(tracker.updated(
-  acts))` inline in the block). Remaining: the bubble-up *logging* half — same as
-  the multi-input "(4) bubble-up logging recipe" item above (`{site-path:
-  log-handle}` projected at the boundary, so `loss()` stops hand-listing the
-  cache writes).
+- [x] **Bubble-up metrics / freq-tracking / logging.** DONE. Metrics +
+  freq-tracking (D-03/D-05/D-13): `_MetricsSite` bubble-up, `collect(FreqTracker)`,
+  and the `@deferred_execution` training-gated EMA update. Logging (D-18): the
+  `{name: log-handle}` projection — `TrainGraph.log_terms` assembled from the
+  collected sites + loss/metric families; `loss()` no longer hand-lists the
+  cache writes.
