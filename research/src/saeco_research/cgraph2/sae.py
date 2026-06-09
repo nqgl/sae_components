@@ -357,14 +357,16 @@ class GraphNormalizer(GraphSpec):
 
 
 class SAEInputs(DictBatch):
-    """The model's boundary input contract: the source activations and the recon
-    target (== source for an autoencoder, != for a transcoder). Read via the typed
-    ``field(SAEInputs.input)`` -- no string keys (D-09). Per-loss weight fields
-    (``w_<lossname>``) are the *dynamic* tail (they vary with the loss set), kept as
-    derived names rather than declared here."""
+    """The model's boundary input contract: the source activations, the recon target
+    (== source for an autoencoder, != for a transcoder), and the per-loss ``weights``.
+    Read via the typed ``field(SAEInputs.input)`` -- no string keys (D-09). The
+    *dynamic* per-loss weights live in one ``weights`` dict (keyed by the loss's own
+    name), so the total-loss fold indexes ``weights[name]`` rather than synthesizing a
+    stringly-typed ``w_<name>`` field per loss."""
 
     input: torch.Tensor
     target: torch.Tensor
+    weights: dict[str, float]
 
 
 class NormalizedModel[T: SAEModel](GraphSpec):
@@ -439,21 +441,36 @@ class LossRef:
         return self.build_graph(norm_model).out
 
 
+def _weight(weights: ValueRef, name: str) -> ValueRef[float]:
+    """The scalar weight for loss ``name``, read from the seeded ``weights`` dict
+    (``weights[name]``). Consed by ``name`` -- two reads of the same weight fuse, and
+    distinct weights stay distinct -- so the weight stays a *graph input* (seeded each
+    step, device-clean: D-04), not a captured constant, with no ``w_<name>`` field."""
+    reader = Op.create(
+        lambda w: w[name], label=f"weights[{name}]", key=("weight", name)
+    )
+    return ref(reader, (weights,))
+
+
 class TrainGraph(GraphSpec):
     """The trainable's outer computation, as a (mostly static) class block.
 
     ``total_loss`` (the backprop target) is a *declarative* weighted fold over a
-    **dynamic** set of loss sub-graphs: ``Σ field("w_<k>") · loss.out``, reduced by
-    ``reduce_sum`` into one flat N-ary node. ``output`` is the main model's
-    denormalized recon (inference). The per-loss / metric / L0 / L1 *logging* values
-    are looked up dynamically in ``GraphTrainable.loss`` (not declared here) -- so
-    this class stays static while being parameterized by the dynamic losses."""
+    **dynamic** set of loss sub-graphs: ``Σ weights[name] · loss.out``, reduced by
+    ``reduce_sum`` into one flat N-ary node (``weights`` is one seeded dict field,
+    indexed by each loss's own name). ``output`` is the main model's denormalized
+    recon (inference). The per-loss / metric / L0 / L1 *logging* values are looked up
+    dynamically in ``GraphTrainable.loss`` (not declared here) -- so this class stays
+    static while being parameterized by the dynamic losses."""
 
     losses: SubSlots[GraphLoss] = sub_slots()
     main: NormalizedModel = sub_slot()
 
     total_loss = losses.reduce(
-        lambda name, loss: field(f"w_{name}") * loss.out, reduce_sum
+        # field(SAEInputs.weights) interns to one shared node; each loss reads its
+        # own weights[name] off it.
+        lambda name, loss: _weight(field(SAEInputs.weights), name) * loss.out,
+        reduce_sum,
     )
     output = main(Input).out  # the main model reads its own fields; Input is a no-op
 
@@ -558,8 +575,8 @@ class GraphTrainable(Trainable):
 
     # -- training contract -----------------------------------------------------
     def _batch(self, x, y=None, coeffs=None) -> SAEInputs:
-        """The boundary input batch: the typed source + recon target, plus a per-loss
-        weight field (the dynamic ``w_<k>`` tail) seeded from ``coeffs``. The target
+        """The boundary input batch: the typed source + recon target, plus the per-loss
+        ``weights`` dict (keyed by loss name) seeded from ``coeffs``. The target
         defaults to the source (autoencoder), but an ``SAETrainBatch`` may carry
         distinct ``target_sites`` (transcoder/crosscoder) -- honor those when no
         explicit ``y`` is given; an explicit ``y`` always wins."""
@@ -571,10 +588,8 @@ class GraphTrainable(Trainable):
         if y is not None:
             target = y
         coeffs = coeffs or {}
-        batch = SAEInputs(input=x, target=target)
-        for k in self._loss_graphs:  # dynamic per-loss weight fields
-            setattr(batch, f"w_{k}", coeffs.get(k, 1.0))
-        return batch
+        weights = {k: coeffs.get(k, 1.0) for k in self._loss_graphs}
+        return SAEInputs(input=x, target=target, weights=weights)
 
     def loss(self, x, *, cache, y=None, coeffs=None):
         # training=self.training gates the freq-tracker EMA: an eval-mode loss pass
@@ -617,14 +632,14 @@ class GraphTrainable(Trainable):
         if isinstance(x, SAETrainBatch):
             x = x.input
         x, shape = self.rearrange(x)
-        # inference reads SAEInputs.input; target is unused on the out path (== x)
-        batch = SAEInputs(input=x, target=x)
+        # inference reads SAEInputs.input; target/weights are unused on the out path
+        batch = SAEInputs(input=x, target=x, weights={})
         return self.dearrange(self.graph.forward(batch, cache=cache), shape)
 
     @make_cache_optional
     def get_acts(self, x, cache=None, pre_acts=False):
         x, shape = self.rearrange(x)
-        batch = SAEInputs(input=x, target=x)
+        batch = SAEInputs(input=x, target=x, weights={})
         return self.dearrange(Graph(self._acts)(batch, cache=cache), shape)
 
     @make_cache_optional
