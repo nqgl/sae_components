@@ -52,7 +52,15 @@ def _callable_name(fn) -> str:
     if isinstance(fn, nn.Module):
         return fn._get_name()
     name = getattr(fn, "__name__", None)
-    return name if name and name != "<lambda>" else "op"
+    return (
+        name
+        if name and name != "<lambda>"
+        else (
+            str(clsname)
+            if (clsname := getattr(type(fn), "__name__", None))
+            else str(type(fn))
+        )
+    )
 
 
 @define(eq=False, repr=False)
