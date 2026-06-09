@@ -337,7 +337,9 @@ def _register_producers(module: cl.Module, order, names) -> None:
             module.add_module(names[n], p)
 
 
-def _eval_node(n: ValueRef, args: list, cache: cl.Cache, name: str, kwargs: dict):
+def _eval_node(
+    n: ValueRef, args: list, cache: cl.Cache, name: str, kwargs: dict[str, Any]
+):
     """Run one node's producer. ``cl.Module`` producers are threaded a named
     subcache; bare ``nn.Module`` / ``Op`` producers (e.g. the ``nn.Linear``
     encoder, arithmetic ops) are called positionally."""
@@ -395,6 +397,10 @@ def collect[S](targets, site_type: type[S]) -> list[ValueRef[Any, S]]:
     return [n for n in _toposort(*targets) if isinstance(n.producer, site_type)]
 
 
+# one deferred side-effect: (materialize(session) -> value, run(value), training_only)
+type _Deferral = tuple[Callable[["_SaveSession"], Any], Callable[[Any], None], bool]
+
+
 @define
 class _SaveSession:
     """Context manager backing ``GraphSpec.forward_values``. The yielded object
@@ -409,11 +415,10 @@ class _SaveSession:
     graph: object
     x: object
     cache: cl.Cache
-    kwargs: dict
+    kwargs: dict[str, Any]
     training: bool = True
-    results: dict = _attr_field(init=False)
-    # each deferral is (materialize(session) -> value, run(value), training_only)
-    deferred: list = _attr_field(init=False, factory=list)
+    results: dict[ValueRef, object] = _attr_field(init=False)
+    deferred: list[_Deferral] = _attr_field(init=False, factory=list)
     token: object = _attr_field(init=False, default=None)
 
     @results.default
