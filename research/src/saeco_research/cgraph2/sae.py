@@ -34,7 +34,6 @@ from saeco_research.cgraph2.core import (
     OpRef,
     ValueRef,
     bind,
-    collect,
     deferred_execution,
     field,
     op,
@@ -101,9 +100,11 @@ class ActMetrics(GraphSpec):
 class _MetricsSite:
     """A passthrough marker spliced onto ``acts`` (``metered(acts)``). Collected by
     ``collect(_MetricsSite)``; ``site.at(acts)`` applies the carried metrics graph
-    to the (already-rebound) acts flowing through it."""
+    to the (already-rebound) acts flowing through it. ``name`` prefixes the site's
+    log handles (``aux/L0``) -- needed only to disambiguate multiple sites."""
 
     metrics: type = ActMetrics
+    name: str | None = None
 
     def __call__(self, x):
         return x
@@ -111,11 +112,30 @@ class _MetricsSite:
     def at(self, acts: ValueRef) -> "GraphSpec":
         return self.metrics(acts=acts)
 
+    def log_handles(self, node: ValueRef) -> dict[str, ValueRef]:
+        """The named log handles of this site applied at ``node``: every *computed*
+        handle of the metrics spec -- its handles minus its slots minus ``output``
+        (a metrics spec's named outputs *are* its metrics, so the names come from
+        the spec itself, not a list kept elsewhere). Prefixed ``name/`` if named."""
+        applied = self.at(node.inputs[0])
+        skip = type(applied).slot_names() | {"output"}
+        prefix = f"{self.name}/" if self.name else ""
+        return {
+            f"{prefix}{nm}": h
+            for nm, h in applied._handle_refs.items()
+            if nm not in skip
+        }
 
-def metered(acts: ValueRef, metrics: type = ActMetrics) -> ValueRef:
+
+def metered(
+    acts: ValueRef, metrics: type = ActMetrics, name: str | None = None
+) -> ValueRef:
     """Splice a metrics site onto ``acts`` (passthrough); bubble it up with
-    ``collect(_MetricsSite)``."""
-    return ref(_MetricsSite(metrics), (acts,))
+    ``collect(_MetricsSite)``. Its computed handles surface in the trainable's
+    ``log_terms`` without the outside naming them (the output-side dual of
+    ``field()`` -- D-18); ``name`` prefixes them (``aux/L0``) when several sites
+    coexist."""
+    return ref(_MetricsSite(metrics, name), (acts,))
 
 
 class FreqTracker(cl.Module):
@@ -127,6 +147,8 @@ class FreqTracker(cl.Module):
     and is skipped on eval, so validation passes don't advance the EMA. The
     principled before/after split: ``freqs`` and ``updated`` are distinct nodes;
     only a training update advances the state."""
+
+    freqs: torch.Tensor
 
     def __init__(self, d_dict: int, decay: float = 0.99):
         super().__init__()
@@ -150,6 +172,13 @@ class FreqTracker(cl.Module):
         # inside a forward_values block this defers to block exit (new_freqs, a
         # handle, is materialized first) and only fires on a training pass.
         self.freqs.copy_(new_freqs)
+
+    def log_state(self) -> dict[str, torch.Tensor]:
+        """The tracker's named logging stats: the fraction of features below each
+        freq threshold. These are *state* reads, not graph handles -- they must see
+        the freqs AFTER the deferred EMA update, so the trainable reads them after
+        the ``forward_values`` block (the names live here, with the state)."""
+        return {nm: (self.freqs < thr).float().mean() for nm, thr in _BELOW}
 
 
 class SAEModel(Protocol):
@@ -461,9 +490,10 @@ class TrainGraph(GraphSpec):
     **dynamic** set of loss sub-graphs: ``Σ weights[name] · loss.out``, reduced by
     ``reduce_sum`` into one flat N-ary node (``weights`` is one seeded dict field,
     indexed by each loss's own name). ``output`` is the main model's denormalized
-    recon (inference). The per-loss / metric / L0 / L1 *logging* values are looked up
-    dynamically in ``GraphTrainable.loss`` (not declared here) -- so this class stays
-    static while being parameterized by the dynamic losses."""
+    recon (inference). Every *logging* handle is assembled here as ``log_terms``
+    (per-loss terms, standing metrics, bubbled-up sites -- D-18), so the trainable
+    saves and projects them without naming any -- this class stays static while
+    being parameterized by the dynamic losses."""
 
     losses: SubSlots[GraphLoss] = sub_slots()
     main: NormalizedModel = sub_slot()
@@ -494,22 +524,39 @@ class TrainGraph(GraphSpec):
         return {k: t(norm_model=self.main).out for k, t in types.items()}
 
     @cached_property
-    def _l0_l1(self) -> tuple[ValueRef, ValueRef]:
-        # bubble up the main model's metrics site (D-03/D-05), applied to the
-        # rebound (normalized) acts; fall back to computing directly if no site.
-        sites = collect([self.main.acts], _MetricsSite)
-        if sites:
-            m = sites[0].producer.at(sites[0].inputs[0])
-            return m.L0, m.L1
-        return op(_l0)(self.main.acts), op(_l1)(self.main.acts)
+    def site_terms(self) -> dict[str, ValueRef]:
+        """Every bubbled-up metrics site's log handles, collected from the *whole*
+        graph cone (a ``metered()`` deep inside any model surfaces here without
+        anything in between naming it -- D-03/D-18). Two sites exposing the same
+        handle name fail loud (give the sites distinct ``metered(..., name=)``
+        prefixes). Falls back to direct L0/L1 over the main model's acts when no
+        site provides them (the trainer contract logs L0/L1 regardless)."""
+        terms: dict[str, ValueRef] = {}
+        for site in self.collect(_MetricsSite):
+            for nm, h in site.producer.log_handles(site).items():
+                if terms.setdefault(nm, h) is not h:
+                    raise ValueError(
+                        f"two metrics sites both expose log handle {nm!r}; give "
+                        "the sites distinct names (metered(acts, name=...))"
+                    )
+        if "L0" not in terms:
+            terms["L0"] = op(_l0)(self.main.acts)
+            terms["L1"] = op(_l1)(self.main.acts)
+        return terms
 
-    @property
-    def l0(self) -> ValueRef:
-        return self._l0_l1[0]
-
-    @property
-    def l1(self) -> ValueRef:
-        return self._l0_l1[1]
+    @cached_property
+    def log_terms(self) -> dict[str, ValueRef]:
+        """Every named logging handle in one dict: the per-loss unweighted terms,
+        the standing metrics (cosim, +L2), and the bubbled-up site terms. The
+        bubble-up logging recipe (D-18): the trainable just saves these in its one
+        fused pass and projects them to the cache -- no hand-listed families. A
+        name claimed by two families fails loud."""
+        terms: dict[str, ValueRef] = {}
+        for family in (self.loss_terms, self.metric_terms, self.site_terms):
+            for nm, h in family.items():
+                if terms.setdefault(nm, h) is not h:
+                    raise ValueError(f"duplicate log term {nm!r} across families")
+        return terms
 
 
 class GraphTrainable(Trainable):
@@ -557,8 +604,8 @@ class GraphTrainable(Trainable):
 
         # the outer graph as a (mostly static) class block: `total_loss` is the
         # declarative weighted fold over the dynamic loss sub-graphs, `output` is
-        # the main recon, and the logging handles (loss_terms/metric_terms/l0/l1)
-        # are its cached properties. register_into over it covers every producer
+        # the main recon, and `log_terms` is the one assembled logging dict (D-18).
+        # register_into over it covers every producer
         # (total_loss's cone is all the loss sub-graphs); GraphSpec is a plain
         # object (not an nn.Module), so register_into does the bookkeeping.
         self.graph: TrainGraph = TrainGraph(
@@ -600,34 +647,30 @@ class GraphTrainable(Trainable):
             self._batch(x, y, coeffs), cache=cache, training=self.training
         ) as save:
             total = save(self.graph.total_loss)  # the one static backprop handle
-            # dynamic lookups: the per-loss / metric / L0 / L1 handles aren't on the
-            # (mostly-static) graph -- they're saved here by handle, sharing the one
-            # fused memoized pass (the model is computed once and reused).
-            logged = {k: save(t) for k, t in self.graph.loss_terms.items()}  # unwtd
-            logged.update({k: save(t) for k, t in self.graph.metric_terms.items()})
-            l0, l1 = save(self.graph.l0), save(self.graph.l1)
+            # the bubble-up logging recipe (D-18): every named log handle --
+            # per-loss, metric, bubbled-up site -- saved in the same fused
+            # memoized pass, without this method naming any of them.
+            logged = {nm: save(h) for nm, h in self.graph.log_terms.items()}
             for site in self._freq_sites:  # deferred EMA update after the pass
                 ft = site.producer
                 ft.update(ft.updated(site.inputs[0]))
-        # cache.<lossname>/<metric> = unweighted (logging); cache.loss = the total.
-        for k, m in logged.items():
-            setattr(cache, k, m)
-        cache.L0, cache.L1 = l0, l1
+        # project to the logging boundary: cache.<name> = value (unweighted);
+        # cache.loss = the total.
+        for nm, v in logged.items():
+            setattr(cache, nm, v)
         cache.loss = total.item()
-        # below_* freq metrics, from the (now-updated) bubbled-up freq trackers
+        # freq-tracker state stats (below_*): post-update reads, hence after the
+        # block -- named by the tracker itself, not here.
         for site in self._freq_sites:
-            freqs = site.producer.freqs
-            for name, thr in _BELOW:
-                setattr(cache, name, (freqs < thr).float().mean())
+            for nm, v in site.producer.log_state().items():
+                setattr(cache, nm, v)
         return total
 
     def get_losses_and_metrics_names(self) -> list[str]:
-        return (
-            list(self.graph.loss_terms)
-            + list(self.graph.metric_terms)
-            + ["L0", "L1"]
-            + [name for name, _ in _BELOW]
-        )
+        return [
+            *self.graph.log_terms,
+            *(nm for s in self._freq_sites for nm in s.producer.log_state()),
+        ]
 
     @make_cache_optional
     def forward(self, x, *, cache):

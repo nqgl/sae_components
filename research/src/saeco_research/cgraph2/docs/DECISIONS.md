@@ -695,3 +695,41 @@ silent; the bargain here is loud failure at the boundary.
 Validated: 61 pytest (incl. a four-part device-safety regression: live `.to()` reads,
 same-tensor fusion, Parameter registration, loud raw-capture refusal) + 6 demos + ruff
 clean + GPU train-identical through the real Trainer.
+
+
+## D-18 — the bubble-up logging recipe: one assembled `log_terms`, nothing hand-listed
+
+**Call:** the last hand-listed thing in `GraphTrainable.loss()` was the logging: it
+separately enumerated `loss_terms`, `metric_terms`, `l0`/`l1` (with `cache.L0, cache.L1
+= ...` spelled out), and the `below_*` freq stats with their thresholds — the *outside*
+naming values that live *inside* the graph. The output-side dual of `field()` (D-03's
+arc; the input boundary was D-09/D-10).
+
+**Choice — names live with the structure that owns them; the trainable names nothing:**
+
+* **A metrics site's log handles are derived from its spec.** `_MetricsSite.log_handles`
+  = the applied metrics spec's *computed* handles — its handles minus its slots minus
+  ``output`` (a metrics spec's named outputs *are* its metrics; backed by the new
+  `GraphSpec.slot_names()`). `metered(acts, name="aux")` prefixes them (`aux/L0`) so
+  several sites coexist; an unnamed collision fails loud.
+* **`TrainGraph.site_terms`** collects every `_MetricsSite` from the *whole* graph cone
+  (was: `sites[0]` over `main.acts` only, hardcoded to L0/L1) — a `metered()` deep
+  inside any model surfaces without anything in between naming it. Direct-L0/L1
+  fallback retained when no site provides them (the trainer contract).
+* **`TrainGraph.log_terms`** = loss_terms | metric_terms | site_terms (collision-checked,
+  same interned node tolerated). `loss()` is now just: save `total_loss`, save every
+  `log_terms` handle in the same fused pass, project `{name: value}` to the cache.
+* **`FreqTracker.log_state()`** names the `below_*` stats (the thresholds live with the
+  tracker). These stay *state reads after the block* — they must see the post-EMA
+  freqs, so they cannot be in-pass graph handles; the split is deliberate.
+* `get_losses_and_metrics_names` = `log_terms` keys + each freq site's `log_state`
+  names — fully derived.
+
+**Why:** adding a metric inside a model should not require touching the trainable —
+that's the bubble-up promise (D-03). The names remaining in `loss()` are zero; the
+`l0`/`l1`/`_l0_l1` properties retired.
+
+Validated: 63 pytest (new: `log_handles` computed-handle selection + `name=` prefixing;
+the recipe end-to-end — log_terms ⊇ losses ∪ {cosim, L0, L1}, site-sourced L0, one
+`loss()` pass writes every advertised name) + 6 demos + ruff clean + GPU
+train-identical through the real Trainer.

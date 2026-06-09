@@ -860,6 +860,15 @@ class GraphSpec(metaclass=_GraphMeta):
         introspection and filtering."""
         return iter(_toposort(*self._targets()))
 
+    @classmethod
+    def slot_names(cls) -> frozenset[str]:
+        """The names of this spec's declared slots (op/module/sub, value, variadic) --
+        so a handle name can be told apart from a slot name (e.g. a metrics spec's
+        *computed* handles are its handles minus its slots minus ``output``). Empty
+        for a dynamic ``GraphSpec.of`` graph (no class template, no slots)."""
+        t = getattr(cls, "_template", None)
+        return frozenset() if t is None else frozenset(_slot_map(t))
+
     def forward_values(
         self, x, *, cache, training: bool = True, **kwargs
     ) -> _SaveSession:
