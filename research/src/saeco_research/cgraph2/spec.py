@@ -47,6 +47,7 @@ from saeco_research.cgraph2.core import (
     op,
     ref,
     ref_as,
+    tensor_source,
 )
 from saeco_research.cgraph2.core import (
     Op as _CoreOp,
@@ -529,6 +530,17 @@ def _slot_map(t: _Template) -> dict[str, _SlotSpec]:
     return {slot.name: slot for slot in _iter_slots(t)}
 
 
+def _value_node(value) -> ValueRef:
+    """A bound/default value as a source node. A bare tensor is wrapped device-safe
+    (``tensor_source``: its own live buffer -- D-04/D-16); a ``Parameter`` stays raw
+    (in-place-safe under ``.to()``, and registers as a parameter)."""
+    if isinstance(value, ValueRef):
+        return value
+    if isinstance(value, torch.Tensor) and not isinstance(value, torch.nn.Parameter):
+        return tensor_source(value)
+    return ref(value, ())
+
+
 def _slot_substitution(slot: _SlotSpec, binding) -> tuple[object, object]:
     if slot.kind == "slot":
         if isinstance(binding, GraphSpec):  # a sub-graph: keep raw for handle splice
@@ -538,8 +550,7 @@ def _slot_substitution(slot: _SlotSpec, binding) -> tuple[object, object]:
         )
         return slot.marker, producer
     if slot.kind == "value":
-        value = binding if isinstance(binding, ValueRef) else ref(binding, ())
-        return slot.marker, value
+        return slot.marker, _value_node(binding)
     if slot.kind == "multi":
         return slot.marker, _bound_dict(binding)
     raise AssertionError(f"unknown slot kind {slot.kind!r}")
@@ -549,9 +560,7 @@ def _slot_default_substitution(slot: _SlotSpec) -> tuple[object, object]:
     if slot.kind == "slot":
         return slot.marker, op(slot.default).producer
     if slot.kind == "value":
-        default = slot.default
-        value = default if isinstance(default, ValueRef) else ref(default, ())
-        return slot.marker, value
+        return slot.marker, _value_node(slot.default)
     raise AssertionError(f"{slot.kind!r} slots do not have defaults")
 
 

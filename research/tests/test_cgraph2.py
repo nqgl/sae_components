@@ -444,6 +444,47 @@ def test_graph_normalizer_embeds_its_inverse() -> None:
     assert torch.allclose(got2, norm2.invert(x), atol=1e-6)
 
 
+def test_bare_tensor_bindings_are_device_safe() -> None:
+    # D-04/D-16: a node captures a tensor OBJECT, and nn.Module._apply REASSIGNS
+    # registered buffers (only a Parameter's .data swaps in place) -- so a captured
+    # bare tensor goes stale on .to(). The slot machinery therefore wraps bound /
+    # default tensors in a holder reading its OWN live buffer; raw ref(tensor, ())
+    # fails loud at registration instead of registering a lying state_dict entry.
+    import saeco.core as cl
+    from saeco_research.cgraph2 import GraphSpec, Input, arg, ref
+    from saeco_research.cgraph2.spec import Arg
+
+    class G(GraphSpec):
+        s: Arg = arg()
+        output = Input * s
+
+    # (1) a bare-tensor binding follows .to() -- the wrap reads live
+    g = G(s=torch.tensor([2.0]))
+    owner = g.register_into(torch.nn.Module())
+    owner.to(torch.float64)
+    out = g.forward(torch.tensor([1.0], dtype=torch.float64), cache=cl.Cache())
+    assert out.dtype == torch.float64  # promotion-free: the source itself moved
+    assert torch.allclose(out, torch.tensor([2.0], dtype=torch.float64))
+
+    # (2) the same tensor bound twice fuses to one source node
+    t = torch.tensor([3.0])
+    assert G(s=t).output.inputs[1] is G(s=t).output.inputs[1]
+
+    # (3) a Parameter stays raw: registered as a parameter (optimizer-visible),
+    # and .to() swaps its .data in place so the captured object reads live
+    p = torch.nn.Parameter(torch.tensor([2.0]), requires_grad=False)
+    gp = G(s=p)
+    owner_p = gp.register_into(torch.nn.Module())
+    assert p in set(owner_p.parameters())
+
+    # (4) the raw escape hatch (ref(tensor, ())) is refused loudly at registration
+    class Raw(GraphSpec):
+        output = Input * ref(torch.tensor([2.0]), ())
+
+    with pytest.raises(TypeError, match="bare tensor"):
+        Raw().register_into(torch.nn.Module())
+
+
 def test_module_slot_forward_and_param_reads() -> None:
     # module_slot() plugs a leaf cl.Module in as a Slot descriptor -- m(x) is its
     # forward, m.get(lambda n: n.w) reads a buffer as a typed graph ref (consed by

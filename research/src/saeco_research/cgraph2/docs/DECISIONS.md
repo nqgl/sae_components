@@ -623,3 +623,75 @@ Validated: 59 pytest + 6 demos + ruff clean + GPU train-identical (step 400 cosi
 L2 0.02 / L0 ~3250) + pyright probes confirming both faces — leaf `.get`
 (`ValueRef[Tensor]`) and sub-graph `.recon` (no `.get`) — with 0 errors and construction
 taking the plugged component.
+
+
+## D-16 — value-typed handles (Tensor by default); weights as one seeded dict; `handle()` contract fields
+
+Three calls from Glen's notes pass (each detailed in its commit):
+
+* **`ValueRef[V]` threaded everywhere, Tensor by default.** Operators, `op()`, and a
+  leaf `slot(x)` return `ValueRef[Tensor]` (graph values here are ~universally
+  tensors — no fragile inference); `field(Batch.x)` carries the declared field type
+  (`field(Batch.weight) -> ValueRef[float]`); `Input` / string-`field` stay `Any`;
+  `bind`/`at` preserve `V`. Purely type-level — identical interned nodes.
+* **Per-loss weights are one seeded `weights: dict[str, float]`** on `SAEInputs`,
+  indexed by each loss's *own* name at fold time — the stringly-typed `w_<k>`
+  field-name synthesis (two coupled f-string sites) is gone.
+* **`handle()` declares a contract handle** (supersedes D-15's ClassVar workaround): a
+  `dataclass_transform` field-specifier with `init=False`, so `SAEGraphSpec.acts/recon`
+  are honest *typed instance attributes* — not construction fields, and subclasses wire
+  `recon = decoder(acts)` with no annotation. (The alternative — annotating the field
+  in each subclass to register a default — forces an annotation per handle; rejected.)
+  The `SAEModel` protocol's members became *read-only properties*: a mutable protocol
+  attribute is invariant, so a spec whose handle is a `ValueRef` subtype (a slot
+  application) would fail it; read-only is covariant and matches reality.
+
+Also: `_PartialGraph[T]` (generic over its source spec; `partial() -> _PartialGraph[Self]`),
+a documented `Subs` alias for the deliberately-heterogeneous bind map, typed
+`_SaveSession`/`_INTERN`/bindings dicts, and a public `GraphSpec.iter_nodes()`.
+
+
+## D-17 — bare-tensor sources are wrapped device-safe; raw capture fails loud (closes the D-04 class)
+
+**Call:** D-04 caught one instance of a bug class and deferred the full understanding
+(TODO, flagged important): what exactly is safe to capture as a node's producer, and can
+the boundary refuse the unsafe form loudly?
+
+**The model (empirically verified; CPU-reproducible via `.to(torch.float64)`):** a node
+captures a *tensor object*; what `nn.Module._apply` does to that object decides
+staleness:
+
+* **`nn.Parameter` — SAFE.** `.data` is swapped *in place* (default
+  `overwrite_module_params_on_conversion=False`), object identity preserved; a captured
+  Parameter reads live. (And it must stay raw so it registers as a *parameter* — the
+  optimizer sees it.)
+* **registered buffer / any bare tensor — UNSAFE.** `_apply` *reassigns* the registry
+  entry (`_buffers[k] = fn(buf)`): the registered copy moves, the captured original is
+  orphaned. Worse, `register_into`'s old behavior (`register_buffer` the captured
+  tensor) manufactured a **lying state_dict entry** — the owner's registered copy moves
+  with `.to()` while the node keeps reading the orphan; wrong device/dtype, *silent*
+  whenever 0-dim/dtype promotion absorbs it (D-04's original catch).
+* **a module reading its own buffer at call time** (e.g. `AffineNormalizer`,
+  `slot.get(lambda m: m.scale)`) — **SAFE**: reads go through the live `_buffers` dict.
+
+**Choice — make the supported surface safe by construction; refuse the escape hatch:**
+
+* Every slot-bound / slot-default bare tensor is routed through `tensor_source(t)`
+  (`_value_node`, spec.py): a `_TensorSource` holder whose registered buffer *is* the
+  bound tensor and whose forward reads `self.value` live — exactly D-04's own lesson
+  ("a param or a module that reads its own live buffer"), supplied by the framework.
+  It registers via the normal module path, so `.to()` on the owning graph moves
+  precisely what the node reads. One holder per tensor identity (a `_FIELDS`-style
+  cache), so re-binding the same tensor still fuses. Parameters stay raw.
+* `_register_producers` now **raises** on a bare non-Parameter tensor producer instead
+  of registering the trap — reachable only via raw `ref(tensor, ())`, and the error
+  names the safe forms.
+
+**Why not** ban tensor bindings outright: `Spec.partial(b=torch.tensor(...))` is a good
+API for constants, and the wrap makes it *correct* rather than forbidden. Why not warn
+instead of raise: a wrong-device read that "works" by promotion is the worst kind of
+silent; the bargain here is loud failure at the boundary.
+
+Validated: 61 pytest (incl. a four-part device-safety regression: live `.to()` reads,
+same-tensor fusion, Parameter registration, loud raw-capture refusal) + 6 demos + ruff
+clean + GPU train-identical through the real Trainer.
